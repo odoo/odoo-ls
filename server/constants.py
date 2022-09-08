@@ -1,0 +1,16 @@
+EXTENSION_NAME = "Odoo"
+
+CMD_COUNT_DOWN_BLOCKING = 'countDownBlocking'
+CMD_COUNT_DOWN_NON_BLOCKING = 'countDownNonBlocking'
+CMD_PROGRESS = 'progress'
+CMD_REGISTER_COMPLETIONS = 'registerCompletions'
+CMD_SHOW_CONFIGURATION_ASYNC = 'showConfigurationAsync'
+CMD_SHOW_CONFIGURATION_CALLBACK = 'showConfigurationCallback'
+CMD_SHOW_CONFIGURATION_THREAD = 'showConfigurationThread'
+CMD_UNREGISTER_COMPLETIONS = 'unregisterCompletions'
+
+CONFIGURATION_SECTION = 'Odoo'
+
+#DEBUG PARAMETERS
+
+FULL_LOAD_AT_STARTUP = True
