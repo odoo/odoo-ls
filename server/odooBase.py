@@ -27,27 +27,32 @@ class Symbol():
         self.paths = paths if isinstance(paths, list) else [paths]
         self.symbols = {}
         self.parent = None
+        self.modelName = None
+        self.bases = [] #for class only
+        #local namespace and corresponding symbol
+        # {odoo.addons: Symbol}
+        self.localAliases = {}
 
-    def get_ancestors(self):
+    def get_tree(self):
         ancestors = []
         curr_symbol = self
         while curr_symbol.parent and curr_symbol.parent.type != "root":
             ancestors.insert(0, curr_symbol.parent.name)
             curr_symbol = curr_symbol.parent
-        return ancestors
+        return ancestors + [self.name]
 
     def get_symbol(self, symbol_names):
         if not symbol_names:
             return self
-        if symbol_names[0] not in self.symbols:
-            return False
-        curr_symbol = self.symbols[symbol_names[0]]
-        for s in symbol_names[1:]:
-            if s in curr_symbol.symbols:
-                curr_symbol = curr_symbol.symbols[s]
-            else:
-                return False
-        return curr_symbol
+        if symbol_names[0] in self.localAliases:
+            curr_symbol = self.localAliases[symbol_names[0]]
+            if curr_symbol:
+                return curr_symbol.get_symbol(symbol_names[1:])
+        if symbol_names[0] in self.symbols:
+            curr_symbol = self.symbols[symbol_names[0]]
+            if curr_symbol:
+                return curr_symbol.get_symbol(symbol_names[1:])
+        return False
 
     def add_symbol(self, symbol_names, symbol):
         """take a list of symbols name and the symbol to add"""
@@ -63,6 +68,16 @@ class Symbol():
         curr_symbol.symbols.update({symbol.name: symbol})
 
 
+class Model():
+
+    def __init__(self, name):
+        self.name = name
+        self.inherit = []
+        self.inherited_by = []
+        self.symbols = []
+
+
+
 class OdooBase():
 
     odooPath = ""
@@ -71,7 +86,10 @@ class OdooBase():
     version_minor = 0
     version_micro = 0
 
-    models = {}
+    # for each model, the list of symbols implenting it
+    # models = {
+    # "account.test": Model}
+    models = {} 
     # for each file path: the symbols loaded for THIS file, and the subfiles that are imported with it
     # files = {"symbols": [], "imports": []}
     files = {}
@@ -130,7 +148,7 @@ class OdooBase():
             #set python path
             self.symbols.paths += [self.odooPath]
             self.symbols.add_symbol([], Symbol("odoo", "package", [self.odooPath + "/odoo"]))
-            self.symbols.add_symbol(["odoo"], Symbol("addons", "package", [self.odooPath + "/odoo/addons", self.odooPath + "/addons"]))
+            self.symbols.add_symbol(["odoo"], Symbol("addons", "package", [self.odooPath + "/odoo/addons", self.odooPath + "/addons", "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]))
             return True
         else:
             print("Odoo not found at " + self.odooPath)
@@ -139,17 +157,15 @@ class OdooBase():
 
     def build_modules(self, ls):
         from server.odooModule import OdooModule
-        addonPaths = [self.odooPath + "/odoo/addons", self.odooPath + "/addons"]
+        addonPaths = [self.odooPath + "/odoo/addons", self.odooPath + "/addons"]#, "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]
         for path in addonPaths:
             dirs = os.listdir(path)
             for dir in dirs:
-                module = OdooModule(ls, os.path.join(path, dir))
+                OdooModule(ls, os.path.join(path, dir))
         if FULL_LOAD_AT_STARTUP:
             for module in OdooModule.modules.values():
-                print(module.name)
                 module.load(ls)
-                #break
-        print(OdooBase.get().symbols)
+                break
         try:
             import psutil
             print("ram usage :" + str(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2))
