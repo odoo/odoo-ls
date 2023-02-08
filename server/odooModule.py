@@ -34,6 +34,9 @@ class OdooModule():
             return
         diagnostics = []
         diagnostics += self.load_manifest(os.path.join(dir_path, "__manifest__.py"))
+        if self.dir_name in OdooModule.modules:
+            #TODO merge ! or erase? or raise error? :(
+            print("already in: " + self.dir_name)
         OdooModule.modules[self.dir_name] = self
         ls.publish_diagnostics(manifestPath, diagnostics)
 
@@ -45,6 +48,7 @@ class OdooModule():
         diagnostics += self.load_data()
         diagnostics += self.load_python_files(ls, self.rootPath)
         self.loaded = True
+        print("loaded: " + self.dir_name)
         ls.publish_diagnostics(os.path.join(self.rootPath, "__manifest__.py"), diagnostics)
     
     def load_manifest(self, manifestPath):

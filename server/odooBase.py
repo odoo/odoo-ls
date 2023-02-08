@@ -32,6 +32,11 @@ class Symbol():
         #local namespace and corresponding symbol
         # {odoo.addons: Symbol}
         self.localAliases = {}
+        self.startLine = 0
+        self.endLine = 0
+    
+    def __str__(self):
+        return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
 
     def get_tree(self):
         ancestors = []
@@ -55,7 +60,7 @@ class Symbol():
         return False
 
     def add_symbol(self, symbol_names, symbol):
-        """take a list of symbols name and the symbol to add"""
+        """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
         if symbol_names and symbol_names[0] not in self.symbols:
             raise Exception("Symbol not found: " + str(symbol_names[0]))
         curr_symbol = self.symbols[symbol_names[0]] if symbol_names else self
@@ -67,6 +72,14 @@ class Symbol():
         symbol.parent = curr_symbol
         curr_symbol.symbols.update({symbol.name: symbol})
 
+    def get_scope_symbol(self, line):
+        """return the symbol (class or function) the closest to the given line """
+        symbol = self
+        for s in self.symbols.values():
+            if s.startLine <= line and s.endLine >= line:
+                symbol = s.get_scope_symbol(line)
+                break
+        return symbol
 
 class Model():
 
@@ -90,8 +103,7 @@ class OdooBase():
     # models = {
     # "account.test": Model}
     models = {} 
-    # for each file path: the symbols loaded for THIS file, and the subfiles that are imported with it
-    # files = {"symbols": [], "imports": []}
+    # for each file path: a reference to the symbol of this file you can find in self.symbols
     files = {}
 
     # symbols is the list of declared symbols and their related declaration, filtered by name
@@ -147,7 +159,7 @@ class OdooBase():
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
             #set python path
             self.symbols.paths += [self.odooPath]
-            self.symbols.add_symbol([], Symbol("odoo", "package", [self.odooPath + "/odoo"]))
+            self.symbols.add_symbol([], Symbol("odoo", "package", [self.odooPath]))
             self.symbols.add_symbol(["odoo"], Symbol("addons", "package", [self.odooPath + "/odoo/addons", self.odooPath + "/addons", "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]))
             return True
         else:
@@ -157,7 +169,7 @@ class OdooBase():
 
     def build_modules(self, ls):
         from server.odooModule import OdooModule
-        addonPaths = [self.odooPath + "/odoo/addons", self.odooPath + "/addons"]#, "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]
+        addonPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
         for path in addonPaths:
             dirs = os.listdir(path)
             for dir in dirs:
@@ -165,10 +177,21 @@ class OdooBase():
         if FULL_LOAD_AT_STARTUP:
             for module in OdooModule.modules.values():
                 module.load(ls)
-                break
+
+
         try:
             import psutil
-            print("ram usage :" + str(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2))
+            print("ram usage : " + str(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2) + " Mo")
         except Exception:
+            print("psutil not found")
             pass
         print(str(len(OdooModule.modules)) + " modules found")
+    
+    def get_file_symbol(self, uri):
+        if uri in self.files:
+            return self.files[uri]
+        return []
+
+    def init_file(uri):
+        if uri.endswith(".py"):
+            pass

@@ -22,10 +22,11 @@ import uuid
 from json import JSONDecodeError
 from typing import Optional
 from .odooBase import OdooBase
+from server.pythonParser import PythonParser
 
 from pygls.lsp.methods import (COMPLETION, TEXT_DOCUMENT_DID_CHANGE,
                                TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN, 
-                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL)
+                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, DEFINITION)
 from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -34,7 +35,8 @@ from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
                              DidOpenTextDocumentParams, MessageType, Position,
                              Range, Registration, RegistrationParams,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
-                             Unregistration, UnregistrationParams)
+                             Unregistration, UnregistrationParams,
+                             TextDocumentPositionParams, Location)
 from pygls.lsp.types.basic_structures import (WorkDoneProgressBegin,
                                               WorkDoneProgressEnd,
                                               WorkDoneProgressReport)
@@ -105,6 +107,23 @@ def completions(params: Optional[CompletionParams] = None) -> CompletionList:
         ]
     )
 
+@odoo_server.feature(DEFINITION)
+def definition(params: TextDocumentPositionParams):
+    """Returns the location of a symbol definition"""
+    # lookup the ident under the cursor
+    #name = get_symbol_name_at_position(params.textDocument.uri, params.position)
+    # lookup the ident within the document
+    #symbol = lookup_symbol(params.textDocument.uri, name)
+    print(params.text_document.uri[7:]) #remove "file://"
+    file_symbol = OdooBase.get().get_file_symbol(params.text_document.uri[7:])
+    scope_symbol = file_symbol.get_scope_symbol(params.position.line + 1)
+    print(scope_symbol)
+    if params.text_document.uri[-3:] == ".py":
+        node = PythonParser.getSymbol(params.text_document.uri[7:], params.position.line + 1, params.position.character + 1)
+    a = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_model.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
+    b = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_actions.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
+
+    return [a,b]
 
 @odoo_server.command(CMD_COUNT_DOWN_BLOCKING)
 def count_down_10_seconds_blocking(ls, *args):
@@ -145,9 +164,7 @@ def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
     base = OdooBase.get(ls)
-    ls.show_message('Text Document Did Open')
-    _validate(ls, params)
-
+    base.init_file(params.text_document.uri)
 
 @odoo_server.feature(
     TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,

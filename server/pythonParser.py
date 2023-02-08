@@ -2,7 +2,9 @@ import ast
 import os
 import sys
 from pathlib import Path
+from .constants import *
 from server.odooBase import Symbol, OdooBase, Model
+from pygls.lsp.types import (Diagnostic,Position, Range)
 
 class PythonParser(ast.NodeVisitor):
     """This class read a file and extract all relevant data. Classes, functions and models are stored in odooBase.
@@ -31,7 +33,8 @@ class PythonParser(ast.NodeVisitor):
     def parse(self):
         """ Parse the file to extract relevant informations """
         self.reset()
-        OdooBase.get().files[self.filePath] = {"symbols": [], "imports": []}
+        print(self.filePath)
+        OdooBase.get().files[self.filePath] = self.symbol
         try:
             with open(self.filePath, "rb") as f:
                 content = f.read()
@@ -84,7 +87,7 @@ class PythonParser(ast.NodeVisitor):
                     current_symbol = OdooBase.get().symbols.get_symbol(packages_copy)
                     if not current_symbol:
                         if packages_copy and packages_copy[0] == "odoo":
-                            print(packages_copy)
+                            pass#print(packages_copy)
                         break
                     next_step_symbols = OdooBase.get().symbols.get_symbol(packages_copy + [element])
                     if not next_step_symbols:
@@ -146,6 +149,8 @@ class PythonParser(ast.NodeVisitor):
                     bases += [symbol]
         if node.name not in self.symbol.symbols:
             symbol = Symbol(node.name, "class", self.filePath)
+            symbol.startLine = node.lineno
+            symbol.endLine = node.end_lineno
             symbol.bases = bases
             self.symbol.localAliases[node.name] = symbol
             self.symbol.add_symbol([], symbol)
@@ -223,7 +228,7 @@ class PythonParser(ast.NodeVisitor):
                 self.visit_Import(node)
             elif isinstance(node, ast.ImportFrom):
                 self.visit_ImportFrom(node)
-        # parsing is done, now we can save what is found. The saving is deferred to the parsing to fix wrong orders in declarations
+        # parsing is done, now we can save what is found. The saving is done after the parsing to fix wrong orders in declarations
         # (inherit before name for example)
         if modelName:
             symbol.modelName = modelName
@@ -234,6 +239,8 @@ class PythonParser(ast.NodeVisitor):
     def _visit_FunctionDef(self, node, classSymbol):
         if node.name not in classSymbol.localAliases:
             symbol = Symbol(node.name, "function", self.filePath)
+            symbol.startLine = node.lineno
+            symbol.endLine = node.end_lineno
             classSymbol.localAliases[node.name] = symbol
             classSymbol.add_symbol([], symbol)
 
@@ -260,3 +267,69 @@ class PythonParser(ast.NodeVisitor):
         self.mode = 'symbols'
         self.parse()
         return self.symbol
+
+    @staticmethod
+    def get_complete_expr(content, line, character):
+        full_expr = []
+        curr_element = ""
+        cl = line
+        cc = character
+        canContinue = True
+        space = False
+        special_closures = ''
+        content_closure = []
+        while canContinue:
+            char = content[cl][cc]
+            if char in ['"', '(', '{', '[']:
+                if (special_closures == ")" and char == "(") or \
+                        (special_closures == "}" and char == "{") or \
+                        (special_closures == "]" and char == "["):
+                    special_closures = ''
+                elif special_closures == '':
+                    space = False
+                    full_expr.insert(0, (curr_element, content_closure))
+                    curr_element = ""
+                    canContinue = False
+            elif special_closures:
+                content_closure[-1][-1] = char + content_closure[-1][-1]
+            elif char == ' ' and not space:
+                space = True
+            elif char == '.':
+                space = False
+                full_expr.insert(0, (curr_element, content_closure))
+                content_closure = []
+                curr_element = ""
+            elif char in [')', '}', ']']:
+                special_closures = char
+                content_closure.append([char, ''])
+            elif char in [',', '+', '/', '*', '-', '%', '>', '<', '=', '!', '&', '|', '^', '~', ':']:
+                full_expr.insert(0, (curr_element, content_closure))
+                curr_element = ""
+                canContinue = False
+            else:
+                if space:
+                    full_expr.insert(0, (curr_element, content_closure))
+                    curr_element = ""
+                    canContinue = False
+                else:
+                    curr_element = char + curr_element
+            cc -= 1
+            if cc < 0:
+                cl -= 1
+                if cl < 0:
+                    canContinue = False
+                else:
+                    cc = len(content[cl]) - 1
+        print(full_expr)
+        if special_closures:
+            return ''
+        return full_expr
+
+    @staticmethod
+    def getSymbol(filePath, line, character):
+        "return the Symbol at the given position in a file"
+        with open(filePath, "r") as f:
+            content = f.readlines()
+        expr = PythonParser.get_complete_expr(content, line -1, character -1)
+
+        return node
