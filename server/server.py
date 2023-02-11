@@ -119,7 +119,7 @@ def definition(params: TextDocumentPositionParams):
     scope_symbol = file_symbol.get_scope_symbol(params.position.line + 1)
     print(scope_symbol)
     if params.text_document.uri[-3:] == ".py":
-        node = PythonParser.getSymbol(params.text_document.uri[7:], params.position.line + 1, params.position.character + 1)
+        node = PythonParser.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
     a = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_model.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
     b = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_actions.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
 

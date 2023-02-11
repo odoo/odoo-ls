@@ -1,5 +1,6 @@
 import ast
 import os
+import parso
 import re
 import sys
 import traceback
@@ -23,14 +24,14 @@ class Symbol():
 
     def __init__(self, name, type, paths):
         self.name = name
-        self.type = type
+        self.type = type #root, file, class, function, variable
+        self.evaluationType = None # inferred symbol of the type of the variable of function return
         self.paths = paths if isinstance(paths, list) else [paths]
         self.symbols = {}
         self.parent = None
         self.modelName = None
         self.bases = [] #for class only
         #local namespace and corresponding symbol
-        # {odoo.addons: Symbol}
         self.localAliases = {}
         self.startLine = 0
         self.endLine = 0
@@ -70,7 +71,10 @@ class Symbol():
             else:
                 raise Exception("Package not found: " + str(symbol_names))
         symbol.parent = curr_symbol
-        curr_symbol.symbols.update({symbol.name: symbol})
+        if symbol.name in curr_symbol.symbols:
+            print("Symbol already exists") #TODO is it correct? shouldn't we merge paths?
+        else:
+            curr_symbol.symbols[symbol.name] = symbol
 
     def get_scope_symbol(self, line):
         """return the symbol (class or function) the closest to the given line """
@@ -80,6 +84,19 @@ class Symbol():
                 symbol = s.get_scope_symbol(line)
                 break
         return symbol
+    
+    def get_class_scope_symbol(self, line):
+        """return the class symbol closest to the given line. If the line is not in a class, return None """
+        symbol = self
+        if self.type == 'class':
+            return self
+        for s in self.symbols.values():
+            if s.startLine <= line and s.endLine >= line:
+                symbol = s.get_class_scope_symbol(line)
+                break
+        if symbol.type != 'class':
+            symbol = None
+        return symbol
 
 class Model():
 
@@ -87,7 +104,7 @@ class Model():
         self.name = name
         self.inherit = []
         self.inherited_by = []
-        self.symbols = []
+        self.symbols = [] #list of symbols implementing this model
 
 
 
@@ -98,6 +115,8 @@ class OdooBase():
     version_major = 0
     version_minor = 0
     version_micro = 0
+
+    grammar = None
 
     # for each model, the list of symbols implenting it
     # models = {
@@ -129,6 +148,7 @@ class OdooBase():
                         section=CONFIGURATION_SECTION)
                 ])).result()
                 OdooBase.instance = OdooBase()
+                OdooBase.instance.grammar = parso.load_grammar(version="3.8") #config or choose automatically
                 OdooBase.instance.start_build_time = time.time()
                 OdooBase.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
                 OdooBase.instance.build_database(ls)
@@ -144,6 +164,7 @@ class OdooBase():
         self.build_modules(ls)
 
     def build_base(self, ls):
+        from server.pythonParser import PythonParser
         releasePath = os.path.join(self.odooPath, "odoo", "release.py")
         if os.path.exists(releasePath):
             with open(releasePath, "r") as f:
@@ -159,8 +180,10 @@ class OdooBase():
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
             #set python path
             self.symbols.paths += [self.odooPath]
-            self.symbols.add_symbol([], Symbol("odoo", "package", [self.odooPath]))
-            self.symbols.add_symbol(["odoo"], Symbol("addons", "package", [self.odooPath + "/odoo/addons", self.odooPath + "/addons", "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]))
+            parser = PythonParser(ls, self.odooPath + "/odoo", self.symbols.get_symbol([]))
+            parser.load_symbols()
+            addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
+            addonsSymbol.paths += [self.odooPath + "/addons", "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]
             return True
         else:
             print("Odoo not found at " + self.odooPath)

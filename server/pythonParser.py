@@ -13,6 +13,7 @@ class PythonParser(ast.NodeVisitor):
     parsed = {}
 
     def __init__(self, ls, path, symbol):
+        self.grammar = OdooBase.get().grammar
         self.filePath = path
         self.symbol = symbol # symbol we are parsing
         self.mode = 'symbols'
@@ -38,6 +39,7 @@ class PythonParser(ast.NodeVisitor):
         try:
             with open(self.filePath, "rb") as f:
                 content = f.read()
+            #tree = self.grammar.parse(content, error_recovery=False, path=self.filePath, cache = False)
             tree = ast.parse(content, self.filePath)
             self.visit(tree)
         except SyntaxError as e:
@@ -221,6 +223,15 @@ class PythonParser(ast.NodeVisitor):
                             for k, v in zip(value.keys, value.values):
                                 if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
                                     modelInherits[k.value] = v.value
+                    else:
+                        if name not in symbol.symbols:
+                            variable = Symbol(name, "variable", self.filePath)
+                            variable.startLine = node.lineno
+                            variable.endLine = node.end_lineno
+                            variable.evaluationType = self.evaluateType(value, symbol)
+                            symbol.add_symbol([], variable)
+                        else:
+                            print("ERROR: symbol already defined")
 
             elif isinstance(node, ast.AnnAssign):
                 pass #TODO not handled yet
@@ -230,11 +241,38 @@ class PythonParser(ast.NodeVisitor):
                 self.visit_ImportFrom(node)
         # parsing is done, now we can save what is found. The saving is done after the parsing to fix wrong orders in declarations
         # (inherit before name for example)
+        if modelInherit and not modelName:
+            modelName = modelInherit[0] if len(modelInherit) == 1 else symbol.name
         if modelName:
             symbol.modelName = modelName
             if modelName not in OdooBase.get().models:
                 OdooBase.get().models[modelName] = Model(modelName)
             OdooBase.get().models[modelName].symbols.append(symbol)
+
+    #TODO evaluateType should not be based on ast?
+    def evaluateType(self, node, symbol):
+        """try to return the symbol corresponding to the expression, evaluated in the context of 'symbol' (a function, class or file)"""
+        if isinstance(node, ast.Constant):
+            return Symbol("constant", "primitive", "")
+        elif isinstance(node, ast.Dict):
+            return Symbol("dict", "primitive", "")
+        elif isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name):
+                return f.id
+            elif isinstance(f, ast.Attribute):
+                return self.evaluateType(f, symbol)
+        elif isinstance(node, ast.Attribute):
+            v = self.evaluateType(node.value, symbol)
+            if v and node.attr in v.symbols:
+                return v.symbols[node.attr]
+        elif isinstance(node, ast.Name):
+            sym = symbol
+            while sym and node.id not in sym.localAliases and sym.type != "file":
+                sym = sym.parent
+            if node.id in sym.localAliases:
+                return sym.localAliases[node.id]
+        return None
 
     def _visit_FunctionDef(self, node, classSymbol):
         if node.name not in classSymbol.localAliases:
@@ -326,10 +364,26 @@ class PythonParser(ast.NodeVisitor):
         return full_expr
 
     @staticmethod
-    def getSymbol(filePath, line, character):
+    def get_parent_symbol(file_symbol, line, expr):
+        current_symbol = None
+        for e in expr:
+            if e[0] == 'self':
+                current_symbol = file_symbol.get_class_scope_symbol(line + 1)
+            elif current_symbol:
+                pass
+            else:
+                #try to find in localAliases
+                pass
+        return current_symbol
+
+    @staticmethod
+    def getSymbol(fileSymbol, line, character):
         "return the Symbol at the given position in a file"
-        with open(filePath, "r") as f:
+        with open(fileSymbol.paths[0], "r") as f:
             content = f.readlines()
         expr = PythonParser.get_complete_expr(content, line -1, character -1)
-
+        #parent_symbol = PythonParser.get_parent_symbol(fileSymbol, line, expr)
+        #type evaluation should be based on unified representation
+        # so not using ast nor parso
+        symbol = evaluateType()
         return node
