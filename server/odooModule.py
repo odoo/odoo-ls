@@ -3,7 +3,7 @@ from .constants import *
 import os
 import server.odooBase as odooBase
 from server.pythonParser import PythonParser
-from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
+from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
                              DidChangeTextDocumentParams,
@@ -54,7 +54,7 @@ class OdooModule():
     def load_manifest(self, manifestPath):
         """ Load manifest to identify the module characteristics 
         Returns list of diagnostics to publish in manifest file """
-        with open(manifestPath, "r") as f:
+        with open(manifestPath, "r", encoding="utf8") as f:
             md = f.read()
             dic = ast.literal_eval(md)
             self.name = dic.get("name", "")

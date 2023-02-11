@@ -5,7 +5,7 @@ import re
 import sys
 import traceback
 from .constants import *
-from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
+from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
                              DidChangeTextDocumentParams,
@@ -13,7 +13,7 @@ from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
                              DidOpenTextDocumentParams, MessageType, Position,
                              Range, Registration, RegistrationParams,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
-                             Unregistration, UnregistrationParams)
+                             Unregistration, UnregistrationParams, WorkspaceConfigurationParams)
 
 from .constants import CONFIGURATION_SECTION
 
@@ -142,7 +142,7 @@ class OdooBase():
             print("Creating new Odoo Base")
 
             try:
-                config = ls.get_configuration(ConfigurationParams(items=[
+                config = ls.get_configuration(WorkspaceConfigurationParams(items=[
                     ConfigurationItem(
                         scope_uri='userDefinedConfigurations',
                         section=CONFIGURATION_SECTION)
@@ -180,10 +180,13 @@ class OdooBase():
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
             #set python path
             self.symbols.paths += [self.odooPath]
-            parser = PythonParser(ls, self.odooPath + "/odoo", self.symbols.get_symbol([]))
+            parser = PythonParser(ls, os.path.join(self.odooPath, "odoo"), self.symbols.get_symbol([]))
             parser.load_symbols()
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
-            addonsSymbol.paths += [self.odooPath + "/addons", "/home/odoo/Documents/odoo-servers/false_odoo/enterprise"]
+            addonsSymbol.paths += [
+                os.path.join(self.odooPath, "addons"), 
+                #"/home/odoo/Documents/odoo-servers/false_odoo/enterprise"
+                ]
             return True
         else:
             print("Odoo not found at " + self.odooPath)

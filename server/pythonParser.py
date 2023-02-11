@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from .constants import *
 from server.odooBase import Symbol, OdooBase, Model
-from pygls.lsp.types import (Diagnostic,Position, Range)
+from lsprotocol.types import (Diagnostic,Position, Range)
 
 class PythonParser(ast.NodeVisitor):
     """This class read a file and extract all relevant data. Classes, functions and models are stored in odooBase.

@@ -24,10 +24,10 @@ from typing import Optional
 from .odooBase import OdooBase
 from server.pythonParser import PythonParser
 
-from pygls.lsp.methods import (COMPLETION, TEXT_DOCUMENT_DID_CHANGE,
+from lsprotocol.types import (TEXT_DOCUMENT_COMPLETION, TEXT_DOCUMENT_DID_CHANGE,
                                TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN, 
-                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, DEFINITION)
-from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
+                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, TEXT_DOCUMENT_DEFINITION)
+from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
                              DidChangeTextDocumentParams,
@@ -37,9 +37,9 @@ from pygls.lsp.types import (CompletionItem, CompletionList, CompletionOptions,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
                              Unregistration, UnregistrationParams,
                              TextDocumentPositionParams, Location)
-from pygls.lsp.types.basic_structures import (WorkDoneProgressBegin,
-                                              WorkDoneProgressEnd,
-                                              WorkDoneProgressReport)
+from lsprotocol.types import (WorkDoneProgressBegin,
+                                WorkDoneProgressEnd,
+                                WorkDoneProgressReport)
 from pygls.server import LanguageServer
 from .constants import *
 
@@ -51,7 +51,7 @@ class OdooLanguageServer(LanguageServer):
 
     def __init__(self):
         print("Starting Odoo Language server")
-        super().__init__()
+        super().__init__(name="Odoo", version="0.1.0")
 
 
 odoo_server = OdooLanguageServer()
@@ -93,7 +93,7 @@ def _validate_json(source):
     return diagnostics
 
 
-@odoo_server.feature(COMPLETION, CompletionOptions(trigger_characters=[',']))
+@odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',']))
 def completions(params: Optional[CompletionParams] = None) -> CompletionList:
     """Returns completion items."""
     return CompletionList(
@@ -107,7 +107,7 @@ def completions(params: Optional[CompletionParams] = None) -> CompletionList:
         ]
     )
 
-@odoo_server.feature(DEFINITION)
+@odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
     # lookup the ident under the cursor
@@ -232,7 +232,7 @@ async def register_completions(ls: OdooLanguageServer, *args):
     params = RegistrationParams(registrations=[
                 Registration(
                     id=str(uuid.uuid4()),
-                    method=COMPLETION,
+                    method=TEXT_DOCUMENT_COMPLETION,
                     register_options={"triggerCharacters": "[':']"})
              ])
     response = await ls.register_capability_async(params)
@@ -304,7 +304,7 @@ def show_configuration_thread(ls: OdooLanguageServer, *args):
 async def unregister_completions(ls: OdooLanguageServer, *args):
     """Unregister completions method on the client."""
     params = UnregistrationParams(unregisterations=[
-        Unregistration(id=str(uuid.uuid4()), method=COMPLETION)
+        Unregistration(id=str(uuid.uuid4()), method=TEXT_DOCUMENT_COMPLETION)
     ])
     response = await ls.unregister_capability_async(params)
     if response is None:

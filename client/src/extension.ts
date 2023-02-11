@@ -120,6 +120,7 @@ export function activate(context: ExtensionContext): void {
 		if (selectedConfig != -1) {
 			const config = configs[selectedConfig];
 			console.log(config);
+            //TODO this is not calling anything...
 			client.sendNotification("Odoo/initWorkspace", [config["odooPath"]]);
 		}
 	});
