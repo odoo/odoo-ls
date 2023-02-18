@@ -157,7 +157,7 @@ class PythonParser(ast.NodeVisitor):
             self.symbol.localAliases[node.name] = symbol
             self.symbol.add_symbol([], symbol)
             #parse body
-            self._visit_Body(node.body, symbol)
+            self._visit_class_Body(node.body, symbol)
     
     def unpack_assign(self, node_targets, node_values, symbol, acc = {}):
         """ Unpack assignement to extract variables and values.
@@ -187,7 +187,7 @@ class PythonParser(ast.NodeVisitor):
                 # print("ERROR: unpack_assign not implemented for " + str(node_targets) + " and " + str(node_values))
         return acc
 
-    def _visit_Body(self, body, symbol):
+    def _visit_class_Body(self, body, symbol):
         modelName = None
         modelInherit = None
         modelInherits = None
@@ -228,7 +228,7 @@ class PythonParser(ast.NodeVisitor):
                             variable = Symbol(name, "variable", self.filePath)
                             variable.startLine = node.lineno
                             variable.endLine = node.end_lineno
-                            variable.evaluationType = self.evaluateType(value, symbol)
+                            variable.evaluationType = PythonParser.evaluateTypeAST(value, symbol)
                             symbol.add_symbol([], variable)
                         else:
                             print("ERROR: symbol already defined")
@@ -250,7 +250,8 @@ class PythonParser(ast.NodeVisitor):
             OdooBase.get().models[modelName].symbols.append(symbol)
 
     #TODO evaluateType should not be based on ast?
-    def evaluateType(self, node, symbol):
+    @staticmethod
+    def evaluateTypeAST(node, symbol):
         """try to return the symbol corresponding to the expression, evaluated in the context of 'symbol' (a function, class or file)"""
         if isinstance(node, ast.Constant):
             return Symbol("constant", "primitive", "")
@@ -261,9 +262,9 @@ class PythonParser(ast.NodeVisitor):
             if isinstance(f, ast.Name):
                 return f.id
             elif isinstance(f, ast.Attribute):
-                return self.evaluateType(f, symbol)
+                return PythonParser.evaluateTypeAST(f, symbol)
         elif isinstance(node, ast.Attribute):
-            v = self.evaluateType(node.value, symbol)
+            v = PythonParser.evaluateTypeAST(node.value, symbol)
             if v and node.attr in v.symbols:
                 return v.symbols[node.attr]
         elif isinstance(node, ast.Name):
@@ -273,6 +274,44 @@ class PythonParser(ast.NodeVisitor):
             if node.id in sym.localAliases:
                 return sym.localAliases[node.id]
         return None
+    
+    @staticmethod
+    def inferTypeParso(expr):
+        return None
+    
+    @staticmethod
+    def _parso_split_node_dot(exprs):
+        results = [exprs[0]]
+        for c in results[1:]:
+            if c.type == "operator" and c.value == ".":
+                results.append([])
+            else:
+                results[-1].append(c)
+        return results
+
+    @staticmethod
+    def evaluateTypeParso(parent_list, scope_symbol):
+        """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned.
+        If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
+        symbol = None
+        if parent_list and parent_list[-1].type == "operator" and parent_list[-1].value == ".":
+            parent = PythonParser.evaluateTypeParso(parent_list[0:-2], parent_list[-2], scope_symbol)
+            if not parent:
+                return None
+            if expr.value in parent.symbols:
+                return parent.symbols[expr.value]
+            if parent.bases: #if is an odoo class (at least inherit model)
+                if expr.value == "env":
+                    pass
+        else:
+            if expr.type == "name" and expr.value == "self":
+                return scope_symbol.get_in_parents("class")
+            scope_sym = scope_symbol
+            while scope_sym and expr.value not in scope_sym.localAliases and scope_sym.type != "file":
+                scope_sym = scope_sym.parent
+            if expr.value in scope_sym.localAliases:
+                return scope_sym.localAliases[expr.value]
+        return symbol
 
     def _visit_FunctionDef(self, node, classSymbol):
         if node.name not in classSymbol.localAliases:
@@ -308,49 +347,38 @@ class PythonParser(ast.NodeVisitor):
 
     @staticmethod
     def get_complete_expr(content, line, character):
-        full_expr = []
-        curr_element = ""
+        #TODO go to previous line and skip comments
+        full_expr = ""
         cl = line
         cc = character
         canContinue = True
         space = False
-        special_closures = ''
-        content_closure = []
+        special_closures = []
         while canContinue:
             char = content[cl][cc]
-            if char in ['"', '(', '{', '[']:
-                if (special_closures == ")" and char == "(") or \
-                        (special_closures == "}" and char == "{") or \
-                        (special_closures == "]" and char == "["):
-                    special_closures = ''
-                elif special_closures == '':
+            if char in ['"', "'", '(', '{', '[']:
+                if (special_closures[-1] == ")" and char == "(") or \
+                        (special_closures[-1] == "}" and char == "{") or \
+                        (special_closures[-1] == "]" and char == "[") or \
+                        (special_closures[-1] == '"' and char == '"') or \
+                        (special_closures[-1] == "'" and char == "'"):
+                    special_closures.pop()
+                elif len(special_closures) == 0:
                     space = False
-                    full_expr.insert(0, (curr_element, content_closure))
-                    curr_element = ""
                     canContinue = False
-            elif special_closures:
-                content_closure[-1][-1] = char + content_closure[-1][-1]
             elif char == ' ' and not space:
                 space = True
             elif char == '.':
                 space = False
-                full_expr.insert(0, (curr_element, content_closure))
-                content_closure = []
-                curr_element = ""
-            elif char in [')', '}', ']']:
-                special_closures = char
-                content_closure.append([char, ''])
+            elif char in [')', '}', ']', '"', "'"]:
+                special_closures.append(char)
             elif char in [',', '+', '/', '*', '-', '%', '>', '<', '=', '!', '&', '|', '^', '~', ':']:
-                full_expr.insert(0, (curr_element, content_closure))
-                curr_element = ""
                 canContinue = False
             else:
                 if space:
-                    full_expr.insert(0, (curr_element, content_closure))
-                    curr_element = ""
                     canContinue = False
-                else:
-                    curr_element = char + curr_element
+            if canContinue:
+                full_expr = char + full_expr
             cc -= 1
             if cc < 0:
                 cl -= 1
@@ -377,13 +405,33 @@ class PythonParser(ast.NodeVisitor):
         return current_symbol
 
     @staticmethod
+    def get_atom_expr(parsoTree, line, char):
+        current = parsoTree
+        last_atomic_expr = None
+        list_expr = [[]]
+        while hasattr(current, "children"):
+            if current.type == 'atom_expr':
+                last_atomic_expr = current
+                list_expr = [[]]
+            for c in current.children:
+                if (c.start_pos[0] < line or c.start_pos[0] == line and c.start_pos[1] <= char) and \
+                    (c.end_pos[0] > line or c.end_pos[0] == line and c.end_pos[1] >= char):
+                    list_expr[-1].append(c)
+                    current = c
+                    break
+                if c.type == "operator" and c.value == ".":
+                    list_expr.append([])
+                else:
+                    list_expr[-1].append(c)
+        return (last_atomic_expr, list_expr, current)
+
+    @staticmethod
     def getSymbol(fileSymbol, line, character):
         "return the Symbol at the given position in a file"
-        with open(fileSymbol.paths[0], "r") as f:
-            content = f.readlines()
-        expr = PythonParser.get_complete_expr(content, line -1, character -1)
-        #parent_symbol = PythonParser.get_parent_symbol(fileSymbol, line, expr)
-        #type evaluation should be based on unified representation
-        # so not using ast nor parso
-        symbol = evaluateType()
-        return node
+        with open(fileSymbol.paths[0], "rb") as f:
+            content = f.read()
+        scope_symbol = fileSymbol.get_scope_symbol(line)
+        parsoTree = OdooBase.get().grammar.parse(content, error_recovery=False, path=fileSymbol.paths[0], cache = False)
+        atom_expr, parent_expr, expr = PythonParser.get_atom_expr(parsoTree, line, character)
+        symbol = PythonParser.evaluateTypeParso(parent_expr, scope_symbol)
+        return symbol

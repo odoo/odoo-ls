@@ -33,6 +33,7 @@ class Symbol():
         self.bases = [] #for class only
         #local namespace and corresponding symbol
         self.localAliases = {}
+        self.localVars = {} #for file, class, func. Indicate where a variable is declared, then a list of range of inferred type
         self.startLine = 0
         self.endLine = 0
     
@@ -75,6 +76,13 @@ class Symbol():
             print("Symbol already exists") #TODO is it correct? shouldn't we merge paths?
         else:
             curr_symbol.symbols[symbol.name] = symbol
+    
+    def get_in_parents(self, type, stop_same_file = True):
+        if self.type == type:
+            return self
+        if stop_same_file and self.type == "file":
+            return None
+        return self.parent.get_in_parents(type, stop_same_file)
 
     def get_scope_symbol(self, line):
         """return the symbol (class or function) the closest to the given line """
@@ -86,8 +94,9 @@ class Symbol():
         return symbol
     
     def get_class_scope_symbol(self, line):
-        """return the class symbol closest to the given line. If the line is not in a class, return None """
+        """return the class symbol closest to the given line. If the line is not in a class, return None. """
         symbol = self
+        assert(self.type == "file", "can only be called on file symbols")
         if self.type == 'class':
             return self
         for s in self.symbols.values():

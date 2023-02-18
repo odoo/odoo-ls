@@ -16,6 +16,7 @@
 ############################################################################
 import asyncio
 import json
+import os
 import re
 import time
 import uuid
@@ -23,6 +24,8 @@ from json import JSONDecodeError
 from typing import Optional
 from .odooBase import OdooBase
 from server.pythonParser import PythonParser
+import urllib.parse
+import urllib.request
 
 from lsprotocol.types import (TEXT_DOCUMENT_COMPLETION, TEXT_DOCUMENT_DID_CHANGE,
                                TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN, 
@@ -114,10 +117,14 @@ def definition(params: TextDocumentPositionParams):
     #name = get_symbol_name_at_position(params.textDocument.uri, params.position)
     # lookup the ident within the document
     #symbol = lookup_symbol(params.textDocument.uri, name)
-    print(params.text_document.uri[7:]) #remove "file://"
-    file_symbol = OdooBase.get().get_file_symbol(params.text_document.uri[7:])
-    scope_symbol = file_symbol.get_scope_symbol(params.position.line + 1)
-    print(scope_symbol)
+    print(params.text_document.uri)
+    final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
+    final_path = urllib.request.url2pathname(final_path)
+    #TODO find better than this small hack for windows
+    if os.name == "nt":
+        final_path = final_path[0].capitalize() + final_path[1:]
+    print(final_path)
+    file_symbol = OdooBase.get().get_file_symbol(final_path)
     if params.text_document.uri[-3:] == ".py":
         node = PythonParser.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
     a = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_model.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
