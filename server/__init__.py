@@ -16,7 +16,11 @@
 ############################################################################
 
 from . import constants
-from . import odooBase
-from . import odooModule
+from . import inferencer
+from . import model
+from . import odoo
+from . import module
 from . import pythonParser
+from . import pythonUtils
 from . import server
+from . import symbol

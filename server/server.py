@@ -22,8 +22,9 @@ import time
 import uuid
 from json import JSONDecodeError
 from typing import Optional
-from .odooBase import OdooBase
+from .odoo import Odoo
 from server.pythonParser import PythonParser
+from server.pythonUtils import PythonUtils
 import urllib.parse
 import urllib.request
 
@@ -54,7 +55,7 @@ class OdooLanguageServer(LanguageServer):
 
     def __init__(self):
         print("Starting Odoo Language server")
-        super().__init__(name="Odoo", version="0.1.0")
+        super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
 
 
 odoo_server = OdooLanguageServer()
@@ -124,13 +125,13 @@ def definition(params: TextDocumentPositionParams):
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
     print(final_path)
-    file_symbol = OdooBase.get().get_file_symbol(final_path)
+    file_symbol = Odoo.get().get_file_symbol(final_path)
     if params.text_document.uri[-3:] == ".py":
-        node = PythonParser.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
+        symbol = PythonUtils.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
     a = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_model.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
     b = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_actions.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
 
-    return [a,b]
+    return [c, a, b]
 
 @odoo_server.command(CMD_COUNT_DOWN_BLOCKING)
 def count_down_10_seconds_blocking(ls, *args):
@@ -157,7 +158,7 @@ async def count_down_10_seconds_non_blocking(ls, *args):
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):
     """Text document did change notification."""
-    base = OdooBase.get(ls)
+    base = Odoo.get(ls)
     _validate(ls, params)
 
 
@@ -170,7 +171,7 @@ def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
-    base = OdooBase.get(ls)
+    base = Odoo.get(ls)
     base.init_file(params.text_document.uri)
 
 @odoo_server.feature(

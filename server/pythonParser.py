@@ -3,39 +3,47 @@ import os
 import sys
 from pathlib import Path
 from .constants import *
-from server.odooBase import Symbol, OdooBase, Model
+from .odoo import *
+from .symbol import *
+from .model import *
+from .pythonUtils import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 class PythonParser(ast.NodeVisitor):
-    """This class read a file and extract all relevant data. Classes, functions and models are stored in odooBase.
-    It imports also all needed imports and store relevant data from them into odooBase."""
+    """This class is linked to a Symbol and can extract/build relatad data. 
+    It can be used to load depending Symbols from python files."""
 
     parsed = {}
 
     def __init__(self, ls, path, symbol):
-        self.grammar = OdooBase.get().grammar
+        self.grammar = Odoo.get().grammar
         self.filePath = path
         self.symbol = symbol # symbol we are parsing
-        self.mode = 'symbols'
         self.ls = ls
-        self.reset()
-
-    def reset(self):
-        """ reset the data from last parsing """
-        self.local_symbols = {}
-
-        #current parsing
-        self.currentClass = None
-
-    def getImportPaths(self):
-        """ Return the import statements in the file """
-        pass
-
-    def parse(self):
-        """ Parse the file to extract relevant informations """
-        self.reset()
-        print(self.filePath)
-        OdooBase.get().files[self.filePath] = self.symbol
+    
+    def load_symbols(self):
+        """ Load all symbols from the symbol. It will follow all imports and create new Symbols from files """
+        if self.symbol.get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]):
+            return
+        #If this is not a python file, check that this is a package and load it
+        if not self.filePath.endswith(".py"):
+            #check if this is a package:
+            if os.path.exists(os.path.join(self.filePath, "__init__.py")):
+                symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
+                self.symbol.add_symbol([], symbol)
+                self.symbol = symbol
+                self.filePath = os.path.join(self.filePath, "__init__.py")
+            else:
+                symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
+                self.symbol.add_symbol([], symbol)
+                self.symbol = symbol
+                return self.symbol
+        else:
+            symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
+            self.symbol.add_symbol([], symbol)
+            self.symbol = symbol
+        #parse the Python file
+        Odoo.get().files[self.filePath] = self.symbol
         try:
             with open(self.filePath, "rb") as f:
                 content = f.read()
@@ -55,16 +63,15 @@ class PythonParser(ast.NodeVisitor):
             return False
         except ValueError as e:
             print("Unable to parse file: " + self.filePath + ". Value error.")
-            return False
-        return True
+        return self.symbol
 
     def visit_Import(self, node):
-        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0)
+        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node.lineno)
 
     def visit_ImportFrom(self, node):
-        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level)
+        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node.lineno)
 
-    def _resolve_import(self, from_stmt, names, level):
+    def _resolve_import(self, from_stmt, names, level, lineno):
         packages = []
         if level != 0:
             if level > len(Path(self.filePath).parts):
@@ -86,12 +93,12 @@ class PythonParser(ast.NodeVisitor):
 
             for element in elements:
                 if element != '*':
-                    current_symbol = OdooBase.get().symbols.get_symbol(packages_copy)
+                    current_symbol = Odoo.get().symbols.get_symbol(packages_copy)
                     if not current_symbol:
                         if packages_copy and packages_copy[0] == "odoo":
                             pass#print(packages_copy)
                         break
-                    next_step_symbols = OdooBase.get().symbols.get_symbol(packages_copy + [element])
+                    next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
                     if not next_step_symbols:
                         symbol_paths = current_symbol.paths if current_symbol else []
                         for path in symbol_paths:
@@ -108,7 +115,7 @@ class PythonParser(ast.NodeVisitor):
                         importSymbol = next_step_symbols
                     packages_copy += [element]
                 else:
-                    # in case of *, we have to populate localAliases with relevant symbols and import all subsymbols in current symbol
+                    # in case of *, we have to populate inferencer with relevant symbols and import all subsymbols in current symbol
                     # this implementation respects the python import order, and submodules will be imported too only if they are known 
                     # due to a previous import statement.
                     to_browse = [importSymbol]
@@ -118,11 +125,29 @@ class PythonParser(ast.NodeVisitor):
                             if symbol.type == "package":
                                 to_browse.append(symbol)
                             elif symbol.type in ["class", "function", "variable"]:
-                                self.symbol.localAliases[symbol.name] = symbol
-                                self.symbol.add_symbol([], symbol)
-                if elements[-1] != '*':
-                    self.symbol.localAliases[asname if asname else name] = OdooBase.get().symbols.get_symbol(packages_copy)
+                                self.symbol.inferencer.addInference(Inference(symbol.name, symbol, lineno))
+            if elements[-1] != '*':
+                self.symbol.inferencer.addInference(
+                    Inference(asname if asname else name, Odoo.get().symbols.get_symbol(packages_copy), lineno)
+                )
+    
+    def visit_Assign(self, node):
+        assigns = self.unpack_assign(node.targets, node.value, self.symbol, {})
+        for variable, value in assigns.items():
+            #TODO add other inference type than Name
+            if isinstance(value, ast.Name):
+                symbol_infer = self.symbol.inferencer.inferName(value.id, node.lineno)
+                if symbol_infer:
+                    symbol_infer = symbol_infer.symbol
+                self.symbol.inferencer.addInference(Inference(
+                    variable,
+                    symbol_infer,
+                    node.lineno
+                ))
 
+    def visit_FunctionDef(self, node):
+        self._visit_FunctionDef(node, self.symbol)
+    
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
             return attr.id
@@ -130,31 +155,31 @@ class PythonParser(ast.NodeVisitor):
             return PythonParser._extract_base_name(attr.value) + "." + attr.attr
         elif isinstance(attr, ast.Call):
             pass
-    
-    def visit_Assign(self, node):
-        assigns = self.unpack_assign(node.targets, node.value, self.symbol, {})
-        for variable, value in assigns.items():
-            if isinstance(value, ast.Name) and value.id in self.symbol.localAliases:
-                self.symbol.localAliases[variable] = self.symbol.localAliases[value.id]
+        return ""
 
     def visit_ClassDef(self, node):
         bases = []
         for base in node.bases:
             full_base = PythonParser._extract_base_name(base)
-            if full_base and full_base.split(".")[0] in self.symbol.localAliases:
-                symbol = self.symbol.localAliases[full_base.split(".")[0]]
-                if not symbol:
+            if full_base and self.symbol.inferencer.inferName(full_base.split(".")[0], node.lineno):
+                inference = self.symbol.inferencer.inferName(full_base.split(".")[0], node.lineno)
+                if not inference or not inference.symbol:
                     continue
+                symbol = inference.symbol
                 if len(full_base.split(".")) > 1:
                     symbol = symbol.get_symbol(full_base.split(".")[1:])
                 if symbol and symbol.type == "class":
-                    bases += [symbol]
+                    bases += [symbol] #TODO DON'T BASE ON REF ?
         if node.name not in self.symbol.symbols:
             symbol = Symbol(node.name, "class", self.filePath)
             symbol.startLine = node.lineno
             symbol.endLine = node.end_lineno
             symbol.bases = bases
-            self.symbol.localAliases[node.name] = symbol
+            self.symbol.inferencer.addInference(Inference(
+                node.name,
+                symbol,
+                node.lineno
+            ))
             self.symbol.add_symbol([], symbol)
             #parse body
             self._visit_class_Body(node.body, symbol)
@@ -186,6 +211,17 @@ class PythonParser(ast.NodeVisitor):
                 pass
                 # print("ERROR: unpack_assign not implemented for " + str(node_targets) + " and " + str(node_values))
         return acc
+    
+    def _visit_FunctionDef(self, node, parentSymbol):
+        symbol = Symbol(node.name, "function", self.filePath)
+        symbol.startLine = node.lineno
+        symbol.endLine = node.end_lineno
+        parentSymbol.inferencer.addInference(Inference(
+            node.name,
+            symbol,
+            node.lineno
+        ))
+        parentSymbol.add_symbol([], symbol)
 
     def _visit_class_Body(self, body, symbol):
         modelName = None
@@ -228,7 +264,7 @@ class PythonParser(ast.NodeVisitor):
                             variable = Symbol(name, "variable", self.filePath)
                             variable.startLine = node.lineno
                             variable.endLine = node.end_lineno
-                            variable.evaluationType = PythonParser.evaluateTypeAST(value, symbol)
+                            variable.evaluationType = PythonUtils.evaluateTypeAST(value, symbol)
                             symbol.add_symbol([], variable)
                         else:
                             print("ERROR: symbol already defined")
@@ -245,193 +281,6 @@ class PythonParser(ast.NodeVisitor):
             modelName = modelInherit[0] if len(modelInherit) == 1 else symbol.name
         if modelName:
             symbol.modelName = modelName
-            if modelName not in OdooBase.get().models:
-                OdooBase.get().models[modelName] = Model(modelName)
-            OdooBase.get().models[modelName].symbols.append(symbol)
-
-    #TODO evaluateType should not be based on ast?
-    @staticmethod
-    def evaluateTypeAST(node, symbol):
-        """try to return the symbol corresponding to the expression, evaluated in the context of 'symbol' (a function, class or file)"""
-        if isinstance(node, ast.Constant):
-            return Symbol("constant", "primitive", "")
-        elif isinstance(node, ast.Dict):
-            return Symbol("dict", "primitive", "")
-        elif isinstance(node, ast.Call):
-            f = node.func
-            if isinstance(f, ast.Name):
-                return f.id
-            elif isinstance(f, ast.Attribute):
-                return PythonParser.evaluateTypeAST(f, symbol)
-        elif isinstance(node, ast.Attribute):
-            v = PythonParser.evaluateTypeAST(node.value, symbol)
-            if v and node.attr in v.symbols:
-                return v.symbols[node.attr]
-        elif isinstance(node, ast.Name):
-            sym = symbol
-            while sym and node.id not in sym.localAliases and sym.type != "file":
-                sym = sym.parent
-            if node.id in sym.localAliases:
-                return sym.localAliases[node.id]
-        return None
-    
-    @staticmethod
-    def inferTypeParso(expr):
-        return None
-    
-    @staticmethod
-    def _parso_split_node_dot(exprs):
-        results = [exprs[0]]
-        for c in results[1:]:
-            if c.type == "operator" and c.value == ".":
-                results.append([])
-            else:
-                results[-1].append(c)
-        return results
-
-    @staticmethod
-    def evaluateTypeParso(parent_list, scope_symbol):
-        """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned.
-        If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
-        symbol = None
-        if parent_list and parent_list[-1].type == "operator" and parent_list[-1].value == ".":
-            parent = PythonParser.evaluateTypeParso(parent_list[0:-2], parent_list[-2], scope_symbol)
-            if not parent:
-                return None
-            if expr.value in parent.symbols:
-                return parent.symbols[expr.value]
-            if parent.bases: #if is an odoo class (at least inherit model)
-                if expr.value == "env":
-                    pass
-        else:
-            if expr.type == "name" and expr.value == "self":
-                return scope_symbol.get_in_parents("class")
-            scope_sym = scope_symbol
-            while scope_sym and expr.value not in scope_sym.localAliases and scope_sym.type != "file":
-                scope_sym = scope_sym.parent
-            if expr.value in scope_sym.localAliases:
-                return scope_sym.localAliases[expr.value]
-        return symbol
-
-    def _visit_FunctionDef(self, node, classSymbol):
-        if node.name not in classSymbol.localAliases:
-            symbol = Symbol(node.name, "function", self.filePath)
-            symbol.startLine = node.lineno
-            symbol.endLine = node.end_lineno
-            classSymbol.localAliases[node.name] = symbol
-            classSymbol.add_symbol([], symbol)
-
-    def load_symbols(self):
-        """ Load all symbols from the file or package """
-        if self.symbol.get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]):
-            return
-        if not self.filePath.endswith(".py"):
-            #check if this is a package:
-            if os.path.exists(os.path.join(self.filePath, "__init__.py")):
-                symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
-                self.symbol.add_symbol([], symbol)
-                self.symbol = symbol
-                self.filePath = os.path.join(self.filePath, "__init__.py")
-            else:
-                symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
-                self.symbol.add_symbol([], symbol)
-                self.symbol = symbol
-                return self.symbol
-        else:
-            symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
-            self.symbol.add_symbol([], symbol)
-            self.symbol = symbol
-        self.mode = 'symbols'
-        self.parse()
-        return self.symbol
-
-    @staticmethod
-    def get_complete_expr(content, line, character):
-        #TODO go to previous line and skip comments
-        full_expr = ""
-        cl = line
-        cc = character
-        canContinue = True
-        space = False
-        special_closures = []
-        while canContinue:
-            char = content[cl][cc]
-            if char in ['"', "'", '(', '{', '[']:
-                if (special_closures[-1] == ")" and char == "(") or \
-                        (special_closures[-1] == "}" and char == "{") or \
-                        (special_closures[-1] == "]" and char == "[") or \
-                        (special_closures[-1] == '"' and char == '"') or \
-                        (special_closures[-1] == "'" and char == "'"):
-                    special_closures.pop()
-                elif len(special_closures) == 0:
-                    space = False
-                    canContinue = False
-            elif char == ' ' and not space:
-                space = True
-            elif char == '.':
-                space = False
-            elif char in [')', '}', ']', '"', "'"]:
-                special_closures.append(char)
-            elif char in [',', '+', '/', '*', '-', '%', '>', '<', '=', '!', '&', '|', '^', '~', ':']:
-                canContinue = False
-            else:
-                if space:
-                    canContinue = False
-            if canContinue:
-                full_expr = char + full_expr
-            cc -= 1
-            if cc < 0:
-                cl -= 1
-                if cl < 0:
-                    canContinue = False
-                else:
-                    cc = len(content[cl]) - 1
-        print(full_expr)
-        if special_closures:
-            return ''
-        return full_expr
-
-    @staticmethod
-    def get_parent_symbol(file_symbol, line, expr):
-        current_symbol = None
-        for e in expr:
-            if e[0] == 'self':
-                current_symbol = file_symbol.get_class_scope_symbol(line + 1)
-            elif current_symbol:
-                pass
-            else:
-                #try to find in localAliases
-                pass
-        return current_symbol
-
-    @staticmethod
-    def get_atom_expr(parsoTree, line, char):
-        current = parsoTree
-        last_atomic_expr = None
-        list_expr = [[]]
-        while hasattr(current, "children"):
-            if current.type == 'atom_expr':
-                last_atomic_expr = current
-                list_expr = [[]]
-            for c in current.children:
-                if (c.start_pos[0] < line or c.start_pos[0] == line and c.start_pos[1] <= char) and \
-                    (c.end_pos[0] > line or c.end_pos[0] == line and c.end_pos[1] >= char):
-                    list_expr[-1].append(c)
-                    current = c
-                    break
-                if c.type == "operator" and c.value == ".":
-                    list_expr.append([])
-                else:
-                    list_expr[-1].append(c)
-        return (last_atomic_expr, list_expr, current)
-
-    @staticmethod
-    def getSymbol(fileSymbol, line, character):
-        "return the Symbol at the given position in a file"
-        with open(fileSymbol.paths[0], "rb") as f:
-            content = f.read()
-        scope_symbol = fileSymbol.get_scope_symbol(line)
-        parsoTree = OdooBase.get().grammar.parse(content, error_recovery=False, path=fileSymbol.paths[0], cache = False)
-        atom_expr, parent_expr, expr = PythonParser.get_atom_expr(parsoTree, line, character)
-        symbol = PythonParser.evaluateTypeParso(parent_expr, scope_symbol)
-        return symbol
+            if modelName not in Odoo.get().models:
+                Odoo.get().models[modelName] = Model(modelName)
+            Odoo.get().models[modelName].impl_sym.append(symbol)

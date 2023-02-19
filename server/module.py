@@ -1,7 +1,7 @@
 import ast
 from .constants import *
 import os
-import server.odooBase as odooBase
+from .odoo import * 
 from server.pythonParser import PythonParser
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
@@ -13,9 +13,9 @@ from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
                              Unregistration, UnregistrationParams)
 
-class OdooModule():
+class Module():
 
-    #static
+    #static usage
     modules = {}
 
     rootPath = ""
@@ -34,10 +34,10 @@ class OdooModule():
             return
         diagnostics = []
         diagnostics += self.load_manifest(os.path.join(dir_path, "__manifest__.py"))
-        if self.dir_name in OdooModule.modules:
+        if self.dir_name in Module.modules:
             #TODO merge ! or erase? or raise error? :(
             print("already in: " + self.dir_name)
-        OdooModule.modules[self.dir_name] = self
+        Module.modules[self.dir_name] = self
         ls.publish_diagnostics(manifestPath, diagnostics)
 
     def load(self, ls):
@@ -67,8 +67,8 @@ class OdooModule():
         Returns list of diagnostics to publish in manifest file """
         diagnostics = []
         for depend in self.depends:
-            if depend in OdooModule.modules:
-                OdooModule.modules[depend].load(ls)
+            if depend in Module.modules:
+                Module.modules[depend].load(ls)
             else:
                 diagnostics.append(Diagnostic(
                     range = Range(
@@ -84,12 +84,6 @@ class OdooModule():
         return []
 
     def load_python_files(self, ls, path):
-        #if self.path in server.odooBase.OdooBase.files:
-        #    if not rebuild:
-        #        return
-        #    else:
-        #        #TODO remove data ??????? o
-        #        pass
-        parser = PythonParser(ls, path, odooBase.OdooBase.get().symbols.get_symbol(["odoo", "addons"]))
+        parser = PythonParser(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
         parser.load_symbols()
         return []

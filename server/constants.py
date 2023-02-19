@@ -1,4 +1,5 @@
 EXTENSION_NAME = "Odoo"
+EXTENSION_VERSION = "0.1.0"
 
 CMD_COUNT_DOWN_BLOCKING = 'countDownBlocking'
 CMD_COUNT_DOWN_NON_BLOCKING = 'countDownNonBlocking'
