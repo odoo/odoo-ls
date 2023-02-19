@@ -30,7 +30,8 @@ import urllib.request
 
 from lsprotocol.types import (TEXT_DOCUMENT_COMPLETION, TEXT_DOCUMENT_DID_CHANGE,
                                TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN, 
-                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, TEXT_DOCUMENT_DEFINITION)
+                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, TEXT_DOCUMENT_DEFINITION,
+                               TEXT_DOCUMENT_HOVER)
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -40,7 +41,7 @@ from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              Range, Registration, RegistrationParams,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
                              Unregistration, UnregistrationParams,
-                             TextDocumentPositionParams, Location)
+                             TextDocumentPositionParams, Location, Hover)
 from lsprotocol.types import (WorkDoneProgressBegin,
                                 WorkDoneProgressEnd,
                                 WorkDoneProgressReport)
@@ -110,6 +111,19 @@ def completions(params: Optional[CompletionParams] = None) -> CompletionList:
             CompletionItem(label='}'),
         ]
     )
+
+@odoo_server.feature(TEXT_DOCUMENT_HOVER)
+def hover(params: TextDocumentPositionParams):
+    final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
+    final_path = urllib.request.url2pathname(final_path)
+    #TODO find better than this small hack for windows (get disk letter in capital)
+    if os.name == "nt":
+        final_path = final_path[0].capitalize() + final_path[1:]
+    file_symbol = Odoo.get().get_file_symbol(final_path)
+    if params.text_document.uri[-3:] == ".py":
+        symbol = PythonUtils.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
+    hover = Hover(symbol and symbol.name)
+    return hover
 
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(params: TextDocumentPositionParams):

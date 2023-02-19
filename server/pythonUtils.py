@@ -47,27 +47,27 @@ class PythonUtils():
         return results
 
     @staticmethod
-    def evaluateTypeParso(parent_list, scope_symbol):
+    def evaluateTypeParso(node_list, scope_symbol):
         """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned.
         If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
         symbol = None
-        if parent_list and parent_list[-1].type == "operator" and parent_list[-1].value == ".":
-            parent = PythonUtils.evaluateTypeParso(parent_list[0:-2], parent_list[-2], scope_symbol)
-            if not parent:
-                return None
-            if expr.value in parent.symbols:
-                return parent.symbols[expr.value]
-            if parent.bases: #if is an odoo class (at least inherit model)
-                if expr.value == "env":
-                    pass
-        else:
-            if expr.type == "name" and expr.value == "self":
-                return scope_symbol.get_in_parents("class")
-            scope_sym = scope_symbol
-            while scope_sym and expr.value not in scope_sym.localAliases and scope_sym.type != "file":
-                scope_sym = scope_sym.parent
-            if expr.value in scope_sym.localAliases:
-                return scope_sym.localAliases[expr.value]
+        for node in node_list:
+            if not symbol:
+                if node.type == "name" and node.value == "self":
+                    symbol = scope_symbol.get_in_parents("class") #should be able to take it in func param, no?
+                else:
+                    #TODO WRONG !!! we should NOT use the inferencer here !!!
+                    infer = scope_symbol.inferencer.inferName(node.value, node.line)
+                    if not infer:
+                        return None
+                    symbol = infer.symbol
+            else:
+                if node.type == "trailer":
+                    if node.children[0].type == "operator" and node.children[0].value == ".":
+                        infer = symbol.inferencer.inferName(node.children[1].value, node.children[1].line)
+                        if not infer:
+                            return None
+                        symbol = infer.symbol
         return symbol
 
     @staticmethod
@@ -131,23 +131,32 @@ class PythonUtils():
 
     @staticmethod
     def get_atom_expr(parsoTree, line, char):
+        """for a parsoTree, return three data for a cursor at 'line', 'char':
+        last_atomic_expr: the full parso tree matching the atomic expression holding the cursor
+        list_expr: a list of parsotree containing each Attribute (self.env[].search will be split in 4)
+            but, if the cursor is on env, the result will be [self, env[]] only. The last element is always 'current'
+        current: the parso tree of the smallest (without child) node containing the cursor"""
         current = parsoTree
         last_atomic_expr = None
-        list_expr = [[]]
-        while hasattr(current, "children"):
+        list_expr = []
+        while hasattr(current, "children") and current.type != "trailer":
             if current.type == 'atom_expr':
                 last_atomic_expr = current
-                list_expr = [[]]
+                list_expr = []
+            found_cursor = False
             for c in current.children:
+                if c.type == "trailer":
+                    if c.children[0].type == "operator" and c.children[0].value == ".":
+                        if found_cursor:
+                            break
                 if (c.start_pos[0] < line or c.start_pos[0] == line and c.start_pos[1] <= char) and \
                     (c.end_pos[0] > line or c.end_pos[0] == line and c.end_pos[1] >= char):
-                    list_expr[-1].append(c)
                     current = c
-                    break
-                if c.type == "operator" and c.value == ".":
-                    list_expr.append([])
-                else:
-                    list_expr[-1].append(c)
+                    found_cursor = True
+                list_expr.append(c)
+        if not last_atomic_expr:
+            list_expr = [current]
+        print(list_expr)
         return (last_atomic_expr, list_expr, current)
 
     @staticmethod
