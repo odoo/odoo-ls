@@ -158,6 +158,16 @@ class PythonParser(ast.NodeVisitor):
                     symbol_infer,
                     node.lineno
                 ))
+            if isinstance(value, ast.Call):
+                #TODO manage Attribute func
+                symbol_infer = self.symbol[-1].inferencer.inferName(value.func.id, node.lineno)
+                if symbol_infer:
+                    symbol_infer = symbol_infer.symbol.evaluationType
+                self.symbol[-1].inferencer.addInference(Inference(
+                    variable,
+                    symbol_infer,
+                    node.lineno
+                ))
             if self.symbol[-1].type == "class":
                 if variable == "_name":
                     #class name
@@ -228,6 +238,7 @@ class PythonParser(ast.NodeVisitor):
                     bases += [symbol] #TODO DON'T BASE ON REF ?
         if node.name not in self.symbol[-1].symbols:
             symbol = Symbol(node.name, "class", self.filePath)
+            symbol.evaluationType = symbol
             symbol.startLine = node.lineno
             symbol.endLine = node.end_lineno
             symbol.bases = bases

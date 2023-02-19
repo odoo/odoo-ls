@@ -45,6 +45,17 @@ class Symbol():
                 return curr_symbol.get_symbol(symbol_names[1:])
         return False
 
+    def get_class_symbol(self, name):
+        """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
+        search on bases"""
+        if name in self.symbols:
+            return self.symbols[name]
+        for base in self.bases:
+            s = base.get_class_symbol(name)
+            if s:
+                return s
+        return None
+
     def add_symbol(self, symbol_names, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
         if symbol_names and symbol_names[0] not in self.symbols:
