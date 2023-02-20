@@ -63,6 +63,8 @@ odoo_server = OdooLanguageServer()
 
 
 def _validate(ls, params):
+    if Odoo.isLoading:
+        return
     ls.show_message_log('Validating odoo...')
 
     text_doc = ls.workspace.get_document(params.text_document.uri)
@@ -75,6 +77,8 @@ def _validate(ls, params):
 
 def _validate_json(source):
     """Validates odoo file."""
+    if Odoo.isLoading:
+        return []
     diagnostics = []
 
     try:
@@ -101,6 +105,8 @@ def _validate_json(source):
 @odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',']))
 def completions(params: Optional[CompletionParams] = None) -> CompletionList:
     """Returns completion items."""
+    if Odoo.isLoading:
+        return None
     return CompletionList(
         is_incomplete=False,
         items=[
@@ -114,6 +120,8 @@ def completions(params: Optional[CompletionParams] = None) -> CompletionList:
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(params: TextDocumentPositionParams):
+    if Odoo.isLoading:
+        return None
     final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
     final_path = urllib.request.url2pathname(final_path)
     #TODO find better than this small hack for windows (get disk letter in capital)
@@ -128,6 +136,8 @@ def hover(params: TextDocumentPositionParams):
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
+    if Odoo.isLoading:
+        return None
     # lookup the ident under the cursor
     #name = get_symbol_name_at_position(params.textDocument.uri, params.position)
     # lookup the ident within the document

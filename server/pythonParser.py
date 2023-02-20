@@ -150,19 +150,18 @@ class PythonParser(ast.NodeVisitor):
         for variable, value in assigns.items():
             #TODO add other inference type than Name
             if isinstance(value, ast.Name):
-                symbol_infer = self.symbol[-1].inferencer.inferName(value.id, node.lineno)
-                if symbol_infer:
-                    symbol_infer = symbol_infer.symbol
+                infered = Inferencer.inferNameInScope(value.id, value.lineno, self.symbol[-1])
+                if infered:
+                    symbol_infer = infered.symbol
                 self.symbol[-1].inferencer.addInference(Inference(
                     variable,
-                    symbol_infer,
+                    symbol_infer if infered else None,
                     node.lineno
                 ))
             if isinstance(value, ast.Call):
-                #TODO manage Attribute func
-                symbol_infer = self.symbol[-1].inferencer.inferName(value.func.id, node.lineno)
+                symbol_infer = PythonUtils.evaluateTypeAST(value, self.symbol[-1])
                 if symbol_infer:
-                    symbol_infer = symbol_infer.symbol.evaluationType
+                    symbol_infer = symbol_infer.evaluationType
                 self.symbol[-1].inferencer.addInference(Inference(
                     variable,
                     symbol_infer,

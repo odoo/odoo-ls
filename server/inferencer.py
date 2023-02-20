@@ -17,6 +17,15 @@ class Inferencer():
             if infer.name == name and (not selected or (infer.lineno > selected.lineno and infer.lineno < line)):
                 selected = infer
         return selected
+    
+    @staticmethod
+    def inferNameInScope(name, line, scope_symbol):
+        sym = scope_symbol
+        infer = sym.inferencer.inferName(name, line)
+        while sym and not infer and sym.type not in ["file", "package"]:
+            sym = sym.parent
+            infer = sym.inferencer.inferName(name, line)
+        return infer
 
     def addInference(self, inference):
         self.inferences.append(inference)

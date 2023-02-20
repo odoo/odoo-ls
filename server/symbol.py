@@ -75,7 +75,7 @@ class Symbol():
     def get_in_parents(self, type, stop_same_file = True):
         if self.type == type:
             return self
-        if stop_same_file and self.type == "file":
+        if stop_same_file and self.type in ["file", "package"]: #a __init__.py file is encoded as a Symbol package
             return None
         return self.parent.get_in_parents(type, stop_same_file)
 

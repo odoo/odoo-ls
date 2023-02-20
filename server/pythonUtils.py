@@ -16,7 +16,9 @@ class PythonUtils():
         elif isinstance(node, ast.Call):
             f = node.func
             if isinstance(f, ast.Name):
-                return f.id
+                infered = Inferencer.inferNameInScope(f.id, f.lineno, symbol)
+                if infered:
+                    return infered.symbol
             elif isinstance(f, ast.Attribute):
                 return PythonUtils.evaluateTypeAST(f, symbol)
         elif isinstance(node, ast.Attribute):
@@ -24,10 +26,7 @@ class PythonUtils():
             if v and node.attr in v.symbols:
                 return v.symbols[node.attr]
         elif isinstance(node, ast.Name):
-            sym = symbol
-            while sym and sym.inferencer.inferName(node.id, node.lineno) and sym.type != "file":
-                sym = sym.parent
-            infered = sym.inferencer.inferName(node.id, node.lineno)
+            infered = Inferencer.inferNameInScope(node.id, node.lineno, symbol)
             if infered:
                 return infered.symbol
         return None

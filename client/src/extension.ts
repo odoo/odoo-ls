@@ -32,6 +32,7 @@ import {
 } from "vscode-languageclient/node";
 
 let client: LanguageClient;
+let odooStatusBar: vscode.StatusBarItem;
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -104,6 +105,11 @@ export function activate(context: ExtensionContext): void {
 
 	new ConfigurationsExplorer(context);
 
+    odooStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    odooStatusBar.text = "Odoo";
+    odooStatusBar.show();
+    context.subscriptions.push(odooStatusBar);
+
 	vscode.window.registerTreeDataProvider(
 		'odoo-databases',
 		new TreeDatabasesDataProvider()
@@ -120,6 +126,15 @@ export function activate(context: ExtensionContext): void {
 		if (selectedConfig != -1) {
 			const config = configs[selectedConfig];
 			console.log(config);
+            // small hack to make Pylance import odoo modules in other workspaces
+            //TODO only do it if addon directory is detected and do it for each root folder if multiple addons paths
+            if (vscode.workspace.getConfiguration("python.analysis")) {
+                const currentExtraPaths = vscode.workspace.getConfiguration("python.analysis").extraPaths;
+                if (currentExtraPaths.indexOf(config["odooPath"]) == -1) {
+                    //vscode.workspace.workspaceFolders.inspect() can help ?
+                    vscode.workspace.getConfiguration("python.analysis").update("extraPaths", currentExtraPaths.concat(config["odooPath"]), vscode.ConfigurationTarget.Workspace);
+                }
+            }
             //TODO this is not calling anything...
 			client.sendNotification("Odoo/initWorkspace", [config["odooPath"]]);
 		}

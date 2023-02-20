@@ -25,6 +25,7 @@ import time
 class Odoo():
 
     odooPath = ""
+    isLoading = False
 
     version_major = 0
     version_minor = 0
@@ -50,6 +51,7 @@ class Odoo():
     @staticmethod
     def get(ls = None):
         if not Odoo.instance:
+            Odoo.isLoading = True
             if not ls:
                 ls.show_message_log(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
             
@@ -70,6 +72,7 @@ class Odoo():
             except Exception as e:
                 print(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}')
+            Odoo.isLoading = False
         return Odoo.instance
     
     def build_database(self, ls):
