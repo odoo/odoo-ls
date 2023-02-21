@@ -30,6 +30,7 @@ class PythonParser(ast.NodeVisitor):
         self.symbol = [symbol] # symbols we are parsing
         self.classData = []
         self.ls = ls
+        self.diagnostics = []
     
     def load_symbols(self):
         """ Load all symbols from the symbol. It will follow all imports and create new Symbols from files """
@@ -40,6 +41,9 @@ class PythonParser(ast.NodeVisitor):
             #check if this is a package:
             if os.path.exists(os.path.join(self.filePath, "__init__.py")):
                 symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
+                if self.symbol[0].get_tree() == ["odoo", "addons"] and \
+                    os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
+                    symbol.isModule = True
                 self.symbol[0].add_symbol([], symbol)
                 self.symbol[0] = symbol
                 self.filePath = os.path.join(self.filePath, "__init__.py")
@@ -61,7 +65,7 @@ class PythonParser(ast.NodeVisitor):
             tree = ast.parse(content, self.filePath)
             self.visit(tree)
         except SyntaxError as e:
-            self.ls.publish_diagnostics(self.filePath, [Diagnostic(
+            self.ls.publish_diagnostics(pathname2uri(self.filePath), [Diagnostic(
                 range = Range(
                     start=Position(line=e.lineno, character=e.offset),
                     end=Position(line=e.lineno, character=e.offset+1) if sys.version_info < (3, 10) else \
@@ -76,16 +80,18 @@ class PythonParser(ast.NodeVisitor):
         except Exception as e:
             import traceback
             a = traceback.format_exc()
-            print(e)
+            print(e)#TODO remove
+        if self.diagnostics:
+            self.ls.publish_diagnostics(pathname2uri(self.filePath), self.diagnostics)
         return self.symbol[0]
 
     def visit_Import(self, node):
-        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node.lineno)
+        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
 
     def visit_ImportFrom(self, node):
-        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node.lineno)
+        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
 
-    def _resolve_import(self, from_stmt, names, level, lineno):
+    def _resolve_import(self, from_stmt, names, level, node):
         packages = []
         if level != 0:
             if level > len(Path(self.filePath).parts):
@@ -118,6 +124,20 @@ class PythonParser(ast.NodeVisitor):
                         for path in symbol_paths:
                             full_path = path + os.sep + element
                             if os.path.isdir(full_path):
+                                if current_symbol.get_tree() == ["odoo", "addons"]:
+                                    module = self.symbol[-1].getModule()
+                                    if module and not Odoo.get().modules[module].is_in_deps(element):
+                                        print(element + " has not been loaded. It should be in dependencies of " + module)
+                                        self.diagnostics.append(Diagnostic(
+                                            range = Range(
+                                                start=Position(line=node.lineno-1, character=node.col_offset),
+                                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                                    Position(line=node.lineno-1, character=node.end_col_offset)
+                                            ),
+                                            message = element + " has not been loaded. It should be in dependencies of " + module,
+                                            source = EXTENSION_NAME
+                                        ))
+                                        return
                                 parser = PythonParser(self.ls, full_path, current_symbol)
                                 importSymbol = parser.load_symbols()
                                 break
@@ -139,10 +159,10 @@ class PythonParser(ast.NodeVisitor):
                             if symbol.type == "package":
                                 to_browse.append(symbol)
                             elif symbol.type in ["class", "function", "variable"]:
-                                self.symbol[-1].inferencer.addInference(Inference(symbol.name, symbol, lineno))
+                                self.symbol[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
             if elements[-1] != '*':
                 self.symbol[-1].inferencer.addInference(
-                    Inference(asname if asname else name, Odoo.get().symbols.get_symbol(packages_copy), lineno)
+                    Inference(asname if asname else name, Odoo.get().symbols.get_symbol(packages_copy), node.lineno)
                 )
     
     def visit_Assign(self, node):
@@ -256,8 +276,11 @@ class PythonParser(ast.NodeVisitor):
             if data.modelName:
                 symbol.modelName = data.modelName
                 if data.modelName not in Odoo.get().models:
-                    Odoo.get().models[data.modelName] = Model(data.modelName)
-                Odoo.get().models[data.modelName].impl_sym.append(symbol)
+                    if data.modelInherit and data.modelInherit[0] == data.modelName:
+                        print("Ben non") #TODO error in dependencies
+                    Odoo.get().models[data.modelName] = Model(data.modelName, symbol)
+                else:
+                    Odoo.get().models[data.modelName].impl_sym.append(symbol)
 
             self.symbol.pop()
     

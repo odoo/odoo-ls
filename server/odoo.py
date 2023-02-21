@@ -37,6 +37,7 @@ class Odoo():
     # models = {
     # "account.test": Model}
     models = {} 
+    modules = {}
     # for each file path: a reference to the symbol of this file you can find in self.symbols
     files = {}
 
@@ -118,7 +119,7 @@ class Odoo():
             for dir in dirs:
                 Module(ls, os.path.join(path, dir))
         if FULL_LOAD_AT_STARTUP:
-            for module in Module.modules.values():
+            for module in Odoo.get().modules.values():
                 module.load(ls)
 
 
@@ -128,7 +129,7 @@ class Odoo():
         except Exception:
             print("psutil not found")
             pass
-        print(str(len(Module.modules)) + " modules found")
+        print(str(len(Odoo.get().modules)) + " modules found")
     
     def get_file_symbol(self, uri):
         if uri in self.files:

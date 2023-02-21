@@ -2,6 +2,17 @@ from .constants import *
 from .odoo import *
 from .symbol import *
 from .model import *
+from urllib.request import quote
+import os
+
+def pathname2uri(str):
+    if os.name == 'nt':
+        #TODO fix hack
+        str = str[0].lower() + str[1:]
+    str = str.replace("\\", "/")
+    str = quote(str)
+    str = "file:///" + str
+    return str
 
 class PythonUtils():
 
@@ -50,7 +61,9 @@ class PythonUtils():
         """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned.
         If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
         symbol = None
-        for node in node_list:
+        node_iter = 0
+        while node_iter != len(node_list):
+            node = node_list[node_iter]
             if not symbol:
                 if node.type == "name" and node.value == "self":
                     symbol = scope_symbol.get_in_parents("class") #should be able to take it in func param, no?
@@ -62,9 +75,20 @@ class PythonUtils():
             else:
                 if node.type == "trailer":
                     if node.children[0].type == "operator" and node.children[0].value == ".":
-                        symbol = scope_symbol.get_class_symbol(node.children[1].value)
+                        if symbol.modelName and node.children[1].value == "env" \
+                            and node_iter != len(node_list) and node_list[node_iter+1].type == "trailer" \
+                            and node_list[node_iter+1].children[0].type == "operator" \
+                            and node_list[node_iter+1].children[0].value == "[" \
+                            and node_list[node_iter+1].children[1].type == "string":
+                            node_iter += 1
+                            model = Odoo.get().models[node_list[node_iter].children[1].value.replace("'", "").replace('"', '')]
+                            if model:
+                                symbol = model.get_main_symbol()
+                        else:
+                            symbol = symbol.get_class_symbol(node.children[1].value)
                         if not symbol:
                             return None
+            node_iter += 1
         return symbol
 
     @staticmethod

@@ -2,6 +2,7 @@ import ast
 from .constants import *
 import os
 from .odoo import * 
+from .pythonUtils import *
 from server.pythonParser import PythonParser
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
@@ -14,9 +15,6 @@ from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              Unregistration, UnregistrationParams)
 
 class Module():
-
-    #static usage
-    modules = {}
 
     rootPath = ""
     loaded = False
@@ -34,11 +32,12 @@ class Module():
             return
         diagnostics = []
         diagnostics += self.load_manifest(os.path.join(dir_path, "__manifest__.py"))
-        if self.dir_name in Module.modules:
+        if self.dir_name in Odoo.get().modules:
             #TODO merge ! or erase? or raise error? :(
             print("already in: " + self.dir_name)
-        Module.modules[self.dir_name] = self
-        ls.publish_diagnostics(manifestPath, diagnostics)
+        Odoo.get().modules[self.dir_name] = self
+        if diagnostics:
+            ls.publish_diagnostics(pathname2uri(manifestPath), diagnostics)
 
     def load(self, ls):
         if self.loaded:
@@ -49,7 +48,8 @@ class Module():
         diagnostics += self.load_python_files(ls, self.rootPath)
         self.loaded = True
         print("loaded: " + self.dir_name)
-        ls.publish_diagnostics(os.path.join(self.rootPath, "__manifest__.py"), diagnostics)
+        if diagnostics:
+            ls.publish_diagnostics(pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
     
     def load_manifest(self, manifestPath):
         """ Load manifest to identify the module characteristics 
@@ -67,8 +67,8 @@ class Module():
         Returns list of diagnostics to publish in manifest file """
         diagnostics = []
         for depend in self.depends:
-            if depend in Module.modules:
-                Module.modules[depend].load(ls)
+            if depend in Odoo.get().modules:
+                Odoo.get().modules[depend].load(ls)
             else:
                 diagnostics.append(Diagnostic(
                     range = Range(
@@ -87,3 +87,10 @@ class Module():
         parser = PythonParser(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
         parser.load_symbols()
         return []
+    
+    def is_in_deps(self, module):
+        for dep in self.depends:
+            is_in = Odoo.get().modules[dep].is_in_deps(module)
+            if is_in:
+                return True
+        return False

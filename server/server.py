@@ -72,7 +72,7 @@ def _validate(ls, params):
     source = text_doc.source
     diagnostics = _validate_json(source) if source else []
 
-    ls.publish_diagnostics(text_doc.uri, diagnostics)
+    #ls.publish_diagnostics(text_doc.uri, diagnostics)
 
 
 def _validate_json(source):

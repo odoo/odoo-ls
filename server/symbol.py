@@ -20,6 +20,7 @@ class Symbol():
         self.symbols = {}
         self.parent = None
         self.modelName = None
+        self.isModule = False
         self.bases = [] #for class only
         self.inferencer = Inferencer()
         self.startLine = 0
@@ -45,11 +46,23 @@ class Symbol():
                 return curr_symbol.get_symbol(symbol_names[1:])
         return False
 
+    def getModule(self):
+        s = self
+        while s and not s.isModule:
+            s = s.parent
+        return s and s.name or None
+
     def get_class_symbol(self, name):
         """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
-        search on bases"""
+        search on bases or on comodels for odoo models"""
         if name in self.symbols:
             return self.symbols[name]
+        if self.modelName:
+            from .odoo import Odoo
+            model = Odoo.get().models[self.modelName]
+            for symbol in model.impl_sym:
+                if name in symbol.symbols:
+                    return self.symbols[name]
         for base in self.bases:
             s = base.get_class_symbol(name)
             if s:
