@@ -73,14 +73,14 @@ class PythonUtils():
                 if node.type == "name" and node.value == "self":
                     symbol = scope_symbol.get_in_parents("class") #should be able to take it in func param, no?
                 else:
-                    infer = scope_symbol.inferencer.inferName(node.value, node.line)
+                    infer = scope_symbol.inferName(node.value, node.line)
                     if not infer or not infer.symbol:
                         return None
                     symbol = infer.symbol
             else:
                 if node.type == "trailer":
                     if node.children[0].type == "operator" and node.children[0].value == ".":
-                        if symbol.modelName and node.children[1].value == "env" \
+                        if symbol.isModel() and node.children[1].value == "env" \
                             and node_iter != len(node_list) and node_list[node_iter+1].type == "trailer" \
                             and node_list[node_iter+1].children[0].type == "operator" \
                             and node_list[node_iter+1].children[0].value == "[" \

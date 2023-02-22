@@ -24,7 +24,7 @@ from json import JSONDecodeError
 from typing import Optional
 from .odoo import Odoo
 from server.pythonParser import PythonParser
-from server.pythonUtils import PythonUtils
+from server.pythonUtils import pathname2uri, PythonUtils
 import urllib.parse
 import urllib.request
 
@@ -138,24 +138,19 @@ def definition(params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
     if Odoo.isLoading:
         return None
-    # lookup the ident under the cursor
-    #name = get_symbol_name_at_position(params.textDocument.uri, params.position)
-    # lookup the ident within the document
-    #symbol = lookup_symbol(params.textDocument.uri, name)
-    print(params.text_document.uri)
     final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
     final_path = urllib.request.url2pathname(final_path)
-    #TODO find better than this small hack for windows
+    #TODO find better than this small hack for windows (get disk letter in capital)
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
-    print(final_path)
     file_symbol = Odoo.get().get_file_symbol(final_path)
-    if params.text_document.uri[-3:] == ".py":
+    if file_symbol and params.text_document.uri[-3:] == ".py":
         symbol = PythonUtils.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
-    a = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_model.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
-    b = Location(uri="file:///home/odoo/Documents/odoo-servers/false_odoo/odoo/odoo/addons/base/models/ir_actions.py", range=Range(start=Position(line=0, character=0), end=Position(line=0, character=0)))
-
-    return [c, a, b]
+    if symbol:
+        #TODO paths?
+        a = Location(uri=pathname2uri(symbol.paths[0]), range=Range(start=Position(line=symbol.startLine-1, character=0), end=Position(line=symbol.endLine-1, character=0)))
+        return [a]
+    return []
 
 @odoo_server.command(CMD_COUNT_DOWN_BLOCKING)
 def count_down_10_seconds_blocking(ls, *args):

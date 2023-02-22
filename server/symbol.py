@@ -4,7 +4,7 @@ class ModelData():
 
     def __init__(self):
         #data related to model symbols
-        self.name
+        self.name = ""
         self.inherit = []
         self.inherits = []
         self.log_access = []
@@ -15,12 +15,6 @@ class ClassData():
         #data related to classes symbols
         self.bases = []
         self.modelData = None
-    
-    def is_inheriting_from(self, class_name):
-        for s in self.bases:
-            if s.get_tree() == class_name or s.is_inheriting_from(class_name):
-                return True
-        return False
 
 class Symbol():
     """A symbol is an object representing an element of the code architecture.
@@ -65,6 +59,7 @@ class Symbol():
             curr_symbol = self.symbols[symbol_names[0]]
             if curr_symbol:
                 return curr_symbol.get_symbol(symbol_names[1:])
+        #last chance, if we are in a file, we can return any declared var
         return False
 
     def getModule(self):
@@ -78,9 +73,9 @@ class Symbol():
         search on bases or on comodels for odoo models"""
         if name in self.symbols:
             return self.symbols[name]
-        if self.modelName and not prevent_comodel:
+        if self.isModel() and not prevent_comodel:
             from .odoo import Odoo
-            model = Odoo.get().models[self.modelName]
+            model = Odoo.get().models[self.classData.modelData.name]
             sym = model.get_symbols(self.getModule())
             for s in sym:
                 r = s.get_class_symbol(name, True)
@@ -91,6 +86,14 @@ class Symbol():
             if s:
                 return s
         return None
+    
+    def is_inheriting_from(self, class_tree):
+        if not self.classData:
+            return False
+        for s in self.classData.bases:
+            if s.get_tree() == class_tree or s.is_inheriting_from(class_tree):
+                return True
+        return False
 
     def add_symbol(self, symbol_names, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
@@ -137,3 +140,17 @@ class Symbol():
         if symbol.type != 'class':
             symbol = None
         return symbol
+    
+    def inferName(self, name, line):
+        local = self.inferencer.inferName(name, line)
+        if self.type == "file":
+            return local
+        if not local:
+            return self.parent.inferName(name, line)
+        return local
+    
+    def isClass(self):
+        return bool(self.classData)
+    
+    def isModel(self):
+        return self.isClass() and bool(self.classData.modelData)

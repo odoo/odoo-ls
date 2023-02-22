@@ -230,6 +230,7 @@ class PythonParser(ast.NodeVisitor):
                 elif variable == "_log_access":
                     if isinstance(value, ast.Constant):
                         self.classContentCache[-1].log_access = bool(value.value)
+            if self.symbol[-1].type in ["class", "file"]:
                 if variable not in self.symbol[-1].symbols:
                     variable = Symbol(variable, "variable", self.filePath)
                     variable.startLine = node.lineno
@@ -237,17 +238,18 @@ class PythonParser(ast.NodeVisitor):
                     variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symbol[-1])
                     self.symbol[-1].add_symbol([], variable)
                 else:
-                    print("ERROR: symbol already defined")
+                    print("Warning: symbol already defined")
 
     def visit_FunctionDef(self, node):
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        self.symbol[-1].inferencer.addInference(Inference(
-            node.name,
-            symbol,
-            node.lineno
-        ))
+        if self.symbol[-1].type in ["file", "function"]:
+            self.symbol[-1].inferencer.addInference(Inference(
+                node.name,
+                symbol,
+                node.lineno
+            ))
         self.symbol[-1].add_symbol([], symbol)
         self.symbol.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
@@ -267,15 +269,21 @@ class PythonParser(ast.NodeVisitor):
         #search for base classes symbols
         for base in node.bases:
             full_base = PythonParser._extract_base_name(base)
-            if full_base and self.symbol[-1].inferencer.inferName(full_base.split(".")[0], node.lineno):
-                inference = self.symbol[-1].inferencer.inferName(full_base.split(".")[0], node.lineno)
+            if full_base:
+                inference = self.symbol[-1].inferName(full_base.split(".")[0], node.lineno)
                 if not inference or not inference.symbol:
                     continue
                 symbol = inference.symbol
                 if len(full_base.split(".")) > 1:
                     symbol = symbol.get_symbol(full_base.split(".")[1:])
-                if symbol and symbol.type == "class":
-                    bases += [symbol] #TODO DON'T BASE ON REF ?
+                if symbol:
+                    if symbol.type == "class":
+                        bases += [symbol] #TODO DON'T BASE ON REF ?
+                    elif symbol.type == "variable":
+                        #Ouch, this is not a class :/ Last chance, we can try to evaluate the variable to check if an inferencer has linked it to a Class
+                        inferred = symbol.parent.inferencer.inferName(symbol.name, 10000000)
+                        if inferred and inferred.symbol and inferred.symbol.type == "class":
+                            bases += [inferred.symbol]
         if node.name not in self.symbol[-1].symbols:
             symbol = Symbol(node.name, "class", self.filePath)
             symbol.evaluationType = symbol
@@ -293,7 +301,7 @@ class PythonParser(ast.NodeVisitor):
             self.classContentCache.append(ClassContentCache())
             ast.NodeVisitor.generic_visit(self, node)
             data = self.classContentCache.pop()
-            if symbol.classData.is_inheriting_from(["odoo", "models", "Model"]):
+            if symbol.is_inheriting_from(["odoo", "models", "BaseModel"]):
                 symbol.classData.modelData = ModelData()
             if data.modelInherit and not data.modelName:
                 data.modelName = data.modelInherit[0] if len(data.modelInherit) == 1 else symbol.name #v15 behaviour
@@ -312,17 +320,19 @@ class PythonParser(ast.NodeVisitor):
                         source = EXTENSION_NAME
                     ))
                 else:
-                    symbol.inherit.append(inh)
+                    symbol.classData.modelData.inherit.append(inh)
             if data.modelName:
-                symbol.classData.modelData.modelName = data.modelName
+                if not symbol.classData.modelData:
+                    print("oups")
+                symbol.classData.modelData.name = data.modelName
                 if data.modelName not in Odoo.get().models:
                     Odoo.get().models[data.modelName] = Model(data.modelName, symbol)
                 else:
                     Odoo.get().models[data.modelName].impl_sym.append(symbol)
-            self.add_magic_fields(symbol, node)
+            self.add_magic_fields(symbol, node, data)
             self.symbol.pop()
     
-    def add_magic_fields(self, symbol, node):
+    def add_magic_fields(self, symbol, node, data):
         def create_symbol(name, type, lineno):
             variable = Symbol(name, "variable", self.filePath)
             variable.startLine = lineno
@@ -334,7 +344,7 @@ class PythonParser(ast.NodeVisitor):
             create_symbol("id", "constant", node.lineno)
             create_symbol("display_name", "constant", node.lineno)
             create_symbol("_log_access", "constant", node.lineno)
-            if _log_access:
+            if data.log_access:
                 create_symbol("create_date", "constant", node.lineno)
                 create_symbol("create_uid", "constant", node.lineno)
                 create_symbol("write_date", "constant", node.lineno)
