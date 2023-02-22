@@ -59,6 +59,8 @@ class Module():
             dic = ast.literal_eval(md)
             self.name = dic.get("name", "")
             self.depends = dic.get("depends", [])
+            if self.dir_name != 'base':
+                self.depends.append("base")
             self.data = dic.get("data", [])
         return []
 
@@ -88,9 +90,11 @@ class Module():
         parser.load_symbols()
         return []
     
-    def is_in_deps(self, module):
+    def is_in_deps(self, module_name):
+        if module_name in self.depends:
+            return True
         for dep in self.depends:
-            is_in = Odoo.get().modules[dep].is_in_deps(module)
+            is_in = Odoo.get().modules[dep].is_in_deps(module_name)
             if is_in:
                 return True
         return False

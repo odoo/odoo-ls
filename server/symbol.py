@@ -1,5 +1,27 @@
 from server.inferencer import *
 
+class ModelData():
+
+    def __init__(self):
+        #data related to model symbols
+        self.name
+        self.inherit = []
+        self.inherits = []
+        self.log_access = []
+
+class ClassData():
+    
+    def __init__(self):
+        #data related to classes symbols
+        self.bases = []
+        self.modelData = None
+    
+    def is_inheriting_from(self, class_name):
+        for s in self.bases:
+            if s.get_tree() == class_name or s.is_inheriting_from(class_name):
+                return True
+        return False
+
 class Symbol():
     """A symbol is an object representing an element of the code architecture.
     It can be either a python package, a file, a class, a function, or even a variable.
@@ -19,9 +41,8 @@ class Symbol():
         #symbols is a dictionnary of all symbols that is contained by the current symbol
         self.symbols = {}
         self.parent = None
-        self.modelName = None
         self.isModule = False
-        self.bases = [] #for class only
+        self.classData = None
         self.inferencer = Inferencer()
         self.startLine = 0
         self.endLine = 0
@@ -52,18 +73,20 @@ class Symbol():
             s = s.parent
         return s and s.name or None
 
-    def get_class_symbol(self, name):
+    def get_class_symbol(self, name, prevent_comodel = False):
         """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
         search on bases or on comodels for odoo models"""
         if name in self.symbols:
             return self.symbols[name]
-        if self.modelName:
+        if self.modelName and not prevent_comodel:
             from .odoo import Odoo
             model = Odoo.get().models[self.modelName]
-            for symbol in model.impl_sym:
-                if name in symbol.symbols:
-                    return self.symbols[name]
-        for base in self.bases:
+            sym = model.get_symbols(self.getModule())
+            for s in sym:
+                r = s.get_class_symbol(name, True)
+                if r:
+                    return r
+        for base in self.classData.bases:
             s = base.get_class_symbol(name)
             if s:
                 return s

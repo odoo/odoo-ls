@@ -128,7 +128,7 @@ def hover(params: TextDocumentPositionParams):
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
     file_symbol = Odoo.get().get_file_symbol(final_path)
-    if params.text_document.uri[-3:] == ".py":
+    if file_symbol and params.text_document.uri[-3:] == ".py":
         symbol = PythonUtils.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
     hover = Hover(symbol and symbol.name)
     return hover

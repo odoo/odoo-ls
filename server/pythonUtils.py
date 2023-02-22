@@ -11,12 +11,15 @@ def pathname2uri(str):
         str = str[0].lower() + str[1:]
     str = str.replace("\\", "/")
     str = quote(str)
-    str = "file:///" + str
+    f = "file://"
+    if os.name == "nt":
+        f += "/"
+    str = f + str
     return str
 
 class PythonUtils():
 
-        #TODO evaluateType should not be based on ast?
+    #TODO evaluateType should not be based on ast?
     @staticmethod
     def evaluateTypeAST(node, symbol):
         """try to return the symbol corresponding to the expression, evaluated in the context of 'symbol' (a function, class or file)"""
@@ -24,6 +27,8 @@ class PythonUtils():
             return Symbol("constant", "primitive", "")
         elif isinstance(node, ast.Dict):
             return Symbol("dict", "primitive", "")
+        elif isinstance(node, ast.List):
+            return Symbol("list", "primitive", "")
         elif isinstance(node, ast.Call):
             f = node.func
             if isinstance(f, ast.Name):
@@ -69,7 +74,7 @@ class PythonUtils():
                     symbol = scope_symbol.get_in_parents("class") #should be able to take it in func param, no?
                 else:
                     infer = scope_symbol.inferencer.inferName(node.value, node.line)
-                    if not infer:
+                    if not infer or not infer.symbol:
                         return None
                     symbol = infer.symbol
             else:
@@ -170,8 +175,10 @@ class PythonUtils():
                     if c.children[0].type == "operator" and c.children[0].value == ".":
                         if found_cursor:
                             break
-                if (c.start_pos[0] < line or c.start_pos[0] == line and c.start_pos[1] <= char) and \
-                    (c.end_pos[0] > line or c.end_pos[0] == line and c.end_pos[1] >= char):
+                #we don't check the start line and char because comments like this one are not in nodes
+                if (c.end_pos[0] > line or c.end_pos[0] == line and c.end_pos[1] >= char) and not found_cursor:
+                    if (c.start_pos[0] > line or c.start_pos[0] == line and c.start_pos[1] > char):
+                        return (None, [], None)
                     current = c
                     found_cursor = True
                 list_expr.append(c)

@@ -9,14 +9,13 @@ from .model import *
 from .pythonUtils import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
-class ClassData():
+class ClassContentCache():
 
     def __init__(self):
         self.modelName = None
-        self.modelInherit = None
-        self.modelInherits = None
-        self.fields = None
-        self.funcs = None
+        self.modelInherit = []
+        self.modelInherits = []
+        self.log_access = True
 
 class PythonParser(ast.NodeVisitor):
     """This class is linked to a Symbol and can extract/build relatad data. 
@@ -28,14 +27,17 @@ class PythonParser(ast.NodeVisitor):
         self.grammar = Odoo.get().grammar
         self.filePath = path
         self.symbol = [symbol] # symbols we are parsing
-        self.classData = []
+        self.classContentCache = []
+        self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
+        self.currentModule = None
     
     def load_symbols(self):
         """ Load all symbols from the symbol. It will follow all imports and create new Symbols from files """
         if self.symbol[0].get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]):
             return
+        self.diagnostics = []
         #If this is not a python file, check that this is a package and load it
         if not self.filePath.endswith(".py"):
             #check if this is a package:
@@ -58,6 +60,9 @@ class PythonParser(ast.NodeVisitor):
             self.symbol[0] = symbol
         #parse the Python file
         Odoo.get().files[self.filePath] = self.symbol[0]
+        moduleName = self.symbol[0].getModule()
+        if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
+            self.currentModule = Odoo.get().modules[moduleName]
         try:
             with open(self.filePath, "rb") as f:
                 content = f.read()
@@ -90,6 +95,19 @@ class PythonParser(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node):
         self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
+
+    def visit_Try(self, node):
+        safe = False
+        for handler in node.handlers:
+            if not isinstance(handler.type, ast.Name):
+                break
+            if handler.type.id == "ImportError":
+                safe = True
+                break
+        self.safeImport.append(safe)
+        ast.NodeVisitor.generic_visit(self, node)
+        self.safeImport.pop()
+
 
     def _resolve_import(self, from_stmt, names, level, node):
         packages = []
@@ -126,7 +144,7 @@ class PythonParser(ast.NodeVisitor):
                             if os.path.isdir(full_path):
                                 if current_symbol.get_tree() == ["odoo", "addons"]:
                                     module = self.symbol[-1].getModule()
-                                    if module and not Odoo.get().modules[module].is_in_deps(element):
+                                    if module and not Odoo.get().modules[module].is_in_deps(element) and not self.safeImport[-1]:
                                         print(element + " has not been loaded. It should be in dependencies of " + module)
                                         self.diagnostics.append(Diagnostic(
                                             range = Range(
@@ -137,6 +155,10 @@ class PythonParser(ast.NodeVisitor):
                                             message = element + " has not been loaded. It should be in dependencies of " + module,
                                             source = EXTENSION_NAME
                                         ))
+                                        return
+                                    if not module:
+                                        """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
+                                        It means we are in a file like odoo/*, and modules are not loaded yet."""
                                         return
                                 parser = PythonParser(self.ls, full_path, current_symbol)
                                 importSymbol = parser.load_symbols()
@@ -189,34 +211,33 @@ class PythonParser(ast.NodeVisitor):
                 ))
             if self.symbol[-1].type == "class":
                 if variable == "_name":
-                    #class name
                     if isinstance(value, ast.Constant) and value.value != None: #can be None for baseModel
-                        self.classData[-1].modelName = value.value
+                        self.classContentCache[-1].modelName = value.value
                 elif variable == "_inherit":
-                    #class name
                     if isinstance(value, ast.Constant):
-                        self.classData[-1].modelInherit = [value.value]
+                        self.classContentCache[-1].modelInherit = [value.value]
                     elif isinstance(value, ast.List):
-                        self.classData[-1].modelInherit = []
+                        self.classContentCache[-1].modelInherit = []
                         for v in value.elts:
                             if isinstance(v, ast.Constant):
-                                self.classData[-1].modelInherit += [v.value]
+                                self.classContentCache[-1].modelInherit += [v.value]
                 elif variable == "_inherits":
-                    #class name
                     if isinstance(value, ast.Dict):
-                        self.classData[-1].modelInherits = {}
+                        self.classContentCache[-1].modelInherits = {}
                         for k, v in zip(value.keys, value.values):
                             if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
-                                self.classData[-1].modelInherits[k.value] = v.value
+                                self.classContentCache[-1].modelInherits[k.value] = v.value
+                elif variable == "_log_access":
+                    if isinstance(value, ast.Constant):
+                        self.classContentCache[-1].log_access = bool(value.value)
+                if variable not in self.symbol[-1].symbols:
+                    variable = Symbol(variable, "variable", self.filePath)
+                    variable.startLine = node.lineno
+                    variable.endLine = node.end_lineno
+                    variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symbol[-1])
+                    self.symbol[-1].add_symbol([], variable)
                 else:
-                    if variable not in self.symbol[-1].symbols:
-                        variable = Symbol(variable, "variable", self.filePath)
-                        variable.startLine = node.lineno
-                        variable.endLine = node.end_lineno
-                        variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symbol[-1])
-                        self.symbol[-1].add_symbol([], variable)
-                    else:
-                        print("ERROR: symbol already defined")
+                    print("ERROR: symbol already defined")
 
     def visit_FunctionDef(self, node):
         symbol = Symbol(node.name, "function", self.filePath)
@@ -260,7 +281,8 @@ class PythonParser(ast.NodeVisitor):
             symbol.evaluationType = symbol
             symbol.startLine = node.lineno
             symbol.endLine = node.end_lineno
-            symbol.bases = bases
+            symbol.classData = ClassData()
+            symbol.classData.bases = bases
             self.symbol[-1].inferencer.addInference(Inference(
                 node.name,
                 symbol,
@@ -268,22 +290,57 @@ class PythonParser(ast.NodeVisitor):
             ))
             self.symbol[-1].add_symbol([], symbol)
             self.symbol.append(symbol)
-            self.classData.append(ClassData())
+            self.classContentCache.append(ClassContentCache())
             ast.NodeVisitor.generic_visit(self, node)
-            data = self.classData.pop()
+            data = self.classContentCache.pop()
+            if symbol.classData.is_inheriting_from(["odoo", "models", "Model"]):
+                symbol.classData.modelData = ModelData()
             if data.modelInherit and not data.modelName:
                 data.modelName = data.modelInherit[0] if len(data.modelInherit) == 1 else symbol.name #v15 behaviour
+            for inh in data.modelInherit:
+                orig_module = ""
+                if inh in Odoo.get().models:
+                    orig_module = Odoo.get().models[inh].get_main_symbol().getModule()
+                if not orig_module or (not self.currentModule.is_in_deps(orig_module) and \
+                    orig_module != self.currentModule.dir_name):
+                    self.diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=node.lineno-1, character=node.col_offset),
+                            end=Position(line=node.lineno-1, character=500)
+                        ),
+                        message = node.name + " is inheriting from " + inh + " but this model is not defined in any loaded module. Please fix the dependencies of the module " + self.currentModule.name,
+                        source = EXTENSION_NAME
+                    ))
+                else:
+                    symbol.inherit.append(inh)
             if data.modelName:
-                symbol.modelName = data.modelName
+                symbol.classData.modelData.modelName = data.modelName
                 if data.modelName not in Odoo.get().models:
-                    if data.modelInherit and data.modelInherit[0] == data.modelName:
-                        print("Ben non") #TODO error in dependencies
                     Odoo.get().models[data.modelName] = Model(data.modelName, symbol)
                 else:
                     Odoo.get().models[data.modelName].impl_sym.append(symbol)
-
+            self.add_magic_fields(symbol, node)
             self.symbol.pop()
     
+    def add_magic_fields(self, symbol, node):
+        def create_symbol(name, type, lineno):
+            variable = Symbol(name, "variable", self.filePath)
+            variable.startLine = lineno
+            variable.endLine = lineno
+            variable.evaluationType = Symbol(type, "primitive", "")
+            symbol.add_symbol([], variable)
+            return variable
+        if symbol.get_tree() == ["odoo", "models", "Model"]:
+            create_symbol("id", "constant", node.lineno)
+            create_symbol("display_name", "constant", node.lineno)
+            create_symbol("_log_access", "constant", node.lineno)
+            if _log_access:
+                create_symbol("create_date", "constant", node.lineno)
+                create_symbol("create_uid", "constant", node.lineno)
+                create_symbol("write_date", "constant", node.lineno)
+                create_symbol("write_uid", "constant", node.lineno)
+
+
     def unpack_assign(self, node_targets, node_values, acc = {}):
         """ Unpack assignement to extract variables and values.
             This method will return a dictionnary that hold each variables and the set value (still in ast node)
