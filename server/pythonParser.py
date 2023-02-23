@@ -21,8 +21,6 @@ class PythonParser(ast.NodeVisitor):
     """This class is linked to a Symbol and can extract/build relatad data. 
     It can be used to load depending Symbols from python files."""
 
-    parsed = {}
-
     def __init__(self, ls, path, symbol):
         self.grammar = Odoo.get().grammar
         self.filePath = path
@@ -32,10 +30,12 @@ class PythonParser(ast.NodeVisitor):
         self.ls = ls
         self.diagnostics = []
         self.currentModule = None
+        self.tree = [] #cache tree of the current symbol
     
-    def load_symbols(self):
-        """ Load all symbols from the symbol. It will follow all imports and create new Symbols from files """
-        if self.symbol[0].get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]):
+    def load_symbols(self, source=None):
+        """ Load all symbols from the symbol. It will follow all imports and create new Symbols from files.
+        if source is not None, we want to rebuild the symbol from the given code"""
+        if self.symbol[0].get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]) and not source:
             return
         self.diagnostics = []
         #If this is not a python file, check that this is a package and load it
@@ -46,34 +46,35 @@ class PythonParser(ast.NodeVisitor):
                 if self.symbol[0].get_tree() == ["odoo", "addons"] and \
                     os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
                     symbol.isModule = True
-                self.symbol[0].add_symbol([], symbol)
-                self.symbol[0] = symbol
+                self.symbol[-1].add_symbol([], symbol)
+                self.symbol.append(symbol)
                 self.filePath = os.path.join(self.filePath, "__init__.py")
             else:
                 symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
-                self.symbol[0].add_symbol([], symbol)
-                self.symbol[0] = symbol
-                return self.symbol[0]
+                self.symbol[-1].add_symbol([], symbol)
+                self.symbol.append(symbol)
+                return self.symbol[1]
         else:
             symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
-            self.symbol[0].add_symbol([], symbol)
-            self.symbol[0] = symbol
+            self.symbol[-1].add_symbol([], symbol)
+            self.symbol.append(symbol)
         #parse the Python file
-        moduleName = self.symbol[0].getModule()
-        if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
-            self.currentModule = Odoo.get().modules[moduleName]
+        self.tree = self.symbol[-1].get_tree()
         try:
-            with open(self.filePath, "rb") as f:
-                content = f.read()
-            #tree = self.grammar.parse(content, error_recovery=False, path=self.filePath, cache = False)
-            tree = ast.parse(content, self.filePath)
-            self.visit(tree)
+            if source:
+                tree = ast.parse(source, self.filePath)
+            else:
+                with open(self.filePath, "rb") as f:
+                    content = f.read()
+                #tree = self.grammar.parse(content, error_recovery=False, path=self.filePath, cache = False)
+                tree = ast.parse(content, self.filePath)
+            Odoo.get().files[self.filePath] = tree
         except SyntaxError as e:
             self.ls.publish_diagnostics(pathname2uri(self.filePath), [Diagnostic(
                 range = Range(
-                    start=Position(line=e.lineno, character=e.offset),
-                    end=Position(line=e.lineno, character=e.offset+1) if sys.version_info < (3, 10) else \
-                        Position(line=e.end_lineno, character=e.end_offset)
+                    start=Position(line=e.lineno-1, character=e.offset),
+                    end=Position(line=e.lineno-1, character=e.offset+1) if sys.version_info < (3, 10) else \
+                        Position(line=e.end_lineno-1, character=e.end_offset)
                 ),
                 message = type(e).__name__ + ": " + e.msg,
                 source = EXTENSION_NAME
@@ -81,13 +82,16 @@ class PythonParser(ast.NodeVisitor):
             return False
         except ValueError as e:
             print("Unable to parse file: " + self.filePath + ". Value error.")
-        except Exception as e:
-            import traceback
-            a = traceback.format_exc()
-            print(e)#TODO remove
+        self.load_symbols_from_ast(tree)
         if self.diagnostics:
             self.ls.publish_diagnostics(pathname2uri(self.filePath), self.diagnostics)
-        return self.symbol[0]
+        return self.symbol[1]
+
+    def load_symbols_from_ast(self, ast):
+        moduleName = self.symbol[-1].getModule()
+        if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
+            self.currentModule = Odoo.get().modules[moduleName]
+        self.visit(ast)
 
     def visit_Import(self, node):
         self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
@@ -114,13 +118,13 @@ class PythonParser(ast.NodeVisitor):
             if level > len(Path(self.filePath).parts):
                 print("ERROR: level is too big ! The current path doesn't have enough parents")
                 return
-            if self.symbol[0].type == "package":
+            if self.symbol[1].type == "package":
                 #as we are at directory level, not init.py
                 level -= 1
             if level == 0:
-                packages = self.symbol[0].get_tree()
+                packages = self.symbol[1].get_tree()
             else:
-                packages = self.symbol[0].get_tree()[:-level]
+                packages = self.symbol[1].get_tree()[:-level]
 
         for name, asname in names:
             packages_copy = packages[:]
@@ -144,7 +148,6 @@ class PythonParser(ast.NodeVisitor):
                                 if current_symbol.get_tree() == ["odoo", "addons"]:
                                     module = self.symbol[-1].getModule()
                                     if module and not Odoo.get().modules[module].is_in_deps(element) and not self.safeImport[-1]:
-                                        print(element + " has not been loaded. It should be in dependencies of " + module)
                                         self.diagnostics.append(Diagnostic(
                                             range = Range(
                                                 start=Position(line=node.lineno-1, character=node.col_offset),
@@ -277,10 +280,10 @@ class PythonParser(ast.NodeVisitor):
                     symbol = symbol.get_symbol(full_base.split(".")[1:])
                 if symbol:
                     if symbol.type == "class":
-                        bases += [symbol] #TODO DON'T BASE ON REF ?
+                        bases += [symbol]
                     elif symbol.type == "variable":
                         #Ouch, this is not a class :/ Last chance, we can try to evaluate the variable to check if an inferencer has linked it to a Class
-                        inferred = symbol.parent.inferencer.inferName(symbol.name, 10000000)
+                        inferred = symbol.parent.inferencer.inferName(symbol.name, 10000000) #TODO 1000000 ?wtf?
                         if inferred and inferred.symbol and inferred.symbol.type == "class":
                             bases += [inferred.symbol]
         if node.name not in self.symbol[-1].symbols:
@@ -289,7 +292,6 @@ class PythonParser(ast.NodeVisitor):
             symbol.startLine = node.lineno
             symbol.endLine = node.end_lineno
             symbol.classData = ClassData()
-            symbol.classData.bases = bases
             self.symbol[-1].inferencer.addInference(Inference(
                 node.name,
                 symbol,
@@ -297,6 +299,10 @@ class PythonParser(ast.NodeVisitor):
             ))
             self.symbol[-1].add_symbol([], symbol)
             self.symbol.append(symbol)
+            for base in bases:
+                if symbol.get_tree() not in base.dependents:
+                    base.dependents.append(symbol.get_tree())
+                symbol.classData.bases.append(base.get_tree())
             self.classContentCache.append(ClassContentCache())
             ast.NodeVisitor.generic_visit(self, node)
             data = self.classContentCache.pop()

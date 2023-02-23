@@ -1,9 +1,10 @@
 from .constants import *
-from .odoo import *
+from .odoo import Odoo
 from .symbol import *
 from .model import *
 from urllib.request import quote
 import os
+import ast
 
 def pathname2uri(str):
     if os.name == 'nt':

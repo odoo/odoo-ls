@@ -13,7 +13,7 @@ class ClassData():
     
     def __init__(self):
         #data related to classes symbols
-        self.bases = []
+        self.bases = [] #list of tree names
         self.modelData = None
 
 class Symbol():
@@ -30,10 +30,11 @@ class Symbol():
     def __init__(self, name, type, paths):
         self.name = name
         self.type = type #root, package, file, class, function, variable
-        self.evaluationType = None # inferred symbol of the type of the variable of function return
+        self.evaluationType = None # inferred symbol treename of the type of the variable of function return
         self.paths = paths if isinstance(paths, list) else [paths]
         #symbols is a dictionnary of all symbols that is contained by the current symbol
         self.symbols = {}
+        self.dependents = []
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -53,6 +54,10 @@ class Symbol():
         return ancestors + [self.name]
 
     def get_symbol(self, symbol_names):
+        """starting from the current symbol, give the symbol corresponding the tree branch symbol_names.
+        Example: symbol = symbol.get_symbol(['odoo', 'models', 'Model'])
+        will return the symbol corresponding to odoo.models.Model.
+        From this one, we can do symbol.get_symbol(['hello']) to get the 'hello' symbol of the Model class"""
         if not symbol_names:
             return self
         if symbol_names[0] in self.symbols:
@@ -82,7 +87,8 @@ class Symbol():
                 if r:
                     return r
         for base in self.classData.bases:
-            s = base.get_class_symbol(name)
+            base_sym = Odoo.get().symbols.get_symbol(base)
+            s = base_sym.get_class_symbol(name)
             if s:
                 return s
         return None
@@ -90,8 +96,10 @@ class Symbol():
     def is_inheriting_from(self, class_tree):
         if not self.classData:
             return False
+        from .odoo import Odoo
         for s in self.classData.bases:
-            if s.get_tree() == class_tree or s.is_inheriting_from(class_tree):
+            base_sym = Odoo.get().symbols.get_symbol(s)
+            if base_sym.get_tree() == class_tree or base_sym.is_inheriting_from(class_tree):
                 return True
         return False
 

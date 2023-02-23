@@ -33,6 +33,8 @@ class Odoo():
 
     grammar = None
 
+    files = {} # cache of files content for each path, the corresponding AST
+
     # for each model, the list of symbols implementing it
     # models = {
     # "account.test": Model}
@@ -41,6 +43,8 @@ class Odoo():
 
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = Symbol("root", "root", [])
+
+    to_rebuild = {} #by files, symbol tree to rebuild
 
     instance = None
 
@@ -52,7 +56,7 @@ class Odoo():
         if not Odoo.instance:
             Odoo.isLoading = True
             if not ls:
-                ls.show_message_log(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
+                print(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
             
             print("Creating new Odoo Base")
 
@@ -129,14 +133,29 @@ class Odoo():
             pass
         print(str(len(Odoo.get().modules)) + " modules found")
     
-    def get_file_symbol(self, uri):
-        if uri.startswith(self.instance.odooPath):
-            return self.symbols.get_symbol(["odoo"] + uri.replace(".py", "")[len(self.instance.odooPath)+1:].split("/"))
+    def get_file_symbol(self, path):
+        if path.startswith(self.instance.odooPath):
+            return self.symbols.get_symbol(path.replace(".py", "")[len(self.instance.odooPath)+1:].split("/"))
         for addonPath in self.symbols.get_symbol(["odoo", "addons"]).paths:
-            if uri.startswith(addonPath):
-                return self.symbols.get_symbol(["odoo", "addons"] + uri.replace(".py", "")[len(addonPath)+1:].split("/"))
+            if path.startswith(addonPath):
+                return self.symbols.get_symbol(["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].split("/"))
         return []
 
-    def init_file(uri):
-        if uri.endswith(".py"):
-            pass
+    def file_change(self, ls, path, text):
+        from server.pythonParser import PythonParser
+        if path.endswith(".py"):
+            file_symbol = self.get_file_symbol(path)
+            self.add_to_rebuild(file_symbol)
+            pp = PythonParser(ls, path, file_symbol.parent)
+            pp.load_symbols(text)
+
+    def add_to_rebuild(self, symbol):
+        for d in symbol.dependents:
+            sym = self.symbols.get_symbol(d)
+            file = sym.paths[0]
+            if file not in self.to_rebuild:
+                self.to_rebuild[file] = [sym]
+            else:
+                self.to_rebuild[file].append(sym)
+        for s in symbol.symbols:
+            self.add_to_rebuild(s)
