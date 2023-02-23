@@ -38,8 +38,6 @@ class Odoo():
     # "account.test": Model}
     models = {} 
     modules = {}
-    # for each file path: a reference to the symbol of this file you can find in self.symbols
-    files = {}
 
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = Symbol("root", "root", [])
@@ -132,8 +130,11 @@ class Odoo():
         print(str(len(Odoo.get().modules)) + " modules found")
     
     def get_file_symbol(self, uri):
-        if uri in self.files:
-            return self.files[uri]
+        if uri.startswith(self.instance.odooPath):
+            return self.symbols.get_symbol(["odoo"] + uri.replace(".py", "")[len(self.instance.odooPath)+1:].split("/"))
+        for addonPath in self.symbols.get_symbol(["odoo", "addons"]).paths:
+            if uri.startswith(addonPath):
+                return self.symbols.get_symbol(["odoo", "addons"] + uri.replace(".py", "")[len(addonPath)+1:].split("/"))
         return []
 
     def init_file(uri):

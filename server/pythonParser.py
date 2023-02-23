@@ -59,7 +59,6 @@ class PythonParser(ast.NodeVisitor):
             self.symbol[0].add_symbol([], symbol)
             self.symbol[0] = symbol
         #parse the Python file
-        Odoo.get().files[self.filePath] = self.symbol[0]
         moduleName = self.symbol[0].getModule()
         if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
             self.currentModule = Odoo.get().modules[moduleName]
