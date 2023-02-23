@@ -33,7 +33,7 @@ class Odoo():
 
     grammar = None
 
-    # for each model, the list of symbols implenting it
+    # for each model, the list of symbols implementing it
     # models = {
     # "account.test": Model}
     models = {} 

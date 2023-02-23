@@ -107,7 +107,10 @@ class Symbol():
                 raise Exception("Package not found: " + str(symbol_names))
         symbol.parent = curr_symbol
         if symbol.name in curr_symbol.symbols:
-            print("Symbol already exists") #TODO is it correct? shouldn't we merge paths?
+            #TODO we don't want to handle this case for now. It can occur for directory of addons
+            # because it has already been added, but it can occur too if two files or directories
+            # have the same name, or even two same classes in a file. We should handle this case in the future
+            print("Symbol already exists: " + str(curr_symbol.get_tree()) + " - " + str(symbol.name)) 
         else:
             curr_symbol.symbols[symbol.name] = symbol
     
