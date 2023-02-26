@@ -2,21 +2,7 @@ from .constants import *
 from .odoo import Odoo
 from .symbol import *
 from .model import *
-from urllib.request import quote
-import os
 import ast
-
-def pathname2uri(str):
-    if os.name == 'nt':
-        #TODO fix hack
-        str = str[0].lower() + str[1:]
-    str = str.replace("\\", "/")
-    str = quote(str)
-    f = "file://"
-    if os.name == "nt":
-        f += "/"
-    str = f + str
-    return str
 
 class PythonUtils():
 

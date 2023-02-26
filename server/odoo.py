@@ -6,6 +6,7 @@ import sys
 import traceback
 from .constants import *
 from .symbol import *
+from .fileMgr import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -33,7 +34,7 @@ class Odoo():
 
     grammar = None
 
-    files = {} # cache of files content for each path, the corresponding AST
+    fileMgr = FileMgr()
 
     # for each model, the list of symbols implementing it
     # models = {
@@ -84,7 +85,7 @@ class Odoo():
         self.build_modules(ls)
 
     def build_base(self, ls):
-        from server.pythonParser import PythonParser
+        from server.pythonArchBuilder import PythonArchBuilder
         releasePath = os.path.join(self.odooPath, "odoo", "release.py")
         if os.path.exists(releasePath):
             with open(releasePath, "r") as f:
@@ -100,8 +101,8 @@ class Odoo():
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
             #set python path
             self.symbols.paths += [self.odooPath]
-            parser = PythonParser(ls, os.path.join(self.odooPath, "odoo"), self.symbols.get_symbol([]))
-            parser.load_symbols()
+            parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols.get_symbol([]))
+            parser.load_arch()
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             addonsSymbol.paths += [
                 os.path.join(self.odooPath, "addons"), 
@@ -135,27 +136,33 @@ class Odoo():
     
     def get_file_symbol(self, path):
         if path.startswith(self.instance.odooPath):
-            return self.symbols.get_symbol(path.replace(".py", "")[len(self.instance.odooPath)+1:].split("/"))
+            tree = path.replace(".py", "")[len(self.instance.odooPath)+1:].replace("\\", "/").split("/")
+            if tree:
+                if tree[0] == "addons":
+                    tree = ["odoo"] + tree
+            return self.symbols.get_symbol(tree)
         for addonPath in self.symbols.get_symbol(["odoo", "addons"]).paths:
             if path.startswith(addonPath):
                 return self.symbols.get_symbol(["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].split("/"))
         return []
 
-    def file_change(self, ls, path, text):
-        from server.pythonParser import PythonParser
+    def file_change(self, ls, path, text, version):
+        from server.pythonArchBuilder import PythonArchBuilder
         if path.endswith(".py"):
             file_symbol = self.get_file_symbol(path)
-            self.add_to_rebuild(file_symbol)
-            pp = PythonParser(ls, path, file_symbol.parent)
-            pp.load_symbols(text)
+            pp = PythonArchBuilder(ls, path, file_symbol.parent)
+            pp.load_arch(text, version)
 
-    def add_to_rebuild(self, symbol):
-        for d in symbol.dependents:
-            sym = self.symbols.get_symbol(d)
-            file = sym.paths[0]
-            if file not in self.to_rebuild:
-                self.to_rebuild[file] = [sym]
-            else:
-                self.to_rebuild[file].append(sym)
-        for s in symbol.symbols:
-            self.add_to_rebuild(s)
+    def add_to_rebuild(self, symbol_path):
+        """ add a symbol (with its tree path) to the list of rebuild to do."""
+        index = 0
+        while index != len(self.to_rebuild):
+            s = self.to_rebuild[s]
+            if len(s) < len(symbol_path):
+                if s == symbol_path[:len(s)]:
+                    return
+            elif symbol_path == s[:len(symbol_path)]:
+                del self.to_rebuild[index]
+                index -=1
+            index += 1
+        self.to_rebuild.append(symbol_path)

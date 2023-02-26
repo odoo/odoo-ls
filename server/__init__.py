@@ -20,7 +20,7 @@ from . import inferencer
 from . import model
 from . import odoo
 from . import module
-from . import pythonParser
+from . import pythonArchBuilder
 from . import pythonUtils
 from . import server
 from . import symbol

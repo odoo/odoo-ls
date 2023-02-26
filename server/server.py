@@ -23,8 +23,9 @@ import uuid
 from json import JSONDecodeError
 from typing import Optional
 from .odoo import Odoo
-from server.pythonParser import PythonParser
-from server.pythonUtils import pathname2uri, PythonUtils
+from server.pythonArchBuilder import PythonArchBuilder
+from server.pythonUtils import PythonUtils
+from server.fileMgr import *
 import urllib.parse
 import urllib.request
 
@@ -121,7 +122,7 @@ def definition(params: TextDocumentPositionParams):
         symbol = PythonUtils.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
     if symbol:
         #TODO paths?
-        a = Location(uri=pathname2uri(symbol.paths[0]), range=Range(start=Position(line=symbol.startLine-1, character=0), end=Position(line=symbol.endLine-1, character=0)))
+        a = Location(uri=FileMgr.pathname2uri(symbol.paths[0]), range=Range(start=Position(line=symbol.startLine-1, character=0), end=Position(line=symbol.endLine-1, character=0)))
         return [a]
     return []
 
@@ -138,7 +139,7 @@ def did_change(ls, params: DidChangeTextDocumentParams):
     #TODO find better than this small hack for windows (get disk letter in capital)
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
-    Odoo.get(ls).file_change(ls, final_path, source)
+    Odoo.get(ls).file_change(ls, final_path, source, params.text_document.version)
     print("done")
 
 

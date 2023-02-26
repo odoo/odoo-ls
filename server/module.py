@@ -2,8 +2,8 @@ import ast
 from .constants import *
 import os
 from .odoo import * 
-from .pythonUtils import *
-from server.pythonParser import PythonParser
+from .fileMgr import *
+from server.pythonArchBuilder import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -37,7 +37,7 @@ class Module():
             print("already in: " + self.dir_name)
         Odoo.get().modules[self.dir_name] = self
         if diagnostics:
-            ls.publish_diagnostics(pathname2uri(manifestPath), diagnostics)
+            ls.publish_diagnostics(FileMgr.pathname2uri(manifestPath), diagnostics)
 
     def load(self, ls):
         if self.loaded:
@@ -45,11 +45,11 @@ class Module():
         diagnostics = []
         diagnostics += self.load_depends(ls)
         diagnostics += self.load_data()
-        diagnostics += self.load_python_files(ls, self.rootPath)
+        diagnostics += self.load_arch(ls, self.rootPath)
         self.loaded = True
         print("loaded: " + self.dir_name)
         if diagnostics:
-            ls.publish_diagnostics(pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
+            ls.publish_diagnostics(FileMgr.pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
     
     def load_manifest(self, manifestPath):
         """ Load manifest to identify the module characteristics 
@@ -85,9 +85,9 @@ class Module():
     def load_data(self):
         return []
 
-    def load_python_files(self, ls, path):
-        parser = PythonParser(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
-        parser.load_symbols()
+    def load_arch(self, ls, path):
+        parser = PythonArchBuilder(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
+        parser.load_arch()
         return []
     
     def is_in_deps(self, module_name):

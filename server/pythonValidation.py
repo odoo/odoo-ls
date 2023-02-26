@@ -9,7 +9,7 @@ from .model import *
 from .pythonUtils import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
-class ClassContentCache():
+class ClassContentCacheValidation():
 
     def __init__(self):
         self.modelName = None
@@ -17,78 +17,57 @@ class ClassContentCache():
         self.modelInherits = []
         self.log_access = True
 
-class PythonParser(ast.NodeVisitor):
-    """This class is linked to a Symbol and can extract/build relatad data. 
-    It can be used to load depending Symbols from python files."""
+class PythonValidation(ast.NodeVisitor):
+    """The python Valitation aims to validate the end code in symbols. No structural changes are allowed here. No new
+    symbol, no symbol deletion. however, each line of code is validated and diagnostics are thrown to client if the code
+    can't be validated"""
 
-    def __init__(self, ls, path, symbol):
-        self.grammar = Odoo.get().grammar
+    def __init__(self, ls, path, parentSymbol, subPathTree=[]):
+        """Prepare an arch builder to parse the element at 'path' + subPathTree"""
         self.filePath = path
-        self.symbol = [symbol] # symbols we are parsing
+        self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
         self.currentModule = None
-        self.tree = [] #cache tree of the current symbol
-    
-    def load_symbols(self, source=None):
-        """ Load all symbols from the symbol. It will follow all imports and create new Symbols from files.
-        if source is not None, we want to rebuild the symbol from the given code"""
-        if self.symbol[0].get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]) and not source:
+        self.subPathTree = subPathTree
+        self.pathTree = [] #cache tree of the current symbol
+
+    def load_arch(self):
+        """load all symbols at self.path, filtered by self.subPathTree. All dependencies (odoo modules) must have been loaded first."""
+        if self.symStack[-1].get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]):
             return
         self.diagnostics = []
-        #If this is not a python file, check that this is a package and load it
         if not self.filePath.endswith(".py"):
             #check if this is a package:
             if os.path.exists(os.path.join(self.filePath, "__init__.py")):
                 symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
-                if self.symbol[0].get_tree() == ["odoo", "addons"] and \
+                if self.symStack[0].get_tree() == ["odoo", "addons"] and \
                     os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
                     symbol.isModule = True
-                self.symbol[-1].add_symbol([], symbol)
-                self.symbol.append(symbol)
+                self.symStack[-1].add_symbol([], symbol)
+                self.symStack.append(symbol)
                 self.filePath = os.path.join(self.filePath, "__init__.py")
             else:
                 symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
-                self.symbol[-1].add_symbol([], symbol)
-                self.symbol.append(symbol)
-                return self.symbol[1]
+                self.symStack[-1].add_symbol([], symbol)
+                self.symStack.append(symbol)
+                return self.symStack[1]
         else:
             symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
-            self.symbol[-1].add_symbol([], symbol)
-            self.symbol.append(symbol)
+            self.symStack[-1].add_symbol([], symbol)
+            self.symStack.append(symbol)
         #parse the Python file
-        self.tree = self.symbol[-1].get_tree()
-        try:
-            if source:
-                tree = ast.parse(source, self.filePath)
-            else:
-                with open(self.filePath, "rb") as f:
-                    content = f.read()
-                #tree = self.grammar.parse(content, error_recovery=False, path=self.filePath, cache = False)
-                tree = ast.parse(content, self.filePath)
-            Odoo.get().files[self.filePath] = tree
-        except SyntaxError as e:
-            self.ls.publish_diagnostics(pathname2uri(self.filePath), [Diagnostic(
-                range = Range(
-                    start=Position(line=e.lineno-1, character=e.offset),
-                    end=Position(line=e.lineno-1, character=e.offset+1) if sys.version_info < (3, 10) else \
-                        Position(line=e.end_lineno-1, character=e.end_offset)
-                ),
-                message = type(e).__name__ + ": " + e.msg,
-                source = EXTENSION_NAME
-            )])
-            return False
-        except ValueError as e:
-            print("Unable to parse file: " + self.filePath + ". Value error.")
-        self.load_symbols_from_ast(tree)
+        self.tree = self.symStack[-1].get_tree()
+        fileInfo = FileMgr.getFileInfo(self.filePath)
+        self.load_symbols_from_ast(fileInfo["ast"])
         if self.diagnostics:
-            self.ls.publish_diagnostics(pathname2uri(self.filePath), self.diagnostics)
-        return self.symbol[1]
+            self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
+        return self.symStack[1]
 
     def load_symbols_from_ast(self, ast):
-        moduleName = self.symbol[-1].getModule()
+        moduleName = self.symStack[-1].getModule()
         if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
             self.currentModule = Odoo.get().modules[moduleName]
         self.visit(ast)
@@ -118,13 +97,13 @@ class PythonParser(ast.NodeVisitor):
             if level > len(Path(self.filePath).parts):
                 print("ERROR: level is too big ! The current path doesn't have enough parents")
                 return
-            if self.symbol[1].type == "package":
+            if self.symStack[1].type == "package":
                 #as we are at directory level, not init.py
                 level -= 1
             if level == 0:
-                packages = self.symbol[1].get_tree()
+                packages = self.symStack[1].get_tree()
             else:
-                packages = self.symbol[1].get_tree()[:-level]
+                packages = self.symStack[1].get_tree()[:-level]
 
         for name, asname in names:
             packages_copy = packages[:]
@@ -146,7 +125,7 @@ class PythonParser(ast.NodeVisitor):
                             full_path = path + os.sep + element
                             if os.path.isdir(full_path):
                                 if current_symbol.get_tree() == ["odoo", "addons"]:
-                                    module = self.symbol[-1].getModule()
+                                    module = self.symStack[-1].getModule()
                                     if module and not Odoo.get().modules[module].is_in_deps(element) and not self.safeImport[-1]:
                                         self.diagnostics.append(Diagnostic(
                                             range = Range(
@@ -162,12 +141,12 @@ class PythonParser(ast.NodeVisitor):
                                         """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
                                         It means we are in a file like odoo/*, and modules are not loaded yet."""
                                         return
-                                parser = PythonParser(self.ls, full_path, current_symbol)
-                                importSymbol = parser.load_symbols()
+                                parser = PythonArchBuilder(self.ls, full_path, current_symbol)
+                                importSymbol = parser.load_arch()
                                 break
                             elif os.path.isfile(full_path + ".py"):
-                                parser = PythonParser(self.ls, full_path + ".py", current_symbol)
-                                importSymbol = parser.load_symbols()
+                                parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol)
+                                importSymbol = parser.load_arch()
                                 break
                     else:
                         importSymbol = next_step_symbols
@@ -176,6 +155,7 @@ class PythonParser(ast.NodeVisitor):
                     # in case of *, we have to populate inferencer with relevant symbols and import all subsymbols in current symbol
                     # this implementation respects the python import order, and submodules will be imported too only if they are known 
                     # due to a previous import statement.
+                    #TODO add dependents to packages_copy before *
                     to_browse = [importSymbol]
                     while to_browse:
                         current_symbol = to_browse.pop()
@@ -183,10 +163,15 @@ class PythonParser(ast.NodeVisitor):
                             if symbol.type == "package":
                                 to_browse.append(symbol)
                             elif symbol.type in ["class", "function", "variable"]:
-                                self.symbol[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
+                                #no dependents for *, the needed symbols will do it in the file later, the import is not invalidated
+                                self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
             if elements[-1] != '*':
-                self.symbol[-1].inferencer.addInference(
-                    Inference(asname if asname else name, Odoo.get().symbols.get_symbol(packages_copy), node.lineno)
+                sym = Odoo.get().symbols.get_symbol(packages_copy)
+                if sym and level > 0:
+                    if self.symStack[-1].get_tree() not in sym.dependents:
+                        sym.dependents.append(self.symStack[-1].get_tree())
+                self.symStack[-1].inferencer.addInference(
+                    Inference(asname if asname else name, sym, node.lineno)
                 )
     
     def visit_Assign(self, node):
@@ -194,24 +179,24 @@ class PythonParser(ast.NodeVisitor):
         for variable, value in assigns.items():
             #TODO add other inference type than Name
             if isinstance(value, ast.Name):
-                infered = Inferencer.inferNameInScope(value.id, value.lineno, self.symbol[-1])
+                infered = Inferencer.inferNameInScope(value.id, value.lineno, self.symStack[-1])
                 if infered:
                     symbol_infer = infered.symbol
-                self.symbol[-1].inferencer.addInference(Inference(
+                self.symStack[-1].inferencer.addInference(Inference(
                     variable,
                     symbol_infer if infered else None,
                     node.lineno
                 ))
             if isinstance(value, ast.Call):
-                symbol_infer = PythonUtils.evaluateTypeAST(value, self.symbol[-1])
+                symbol_infer = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
                 if symbol_infer:
                     symbol_infer = symbol_infer.evaluationType
-                self.symbol[-1].inferencer.addInference(Inference(
+                self.symStack[-1].inferencer.addInference(Inference(
                     variable,
                     symbol_infer,
                     node.lineno
                 ))
-            if self.symbol[-1].type == "class":
+            if self.symStack[-1].type == "class":
                 if variable == "_name":
                     if isinstance(value, ast.Constant) and value.value != None: #can be None for baseModel
                         self.classContentCache[-1].modelName = value.value
@@ -232,13 +217,13 @@ class PythonParser(ast.NodeVisitor):
                 elif variable == "_log_access":
                     if isinstance(value, ast.Constant):
                         self.classContentCache[-1].log_access = bool(value.value)
-            if self.symbol[-1].type in ["class", "file"]:
-                if variable not in self.symbol[-1].symbols:
+            if self.symStack[-1].type in ["class", "file"]:
+                if variable not in self.symStack[-1].symbols:
                     variable = Symbol(variable, "variable", self.filePath)
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
-                    variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symbol[-1])
-                    self.symbol[-1].add_symbol([], variable)
+                    variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
+                    self.symStack[-1].add_symbol([], variable)
                 else:
                     print("Warning: symbol already defined")
 
@@ -246,22 +231,22 @@ class PythonParser(ast.NodeVisitor):
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        if self.symbol[-1].type in ["file", "function"]:
-            self.symbol[-1].inferencer.addInference(Inference(
+        if self.symStack[-1].type in ["file", "function"]:
+            self.symStack[-1].inferencer.addInference(Inference(
                 node.name,
                 symbol,
                 node.lineno
             ))
-        self.symbol[-1].add_symbol([], symbol)
-        self.symbol.append(symbol)
+        self.symStack[-1].add_symbol([], symbol)
+        self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
-        self.symbol.pop()
+        self.symStack.pop()
     
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
             return attr.id
         elif isinstance(attr, ast.Attribute):
-            return PythonParser._extract_base_name(attr.value) + "." + attr.attr
+            return PythonArchBuilder._extract_base_name(attr.value) + "." + attr.attr
         elif isinstance(attr, ast.Call):
             pass
         return ""
@@ -270,9 +255,9 @@ class PythonParser(ast.NodeVisitor):
         bases = []
         #search for base classes symbols
         for base in node.bases:
-            full_base = PythonParser._extract_base_name(base)
+            full_base = PythonArchBuilder._extract_base_name(base)
             if full_base:
-                inference = self.symbol[-1].inferName(full_base.split(".")[0], node.lineno)
+                inference = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
                 if not inference or not inference.symbol:
                     continue
                 symbol = inference.symbol
@@ -286,19 +271,19 @@ class PythonParser(ast.NodeVisitor):
                         inferred = symbol.parent.inferencer.inferName(symbol.name, 10000000) #TODO 1000000 ?wtf?
                         if inferred and inferred.symbol and inferred.symbol.type == "class":
                             bases += [inferred.symbol]
-        if node.name not in self.symbol[-1].symbols:
+        if node.name not in self.symStack[-1].symbols:
             symbol = Symbol(node.name, "class", self.filePath)
             symbol.evaluationType = symbol
             symbol.startLine = node.lineno
             symbol.endLine = node.end_lineno
             symbol.classData = ClassData()
-            self.symbol[-1].inferencer.addInference(Inference(
+            self.symStack[-1].inferencer.addInference(Inference(
                 node.name,
                 symbol,
                 node.lineno
             ))
-            self.symbol[-1].add_symbol([], symbol)
-            self.symbol.append(symbol)
+            self.symStack[-1].add_symbol([], symbol)
+            self.symStack.append(symbol)
             for base in bases:
                 if symbol.get_tree() not in base.dependents:
                     base.dependents.append(symbol.get_tree())
@@ -335,7 +320,7 @@ class PythonParser(ast.NodeVisitor):
                 else:
                     Odoo.get().models[data.modelName].impl_sym.append(symbol)
             self.add_magic_fields(symbol, node, data)
-            self.symbol.pop()
+            self.symStack.pop()
     
     def add_magic_fields(self, symbol, node, data):
         def create_symbol(name, type, lineno):

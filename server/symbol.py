@@ -44,6 +44,20 @@ class Symbol():
     
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
+    
+    def unload(self):
+        from .odoo import Odoo
+        #1: collect all symbols to revalidate
+        symbols = [self]
+        while symbols:
+            for d in symbols[0].dependents:
+                Odoo.get().add_to_rebuild(d.get_tree())
+            for s in symbols[0].symbols.values():
+                symbols.append(s)
+            del symbols[0]
+        #2: delete symbol
+        self.parent.symbols.pop(self.name)
+        self.type = "dirty" #to help debugging
 
     def get_tree(self):
         ancestors = []
