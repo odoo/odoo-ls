@@ -20,7 +20,7 @@ class ClassContentCache():
 class PythonArchBuilder(ast.NodeVisitor):
     """The python arch builder aims to build symbols from files and directories. Only structural diagnostics
     can be thrown from here (invalid base class, etc...). Any validation diagnostics should be done byafter with
-    the PythonValidation"""
+    the PythonValidator"""
 
     def __init__(self, ls, path, parentSymbol, subPathTree=[], importMode=False):
         """Prepare an arch builder to parse the element at 'path' + subPathTree.
@@ -152,7 +152,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                                             ))
                                         #We return in any case here. the module is not in dependencies, so it could be not
                                         #loaded and load it now could break the import system. example mail_thread.py:L2041
-                                        #If the import is really needed for inferencer, it will be done in pythonValidation, not here
+                                        #If the import is really needed for inferencer, it will be done in pythonValidator, not here
                                         return
                                     if not module:
                                         """If we are searching for a odoo.addons.* element, skip it if we are not in a module.

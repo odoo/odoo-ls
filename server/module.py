@@ -4,6 +4,7 @@ import os
 from .odoo import * 
 from .fileMgr import *
 from server.pythonArchBuilder import *
+from server.pythonValidator import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -23,6 +24,7 @@ class Module():
     dir_name = ""
     depends = ["base"]
     data = []
+    mainSymbol = None
 
     def __init__(self, ls, dir_path):
         self.dir_name = os.path.split(dir_path)[1]
@@ -39,18 +41,23 @@ class Module():
         if diagnostics:
             ls.publish_diagnostics(FileMgr.pathname2uri(manifestPath), diagnostics)
 
-    def load(self, ls):
+    def load_arch(self, ls):
         if self.loaded:
             return
         diagnostics = []
         diagnostics += self.load_depends(ls)
-        diagnostics += self.load_data()
-        diagnostics += self.load_arch(ls, self.rootPath)
+        diagnostics += self._load_data()
+        diagnostics += self._load_arch(ls, self.rootPath)
         self.loaded = True
         print("loaded: " + self.dir_name)
         if diagnostics:
             ls.publish_diagnostics(FileMgr.pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
     
+    def validate(self, ls):
+        if self.mainSymbol:
+            validator = PythonValidator(ls, self.mainSymbol)
+            validator.validate()
+
     def load_manifest(self, manifestPath):
         """ Load manifest to identify the module characteristics 
         Returns list of diagnostics to publish in manifest file """
@@ -70,7 +77,7 @@ class Module():
         diagnostics = []
         for depend in self.depends:
             if depend in Odoo.get().modules:
-                Odoo.get().modules[depend].load(ls)
+                Odoo.get().modules[depend].load_arch(ls)
             else:
                 diagnostics.append(Diagnostic(
                     range = Range(
@@ -82,12 +89,12 @@ class Module():
                 ))
         return diagnostics
     
-    def load_data(self):
+    def _load_data(self):
         return []
 
-    def load_arch(self, ls, path):
+    def _load_arch(self, ls, path):
         parser = PythonArchBuilder(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
-        parser.load_arch()
+        self.mainSymbol = parser.load_arch()
         return []
     
     def is_in_deps(self, module_name):

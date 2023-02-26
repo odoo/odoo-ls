@@ -1,0 +1,18 @@
+
+build a valid structure for hovering and go to definition
+    -> basic validation (complete arch build)
+        -> follow build construction and order, but validate files if an inference is needed ?
+    -> data rebuild on file change
+implement hover and go to definition "under cursor detetion"
+
+
+
+
+
+
+
+
+
+Deployment
+    -> add pygls and parso as python dependencies
+    -> separate repositories

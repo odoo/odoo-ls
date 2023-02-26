@@ -9,7 +9,7 @@ from .model import *
 from .pythonUtils import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
-class ClassContentCacheValidation():
+class ClassContentCacheValidator():
 
     def __init__(self):
         self.modelName = None
@@ -17,13 +17,13 @@ class ClassContentCacheValidation():
         self.modelInherits = []
         self.log_access = True
 
-class PythonValidation(ast.NodeVisitor):
-    """The python Valitation aims to validate the end code in symbols. No structural changes are allowed here. No new
+class PythonValidator(ast.NodeVisitor):
+    """The python Validator aims to validate the end code in symbols. No structural changes are allowed here. No new
     symbol, no symbol deletion. however, each line of code is validated and diagnostics are thrown to client if the code
     can't be validated"""
 
-    def __init__(self, ls, path, parentSymbol, subPathTree=[]):
-        """Prepare an arch builder to parse the element at 'path' + subPathTree"""
+    def __init__(self, ls, symbol):
+        """Prepare an validator to validate the given symbol"""
         self.filePath = path
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []

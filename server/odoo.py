@@ -123,7 +123,9 @@ class Odoo():
                 Module(ls, os.path.join(path, dir))
         if FULL_LOAD_AT_STARTUP:
             for module in Odoo.get().modules.values():
-                module.load(ls)
+                module.load_arch(ls)
+            for module in Odoo.get().modules.values():
+                module.validate(ls)
 
 
         try:
