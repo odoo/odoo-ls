@@ -22,8 +22,10 @@ class PythonArchBuilder(ast.NodeVisitor):
     can be thrown from here (invalid base class, etc...). Any validation diagnostics should be done byafter with
     the PythonValidation"""
 
-    def __init__(self, ls, path, parentSymbol, subPathTree=[]):
-        """Prepare an arch builder to parse the element at 'path' + subPathTree"""
+    def __init__(self, ls, path, parentSymbol, subPathTree=[], importMode=False):
+        """Prepare an arch builder to parse the element at 'path' + subPathTree.
+        if importMode, the symbol will be not built if they already exists. It is used to check that a module/file has
+        been imported or import it without reconstructing it multiple time"""
         self.filePath = path
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
@@ -32,6 +34,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.diagnostics = []
         self.currentModule = None
         self.subPathTree = subPathTree
+        self.importMode = importMode
         self.pathTree = [] #cache tree of the current symbol
 
     def load_arch(self, content = False, version = 1):
@@ -45,6 +48,8 @@ class PythonArchBuilder(ast.NodeVisitor):
         #TODO ensure that identical name in same file doesn't throw a reload on first one
         existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]] + self.subPathTree)
         if existing_symbol:
+            if self.importMode:
+                return existing_symbol
             existing_symbol.unload()
         self.diagnostics = []
         if not self.filePath.endswith(".py"):
@@ -153,82 +158,23 @@ class PythonArchBuilder(ast.NodeVisitor):
                                         """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
                                         It means we are in a file like odoo/*, and modules are not loaded yet."""
                                         return
-                                parser = PythonArchBuilder(self.ls, full_path, current_symbol)
-                                importSymbol = parser.load_arch()
+                                parser = PythonArchBuilder(self.ls, full_path, current_symbol, importMode=True)
+                                parser.load_arch()
                                 break
                             elif os.path.isfile(full_path + ".py"):
-                                parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol)
-                                importSymbol = parser.load_arch()
+                                parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol, importMode=True)
+                                parser.load_arch()
                                 break
-                    else:
-                        importSymbol = next_step_symbols
                     packages_copy += [element]
-                else:
-                    # in case of *, we have to populate inferencer with relevant symbols and import all subsymbols in current symbol
-                    # this implementation respects the python import order, and submodules will be imported too only if they are known 
-                    # due to a previous import statement.
-                    #TODO add dependents to packages_copy before *
-                    to_browse = [importSymbol]
-                    while to_browse:
-                        current_symbol = to_browse.pop()
-                        for symbol in current_symbol.symbols.values():
-                            if symbol.type == "package":
-                                to_browse.append(symbol)
-                            elif symbol.type in ["class", "function", "variable"]:
-                                #no dependents for *, the needed symbols will do it in the file later, the import is not invalidated
-                                self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
             if elements[-1] != '*':
                 sym = Odoo.get().symbols.get_symbol(packages_copy)
                 if sym and level > 0:
                     if self.symStack[-1].get_tree() not in sym.dependents:
                         sym.dependents.append(self.symStack[-1].get_tree())
-                self.symStack[-1].inferencer.addInference(
-                    Inference(asname if asname else name, sym, node.lineno)
-                )
     
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
         for variable, value in assigns.items():
-            #TODO add other inference type than Name
-            if isinstance(value, ast.Name):
-                infered = Inferencer.inferNameInScope(value.id, value.lineno, self.symStack[-1])
-                if infered:
-                    symbol_infer = infered.symbol
-                self.symStack[-1].inferencer.addInference(Inference(
-                    variable,
-                    symbol_infer if infered else None,
-                    node.lineno
-                ))
-            if isinstance(value, ast.Call):
-                symbol_infer = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
-                if symbol_infer:
-                    symbol_infer = symbol_infer.evaluationType
-                self.symStack[-1].inferencer.addInference(Inference(
-                    variable,
-                    symbol_infer,
-                    node.lineno
-                ))
-            if self.symStack[-1].type == "class":
-                if variable == "_name":
-                    if isinstance(value, ast.Constant) and value.value != None: #can be None for baseModel
-                        self.classContentCache[-1].modelName = value.value
-                elif variable == "_inherit":
-                    if isinstance(value, ast.Constant):
-                        self.classContentCache[-1].modelInherit = [value.value]
-                    elif isinstance(value, ast.List):
-                        self.classContentCache[-1].modelInherit = []
-                        for v in value.elts:
-                            if isinstance(v, ast.Constant):
-                                self.classContentCache[-1].modelInherit += [v.value]
-                elif variable == "_inherits":
-                    if isinstance(value, ast.Dict):
-                        self.classContentCache[-1].modelInherits = {}
-                        for k, v in zip(value.keys, value.values):
-                            if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
-                                self.classContentCache[-1].modelInherits[k.value] = v.value
-                elif variable == "_log_access":
-                    if isinstance(value, ast.Constant):
-                        self.classContentCache[-1].log_access = bool(value.value)
             if self.symStack[-1].type in ["class", "file"]:
                 if variable not in self.symStack[-1].symbols:
                     variable = Symbol(variable, "variable", self.filePath)
@@ -243,12 +189,6 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        if self.symStack[-1].type in ["file", "function"]:
-            self.symStack[-1].inferencer.addInference(Inference(
-                node.name,
-                symbol,
-                node.lineno
-            ))
         self.symStack[-1].add_symbol([], symbol)
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
@@ -264,93 +204,18 @@ class PythonArchBuilder(ast.NodeVisitor):
         return ""
 
     def visit_ClassDef(self, node):
-        bases = []
-        #search for base classes symbols
-        for base in node.bases:
-            full_base = PythonArchBuilder._extract_base_name(base)
-            if full_base:
-                inference = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
-                if not inference or not inference.symbol:
-                    continue
-                symbol = inference.symbol
-                if len(full_base.split(".")) > 1:
-                    symbol = symbol.get_symbol(full_base.split(".")[1:])
-                if symbol:
-                    if symbol.type == "class":
-                        bases += [symbol]
-                    elif symbol.type == "variable":
-                        #Ouch, this is not a class :/ Last chance, we can try to evaluate the variable to check if an inferencer has linked it to a Class
-                        inferred = symbol.parent.inferencer.inferName(symbol.name, 10000000) #TODO 1000000 ?wtf?
-                        if inferred and inferred.symbol and inferred.symbol.type == "class":
-                            bases += [inferred.symbol]
-        if node.name not in self.symStack[-1].symbols:
+        if node.name not in self.symStack[-1].symbols: #TODO ouch, this is the last that should be kept...
             symbol = Symbol(node.name, "class", self.filePath)
             symbol.evaluationType = symbol
             symbol.startLine = node.lineno
             symbol.endLine = node.end_lineno
             symbol.classData = ClassData()
-            self.symStack[-1].inferencer.addInference(Inference(
-                node.name,
-                symbol,
-                node.lineno
-            ))
             self.symStack[-1].add_symbol([], symbol)
             self.symStack.append(symbol)
-            for base in bases:
-                if symbol.get_tree() not in base.dependents:
-                    base.dependents.append(symbol.get_tree())
-                symbol.classData.bases.append(base.get_tree())
             self.classContentCache.append(ClassContentCache())
             ast.NodeVisitor.generic_visit(self, node)
             data = self.classContentCache.pop()
-            if symbol.is_inheriting_from(["odoo", "models", "BaseModel"]):
-                symbol.classData.modelData = ModelData()
-            if data.modelInherit and not data.modelName:
-                data.modelName = data.modelInherit[0] if len(data.modelInherit) == 1 else symbol.name #v15 behaviour
-            for inh in data.modelInherit:
-                orig_module = ""
-                if inh in Odoo.get().models:
-                    orig_module = Odoo.get().models[inh].get_main_symbol().getModule()
-                if not orig_module or (not self.currentModule.is_in_deps(orig_module) and \
-                    orig_module != self.currentModule.dir_name):
-                    self.diagnostics.append(Diagnostic(
-                        range = Range(
-                            start=Position(line=node.lineno-1, character=node.col_offset),
-                            end=Position(line=node.lineno-1, character=500)
-                        ),
-                        message = node.name + " is inheriting from " + inh + " but this model is not defined in any loaded module. Please fix the dependencies of the module " + self.currentModule.name,
-                        source = EXTENSION_NAME
-                    ))
-                else:
-                    symbol.classData.modelData.inherit.append(inh)
-            if data.modelName:
-                if not symbol.classData.modelData:
-                    print("oups")
-                symbol.classData.modelData.name = data.modelName
-                if data.modelName not in Odoo.get().models:
-                    Odoo.get().models[data.modelName] = Model(data.modelName, symbol)
-                else:
-                    Odoo.get().models[data.modelName].impl_sym.append(symbol)
-            self.add_magic_fields(symbol, node, data)
             self.symStack.pop()
-    
-    def add_magic_fields(self, symbol, node, data):
-        def create_symbol(name, type, lineno):
-            variable = Symbol(name, "variable", self.filePath)
-            variable.startLine = lineno
-            variable.endLine = lineno
-            variable.evaluationType = Symbol(type, "primitive", "")
-            symbol.add_symbol([], variable)
-            return variable
-        if symbol.get_tree() == ["odoo", "models", "Model"]:
-            create_symbol("id", "constant", node.lineno)
-            create_symbol("display_name", "constant", node.lineno)
-            create_symbol("_log_access", "constant", node.lineno)
-            if data.log_access:
-                create_symbol("create_date", "constant", node.lineno)
-                create_symbol("create_uid", "constant", node.lineno)
-                create_symbol("write_date", "constant", node.lineno)
-                create_symbol("write_uid", "constant", node.lineno)
 
 
     def unpack_assign(self, node_targets, node_values, acc = {}):
