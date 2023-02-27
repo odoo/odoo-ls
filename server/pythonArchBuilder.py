@@ -204,18 +204,20 @@ class PythonArchBuilder(ast.NodeVisitor):
         return ""
 
     def visit_ClassDef(self, node):
-        if node.name not in self.symStack[-1].symbols: #TODO ouch, this is the last that should be kept...
-            symbol = Symbol(node.name, "class", self.filePath)
-            symbol.evaluationType = symbol
-            symbol.startLine = node.lineno
-            symbol.endLine = node.end_lineno
-            symbol.classData = ClassData()
-            self.symStack[-1].add_symbol([], symbol)
-            self.symStack.append(symbol)
-            self.classContentCache.append(ClassContentCache())
-            ast.NodeVisitor.generic_visit(self, node)
-            data = self.classContentCache.pop()
-            self.symStack.pop()
+        old_sym = self.symStack[-1].symbols.pop(old_sym, False)
+        if old_sym:
+            self.symStack[-1].localSymbols.append(old_sym)
+        symbol = Symbol(node.name, "class", self.filePath)
+        symbol.evaluationType = symbol
+        symbol.startLine = node.lineno
+        symbol.endLine = node.end_lineno
+        symbol.classData = ClassData()
+        self.symStack[-1].add_symbol([], symbol)
+        self.symStack.append(symbol)
+        self.classContentCache.append(ClassContentCache())
+        ast.NodeVisitor.generic_visit(self, node)
+        data = self.classContentCache.pop()
+        self.symStack.pop()
 
 
     def unpack_assign(self, node_targets, node_values, acc = {}):

@@ -34,7 +34,12 @@ class Symbol():
         self.paths = paths if isinstance(paths, list) else [paths]
         #symbols is a dictionnary of all symbols that is contained by the current symbol
         self.symbols = {}
+        #List of symbols not available from outside as they are redefined later in the same symbol 
+        #(ex: two classes with same name in same file. Only last will be available for imports, 
+        # but the other can be used locally)
+        self.localSymbols = [] 
         self.dependents = []
+        self.diagnostics = []
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -146,6 +151,7 @@ class Symbol():
 
     def get_scope_symbol(self, line):
         """return the symbol (class or function) the closest to the given line """
+        #TODO search in localSymbols too
         symbol = self
         for s in self.symbols.values():
             if s.startLine <= line and s.endLine >= line:
@@ -155,6 +161,7 @@ class Symbol():
     
     def get_class_scope_symbol(self, line):
         """return the class symbol closest to the given line. If the line is not in a class, return None. """
+        #TODO search in localSymbols too
         symbol = self
         assert self.type == "file", "can only be called on file symbols"
         if self.type == 'class':
@@ -168,6 +175,7 @@ class Symbol():
         return symbol
     
     def inferName(self, name, line):
+        #TODO search in localSymbols too?
         local = self.inferencer.inferName(name, line)
         if self.type == "file":
             return local

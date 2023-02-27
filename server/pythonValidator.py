@@ -23,13 +23,11 @@ class PythonValidator(ast.NodeVisitor):
     can't be validated"""
 
     def __init__(self, ls, symbol):
-        """Prepare an validator to validate the given symbol"""
-        self.filePath = path
-        self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
+        """Prepare an validator to validate the given file. """
+        self.symStack = [symbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
-        self.diagnostics = []
         self.currentModule = None
         self.subPathTree = subPathTree
         self.pathTree = [] #cache tree of the current symbol
