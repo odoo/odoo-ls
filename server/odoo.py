@@ -68,6 +68,10 @@ class Odoo():
                         section=CONFIGURATION_SECTION)
                 ])).result()
                 Odoo.instance = Odoo()
+                Odoo.instance.symbols.paths = []
+                for path in sys.path:
+                    if os.path.isdir(path):
+                        Odoo.instance.symbols.paths.append(path)
                 Odoo.instance.grammar = parso.load_grammar(version="3.8") #config or choose automatically
                 Odoo.instance.start_build_time = time.time()
                 Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']

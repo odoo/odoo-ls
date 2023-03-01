@@ -46,7 +46,7 @@ class Symbol():
         self.inferencer = Inferencer()
         self.startLine = 0
         self.endLine = 0
-        self.validated = False
+        self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
     
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"

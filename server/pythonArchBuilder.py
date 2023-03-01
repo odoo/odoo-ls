@@ -87,7 +87,10 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
+        try:
+            self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
+        except Exception as e:
+            print("here")
 
     def visit_ImportFrom(self, node):
         self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
@@ -124,13 +127,11 @@ class PythonArchBuilder(ast.NodeVisitor):
             elements = from_stmt.split(".") if from_stmt != None else []
             elements += name.split(".") if name != None else []
 
+            current_symbol = Odoo.get().symbols.get_symbol(packages_copy)
+            next_step_symbols = current_symbol
             for element in elements:
                 if element != '*':
-                    current_symbol = Odoo.get().symbols.get_symbol(packages_copy)
-                    if not current_symbol:
-                        if packages_copy and packages_copy[0] == "odoo":
-                            pass#print(packages_copy)
-                        break
+                    current_symbol = next_step_symbols
                     next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
                     if not next_step_symbols:
                         symbol_paths = current_symbol.paths if current_symbol else []
@@ -141,6 +142,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                                     module = self.symStack[-1].getModule()
                                     if module and not Odoo.get().modules[module].is_in_deps(element):
                                         if not any(self.safeImport):
+                                            #TODO move from archbuilder to validator
                                             self.diagnostics.append(Diagnostic(
                                                 range = Range(
                                                     start=Position(line=node.lineno-1, character=node.col_offset),
@@ -204,7 +206,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         return ""
 
     def visit_ClassDef(self, node):
-        old_sym = self.symStack[-1].symbols.pop(old_sym, False)
+        old_sym = self.symStack[-1].symbols.pop(node.name, False)
         if old_sym:
             self.symStack[-1].localSymbols.append(old_sym)
         symbol = Symbol(node.name, "class", self.filePath)
@@ -230,6 +232,9 @@ class PythonArchBuilder(ast.NodeVisitor):
             return acc
         if isinstance(node_targets, ast.Name):
             acc[node_targets.id] = node_values
+            return acc
+        if isinstance(node_targets, ast.Tuple) and not isinstance(node_values, ast.Tuple):
+            #we can't unpack (a,b) = c as we can't unpack c here
             return acc
         for target in node_targets:
             if isinstance(target, ast.Name):

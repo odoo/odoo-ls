@@ -23,48 +23,40 @@ class PythonValidator(ast.NodeVisitor):
     can't be validated"""
 
     def __init__(self, ls, symbol):
-        """Prepare an validator to validate the given file. """
+        """Prepare a validator to validate the given file. """
         self.symStack = [symbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.currentModule = None
-        self.subPathTree = subPathTree
+        self.filePath = None
         self.pathTree = [] #cache tree of the current symbol
 
-    def load_arch(self):
-        """load all symbols at self.path, filtered by self.subPathTree. All dependencies (odoo modules) must have been loaded first."""
-        if self.symStack[-1].get_symbol(self.filePath.split(os.sep)[-1].split(".py")[0]):
-            return
+    def validate(self):
+        """validate the symbol"""
         self.diagnostics = []
-        if not self.filePath.endswith(".py"):
-            #check if this is a package:
-            if os.path.exists(os.path.join(self.filePath, "__init__.py")):
-                symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
-                if self.symStack[0].get_tree() == ["odoo", "addons"] and \
-                    os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
-                    symbol.isModule = True
-                self.symStack[-1].add_symbol([], symbol)
-                self.symStack.append(symbol)
-                self.filePath = os.path.join(self.filePath, "__init__.py")
-            else:
-                symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
-                self.symStack[-1].add_symbol([], symbol)
-                self.symStack.append(symbol)
-                return self.symStack[1]
+        if self.symStack[0].validationStatus:
+            return
+        if self.symStack[0].type == 'namespace':
+            print("can't validate a namespace")
+            return
+        elif self.symStack[0].type == 'package':
+            self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
         else:
-            symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
-            self.symStack[-1].add_symbol([], symbol)
-            self.symStack.append(symbol)
-        #parse the Python file
+            self.filePath = self.symStack[0].paths[0]
+        self.symStack[0].validationStatus = 1
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
-        self.load_symbols_from_ast(fileInfo["ast"])
+        if not fileInfo["ast"]: #doesn"t compile
+            return
+        self.validate_ast(fileInfo["ast"])
+        self.symStack[0].validationStatus = 2
+        print("validated " + self.symStack[0].name)
         if self.diagnostics:
             self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
-        return self.symStack[1]
+        return
 
-    def load_symbols_from_ast(self, ast):
+    def validate_ast(self, ast):
         moduleName = self.symStack[-1].getModule()
         if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
             self.currentModule = Odoo.get().modules[moduleName]
@@ -95,84 +87,104 @@ class PythonValidator(ast.NodeVisitor):
             if level > len(Path(self.filePath).parts):
                 print("ERROR: level is too big ! The current path doesn't have enough parents")
                 return
-            if self.symStack[1].type == "package":
+            if self.symStack[0].type == "package":
                 #as we are at directory level, not init.py
                 level -= 1
             if level == 0:
-                packages = self.symStack[1].get_tree()
+                packages = self.symStack[0].get_tree()
             else:
-                packages = self.symStack[1].get_tree()[:-level]
+                packages = self.symStack[0].get_tree()[:-level]
 
         for name, asname in names:
-            packages_copy = packages[:]
-            elements = from_stmt.split(".") if from_stmt != None else []
+            elements = packages[:] + (from_stmt.split(".") if from_stmt != None else [])
             elements += name.split(".") if name != None else []
             importSymbol = None
 
-            for element in elements:
-                if element != '*':
-                    current_symbol = Odoo.get().symbols.get_symbol(packages_copy)
-                    if not current_symbol:
-                        if packages_copy and packages_copy[0] == "odoo":
-                            pass#print(packages_copy)
-                        break
-                    next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
-                    if not next_step_symbols:
-                        symbol_paths = current_symbol.paths if current_symbol else []
-                        for path in symbol_paths:
-                            full_path = path + os.sep + element
-                            if os.path.isdir(full_path):
-                                if current_symbol.get_tree() == ["odoo", "addons"]:
-                                    module = self.symStack[-1].getModule()
-                                    if module and not Odoo.get().modules[module].is_in_deps(element) and not self.safeImport[-1]:
-                                        self.diagnostics.append(Diagnostic(
-                                            range = Range(
-                                                start=Position(line=node.lineno-1, character=node.col_offset),
-                                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                                    Position(line=node.lineno-1, character=node.end_col_offset)
-                                            ),
-                                            message = element + " has not been loaded. It should be in dependencies of " + module,
-                                            source = EXTENSION_NAME
-                                        ))
-                                        return
-                                    if not module:
-                                        """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
-                                        It means we are in a file like odoo/*, and modules are not loaded yet."""
-                                        return
-                                parser = PythonArchBuilder(self.ls, full_path, current_symbol)
-                                importSymbol = parser.load_arch()
-                                break
-                            elif os.path.isfile(full_path + ".py"):
-                                parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol)
-                                importSymbol = parser.load_arch()
-                                break
-                    else:
-                        importSymbol = next_step_symbols
-                    packages_copy += [element]
+            if elements[-1] == "*":
+                pass
+            else:
+                symbol = Odoo.get().symbols.get_symbol(elements)
+                if not symbol:
+                    self.diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=node.lineno-1, character=node.col_offset),
+                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                Position(line=node.lineno-1, character=node.end_col_offset)
+                        ),
+                        message = str(elements) + " not found",
+                        source = EXTENSION_NAME
+                    ))
+                    break
                 else:
-                    # in case of *, we have to populate inferencer with relevant symbols and import all subsymbols in current symbol
-                    # this implementation respects the python import order, and submodules will be imported too only if they are known 
-                    # due to a previous import statement.
-                    #TODO add dependents to packages_copy before *
-                    to_browse = [importSymbol]
-                    while to_browse:
-                        current_symbol = to_browse.pop()
-                        for symbol in current_symbol.symbols.values():
-                            if symbol.type == "package":
-                                to_browse.append(symbol)
-                            elif symbol.type in ["class", "function", "variable"]:
-                                #no dependents for *, the needed symbols will do it in the file later, the import is not invalidated
-                                self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
-            if elements[-1] != '*':
-                sym = Odoo.get().symbols.get_symbol(packages_copy)
-                if sym and level > 0:
-                    if self.symStack[-1].get_tree() not in sym.dependents:
-                        sym.dependents.append(self.symStack[-1].get_tree())
-                self.symStack[-1].inferencer.addInference(
-                    Inference(asname if asname else name, sym, node.lineno)
-                )
+                    if not symbol.validationStatus:
+                        validator = PythonValidator(self.ls, symbol)
+                        validator.validate()
+                    self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
+                    #import symbols, inference them
+
+        return
+
+            # for element in elements:
+            #     if element != '*':
+            #         current_symbol = Odoo.get().symbols.get_symbol(packages_copy)
+            #         next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
+            #         if not next_step_symbols:
+            #             symbol_paths = current_symbol.paths if current_symbol else []
+            #             for path in symbol_paths:
+            #                 full_path = path + os.sep + element
+            #                 if os.path.isdir(full_path):
+            #                     if current_symbol.get_tree() == ["odoo", "addons"]:
+            #                         module = self.symStack[-1].getModule()
+            #                         if module and not Odoo.get().modules[module].is_in_deps(element) and not self.safeImport[-1]:
+            #                             self.diagnostics.append(Diagnostic(
+            #                                 range = Range(
+            #                                     start=Position(line=node.lineno-1, character=node.col_offset),
+            #                                     end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+            #                                         Position(line=node.lineno-1, character=node.end_col_offset)
+            #                                 ),
+            #                                 message = element + " has not been loaded. It should be in dependencies of " + module,
+            #                                 source = EXTENSION_NAME
+            #                             ))
+            #                             return
+            #                         if not module:
+            #                             """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
+            #                             It means we are in a file like odoo/*, and modules are not loaded yet."""
+            #                             return
+            #                     parser = PythonValidator(self.ls, full_path, current_symbol)
+            #                     importSymbol = parser.validate()
+            #                     break
+            #                 elif os.path.isfile(full_path + ".py"):
+            #                     parser = PythonValidator(self.ls, full_path + ".py", current_symbol)
+            #                     importSymbol = parser.validate()
+            #                     break
+            #         else:
+            #             importSymbol = next_step_symbols
+            #         packages_copy += [element]
+            #     else:
+            #         # in case of *, we have to populate inferencer with relevant symbols and import all subsymbols in current symbol
+            #         # this implementation respects the python import order, and submodules will be imported too only if they are known 
+            #         # due to a previous import statement.
+            #         #TODO add dependents to packages_copy before *
+            #         to_browse = [importSymbol]
+            #         while to_browse:
+            #             current_symbol = to_browse.pop()
+            #             for symbol in current_symbol.symbols.values():
+            #                 if symbol.type == "package":
+            #                     to_browse.append(symbol)
+            #                 elif symbol.type in ["class", "function", "variable"]:
+            #                     #no dependents for *, the needed symbols will do it in the file later, the import is not invalidated
+            #                     self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
+            # if elements[-1] != '*':
+            #     sym = Odoo.get().symbols.get_symbol(packages_copy)
+            #     if sym and level > 0:
+            #         if self.symStack[-1].get_tree() not in sym.dependents:
+            #             sym.dependents.append(self.symStack[-1].get_tree())
+            #     self.symStack[-1].inferencer.addInference(
+            #         Inference(asname if asname else name, sym, node.lineno)
+            #     )
     
     def visit_Assign(self, node):
+        return
         assigns = self.unpack_assign(node.targets, node.value, {})
         for variable, value in assigns.items():
             #TODO add other inference type than Name
@@ -226,6 +238,7 @@ class PythonValidator(ast.NodeVisitor):
                     print("Warning: symbol already defined")
 
     def visit_FunctionDef(self, node):
+        return
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
@@ -241,6 +254,7 @@ class PythonValidator(ast.NodeVisitor):
         self.symStack.pop()
     
     def _extract_base_name(attr):
+        return
         if isinstance(attr, ast.Name):
             return attr.id
         elif isinstance(attr, ast.Attribute):
@@ -250,6 +264,7 @@ class PythonValidator(ast.NodeVisitor):
         return ""
 
     def visit_ClassDef(self, node):
+        return
         bases = []
         #search for base classes symbols
         for base in node.bases:
