@@ -5,6 +5,9 @@ class Inference():
         self.symbol = symbol
         self.lineno = lineno
         self.instance = instance
+    
+    def __str__(self):
+        return f"{self.name} - {self.lineno}"
 
 class Inferencer():
 
@@ -23,7 +26,7 @@ class Inferencer():
         """try to resolve a name in the scope of a symbol. If the name is not found, try to resolve it in the scope of the parent symbol, and so on."""
         sym = scope_symbol
         infer = sym.inferencer.inferName(name, line)
-        while sym and not infer and sym.type not in ["file", "package"]:
+        while sym and not infer and sym.type not in ["file", "package", "ext_package"]:
             sym = sym.parent
             infer = sym.inferencer.inferName(name, line)
         return infer

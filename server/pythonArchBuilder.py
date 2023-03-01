@@ -76,6 +76,8 @@ class PythonArchBuilder(ast.NodeVisitor):
         fileInfo = FileMgr.getFileInfo(self.filePath, content, version)
         if fileInfo["ast"]:
             self.load_symbols_from_ast(fileInfo["ast"])
+            if self.symStack[-1].type == "ext_package":
+                fileInfo["ast"] = None
         if self.diagnostics: #TODO not on self anymore.... take diags from fileInfo
             self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
         return self.symStack[1]
@@ -177,7 +179,7 @@ class PythonArchBuilder(ast.NodeVisitor):
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
         for variable, value in assigns.items():
-            if self.symStack[-1].type in ["class", "file"]:
+            if self.symStack[-1].type in ["class", "file", "package"]:
                 if variable not in self.symStack[-1].symbols:
                     variable = Symbol(variable, "variable", self.filePath)
                     variable.startLine = node.lineno

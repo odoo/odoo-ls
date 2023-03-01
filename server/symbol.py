@@ -1,3 +1,4 @@
+import sys
 from server.inferencer import *
 
 class ModelData():
@@ -29,7 +30,7 @@ class Symbol():
 
     def __init__(self, name, type, paths):
         self.name = name
-        self.type = type #root, package, file, class, function, variable
+        self.type = type #root, ext_package, package, file, class, function, variable
         self.evaluationType = None # inferred symbol treename of the type of the variable of function return
         self.paths = paths if isinstance(paths, list) else [paths]
         #symbols is a dictionnary of all symbols that is contained by the current symbol
@@ -46,6 +47,7 @@ class Symbol():
         self.inferencer = Inferencer()
         self.startLine = 0
         self.endLine = 0
+        self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
     
     def __str__(self):
@@ -85,6 +87,10 @@ class Symbol():
             if curr_symbol:
                 return curr_symbol.get_symbol(symbol_names[1:])
         #last chance, if we are in a file, we can return any declared var
+        if self.type not in ["root", "namespace"]:
+            inference = self.inferName(symbol_names[0], 99999999)
+            if inference and inference.symbol:
+                return inference.symbol
         return False
 
     def getModule(self):
@@ -145,7 +151,7 @@ class Symbol():
     def get_in_parents(self, type, stop_same_file = True):
         if self.type == type:
             return self
-        if stop_same_file and self.type in ["file", "package"]: #a __init__.py file is encoded as a Symbol package
+        if stop_same_file and self.type in ["file", "package", "ext_package"]: #a __init__.py file is encoded as a Symbol package
             return None
         return self.parent.get_in_parents(type, stop_same_file)
 
@@ -177,7 +183,7 @@ class Symbol():
     def inferName(self, name, line):
         #TODO search in localSymbols too?
         local = self.inferencer.inferName(name, line)
-        if self.type == "file":
+        if self.type in ["file", "package", "ext_package"]:
             return local
         if not local:
             return self.parent.inferName(name, line)
@@ -188,3 +194,17 @@ class Symbol():
     
     def isModel(self):
         return self.isClass() and bool(self.classData.modelData)
+
+class RootSymbol(Symbol):
+
+    def add_symbol(self, symbol_names, symbol):
+        """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
+        super().add_symbol(symbol_names, symbol)
+        if not symbol_names:
+            for path in symbol.paths:
+                for sysPath in sys.path:
+                    if sysPath == "":
+                        continue
+                    if path.startswith(sysPath):
+                        symbol.type = "ext_package"
+                        return

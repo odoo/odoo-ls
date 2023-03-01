@@ -37,8 +37,8 @@ class PythonValidator(ast.NodeVisitor):
         self.diagnostics = []
         if self.symStack[0].validationStatus:
             return
-        if self.symStack[0].type == 'namespace':
-            print("can't validate a namespace")
+        if self.symStack[0].type in ['namespace', 'ext_package']:
+            print("can't validate a " + self.symStack[0].type)
             return
         elif self.symStack[0].type == 'package':
             self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
@@ -47,7 +47,7 @@ class PythonValidator(ast.NodeVisitor):
         self.symStack[0].validationStatus = 1
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
-        if not fileInfo["ast"]: #doesn"t compile
+        if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
             return
         self.validate_ast(fileInfo["ast"])
         self.symStack[0].validationStatus = 2
@@ -101,23 +101,39 @@ class PythonValidator(ast.NodeVisitor):
             importSymbol = None
 
             if elements[-1] == "*":
-                pass
+                symbol = Odoo.get().symbols.get_symbol(elements[:-1])
+                if not symbol:
+                    continue
+                for sym_child in symbol.symbols.values():
+                    if sym_child.type not in ["file", "package", "namespace"]:
+                        if not sym_child.validationStatus:
+                            validator = PythonValidator(self.ls, sym_child)
+                            validator.validate()
+                        self.symStack[-1].inferencer.addInference(Inference(sym_child.name, sym_child, node.lineno))
+                for inference in symbol.inferencer.inferences:
+                    #TODO link to the final symbol is ok, but add dependency to inference symbol !
+                    self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.symbol, node.lineno))
             else:
                 symbol = Odoo.get().symbols.get_symbol(elements)
                 if not symbol:
-                    self.diagnostics.append(Diagnostic(
-                        range = Range(
-                            start=Position(line=node.lineno-1, character=node.col_offset),
-                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                Position(line=node.lineno-1, character=node.end_col_offset)
-                        ),
-                        message = str(elements) + " not found",
-                        source = EXTENSION_NAME
-                    ))
+                    if elements[0] not in BUILD_IN_LIBS:
+                        self.diagnostics.append(Diagnostic(
+                            range = Range(
+                                start=Position(line=node.lineno-1, character=node.col_offset),
+                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                    Position(line=node.lineno-1, character=node.end_col_offset)
+                            ),
+                            message = str(elements) + " not found",
+                            source = EXTENSION_NAME
+                        ))
                     break
                 else:
-                    if not symbol.validationStatus:
-                        validator = PythonValidator(self.ls, symbol)
+                    parent_file = symbol.get_in_parents("file")
+                    to_validate = symbol
+                    if parent_file:
+                        to_validate = parent_file
+                    if not to_validate.validationStatus:
+                        validator = PythonValidator(self.ls, to_validate)
                         validator.validate()
                     self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
                     #import symbols, inference them

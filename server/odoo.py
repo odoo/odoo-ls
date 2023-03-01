@@ -43,7 +43,7 @@ class Odoo():
     modules = {}
 
     # symbols is the list of declared symbols and their related declaration, filtered by name
-    symbols = Symbol("root", "root", [])
+    symbols = RootSymbol("root", "root", [])
 
     to_rebuild = {} #by files, symbol tree to rebuild
 
@@ -72,7 +72,7 @@ class Odoo():
                 for path in sys.path:
                     if os.path.isdir(path):
                         Odoo.instance.symbols.paths.append(path)
-                Odoo.instance.grammar = parso.load_grammar(version="3.8") #config or choose automatically
+                Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
                 Odoo.instance.start_build_time = time.time()
                 Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
                 Odoo.instance.build_database(ls)
@@ -90,6 +90,7 @@ class Odoo():
 
     def build_base(self, ls):
         from server.pythonArchBuilder import PythonArchBuilder
+        from server.pythonValidator import PythonValidator
         releasePath = os.path.join(self.odooPath, "odoo", "release.py")
         if os.path.exists(releasePath):
             with open(releasePath, "r") as f:
@@ -107,6 +108,8 @@ class Odoo():
             self.symbols.paths += [self.odooPath]
             parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols.get_symbol([]))
             parser.load_arch()
+            validation = PythonValidator(ls, self.symbols.get_symbol(["odoo"]))
+            validation.validate()
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             addonsSymbol.paths += [
                 os.path.join(self.odooPath, "addons"), 
