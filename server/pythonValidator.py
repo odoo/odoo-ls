@@ -105,7 +105,7 @@ class PythonValidator(ast.NodeVisitor):
                 if not symbol:
                     continue
                 for sym_child in symbol.symbols.values():
-                    if sym_child.type not in ["file", "package", "namespace"]:
+                    if sym_child.type not in ["file", "package", "namespace", "pyd"]:
                         if not sym_child.validationStatus:
                             validator = PythonValidator(self.ls, sym_child)
                             validator.validate()

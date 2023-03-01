@@ -30,7 +30,7 @@ class Symbol():
 
     def __init__(self, name, type, paths):
         self.name = name
-        self.type = type #root, ext_package, package, file, class, function, variable
+        self.type = type #root, ext_package, package, file, pyd, class, function, variable
         self.evaluationType = None # inferred symbol treename of the type of the variable of function return
         self.paths = paths if isinstance(paths, list) else [paths]
         #symbols is a dictionnary of all symbols that is contained by the current symbol
@@ -68,12 +68,12 @@ class Symbol():
         self.type = "dirty" #to help debugging
 
     def get_tree(self):
-        ancestors = []
+        tree = []
         curr_symbol = self
-        while curr_symbol.parent and curr_symbol.parent.type != "root":
-            ancestors.insert(0, curr_symbol.parent.name)
+        while curr_symbol.type != "root" and curr_symbol.parent:
+            tree.insert(0, curr_symbol.name)
             curr_symbol = curr_symbol.parent
-        return ancestors + [self.name]
+        return tree
 
     def get_symbol(self, symbol_names):
         """starting from the current symbol, give the symbol corresponding the tree branch symbol_names.
@@ -153,7 +153,8 @@ class Symbol():
             return self
         if stop_same_file and self.type in ["file", "package", "ext_package"]: #a __init__.py file is encoded as a Symbol package
             return None
-        return self.parent.get_in_parents(type, stop_same_file)
+        if self.parent:
+            return self.parent.get_in_parents(type, stop_same_file)
 
     def get_scope_symbol(self, line):
         """return the symbol (class or function) the closest to the given line """

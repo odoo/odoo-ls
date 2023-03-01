@@ -68,4 +68,6 @@ class FileMgr():
             )]
             fileInfo["d_synt"] = diag
             return False
+        except ValueError as e:
+            return False
         return tree

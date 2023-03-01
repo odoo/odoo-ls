@@ -1,4 +1,5 @@
 import ast
+import glob
 import os
 import sys
 from pathlib import Path
@@ -76,7 +77,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         fileInfo = FileMgr.getFileInfo(self.filePath, content, version)
         if fileInfo["ast"]:
             self.load_symbols_from_ast(fileInfo["ast"])
-            if self.symStack[-1].type == "ext_package":
+            if self.symStack[-1].get_in_parents("ext_package", False):
                 fileInfo["ast"] = None
         if self.diagnostics: #TODO not on self anymore.... take diags from fileInfo
             self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
@@ -136,6 +137,13 @@ class PythonArchBuilder(ast.NodeVisitor):
                     current_symbol = next_step_symbols
                     next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
                     if not next_step_symbols:
+                        if current_symbol and current_symbol.type == "pyd":
+                            #in case of compiled file, import symbols to resolve imports
+                            variable = Symbol(name, "variable", self.filePath)
+                            variable.startLine = node.lineno
+                            variable.endLine = node.end_lineno
+                            variable.evaluationType = False
+                            self.symStack[-1].add_symbol([], variable)
                         symbol_paths = current_symbol.paths if current_symbol else []
                         for path in symbol_paths:
                             full_path = path + os.sep + element
@@ -163,12 +171,17 @@ class PythonArchBuilder(ast.NodeVisitor):
                                         It means we are in a file like odoo/*, and modules are not loaded yet."""
                                         return
                                 parser = PythonArchBuilder(self.ls, full_path, current_symbol, importMode=True)
-                                parser.load_arch()
+                                next_step_symbols = parser.load_arch()
                                 break
                             elif os.path.isfile(full_path + ".py"):
                                 parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol, importMode=True)
-                                parser.load_arch()
+                                next_step_symbols = parser.load_arch()
                                 break
+                            elif os.name == "nt" and current_symbol.get_tree() != []: #don't try to glob on root and direct subpackages
+                                paths = glob.glob(full_path + r".*.pyd")
+                                if paths:
+                                    next_step_symbols = Symbol(element, "pyd", paths)
+                                    current_symbol.add_symbol([], next_step_symbols)
                     packages_copy += [element]
             if elements[-1] != '*':
                 sym = Odoo.get().symbols.get_symbol(packages_copy)
