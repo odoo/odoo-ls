@@ -139,7 +139,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     if not next_step_symbols:
                         if current_symbol and current_symbol.type == "compiled":
                             #in case of compiled file, import symbols to resolve imports
-                            variable = Symbol(name, "variable", self.filePath)
+                            variable = Symbol(asname if asname else name, "variable", self.filePath)
                             variable.startLine = node.lineno
                             variable.endLine = node.end_lineno
                             variable.evaluationType = False
@@ -191,9 +191,37 @@ class PythonArchBuilder(ast.NodeVisitor):
                     packages_copy += [element]
             if elements[-1] != '*':
                 sym = Odoo.get().symbols.get_symbol(packages_copy)
+                variable = Symbol(asname if asname else name, "variable", self.filePath)
+                variable.startLine = node.lineno
+                variable.endLine = node.end_lineno
+                variable.evaluationType = sym.get_tree() if sym else False
+                if not self.safeImport[-1] or not variable.name in self.symStack[-1].symbols:
+                    #Skip the case where some modules try to override a symbol with a try...importerror
+                    self.symStack[-1].add_symbol([], variable)
                 if sym and level > 0:
                     if self.symStack[-1].get_tree() not in sym.dependents:
                         sym.dependents.append(self.symStack[-1].get_tree())
+            else:
+                if next_step_symbols:
+                    allowed_sym = True
+                    if "__all__" in next_step_symbols.symbols:
+                        allowed_sym = next_step_symbols.symbols["__all__"]
+                        while allowed_sym and allowed_sym.type == "variable" and isinstance(allowed_sym.evaluationType, list):
+                            allowed_sym = Odoo.get().symbols.get_symbol(allowed_sym.evaluationType)
+                        if allowed_sym:
+                            allowed_sym = allowed_sym.evaluationType
+                            if not allowed_sym or not allowed_sym.type == "primitive" and not allowed_sym.name == "list":
+                                allowed_sym = True
+                                print("debug= wrong __all__")
+                        if not isinstance(allowed_sym, Symbol):
+                            allowed_sym = True
+                    for s in next_step_symbols.symbols.values():
+                        if allowed_sym == True or s.name in allowed_sym.evaluationType:
+                            variable = Symbol(s.name, "variable", self.filePath)
+                            variable.startLine = node.lineno
+                            variable.endLine = node.end_lineno
+                            variable.evaluationType = s.get_tree()
+                            self.symStack[-1].add_symbol([], variable)
     
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
@@ -204,18 +232,21 @@ class PythonArchBuilder(ast.NodeVisitor):
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
                     variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
+                    if variable.evaluationType and variable.evaluationType.type != "primitive":
+                        variable.evaluationType = variable.evaluationType.get_tree()
                     self.symStack[-1].add_symbol([], variable)
                 else:
-                    print("Warning: symbol already defined")
+                    print("Warning: symbol already defined " + variable)
 
     def visit_FunctionDef(self, node):
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         self.symStack[-1].add_symbol([], symbol)
-        self.symStack.append(symbol)
-        ast.NodeVisitor.generic_visit(self, node)
-        self.symStack.pop()
+        #We don't need what's inside the function?
+        #self.symStack.append(symbol)
+        #ast.NodeVisitor.generic_visit(self, node)
+        #self.symStack.pop()
     
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
@@ -231,7 +262,6 @@ class PythonArchBuilder(ast.NodeVisitor):
         if old_sym:
             self.symStack[-1].localSymbols.append(old_sym)
         symbol = Symbol(node.name, "class", self.filePath)
-        symbol.evaluationType = symbol
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         symbol.classData = ClassData()
@@ -265,6 +295,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     print("ERROR: unable to unpack assignement")
                     return acc
                 else:
+                    #TODO handle a,b = b,a
                     for nt, nv in zip(target.elts, node_values.elts):
                         self.unpack_assign(nt, nv, acc)
             elif isinstance(target, ast.Tuple):

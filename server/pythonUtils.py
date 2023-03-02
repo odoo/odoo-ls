@@ -15,7 +15,14 @@ class PythonUtils():
         elif isinstance(node, ast.Dict):
             return Symbol("dict", "primitive", "")
         elif isinstance(node, ast.List):
-            return Symbol("list", "primitive", "")
+            s = Symbol("list", "primitive", "")
+            res = []
+            for n in node.elts:
+                if not isinstance(n, ast.Constant):
+                    return s
+                res.append(n.value)
+            s.evaluationType = res
+            return s
         elif isinstance(node, ast.Call):
             f = node.func
             if isinstance(f, ast.Name):

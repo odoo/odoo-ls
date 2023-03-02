@@ -24,7 +24,7 @@ class PythonValidator(ast.NodeVisitor):
 
     def __init__(self, ls, symbol):
         """Prepare a validator to validate the given file. """
-        self.symStack = [symbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
+        self.symStack = [symbol.get_in_parents("file") or symbol] # we always validate at file level
         self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
@@ -37,8 +37,7 @@ class PythonValidator(ast.NodeVisitor):
         self.diagnostics = []
         if self.symStack[0].validationStatus:
             return
-        if self.symStack[0].type in ['namespace', 'ext_package']:
-            print("can't validate a " + self.symStack[0].type)
+        if self.symStack[0].type in ['namespace', 'ext_package']: #we don't want to validate ext_packages
             return
         elif self.symStack[0].type == 'package':
             self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
@@ -51,7 +50,6 @@ class PythonValidator(ast.NodeVisitor):
             return
         self.validate_ast(fileInfo["ast"])
         self.symStack[0].validationStatus = 2
-        print("validated " + self.symStack[0].name)
         if self.diagnostics:
             self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
         return
@@ -105,11 +103,9 @@ class PythonValidator(ast.NodeVisitor):
                 if not symbol:
                     continue
                 for sym_child in symbol.symbols.values():
-                    if sym_child.type not in ["file", "package", "namespace", "compiled"]:
-                        if not sym_child.validationStatus:
-                            validator = PythonValidator(self.ls, sym_child)
-                            validator.validate()
-                        self.symStack[-1].inferencer.addInference(Inference(sym_child.name, sym_child, node.lineno))
+                    if not sym_child.validationStatus:
+                        validator = PythonValidator(self.ls, sym_child)
+                        validator.validate()
                 for inference in symbol.inferencer.inferences:
                     #TODO link to the final symbol is ok, but add dependency to inference symbol !
                     self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.symbol, node.lineno))

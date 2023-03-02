@@ -17,7 +17,7 @@ class Inferencer():
     def inferName(self, name, line):
         selected = False
         for infer in self.inferences:
-            if infer.name == name and (not selected or (infer.lineno > selected.lineno and infer.lineno < line)):
+            if infer.name == name and infer.lineno < line and (not selected or infer.lineno > selected.lineno):
                 selected = infer
         return selected
     

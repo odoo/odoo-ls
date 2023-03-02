@@ -201,7 +201,7 @@ class RootSymbol(Symbol):
     def add_symbol(self, symbol_names, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
         super().add_symbol(symbol_names, symbol)
-        if not symbol_names:
+        if not symbol_names and symbol.type == "package":
             for path in symbol.paths:
                 for sysPath in sys.path:
                     if sysPath == "":
