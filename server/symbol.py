@@ -30,7 +30,7 @@ class Symbol():
 
     def __init__(self, name, type, paths):
         self.name = name
-        self.type = type #root, ext_package, package, file, pyd, class, function, variable
+        self.type = type #root, ext_package, package, file, compiled, class, function, variable
         self.evaluationType = None # inferred symbol treename of the type of the variable of function return
         self.paths = paths if isinstance(paths, list) else [paths]
         #symbols is a dictionnary of all symbols that is contained by the current symbol

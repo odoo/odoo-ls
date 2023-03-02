@@ -137,7 +137,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     current_symbol = next_step_symbols
                     next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
                     if not next_step_symbols:
-                        if current_symbol and current_symbol.type == "pyd":
+                        if current_symbol and current_symbol.type == "compiled":
                             #in case of compiled file, import symbols to resolve imports
                             variable = Symbol(name, "variable", self.filePath)
                             variable.startLine = node.lineno
@@ -177,11 +177,17 @@ class PythonArchBuilder(ast.NodeVisitor):
                                 parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol, importMode=True)
                                 next_step_symbols = parser.load_arch()
                                 break
-                            elif os.name == "nt" and current_symbol.get_tree() != []: #don't try to glob on root and direct subpackages
-                                paths = glob.glob(full_path + r".*.pyd")
-                                if paths:
-                                    next_step_symbols = Symbol(element, "pyd", paths)
-                                    current_symbol.add_symbol([], next_step_symbols)
+                            elif current_symbol.get_tree() != []: #don't try to glob on root and direct subpackages
+                                if os.name == "nt":
+                                    paths = glob.glob(full_path + r".*.pyd")
+                                    if paths:
+                                        next_step_symbols = Symbol(element, "compiled", paths)
+                                        current_symbol.add_symbol([], next_step_symbols)
+                                else:
+                                    paths = glob.glob(full_path + r".*.so")
+                                    if paths:
+                                        next_step_symbols = Symbol(element, "compiled", paths)
+                                        current_symbol.add_symbol([], next_step_symbols)
                     packages_copy += [element]
             if elements[-1] != '*':
                 sym = Odoo.get().symbols.get_symbol(packages_copy)
