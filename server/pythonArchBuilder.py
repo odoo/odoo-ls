@@ -8,6 +8,7 @@ from .odoo import *
 from .symbol import *
 from .model import *
 from .pythonUtils import *
+from .importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 class ClassContentCache():
@@ -57,27 +58,27 @@ class PythonArchBuilder(ast.NodeVisitor):
             #check if this is a package:
             if os.path.exists(os.path.join(self.filePath, "__init__.py")):
                 symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
-                if self.symStack[0].get_tree() == ["odoo", "addons"] and \
+                if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
                     os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
-                    symbol.isModule = True
-                self.symStack[-1].add_symbol([], symbol)
+                     symbol.isModule = True
+                self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 self.filePath = os.path.join(self.filePath, "__init__.py")
             else:
                 symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
-                self.symStack[-1].add_symbol([], symbol)
+                self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 return self.symStack[1]
         else:
             symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
-            self.symStack[-1].add_symbol([], symbol)
+            self.symStack[-1].add_symbol(symbol)
             self.symStack.append(symbol)
         #parse the Python file
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath, content, version)
         if fileInfo["ast"]:
             self.load_symbols_from_ast(fileInfo["ast"])
-            if self.symStack[-1].get_in_parents("ext_package", False):
+            if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
         if self.diagnostics: #TODO not on self anymore.... take diags from fileInfo
             self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
@@ -90,13 +91,16 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        try:
-            self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
-        except Exception as e:
-            print("here")
+        loadSymbolsFromImportStmt(self.ls, self.symStack[1], self.symStack[-1], None, 
+                    [(name.name, name.asname) for name in node.names], 0, 
+                    node.lineno, node.end_lineno)
+        #self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
 
     def visit_ImportFrom(self, node):
-        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
+        loadSymbolsFromImportStmt(self.ls, self.symStack[1], self.symStack[-1], node.module, 
+                    [(name.name, name.asname) for name in node.names], node.level, 
+                    node.lineno, node.end_lineno)
+        #self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
 
     def visit_Try(self, node):
         safe = False
@@ -143,7 +147,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                             variable.startLine = node.lineno
                             variable.endLine = node.end_lineno
                             variable.evaluationType = False
-                            self.symStack[-1].add_symbol([], variable)
+                            self.symStack[-1].add_symbol(variable)
                         symbol_paths = current_symbol.paths if current_symbol else []
                         for path in symbol_paths:
                             full_path = path + os.sep + element
@@ -182,12 +186,12 @@ class PythonArchBuilder(ast.NodeVisitor):
                                     paths = glob.glob(full_path + r".*.pyd")
                                     if paths:
                                         next_step_symbols = Symbol(element, "compiled", paths)
-                                        current_symbol.add_symbol([], next_step_symbols)
+                                        current_symbol.add_symbol(next_step_symbols)
                                 else:
                                     paths = glob.glob(full_path + r".*.so")
                                     if paths:
                                         next_step_symbols = Symbol(element, "compiled", paths)
-                                        current_symbol.add_symbol([], next_step_symbols)
+                                        current_symbol.add_symbol(next_step_symbols)
                     packages_copy += [element]
             if elements[-1] != '*':
                 sym = Odoo.get().symbols.get_symbol(packages_copy)
@@ -197,7 +201,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.evaluationType = sym.get_tree() if sym else False
                 if not self.safeImport[-1] or not variable.name in self.symStack[-1].symbols:
                     #Skip the case where some modules try to override a symbol with a try...importerror
-                    self.symStack[-1].add_symbol([], variable)
+                    self.symStack[-1].add_symbol(variable)
                 if sym and level > 0:
                     if self.symStack[-1].get_tree() not in sym.dependents:
                         sym.dependents.append(self.symStack[-1].get_tree())
@@ -221,7 +225,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                             variable.startLine = node.lineno
                             variable.endLine = node.end_lineno
                             variable.evaluationType = s.get_tree()
-                            self.symStack[-1].add_symbol([], variable)
+                            self.symStack[-1].add_symbol(variable)
     
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
@@ -234,7 +238,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
                     if variable.evaluationType and variable.evaluationType.type != "primitive":
                         variable.evaluationType = variable.evaluationType.get_tree()
-                    self.symStack[-1].add_symbol([], variable)
+                    self.symStack[-1].add_symbol(variable)
                 else:
                     print("Warning: symbol already defined " + variable)
 
@@ -242,7 +246,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        self.symStack[-1].add_symbol([], symbol)
+        self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
         #self.symStack.append(symbol)
         #ast.NodeVisitor.generic_visit(self, node)
@@ -265,7 +269,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         symbol.classData = ClassData()
-        self.symStack[-1].add_symbol([], symbol)
+        self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         self.classContentCache.append(ClassContentCache())
         ast.NodeVisitor.generic_visit(self, node)

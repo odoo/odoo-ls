@@ -5,10 +5,7 @@ Imports:
             -> import sys => ignore
             -> import difflib => import it from sys.path, load symbols and drop ast (no validation)
     Validation level:
-        -> follow imports to build inferences of symbols
-            -> from odoo import _
-                -> build odoo(__init__.py) that will have an inferencer with _ in it
-                -> _ will have an inference to odoo._ (use inferencer to resolve getSymbol)
+        -> follow imports to build inferences of symbols -> wrong, they should be real symbols
 
 
 

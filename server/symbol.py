@@ -30,11 +30,14 @@ class Symbol():
 
     def __init__(self, name, type, paths):
         self.name = name
-        self.type = type #root, ext_package, package, file, compiled, class, function, variable
-        self.evaluationType = None # inferred symbol treename of the type of the variable of function return
+        self.type = type #root, package, file, compiled, class, function, variable
+        self.evaluationType = None # actually either a treepath (list) or a symbol of a primitive (value stored in evaluationType of this one)
         self.paths = paths if isinstance(paths, list) else [paths]
-        #symbols is a dictionnary of all symbols that is contained by the current symbol
+        #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
+        #symbols contains classes, functions, variables (all file content)
         self.symbols = {}
+        #moduleSymbols contains namespace, packages, files
+        self.moduleSymbols = {}
         #List of symbols not available from outside as they are redefined later in the same symbol 
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
@@ -44,6 +47,7 @@ class Symbol():
         self.parent = None
         self.isModule = False
         self.classData = None
+        self.external = False
         self.inferencer = Inferencer()
         self.startLine = 0
         self.endLine = 0
@@ -53,6 +57,15 @@ class Symbol():
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
     
+    def all_symbols(self):
+        for s in self.symbols.values():
+            yield s
+        for s in self.moduleSymbols.values():
+            yield s
+    
+    def is_file_content(self):
+        return self.type not in ["namespace", "package", "file"]
+    
     def unload(self):
         from .odoo import Odoo
         #1: collect all symbols to revalidate
@@ -60,7 +73,7 @@ class Symbol():
         while symbols:
             for d in symbols[0].dependents:
                 Odoo.get().add_to_rebuild(d.get_tree())
-            for s in symbols[0].symbols.values():
+            for s in symbols[0].all_symbols():
                 symbols.append(s)
             del symbols[0]
         #2: delete symbol
@@ -68,30 +81,59 @@ class Symbol():
         self.type = "dirty" #to help debugging
 
     def get_tree(self):
-        tree = []
+        tree = ([], [])
         curr_symbol = self
         while curr_symbol.type != "root" and curr_symbol.parent:
-            tree.insert(0, curr_symbol.name)
+            if curr_symbol.is_file_content():
+                if tree[0]:
+                    print("impossible") #TODO remove this test
+                tree[1].insert(0,  curr_symbol.name)
+            else:
+                tree[0].insert(0,  curr_symbol.name)
             curr_symbol = curr_symbol.parent
         return tree
 
-    def get_symbol(self, symbol_names):
-        """starting from the current symbol, give the symbol corresponding the tree branch symbol_names.
-        Example: symbol = symbol.get_symbol(['odoo', 'models', 'Model'])
-        will return the symbol corresponding to odoo.models.Model.
-        From this one, we can do symbol.get_symbol(['hello']) to get the 'hello' symbol of the Model class"""
-        if not symbol_names:
-            return self
-        if symbol_names[0] in self.symbols:
-            curr_symbol = self.symbols[symbol_names[0]]
-            if curr_symbol:
-                return curr_symbol.get_symbol(symbol_names[1:])
+    def get_symbol(self, symbol_tree_files, symbol_tree_content = [], excl=None):
+        """starting from the current symbol, give the symbol corresponding to the right tree branch.
+        Example: symbol = symbol.get_symbol(['odoo', 'models'], ['Model'])
+        symbol_tree_files are parts that are mandatory "on disk": files, packages, namespaces.
+        symbol_tree_content is the parts that are 1) from the content of a file, and if not found
+        2) a symbol_tree_files.
+        If you don't know the type of data you are searching for, just use the second parameter.
+        This implementation allows to fix ambiguity in the case of a package P holds a symbol A
+        in its __init__.py and a file A.py in the directory. An import from elswhere that would 
+        type 'from P.A import c' would have to call get_symbol(["P", "A"], ["c"]) because P and A
+        can't be file content (because theyr're in the from clause)"""
+        #This function of voluntarily non recursive
+        if isinstance(symbol_tree_files, str) or isinstance(symbol_tree_content, str):
+            raise Exception("get_symbol can only be used with list")
+        current_symbol = self
+        while symbol_tree_files or symbol_tree_content:
+            if symbol_tree_files:
+                next_sym = current_symbol.moduleSymbols.get(symbol_tree_files[0], None)
+                if next_sym:
+                    current_symbol = next_sym
+                    symbol_tree_files = symbol_tree_files[1:]
+                    continue
+                return None
+            next_sym = current_symbol.symbols.get(symbol_tree_content[0], None)
+            if next_sym and current_symbol != excl:
+                current_symbol = next_sym
+                symbol_tree_content = symbol_tree_content[1:]
+            else:
+                next_sym = current_symbol.moduleSymbols.get(symbol_tree_content[0], None)
+                if next_sym:
+                    current_symbol = next_sym
+                    symbol_tree_content = symbol_tree_content[1:]
+                else:
+                    return None
+        return current_symbol
+
         #last chance, if we are in a file, we can return any declared var
         if self.type not in ["root", "namespace"]:
             inference = self.inferName(symbol_names[0], 99999999)
             if inference and inference.symbol:
                 return inference.symbol
-        return False
 
     def getModule(self):
         s = self
@@ -129,32 +171,30 @@ class Symbol():
                 return True
         return False
 
-    def add_symbol(self, symbol_names, symbol):
-        """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
-        if symbol_names and symbol_names[0] not in self.symbols:
-            raise Exception("Symbol not found: " + str(symbol_names[0]))
-        curr_symbol = self.symbols[symbol_names[0]] if symbol_names else self
-        for s in symbol_names[1:]:
-            if s in curr_symbol.symbols:
-                curr_symbol = curr_symbol.symbols[s]
-            else:
-                raise Exception("Package not found: " + str(symbol_names))
-        symbol.parent = curr_symbol
-        if symbol.name in curr_symbol.symbols:
+    def add_symbol(self, symbol):
+        """take the symbol to add"""
+        sym_dict = self.moduleSymbols
+        if symbol.is_file_content():
+            sym_dict = self.symbols
+        symbol.parent = self
+        if symbol.name in sym_dict:
             #TODO we don't want to handle this case for now. It can occur for directory of addons
             # because it has already been added, but it can occur too if two files or directories
             # have the same name, or even two same classes in a file. We should handle this case in the future
-            print("Symbol already exists: " + str(curr_symbol.get_tree()) + " - " + str(symbol.name)) 
+            print("Symbol already exists: " + str(self.get_tree()) + " - " + str(symbol.name)) 
         else:
-            curr_symbol.symbols[symbol.name] = symbol
+            sym_dict[symbol.name] = symbol
+        
+    def add_module_symbol(self, symbol_names, symbol):
+        pass
     
-    def get_in_parents(self, type, stop_same_file = True):
-        if self.type == type:
+    def get_in_parents(self, types, stop_same_file = True):
+        if self.type in types:
             return self
-        if stop_same_file and self.type in ["file", "package", "ext_package"]: #a __init__.py file is encoded as a Symbol package
+        if stop_same_file and self.type in ["file", "package"]: #a __init__.py file is encoded as a Symbol package
             return None
         if self.parent:
-            return self.parent.get_in_parents(type, stop_same_file)
+            return self.parent.get_in_parents(types, stop_same_file)
 
     def get_scope_symbol(self, line):
         """return the symbol (class or function) the closest to the given line """
@@ -184,7 +224,7 @@ class Symbol():
     def inferName(self, name, line):
         #TODO search in localSymbols too?
         local = self.inferencer.inferName(name, line)
-        if self.type in ["file", "package", "ext_package"]:
+        if self.type in ["file", "package"]:
             return local
         if not local:
             return self.parent.inferName(name, line)
@@ -195,17 +235,24 @@ class Symbol():
     
     def isModel(self):
         return self.isClass() and bool(self.classData.modelData)
+    
+    def is_external(self):
+        if self.external:
+            return True
+        if self.parent:
+            return self.parent.is_external()
+        return False
 
 class RootSymbol(Symbol):
 
-    def add_symbol(self, symbol_names, symbol):
+    def add_symbol(self, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
-        super().add_symbol(symbol_names, symbol)
-        if not symbol_names and symbol.type == "package":
+        super().add_symbol(symbol)
+        if symbol.type in ["package", "file"]:
             for path in symbol.paths:
                 for sysPath in sys.path:
                     if sysPath == "":
                         continue
                     if path.startswith(sysPath):
-                        symbol.type = "ext_package"
+                        symbol.external = True
                         return

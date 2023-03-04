@@ -7,6 +7,7 @@ from .odoo import *
 from .symbol import *
 from .model import *
 from .pythonUtils import *
+from .importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 class ClassContentCacheValidator():
@@ -24,7 +25,7 @@ class PythonValidator(ast.NodeVisitor):
 
     def __init__(self, ls, symbol):
         """Prepare a validator to validate the given file. """
-        self.symStack = [symbol.get_in_parents("file") or symbol] # we always validate at file level
+        self.symStack = [symbol.get_in_parents(["file"]) or symbol] # we always validate at file level
         self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
@@ -37,7 +38,7 @@ class PythonValidator(ast.NodeVisitor):
         self.diagnostics = []
         if self.symStack[0].validationStatus:
             return
-        if self.symStack[0].type in ['namespace', 'ext_package']: #we don't want to validate ext_packages
+        if self.symStack[0].type in ['namespace']:
             return
         elif self.symStack[0].type == 'package':
             self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
@@ -80,29 +81,13 @@ class PythonValidator(ast.NodeVisitor):
 
 
     def _resolve_import(self, from_stmt, names, level, node):
-        packages = []
-        if level != 0:
-            if level > len(Path(self.filePath).parts):
-                print("ERROR: level is too big ! The current path doesn't have enough parents")
-                return
-            if self.symStack[0].type == "package":
-                #as we are at directory level, not init.py
-                level -= 1
-            if level == 0:
-                packages = self.symStack[0].get_tree()
-            else:
-                packages = self.symStack[0].get_tree()[:-level]
-
+        file_tree = resolve_packages(self.symStack[0], level, from_stmt)
         for name, asname in names:
-            elements = packages[:] + (from_stmt.split(".") if from_stmt != None else [])
-            elements += name.split(".") if name != None else []
-            importSymbol = None
-
-            if elements[-1] == "*":
-                symbol = Odoo.get().symbols.get_symbol(elements[:-1])
+            if name == "*":
+                symbol = Odoo.get().symbols.get_symbol(file_tree)
                 if not symbol:
                     continue
-                for sym_child in symbol.symbols.values():
+                for sym_child in symbol.moduleSymbols.values():
                     if not sym_child.validationStatus:
                         validator = PythonValidator(self.ls, sym_child)
                         validator.validate()
@@ -110,21 +95,30 @@ class PythonValidator(ast.NodeVisitor):
                     #TODO link to the final symbol is ok, but add dependency to inference symbol !
                     self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.symbol, node.lineno))
             else:
-                symbol = Odoo.get().symbols.get_symbol(elements)
+                symbol = Odoo.get().symbols.get_symbol(file_tree)
+                name_parts = name.split(".")
+                for n in name_parts[:-1]:
+                    if not symbol:
+                        break
+                    symbol = symbol.get_symbol([n])
+                if symbol:
+                    symbol = symbol.get_symbol([], [name.split(".")[-1]], excl=self.symStack[0])
                 if not symbol:
-                    if elements[0] not in BUILD_IN_LIBS:
+                    if not file_tree and name.split(".")[0] in BUILD_IN_LIBS:
+                        continue
+                    if not self.safeImport[-1]:
                         self.diagnostics.append(Diagnostic(
                             range = Range(
                                 start=Position(line=node.lineno-1, character=node.col_offset),
                                 end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
                                     Position(line=node.lineno-1, character=node.end_col_offset)
                             ),
-                            message = str(elements) + " not found",
+                            message = "".join(file_tree + [name]) + " not found",
                             source = EXTENSION_NAME
                         ))
                     break
                 else:
-                    parent_file = symbol.get_in_parents("file")
+                    parent_file = symbol.get_in_parents(["file", "package"])
                     to_validate = symbol
                     if parent_file:
                         to_validate = parent_file
@@ -245,7 +239,7 @@ class PythonValidator(ast.NodeVisitor):
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
                     variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
-                    self.symStack[-1].add_symbol([], variable)
+                    self.symStack[-1].add_symbol(variable)
                 else:
                     print("Warning: symbol already defined")
 
@@ -260,7 +254,7 @@ class PythonValidator(ast.NodeVisitor):
                 symbol,
                 node.lineno
             ))
-        self.symStack[-1].add_symbol([], symbol)
+        self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()
@@ -307,7 +301,7 @@ class PythonValidator(ast.NodeVisitor):
                 symbol,
                 node.lineno
             ))
-            self.symStack[-1].add_symbol([], symbol)
+            self.symStack[-1].add_symbol(symbol)
             self.symStack.append(symbol)
             for base in bases:
                 if symbol.get_tree() not in base.dependents:
@@ -353,7 +347,7 @@ class PythonValidator(ast.NodeVisitor):
             variable.startLine = lineno
             variable.endLine = lineno
             variable.evaluationType = Symbol(type, "primitive", "")
-            symbol.add_symbol([], variable)
+            symbol.add_symbol(variable)
             return variable
         if symbol.get_tree() == ["odoo", "models", "Model"]:
             create_symbol("id", "constant", node.lineno)

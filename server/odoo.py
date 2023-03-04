@@ -106,7 +106,7 @@ class Odoo():
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
             #set python path
             self.symbols.paths += [self.odooPath]
-            parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols.get_symbol([]))
+            parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols)
             parser.load_arch()
             validation = PythonValidator(ls, self.symbols.get_symbol(["odoo"]))
             validation.validate()

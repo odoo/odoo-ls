@@ -33,7 +33,7 @@ class PythonUtils():
                 return PythonUtils.evaluateTypeAST(f, symbol)
         elif isinstance(node, ast.Attribute):
             v = PythonUtils.evaluateTypeAST(node.value, symbol)
-            if v and node.attr in v.symbols:
+            if v and node.attr in v.symbols: #TODO wrong, don't use .symbols?
                 return v.symbols[node.attr]
         elif isinstance(node, ast.Name):
             infered = Inferencer.inferNameInScope(node.id, node.lineno, symbol)
@@ -65,7 +65,7 @@ class PythonUtils():
             node = node_list[node_iter]
             if not symbol:
                 if node.type == "name" and node.value == "self":
-                    symbol = scope_symbol.get_in_parents("class") #should be able to take it in func param, no?
+                    symbol = scope_symbol.get_in_parents(["class"]) #should be able to take it in func param, no?
                 else:
                     infer = scope_symbol.inferName(node.value, node.line)
                     if not infer or not infer.symbol:

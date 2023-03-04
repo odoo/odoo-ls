@@ -70,4 +70,6 @@ class FileMgr():
             return False
         except ValueError as e:
             return False
+        except PermissionError as e:
+            return False
         return tree

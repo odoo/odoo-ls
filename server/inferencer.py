@@ -26,7 +26,7 @@ class Inferencer():
         """try to resolve a name in the scope of a symbol. If the name is not found, try to resolve it in the scope of the parent symbol, and so on."""
         sym = scope_symbol
         infer = sym.inferencer.inferName(name, line)
-        while sym and not infer and sym.type not in ["file", "package", "ext_package"]:
+        while sym and not infer and sym.type not in ["file", "package"]:
             sym = sym.parent
             infer = sym.inferencer.inferName(name, line)
         return infer
