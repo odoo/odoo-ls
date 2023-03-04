@@ -113,119 +113,6 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.safeImport.append(safe)
         ast.NodeVisitor.generic_visit(self, node)
         self.safeImport.pop()
-
-
-    def _resolve_import(self, from_stmt, names, level, node):
-        packages = []
-        if level != 0:
-            if level > len(Path(self.filePath).parts):
-                print("ERROR: level is too big ! The current path doesn't have enough parents")
-                return
-            if self.symStack[1].type == "package":
-                #as we are at directory level, not init.py
-                level -= 1
-            if level == 0:
-                packages = self.symStack[1].get_tree()
-            else:
-                packages = self.symStack[1].get_tree()[:-level]
-
-        for name, asname in names:
-            packages_copy = packages[:]
-            elements = from_stmt.split(".") if from_stmt != None else []
-            elements += name.split(".") if name != None else []
-
-            current_symbol = Odoo.get().symbols.get_symbol(packages_copy)
-            next_step_symbols = current_symbol
-            for element in elements:
-                if element != '*':
-                    current_symbol = next_step_symbols
-                    next_step_symbols = Odoo.get().symbols.get_symbol(packages_copy + [element])
-                    if not next_step_symbols:
-                        if current_symbol and current_symbol.type == "compiled":
-                            #in case of compiled file, import symbols to resolve imports
-                            variable = Symbol(asname if asname else name, "variable", self.filePath)
-                            variable.startLine = node.lineno
-                            variable.endLine = node.end_lineno
-                            variable.evaluationType = False
-                            self.symStack[-1].add_symbol(variable)
-                        symbol_paths = current_symbol.paths if current_symbol else []
-                        for path in symbol_paths:
-                            full_path = path + os.sep + element
-                            if os.path.isdir(full_path):
-                                if current_symbol.get_tree() == ["odoo", "addons"]:
-                                    module = self.symStack[-1].getModule()
-                                    if module and not Odoo.get().modules[module].is_in_deps(element):
-                                        if not any(self.safeImport):
-                                            #TODO move from archbuilder to validator
-                                            self.diagnostics.append(Diagnostic(
-                                                range = Range(
-                                                    start=Position(line=node.lineno-1, character=node.col_offset),
-                                                    end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                                        Position(line=node.lineno-1, character=node.end_col_offset)
-                                                ),
-                                                message = element + " has not been loaded. It should be in dependencies of " + module,
-                                                source = EXTENSION_NAME
-                                            ))
-                                        #We return in any case here. the module is not in dependencies, so it could be not
-                                        #loaded and load it now could break the import system. example mail_thread.py:L2041
-                                        #If the import is really needed for inferencer, it will be done in pythonValidator, not here
-                                        return
-                                    if not module:
-                                        """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
-                                        It means we are in a file like odoo/*, and modules are not loaded yet."""
-                                        return
-                                parser = PythonArchBuilder(self.ls, full_path, current_symbol, importMode=True)
-                                next_step_symbols = parser.load_arch()
-                                break
-                            elif os.path.isfile(full_path + ".py"):
-                                parser = PythonArchBuilder(self.ls, full_path + ".py", current_symbol, importMode=True)
-                                next_step_symbols = parser.load_arch()
-                                break
-                            elif current_symbol.get_tree() != []: #don't try to glob on root and direct subpackages
-                                if os.name == "nt":
-                                    paths = glob.glob(full_path + r".*.pyd")
-                                    if paths:
-                                        next_step_symbols = Symbol(element, "compiled", paths)
-                                        current_symbol.add_symbol(next_step_symbols)
-                                else:
-                                    paths = glob.glob(full_path + r".*.so")
-                                    if paths:
-                                        next_step_symbols = Symbol(element, "compiled", paths)
-                                        current_symbol.add_symbol(next_step_symbols)
-                    packages_copy += [element]
-            if elements[-1] != '*':
-                sym = Odoo.get().symbols.get_symbol(packages_copy)
-                variable = Symbol(asname if asname else name, "variable", self.filePath)
-                variable.startLine = node.lineno
-                variable.endLine = node.end_lineno
-                variable.evaluationType = sym.get_tree() if sym else False
-                if not self.safeImport[-1] or not variable.name in self.symStack[-1].symbols:
-                    #Skip the case where some modules try to override a symbol with a try...importerror
-                    self.symStack[-1].add_symbol(variable)
-                if sym and level > 0:
-                    if self.symStack[-1].get_tree() not in sym.dependents:
-                        sym.dependents.append(self.symStack[-1].get_tree())
-            else:
-                if next_step_symbols:
-                    allowed_sym = True
-                    if "__all__" in next_step_symbols.symbols:
-                        allowed_sym = next_step_symbols.symbols["__all__"]
-                        while allowed_sym and allowed_sym.type == "variable" and isinstance(allowed_sym.evaluationType, list):
-                            allowed_sym = Odoo.get().symbols.get_symbol(allowed_sym.evaluationType)
-                        if allowed_sym:
-                            allowed_sym = allowed_sym.evaluationType
-                            if not allowed_sym or not allowed_sym.type == "primitive" and not allowed_sym.name == "list":
-                                allowed_sym = True
-                                print("debug= wrong __all__")
-                        if not isinstance(allowed_sym, Symbol):
-                            allowed_sym = True
-                    for s in next_step_symbols.symbols.values():
-                        if allowed_sym == True or s.name in allowed_sym.evaluationType:
-                            variable = Symbol(s.name, "variable", self.filePath)
-                            variable.startLine = node.lineno
-                            variable.endLine = node.end_lineno
-                            variable.evaluationType = s.get_tree()
-                            self.symStack[-1].add_symbol(variable)
     
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
@@ -239,6 +126,18 @@ class PythonArchBuilder(ast.NodeVisitor):
                     if variable.evaluationType and variable.evaluationType.type != "primitive":
                         variable.evaluationType = variable.evaluationType.get_tree()
                     self.symStack[-1].add_symbol(variable)
+                    if variable.name == "__all__" and self.symStack[-1].is_external():
+                        # external packages often import symbols from compiled files 
+                        # or with meta programmation like globals["var"] = __get_func().
+                        # we don't want to handle that, so just declare __all__ content
+                        # as symbols to not raise any error.
+                        if variable.evaluationType and variable.evaluationType.type == "primitive":
+                            for var_name in variable.evaluationType.evaluationType:
+                                var = Symbol(var_name, "variable", self.filePath)
+                                var.startLine = node.lineno
+                                var.endLine = node.end_lineno
+                                var.evaluationType = None
+                                self.symStack[-1].add_symbol(var)
                 else:
                     print("Warning: symbol already defined " + variable)
 

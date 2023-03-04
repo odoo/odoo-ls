@@ -104,7 +104,7 @@ class PythonValidator(ast.NodeVisitor):
                 if symbol:
                     symbol = symbol.get_symbol([], [name.split(".")[-1]], excl=self.symStack[0])
                 if not symbol:
-                    if not file_tree and name.split(".")[0] in BUILD_IN_LIBS:
+                    if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
                         continue
                     if not self.safeImport[-1]:
                         self.diagnostics.append(Diagnostic(
@@ -113,8 +113,9 @@ class PythonValidator(ast.NodeVisitor):
                                 end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
                                     Position(line=node.lineno-1, character=node.end_col_offset)
                             ),
-                            message = "".join(file_tree + [name]) + " not found",
-                            source = EXTENSION_NAME
+                            message = ".".join(file_tree + [name]) + " not found",
+                            source = EXTENSION_NAME,
+                            severity = 2
                         ))
                     break
                 else:

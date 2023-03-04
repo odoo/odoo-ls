@@ -10,26 +10,27 @@ def loadSymbolsFromImportStmt(ls, file_symbol, parent_symbol, from_stmt, names, 
                     lineno, end_lineno):
     file_tree = resolve_packages(file_symbol, level, from_stmt)
     from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, file_symbol, None, lineno, end_lineno)
-    if not from_symbol:
-        return
 
     for name, asname in names:
         if name != '*':
+            variable = Symbol(asname if asname else name, "variable", file_symbol.paths[0])
+            variable.startLine = lineno
+            variable.endLine = end_lineno
+            variable.evaluationType = False
+            parent_symbol.add_symbol(variable)
+            if not from_symbol:
+                continue
             from_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], file_symbol, None, lineno, end_lineno)
             if not from_symbol:
                 continue
             last_part_name = name.split(".")[-1]
-            name_symbol = from_symbol.get_symbol([], [last_part_name]) #find the last part of the name
+            name_symbol = from_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
             if not name_symbol:
                 name_symbol = _resolve_new_symbol(ls, file_symbol, from_symbol, last_part_name, None, 
                                                 lineno, end_lineno)
             if not name_symbol:
                 continue
-            variable = Symbol(asname if asname else name, "variable", file_symbol.paths[0])
-            variable.startLine = lineno
-            variable.endLine = end_lineno
             variable.evaluationType = name_symbol.get_tree() if name_symbol else False
-            parent_symbol.add_symbol(variable)
             if name_symbol and level > 0:
                 if parent_symbol.get_tree() not in name_symbol.dependents:
                     name_symbol.dependents.append(parent_symbol.get_tree())
@@ -112,9 +113,13 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
             if os.name == "nt":
                 paths = glob.glob(full_path + r".*.pyd")
                 if paths:
-                    return Symbol(name, "compiled", paths)
+                    sym = Symbol(name, "compiled", paths)
+                    parent_symbol.add_symbol(sym)
+                    return sym
             else:
                 paths = glob.glob(full_path + r".*.so")
                 if paths:
-                    return Symbol(name, "compiled", paths)
+                    sym = Symbol(name, "compiled", paths)
+                    parent_symbol.add_symbol(sym)
+                    return sym
     return False

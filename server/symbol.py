@@ -64,7 +64,7 @@ class Symbol():
             yield s
     
     def is_file_content(self):
-        return self.type not in ["namespace", "package", "file"]
+        return self.type not in ["namespace", "package", "file", "compiled"]
     
     def unload(self):
         from .odoo import Odoo
@@ -120,6 +120,9 @@ class Symbol():
             if next_sym and current_symbol != excl:
                 current_symbol = next_sym
                 symbol_tree_content = symbol_tree_content[1:]
+            elif current_symbol.type == "compiled":
+                # always accept symbols in compiled files
+                return current_symbol
             else:
                 next_sym = current_symbol.moduleSymbols.get(symbol_tree_content[0], None)
                 if next_sym:
@@ -181,7 +184,7 @@ class Symbol():
             #TODO we don't want to handle this case for now. It can occur for directory of addons
             # because it has already been added, but it can occur too if two files or directories
             # have the same name, or even two same classes in a file. We should handle this case in the future
-            print("Symbol already exists: " + str(self.get_tree()) + " - " + str(symbol.name)) 
+            pass # print("Symbol already exists: " + str(self.get_tree()) + " - " + str(symbol.name)) 
         else:
             sym_dict[symbol.name] = symbol
         
