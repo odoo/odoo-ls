@@ -1,8 +1,10 @@
+import weakref
+
 class Inference():
 
     def __init__(self, name, symbol, lineno, instance=False):
         self.name = name
-        self.symbol = symbol
+        self.ref_symbol = weakref.ref(symbol)
         self.lineno = lineno
         self.instance = instance
     

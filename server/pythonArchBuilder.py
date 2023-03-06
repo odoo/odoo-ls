@@ -123,8 +123,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
                     variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
-                    if variable.evaluationType and variable.evaluationType.type != "primitive":
-                        variable.evaluationType = variable.evaluationType.get_tree()
                     self.symStack[-1].add_symbol(variable)
                     if variable.name == "__all__" and self.symStack[-1].is_external():
                         # external packages often import symbols from compiled files 

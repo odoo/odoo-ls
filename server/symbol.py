@@ -1,4 +1,5 @@
 import sys
+import weakref
 from server.inferencer import *
 
 class ModelData():
@@ -31,7 +32,7 @@ class Symbol():
     def __init__(self, name, type, paths):
         self.name = name
         self.type = type #root, package, file, compiled, class, function, variable
-        self.evaluationType = None # actually either a treepath (list) or a symbol of a primitive (value stored in evaluationType of this one)
+        self.evaluationType = None # actually either weakrefof a symbol or the symbol of a primitive (value stored in evaluationType of this one)
         self.paths = paths if isinstance(paths, list) else [paths]
         #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
         #symbols contains classes, functions, variables (all file content)
@@ -42,7 +43,7 @@ class Symbol():
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
         self.localSymbols = [] 
-        self.dependents = []
+        self.dependents = weakref.WeakSet()
         self.diagnostics = []
         self.parent = None
         self.isModule = False
@@ -72,7 +73,7 @@ class Symbol():
         symbols = [self]
         while symbols:
             for d in symbols[0].dependents:
-                Odoo.get().add_to_rebuild(d.get_tree())
+                Odoo.get().add_to_rebuild(d)
             for s in symbols[0].all_symbols():
                 symbols.append(s)
             del symbols[0]

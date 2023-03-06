@@ -93,7 +93,7 @@ class PythonValidator(ast.NodeVisitor):
                         validator.validate()
                 for inference in symbol.inferencer.inferences:
                     #TODO link to the final symbol is ok, but add dependency to inference symbol !
-                    self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.symbol, node.lineno))
+                    self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.ref_symbol(), node.lineno))
             else:
                 symbol = Odoo.get().symbols.get_symbol(file_tree)
                 name_parts = name.split(".")

@@ -193,9 +193,10 @@ class Odoo():
             except Exception as e:
                 return
 
-    def add_to_rebuild(self, symbol_path):
+    def add_to_rebuild(self, weak_symbol):
         """ add a symbol (with its tree path) to the list of rebuild to do."""
         index = 0
+        return
         while index != len(self.to_rebuild):
             s = self.to_rebuild[s]
             if len(s) < len(symbol_path):

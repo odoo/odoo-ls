@@ -1,6 +1,7 @@
 import glob
 import os
 from pathlib import Path
+import weakref
 from .odoo import Odoo
 from .symbol import Symbol
 
@@ -30,15 +31,16 @@ def loadSymbolsFromImportStmt(ls, file_symbol, parent_symbol, from_stmt, names, 
                                                 lineno, end_lineno)
             if not name_symbol:
                 continue
-            variable.evaluationType = name_symbol.get_tree() if name_symbol else False
+            variable.evaluationType = weakref.ref(name_symbol)
             if name_symbol and level > 0:
-                if parent_symbol.get_tree() not in name_symbol.dependents:
-                    name_symbol.dependents.append(parent_symbol.get_tree())
+                if parent_symbol not in name_symbol.dependents:
+                    name_symbol.dependents.add(parent_symbol)
         else:
             if from_symbol:
                 allowed_sym = True
                 if "__all__" in from_symbol.symbols:
                     allowed_sym = from_symbol.symbols["__all__"]
+                    # follow ref if the current __all__ is imported
                     while allowed_sym and allowed_sym.type == "variable" and isinstance(allowed_sym.evaluationType, list):
                         allowed_sym = Odoo.get().symbols.get_symbol([], allowed_sym.evaluationType)
                     if allowed_sym:
@@ -53,7 +55,7 @@ def loadSymbolsFromImportStmt(ls, file_symbol, parent_symbol, from_stmt, names, 
                         variable = Symbol(s.name, "variable", file_symbol.paths[0])
                         variable.startLine = lineno
                         variable.endLine = end_lineno
-                        variable.evaluationType = s.get_tree()
+                        variable.evaluationType = weakref.ref(s)
                         parent_symbol.add_symbol(variable)
 
 def resolve_packages(file_symbol, level, from_stmt):

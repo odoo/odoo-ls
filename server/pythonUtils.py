@@ -28,7 +28,7 @@ class PythonUtils():
             if isinstance(f, ast.Name):
                 infered = Inferencer.inferNameInScope(f.id, f.lineno, symbol)
                 if infered:
-                    return infered.symbol
+                    return infered.ref_symbol
             elif isinstance(f, ast.Attribute):
                 return PythonUtils.evaluateTypeAST(f, symbol)
         elif isinstance(node, ast.Attribute):
@@ -38,7 +38,7 @@ class PythonUtils():
         elif isinstance(node, ast.Name):
             infered = Inferencer.inferNameInScope(node.id, node.lineno, symbol)
             if infered:
-                return infered.symbol
+                return infered.ref_symbol
         return None
     
     @staticmethod
