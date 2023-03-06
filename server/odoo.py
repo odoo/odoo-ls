@@ -1,12 +1,16 @@
 import ast
+import asyncio
 import os
 import parso
 import re
 import sys
 import traceback
+import threading
 from .constants import *
 from .symbol import *
 from .fileMgr import *
+from .threadCondition import ReadWriteCondition
+from contextlib import contextmanager
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -49,8 +53,25 @@ class Odoo():
 
     instance = None
 
+    write_lock = threading.Lock()
+    thread_access_condition = ReadWriteCondition(10) #should match the number of threads
+
     def __init__(self):
         pass
+
+    @contextmanager
+    def acquire_write(self):
+        with self.write_lock:
+            self.read_sem.wait()
+            yield
+
+    @contextmanager
+    def acquire_read(self):
+        with self.write_lock:
+            self.thread_access_condition.acquire()
+        yield
+        self.thread_access_condition.release()
+
 
     @staticmethod
     def get(ls = None):
@@ -158,9 +179,19 @@ class Odoo():
     def file_change(self, ls, path, text, version):
         from server.pythonArchBuilder import PythonArchBuilder
         if path.endswith(".py"):
-            file_symbol = self.get_file_symbol(path)
-            pp = PythonArchBuilder(ls, path, file_symbol.parent)
-            pp.load_arch(text, version)
+            try:
+                new_ast = ast.parse(text)
+                file_symbol["ast"] = new_ast
+                file_symbol["version"] = version
+                with Odoo.get().acquire_write():
+                    #1 unload
+                    file_symbol = self.get_file_symbol(path)
+                    file_symbol.unload()
+                    #build new
+                    pp = PythonArchBuilder(ls, path, file_symbol.parent)
+                    pp.load_arch(text, version)
+            except Exception as e:
+                return
 
     def add_to_rebuild(self, symbol_path):
         """ add a symbol (with its tree path) to the list of rebuild to do."""

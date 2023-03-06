@@ -20,6 +20,7 @@ import os
 import re
 import time
 import uuid
+import threading
 from json import JSONDecodeError
 from typing import Optional
 from .odoo import Odoo
@@ -57,11 +58,12 @@ class OdooLanguageServer(LanguageServer):
 
     def __init__(self):
         print("Starting Odoo Language server")
+        self.id_lock = threading.Lock()
+        self.id = 0
         super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
 
 
 odoo_server = OdooLanguageServer()
-
 
 def _validate(ls, params):
     if Odoo.isLoading:
@@ -127,11 +129,12 @@ def definition(params: TextDocumentPositionParams):
     return []
 
 @odoo_server.thread()
-@odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
-def did_change(ls, params: DidChangeTextDocumentParams):
-    """Text document did change notification."""
-    if Odoo.isLoading:
-        return
+def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
+    id = 0
+    with odoo_server.id_lock:
+        id = odoo_server.id
+        if id != reg_id:
+            return
     text_doc = ls.workspace.get_document(params.text_document.uri)
     source = text_doc.source
     final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
@@ -142,6 +145,17 @@ def did_change(ls, params: DidChangeTextDocumentParams):
     Odoo.get(ls).file_change(ls, final_path, source, params.text_document.version)
     print("done")
 
+@odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
+def did_change(ls, params: DidChangeTextDocumentParams):
+    """Text document did change notification."""
+    if Odoo.isLoading:
+        return
+    with odoo_server.id_lock:
+        odoo_server.id += 1
+        id = odoo_server.id
+    #As we don't want to validate on each change immediately, we wait a bit before rebuilding.
+    #The id ensure we do the rebuild only if this is the last change.
+    threading.Timer(2.0, _did_change_after_delay, [ls, params, id]).start()
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
