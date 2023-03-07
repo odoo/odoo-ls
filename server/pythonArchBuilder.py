@@ -24,10 +24,8 @@ class PythonArchBuilder(ast.NodeVisitor):
     can be thrown from here (invalid base class, etc...). Any validation diagnostics should be done byafter with
     the PythonValidator"""
 
-    def __init__(self, ls, path, parentSymbol, subPathTree=[], importMode=False):
-        """Prepare an arch builder to parse the element at 'path' + subPathTree.
-        if importMode, the symbol will be not built if they already exists. It is used to check that a module/file has
-        been imported or import it without reconstructing it multiple time"""
+    def __init__(self, ls, path, parentSymbol, subPathTree=[]):
+        """Prepare an arch builder to parse the element at 'path' + subPathTree."""
         self.filePath = path
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
@@ -36,23 +34,19 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.diagnostics = []
         self.currentModule = None
         self.subPathTree = subPathTree
-        self.importMode = importMode
         self.pathTree = [] #cache tree of the current symbol
 
-    def load_arch(self, content = False, version = 1):
+    def load_arch(self, fileInfo = False, follow_imports = True):
         """load all symbols at self.path, filtered by self.subPathTree. All dependencies (odoo modules) must have been loaded first.
         Excpected behaviour:
         On new element, not present in tree: load symbol and subsequent symbols.
         The code will follow all found import statement and try to import symbols from them too.
-        On an existing symbol, the symbol will be unloaded and dependents flagged as to revalidate.
-        The symbol unloaded is then reloaded, but imports are not followed
+        On an existing symbol, the symbol will be simply returned
         """
         #TODO ensure that identical name in same file doesn't throw a reload on first one
         existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]] + self.subPathTree)
         if existing_symbol:
-            if self.importMode:
-                return existing_symbol
-            existing_symbol.unload()
+            return existing_symbol
         self.diagnostics = []
         if not self.filePath.endswith(".py"):
             #check if this is a package:
@@ -75,7 +69,8 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.symStack.append(symbol)
         #parse the Python file
         self.tree = self.symStack[-1].get_tree()
-        fileInfo = FileMgr.getFileInfo(self.filePath, content, version)
+        if not fileInfo:
+            fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
             self.load_symbols_from_ast(fileInfo["ast"])
             if self.symStack[-1].is_external():

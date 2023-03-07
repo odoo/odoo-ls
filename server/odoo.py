@@ -49,7 +49,7 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", "root", [])
 
-    to_rebuild = {} #by files, symbol tree to rebuild
+    to_rebuild = weakref.WeakSet()
 
     instance = None
 
@@ -62,7 +62,7 @@ class Odoo():
     @contextmanager
     def acquire_write(self):
         with self.write_lock:
-            self.read_sem.wait()
+            self.thread_access_condition.wait_empty()
             yield
 
     @contextmanager
@@ -168,6 +168,8 @@ class Odoo():
         if path.startswith(self.instance.odooPath):
             tree = path.replace(".py", "")[len(self.instance.odooPath)+1:].replace("\\", "/").split("/")
             if tree:
+                if tree[-1] == "__init__":
+                    tree.pop()
                 if tree[0] == "addons":
                     tree = ["odoo"] + tree
             return self.symbols.get_symbol(tree)
@@ -179,31 +181,38 @@ class Odoo():
     def file_change(self, ls, path, text, version):
         from server.pythonArchBuilder import PythonArchBuilder
         if path.endswith(".py"):
-            try:
-                new_ast = ast.parse(text)
-                file_symbol["ast"] = new_ast
-                file_symbol["version"] = version
-                with Odoo.get().acquire_write():
-                    #1 unload
-                    file_symbol = self.get_file_symbol(path)
-                    file_symbol.unload()
-                    #build new
-                    pp = PythonArchBuilder(ls, path, file_symbol.parent)
-                    pp.load_arch(text, version)
-            except Exception as e:
-                return
+            print("reload triggered on " + path + " version " + str(version))
+            file_info = FileMgr.getFileInfo(path, text, version)
+            if not file_info["ast"]:
+                return #could emit syntax error in file_info["d_synt"]
+            with Odoo.get().acquire_write():
+                #1 unload
+                print("unload " + path)
+                file_symbol = self.get_file_symbol(path)
+                file_symbol.unload()
+                #build new
+                time.sleep(4)
+                print("rebuilding...")
+                pp = PythonArchBuilder(ls, path, file_symbol.parent)
+                del file_symbol
+                pp.load_arch()
+                #rebuild validations
+                print("revalidating..."+ str(len(self.to_rebuild)) + " files to rebuild")
+                self.rebuild_validations(ls)
+                print("done")
 
-    def add_to_rebuild(self, weak_symbol):
-        """ add a symbol (with its tree path) to the list of rebuild to do."""
-        index = 0
-        return
-        while index != len(self.to_rebuild):
-            s = self.to_rebuild[s]
-            if len(s) < len(symbol_path):
-                if s == symbol_path[:len(s)]:
-                    return
-            elif symbol_path == s[:len(symbol_path)]:
-                del self.to_rebuild[index]
-                index -=1
-            index += 1
-        self.to_rebuild.append(symbol_path)
+    def add_to_rebuild(self, symbol):
+        """ add a symbol to the list of rebuild to do."""
+        if symbol:
+            file = symbol.get_in_parents(["file", "package", "namespace"])
+            if not file:
+                print("file not found, can't rebuild")
+                return
+            self.to_rebuild.add(file)
+
+    def rebuild_validations(self, ls):
+        """ Rebuild validation of all pending files. Be sure to have a write lock """
+        from server.pythonValidator import PythonValidator
+        for file in self.to_rebuild:
+            PythonValidator(ls, file).validate()
+        self.to_rebuild.clear()

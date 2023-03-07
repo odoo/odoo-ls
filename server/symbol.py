@@ -58,6 +58,9 @@ class Symbol():
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
     
+    def __del__(self):
+        print("symbol deleted " + self.name)
+    
     def all_symbols(self):
         for s in self.symbols.values():
             yield s
@@ -78,7 +81,8 @@ class Symbol():
                 symbols.append(s)
             del symbols[0]
         #2: delete symbol
-        self.parent.symbols.pop(self.name)
+        self.parent.symbols.pop(self.name, None)
+        self.parent.moduleSymbols.pop(self.name, None)
         self.type = "dirty" #to help debugging
 
     def get_tree(self):

@@ -92,7 +92,6 @@ class PythonValidator(ast.NodeVisitor):
                         validator = PythonValidator(self.ls, sym_child)
                         validator.validate()
                 for inference in symbol.inferencer.inferences:
-                    #TODO link to the final symbol is ok, but add dependency to inference symbol !
                     self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.ref_symbol(), node.lineno))
             else:
                 symbol = Odoo.get().symbols.get_symbol(file_tree)
@@ -101,8 +100,11 @@ class PythonValidator(ast.NodeVisitor):
                     if not symbol:
                         break
                     symbol = symbol.get_symbol([n])
+                    if symbol:
+                        symbol.dependents.add(self.symStack[-1])
                 if symbol:
                     symbol = symbol.get_symbol([], [name.split(".")[-1]], excl=self.symStack[0])
+                    symbol.dependents.add(self.symStack[-1])
                 if not symbol:
                     if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
                         continue

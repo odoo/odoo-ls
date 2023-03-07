@@ -32,9 +32,6 @@ def loadSymbolsFromImportStmt(ls, file_symbol, parent_symbol, from_stmt, names, 
             if not name_symbol:
                 continue
             variable.evaluationType = weakref.ref(name_symbol)
-            if name_symbol and level > 0:
-                if parent_symbol not in name_symbol.dependents:
-                    name_symbol.dependents.add(parent_symbol)
         else:
             if from_symbol:
                 allowed_sym = True
@@ -89,6 +86,7 @@ def _get_or_create_symbol(ls, symbol, names, file_symbol, asname, lineno, end_li
     return symbol
 
 def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, end_lineno):
+    """ Return a new symbol for the name and given parent_Symbol, that is matching what is on disk"""
     from .pythonArchBuilder import PythonArchBuilder
     if parent_symbol and parent_symbol.type == "compiled":
         #in case of compiled file, import symbols to resolve imports
@@ -106,10 +104,10 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
                     """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
                     It means we are in a file like odoo/*, and modules are not loaded yet."""
                     return
-            parser = PythonArchBuilder(ls, full_path, parent_symbol, importMode=True)
+            parser = PythonArchBuilder(ls, full_path, parent_symbol)
             return parser.load_arch()
         elif os.path.isfile(full_path + ".py"):
-            parser = PythonArchBuilder(ls, full_path + ".py", parent_symbol, importMode=True)
+            parser = PythonArchBuilder(ls, full_path + ".py", parent_symbol)
             return parser.load_arch()
         elif parent_symbol.get_tree()[0] != []: #don't try to glob on root and direct subpackages
             if os.name == "nt":
