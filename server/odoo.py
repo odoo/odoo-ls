@@ -189,19 +189,37 @@ class Odoo():
                 return #could emit syntax error in file_info["d_synt"]
             with Odoo.get().acquire_write():
                 #1 unload
-                print("unload " + path)
                 file_symbol = self.get_file_symbol(path)
                 file_symbol.unload()
                 #build new
-                print("rebuilding...")
                 pp = PythonArchBuilder(ls, path, file_symbol.parent)
                 del file_symbol
                 new_symbol = pp.load_arch()
                 #rebuild validations
-                print("revalidating..."+ str(len(self.to_rebuild)) + " files to rebuild")
                 self.rebuild_validations(ls)
                 self.search_for_new_dependents(ls, new_symbol)
-                print("done")
+    
+    def file_rename(self, ls, old_path, new_path):
+        from server.pythonArchBuilder import PythonArchBuilder
+        with Odoo.get().acquire_write():
+            #unload old
+            file_symbol = self.get_file_symbol(old_path)
+            if file_symbol:
+                file_symbol.unload()
+            #build new
+            parent_path = "/".join(new_path.split("/")[:-1])
+            parent_symbol = self.get_file_symbol(parent_path)
+            new_symbol = None
+            if not parent_symbol:
+                print("parent symbol not found: " + parent_path)
+            else:
+                print("found: " + str(parent_symbol.get_tree()))
+                pp = PythonArchBuilder(ls, new_path, parent_symbol)
+                del file_symbol
+                new_symbol = pp.load_arch()
+            #rebuild validations
+            self.rebuild_validations(ls)
+            self.search_for_new_dependents(ls, new_symbol)
 
     def add_to_rebuild(self, symbol):
         """ add a symbol to the list of rebuild to do."""
@@ -223,6 +241,8 @@ class Odoo():
     
     def search_for_new_dependents(self, ls, symbol):
         from server.pythonValidator import PythonValidator
+        if not symbol:
+            return
         flat_tree = [item for l in symbol.get_tree() for item in l]
         new_set_to_revalidate = weakref.WeakSet()
         for s in self.not_found_symbols:

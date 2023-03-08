@@ -30,10 +30,7 @@ from server.fileMgr import *
 import urllib.parse
 import urllib.request
 
-from lsprotocol.types import (TEXT_DOCUMENT_COMPLETION, TEXT_DOCUMENT_DID_CHANGE,
-                               TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN, 
-                               TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL, TEXT_DOCUMENT_DEFINITION,
-                               TEXT_DOCUMENT_HOVER)
+from lsprotocol.types import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
@@ -156,6 +153,21 @@ def did_change(ls, params: DidChangeTextDocumentParams):
     #As we don't want to validate on each change immediately, we wait a bit before rebuilding.
     #The id ensure we do the rebuild only if this is the last change.
     threading.Timer(2.0, _did_change_after_delay, [ls, params, id]).start()
+
+@odoo_server.feature(WORKSPACE_DID_RENAME_FILES, FileOperationRegistrationOptions(filters = [
+    FileOperationFilter(pattern = FileOperationPattern(glob = "**"))
+]))
+def did_rename_files(ls, params):
+    """Workspace did rename files notification."""
+    if Odoo.isLoading:
+        return
+    for f in params.files:
+        final_path = urllib.parse.urlparse(urllib.parse.unquote(f.old_uri)).path
+        final_path = urllib.request.url2pathname(final_path)
+        #TODO find better than this small hack for windows (get disk letter in capital)
+        if os.name == "nt":
+            final_path = final_path[0].capitalize() + final_path[1:]
+        Odoo.get(ls).file_rename(ls, final_path, f.new_uri)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
