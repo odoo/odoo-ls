@@ -45,14 +45,16 @@ class PythonValidator(ast.NodeVisitor):
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].validationStatus = 1
+        self.symStack[0].not_found_paths = []
+        Odoo.get().not_found_symbols.discard(self.symStack[0])
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
             return
         self.validate_ast(fileInfo["ast"])
         self.symStack[0].validationStatus = 2
-        if self.diagnostics:
-            self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
+        #publish diag in all case to erase potential previous diag
+        self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
         return
 
     def validate_ast(self, ast):
@@ -104,11 +106,12 @@ class PythonValidator(ast.NodeVisitor):
                         symbol.dependents.add(self.symStack[-1])
                 if symbol:
                     symbol = symbol.get_symbol([], [name.split(".")[-1]], excl=self.symStack[0])
-                    symbol.dependents.add(self.symStack[-1])
                 if not symbol:
                     if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
                         continue
                     if not self.safeImport[-1]:
+                        self.symStack[0].not_found_paths.append(file_tree + name.split("."))
+                        Odoo.get().not_found_symbols.add(self.symStack[0])
                         self.diagnostics.append(Diagnostic(
                             range = Range(
                                 start=Position(line=node.lineno-1, character=node.col_offset),
@@ -121,6 +124,7 @@ class PythonValidator(ast.NodeVisitor):
                         ))
                     break
                 else:
+                    symbol.dependents.add(self.symStack[-1])
                     parent_file = symbol.get_in_parents(["file", "package"])
                     to_validate = symbol
                     if parent_file:

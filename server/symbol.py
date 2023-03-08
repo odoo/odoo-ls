@@ -54,6 +54,7 @@ class Symbol():
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
+        self.not_found_paths = []
     
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"

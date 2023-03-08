@@ -51,6 +51,8 @@ class Odoo():
 
     to_rebuild = weakref.WeakSet()
 
+    not_found_symbols = weakref.WeakSet() # Set of symbols that still have unresolved dependencies
+
     instance = None
 
     write_lock = threading.Lock()
@@ -191,14 +193,14 @@ class Odoo():
                 file_symbol = self.get_file_symbol(path)
                 file_symbol.unload()
                 #build new
-                time.sleep(4)
                 print("rebuilding...")
                 pp = PythonArchBuilder(ls, path, file_symbol.parent)
                 del file_symbol
-                pp.load_arch()
+                new_symbol = pp.load_arch()
                 #rebuild validations
                 print("revalidating..."+ str(len(self.to_rebuild)) + " files to rebuild")
                 self.rebuild_validations(ls)
+                self.search_for_new_dependents(ls, new_symbol)
                 print("done")
 
     def add_to_rebuild(self, symbol):
@@ -208,11 +210,27 @@ class Odoo():
             if not file:
                 print("file not found, can't rebuild")
                 return
+            file.validationStatus = 0
             self.to_rebuild.add(file)
 
     def rebuild_validations(self, ls):
         """ Rebuild validation of all pending files. Be sure to have a write lock """
         from server.pythonValidator import PythonValidator
         for file in self.to_rebuild:
+            print(file.paths[0])
             PythonValidator(ls, file).validate()
         self.to_rebuild.clear()
+    
+    def search_for_new_dependents(self, ls, symbol):
+        from server.pythonValidator import PythonValidator
+        flat_tree = [item for l in symbol.get_tree() for item in l]
+        new_set_to_revalidate = weakref.WeakSet()
+        for s in self.not_found_symbols:
+            for p in s.not_found_paths:
+                if flat_tree[:len(p)] == p[:len(flat_tree)]:
+                    new_set_to_revalidate.add(s)
+                    print("found one pending: " + str(s.get_tree()))
+        for s in new_set_to_revalidate:
+            s.validationStatus = 0
+            PythonValidator(ls, s).validate()
+
