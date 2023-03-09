@@ -162,12 +162,15 @@ def did_rename_files(ls, params):
     if Odoo.isLoading:
         return
     for f in params.files:
-        final_path = urllib.parse.urlparse(urllib.parse.unquote(f.old_uri)).path
-        final_path = urllib.request.url2pathname(final_path)
+        old_path = urllib.parse.urlparse(urllib.parse.unquote(f.old_uri)).path
+        old_path = urllib.request.url2pathname(old_path)
+        new_path = urllib.parse.urlparse(urllib.parse.unquote(f.new_uri)).path
+        new_path = urllib.request.url2pathname(new_path)
         #TODO find better than this small hack for windows (get disk letter in capital)
         if os.name == "nt":
-            final_path = final_path[0].capitalize() + final_path[1:]
-        Odoo.get(ls).file_rename(ls, final_path, f.new_uri)
+            old_path = old_path[0].capitalize() + old_path[1:]
+            new_path = new_path[0].capitalize() + new_path[1:]
+        Odoo.get(ls).file_rename(ls, old_path, new_path)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):

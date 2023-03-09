@@ -197,7 +197,9 @@ class Odoo():
                 new_symbol = pp.load_arch()
                 #rebuild validations
                 self.rebuild_validations(ls)
-                self.search_for_new_dependents(ls, new_symbol)
+                if new_symbol:
+                    set_to_validate = self._search_symbols_to_rebuild(new_symbol.get_tree())
+                    self.validate_related_files(ls, set_to_validate)
     
     def file_rename(self, ls, old_path, new_path):
         from server.pythonArchBuilder import PythonArchBuilder
@@ -214,12 +216,19 @@ class Odoo():
                 print("parent symbol not found: " + parent_path)
             else:
                 print("found: " + str(parent_symbol.get_tree()))
-                pp = PythonArchBuilder(ls, new_path, parent_symbol)
-                del file_symbol
-                new_symbol = pp.load_arch()
+                new_tree = parent_symbol.get_tree()
+                new_tree[1].append(new_path.split("/")[-1].replace(".py", ""))
+                set_to_validate = self._search_symbols_to_rebuild(new_tree)
+                if set_to_validate:
+                    #if there is something that is trying to import the new file, build it.
+                    #Else, don't add it to the architecture to not add useless symbols (and overrides)
+                    pp = PythonArchBuilder(ls, new_path, parent_symbol)
+                    del file_symbol
+                    new_symbol = pp.load_arch()
             #rebuild validations
             self.rebuild_validations(ls)
-            self.search_for_new_dependents(ls, new_symbol)
+            if new_symbol:
+                self.validate_related_files(ls, set_to_validate)
 
     def add_to_rebuild(self, symbol):
         """ add a symbol to the list of rebuild to do."""
@@ -238,19 +247,20 @@ class Odoo():
             print(file.paths[0])
             PythonValidator(ls, file).validate()
         self.to_rebuild.clear()
-    
-    def search_for_new_dependents(self, ls, symbol):
-        from server.pythonValidator import PythonValidator
-        if not symbol:
-            return
-        flat_tree = [item for l in symbol.get_tree() for item in l]
+
+    def _search_symbols_to_rebuild(self, tree):
+        flat_tree = [item for l in tree for item in l]
         new_set_to_revalidate = weakref.WeakSet()
         for s in self.not_found_symbols:
             for p in s.not_found_paths:
                 if flat_tree[:len(p)] == p[:len(flat_tree)]:
                     new_set_to_revalidate.add(s)
                     print("found one pending: " + str(s.get_tree()))
-        for s in new_set_to_revalidate:
+        return new_set_to_revalidate
+    
+    def validate_related_files(self, ls, set_to_validate):
+        from server.pythonValidator import PythonValidator
+        for s in set_to_validate:
             s.validationStatus = 0
             PythonValidator(ls, s).validate()
 

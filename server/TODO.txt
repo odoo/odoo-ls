@@ -18,11 +18,6 @@ build a valid structure for hovering and go to definition
 implement hover and go to definition "under cursor detetion"
 
 
-Remains for imports:
-    -> add imported names as Symbol (type = ImportedVar?)
-    -> for name, asname highly inefficient
-
-
 
 
 
