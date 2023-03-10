@@ -74,16 +74,20 @@ class Symbol():
     def unload(self):
         from .odoo import Odoo
         #1: collect all symbols to revalidate
+        self.parent.symbols.pop(self.name, None)
+        self.parent.moduleSymbols.pop(self.name, None)
         symbols = [self]
         while symbols:
             for d in symbols[0].dependents:
-                Odoo.get().add_to_rebuild(d)
+                if not symbols[0].is_symbol_in_parents(self):
+                    Odoo.get().add_to_validations(d, force=True) #As we are unloading, things are changing, we have to force the validation
             for s in symbols[0].all_symbols():
                 symbols.append(s)
+            symbols[0].moduleSymbols.clear()
+            symbols[0].symbols.clear()
+            symbols[0].parent = None
             del symbols[0]
         #2: delete symbol
-        self.parent.symbols.pop(self.name, None)
-        self.parent.moduleSymbols.pop(self.name, None)
         self.type = "dirty" #to help debugging
 
     def get_tree(self):
@@ -204,6 +208,11 @@ class Symbol():
             return None
         if self.parent:
             return self.parent.get_in_parents(types, stop_same_file)
+    
+    def is_symbol_in_parents(self, symbol):
+        while self.parent != symbol and self.parent:
+            self = self.parent
+        return self.parent == symbol
 
     def get_scope_symbol(self, line):
         """return the symbol (class or function) the closest to the given line """

@@ -75,6 +75,8 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.load_symbols_from_ast(fileInfo["ast"])
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
+            else:
+                Odoo.get().to_validate.add(self.symStack[1])
         if self.diagnostics: #TODO not on self anymore.... take diags from fileInfo
             self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
         return self.symStack[1]

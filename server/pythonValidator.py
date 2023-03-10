@@ -109,6 +109,10 @@ class PythonValidator(ast.NodeVisitor):
                 if not symbol:
                     if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
                         continue
+                    # in the first build, the symbol should be available, but byafter, not necessarily.
+                    # When a symbol is rebuild, subsymbols can be ignored if they are not imported
+                    # in __init__.py. So we can try to import them here if we don't find them.
+                    #TODO import symbol
                     if not self.safeImport[-1]:
                         self.symStack[0].not_found_paths.append(file_tree + name.split("."))
                         Odoo.get().not_found_symbols.add(self.symStack[0])
@@ -125,13 +129,6 @@ class PythonValidator(ast.NodeVisitor):
                     break
                 else:
                     symbol.dependents.add(self.symStack[-1])
-                    parent_file = symbol.get_in_parents(["file", "package"])
-                    to_validate = symbol
-                    if parent_file:
-                        to_validate = parent_file
-                    if not to_validate.validationStatus:
-                        validator = PythonValidator(self.ls, to_validate)
-                        validator.validate()
                     self.symStack[-1].inferencer.addInference(Inference(symbol.name, symbol, node.lineno))
                     #import symbols, inference them
 

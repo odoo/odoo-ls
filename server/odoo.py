@@ -26,6 +26,8 @@ from .constants import CONFIGURATION_SECTION
 #for debug
 import time
 
+import tracemalloc
+
 
 class Odoo():
 
@@ -49,7 +51,7 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", "root", [])
 
-    to_rebuild = weakref.WeakSet()
+    to_validate = weakref.WeakSet() # List of symbols that need to be revalidated
 
     not_found_symbols = weakref.WeakSet() # Set of symbols that still have unresolved dependencies
 
@@ -113,7 +115,6 @@ class Odoo():
 
     def build_base(self, ls):
         from server.pythonArchBuilder import PythonArchBuilder
-        from server.pythonValidator import PythonValidator
         releasePath = os.path.join(self.odooPath, "odoo", "release.py")
         if os.path.exists(releasePath):
             with open(releasePath, "r") as f:
@@ -131,8 +132,7 @@ class Odoo():
             self.symbols.paths += [self.odooPath]
             parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols)
             parser.load_arch()
-            validation = PythonValidator(ls, self.symbols.get_symbol(["odoo"]))
-            validation.validate()
+            self.process_validations(ls)
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             addonsSymbol.paths += [
                 os.path.join(self.odooPath, "addons"), 
@@ -144,6 +144,13 @@ class Odoo():
             return False
         return False
 
+    def process_validations(self, ls):
+        from server.pythonValidator import PythonValidator
+        for symbol in self.to_validate:
+            validation = PythonValidator(ls, symbol)
+            validation.validate()
+        self.to_validate.clear()
+
     def build_modules(self, ls):
         from server.module import Module
         addonPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
@@ -154,9 +161,7 @@ class Odoo():
         if FULL_LOAD_AT_STARTUP:
             for module in Odoo.get().modules.values():
                 module.load_arch(ls)
-            for module in Odoo.get().modules.values():
-                module.validate(ls)
-
+            self.process_validations(ls) #Maybe avoid this as the weakset can be quite big?
 
         try:
             import psutil
@@ -182,6 +187,8 @@ class Odoo():
 
     def file_change(self, ls, path, text, version):
         from server.pythonArchBuilder import PythonArchBuilder
+
+        #snapshot1 = tracemalloc.take_snapshot()
         if path.endswith(".py"):
             print("reload triggered on " + path + " version " + str(version))
             file_info = FileMgr.getFileInfo(path, text, version)
@@ -189,17 +196,24 @@ class Odoo():
                 return #could emit syntax error in file_info["d_synt"]
             with Odoo.get().acquire_write():
                 #1 unload
+                if path.endswith("__init__.py"):
+                    path = "/".join(path.split("/")[:-1])
                 file_symbol = self.get_file_symbol(path)
+                parent = file_symbol.parent
                 file_symbol.unload()
-                #build new
-                pp = PythonArchBuilder(ls, path, file_symbol.parent)
                 del file_symbol
+                #build new
+                pp = PythonArchBuilder(ls, path, parent)
                 new_symbol = pp.load_arch()
                 #rebuild validations
-                self.rebuild_validations(ls)
+                self.process_validations(ls)
                 if new_symbol:
                     set_to_validate = self._search_symbols_to_rebuild(new_symbol.get_tree())
                     self.validate_related_files(ls, set_to_validate)
+        #snapshot2 = tracemalloc.take_snapshot()
+
+        #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
+        return
     
     def file_rename(self, ls, old_path, new_path):
         from server.pythonArchBuilder import PythonArchBuilder
@@ -222,31 +236,27 @@ class Odoo():
                 if set_to_validate:
                     #if there is something that is trying to import the new file, build it.
                     #Else, don't add it to the architecture to not add useless symbols (and overrides)
+                    if new_path.endswith("__init__.py"):
+                        new_path = "/".join(new_path.split("/")[:-1])
                     pp = PythonArchBuilder(ls, new_path, parent_symbol)
                     del file_symbol
                     new_symbol = pp.load_arch()
             #rebuild validations
-            self.rebuild_validations(ls)
+            self.process_validations(ls)
             if new_symbol:
                 self.validate_related_files(ls, set_to_validate)
 
-    def add_to_rebuild(self, symbol):
-        """ add a symbol to the list of rebuild to do."""
+    def add_to_validations(self, symbol, force=False):
+        """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
+        he is already validated"""
         if symbol:
             file = symbol.get_in_parents(["file", "package", "namespace"])
             if not file:
                 print("file not found, can't rebuild")
                 return
-            file.validationStatus = 0
-            self.to_rebuild.add(file)
-
-    def rebuild_validations(self, ls):
-        """ Rebuild validation of all pending files. Be sure to have a write lock """
-        from server.pythonValidator import PythonValidator
-        for file in self.to_rebuild:
-            print(file.paths[0])
-            PythonValidator(ls, file).validate()
-        self.to_rebuild.clear()
+            if force:
+                file.validationStatus = 0
+            self.to_validate.add(file)
 
     def _search_symbols_to_rebuild(self, tree):
         flat_tree = [item for l in tree for item in l]

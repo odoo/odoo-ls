@@ -7,8 +7,11 @@ Imports:
     Validation level:
         -> follow imports to build inferences of symbols -> wrong, they should be real symbols
 
-
-
+Bugs
+=> when rebuild:
+    -> if a subsymbol (of package/namespace) is not imported by parents but by validators only, they are not imported
+=> (to check) what happen if 1 sys.path is included in another one? Are all symbols duplicated?
+    We can maybe have this issue in another cases? to check and try to avoid this situation?
 
 
 build a valid structure for hovering and go to definition

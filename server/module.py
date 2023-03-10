@@ -3,6 +3,7 @@ from .constants import *
 import os
 from .odoo import * 
 from .fileMgr import *
+import weakref
 from server.pythonArchBuilder import *
 from server.pythonValidator import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
@@ -24,7 +25,6 @@ class Module():
     dir_name = ""
     depends = ["base"]
     data = []
-    mainSymbol = None
 
     def __init__(self, ls, dir_path):
         self.dir_name = os.path.split(dir_path)[1]
@@ -52,11 +52,6 @@ class Module():
         print("loaded: " + self.dir_name)
         if diagnostics:
             ls.publish_diagnostics(FileMgr.pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
-    
-    def validate(self, ls):
-        if self.mainSymbol:
-            validator = PythonValidator(ls, self.mainSymbol)
-            validator.validate()
 
     def load_manifest(self, manifestPath):
         """ Load manifest to identify the module characteristics 
@@ -94,7 +89,7 @@ class Module():
 
     def _load_arch(self, ls, path):
         parser = PythonArchBuilder(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
-        self.mainSymbol = parser.load_arch()
+        parser.load_arch()
         return []
     
     def is_in_deps(self, module_name):
