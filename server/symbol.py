@@ -79,7 +79,7 @@ class Symbol():
         symbols = [self]
         while symbols:
             for d in symbols[0].dependents:
-                if not symbols[0].is_symbol_in_parents(self):
+                if not d.is_symbol_in_parents(symbols[0]):
                     Odoo.get().add_to_validations(d, force=True) #As we are unloading, things are changing, we have to force the validation
             for s in symbols[0].all_symbols():
                 symbols.append(s)

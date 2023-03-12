@@ -84,19 +84,19 @@ class PythonValidator(ast.NodeVisitor):
 
     def _resolve_import(self, from_stmt, names, level, node):
         file_tree = resolve_packages(self.symStack[0], level, from_stmt)
+        symbol = Odoo.get().symbols.get_symbol(file_tree)
         for name, asname in names:
             if name == "*":
-                symbol = Odoo.get().symbols.get_symbol(file_tree)
                 if not symbol:
                     continue
                 for sym_child in symbol.moduleSymbols.values():
                     if not sym_child.validationStatus:
                         validator = PythonValidator(self.ls, sym_child)
                         validator.validate()
+                #TODO wrong, it should be symbols
                 for inference in symbol.inferencer.inferences:
                     self.symStack[-1].inferencer.addInference(Inference(inference.name, inference.ref_symbol(), node.lineno))
             else:
-                symbol = Odoo.get().symbols.get_symbol(file_tree)
                 name_parts = name.split(".")
                 for n in name_parts[:-1]:
                     if not symbol:
@@ -112,7 +112,8 @@ class PythonValidator(ast.NodeVisitor):
                     # in the first build, the symbol should be available, but byafter, not necessarily.
                     # When a symbol is rebuild, subsymbols can be ignored if they are not imported
                     # in __init__.py. So we can try to import them here if we don't find them.
-                    #TODO import symbol
+                    loadSymbolsFromImportStmt(self.ls, self.symStack[1], self.symStack[-1], from_stmt, 
+                        names, level, node.lineno, node.end_lineno)
                     if not self.safeImport[-1]:
                         self.symStack[0].not_found_paths.append(file_tree + name.split("."))
                         Odoo.get().not_found_symbols.add(self.symStack[0])

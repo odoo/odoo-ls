@@ -152,7 +152,7 @@ def did_change(ls, params: DidChangeTextDocumentParams):
         id = odoo_server.id
     #As we don't want to validate on each change immediately, we wait a bit before rebuilding.
     #The id ensure we do the rebuild only if this is the last change.
-    threading.Timer(2.0, _did_change_after_delay, [ls, params, id]).start()
+    threading.Timer(1.0, _did_change_after_delay, [ls, params, id]).start()
 
 @odoo_server.feature(WORKSPACE_DID_RENAME_FILES, FileOperationRegistrationOptions(filters = [
     FileOperationFilter(pattern = FileOperationPattern(glob = "**"))
