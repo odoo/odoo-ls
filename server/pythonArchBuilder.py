@@ -88,16 +88,49 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        loadSymbolsFromImportStmt(self.ls, self.symStack[1], self.symStack[-1], None, 
+        self.create_local_symbols_from_import_stmt(None, 
                     [(name.name, name.asname) for name in node.names], 0, 
                     node.lineno, node.end_lineno)
-        #self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
 
     def visit_ImportFrom(self, node):
-        loadSymbolsFromImportStmt(self.ls, self.symStack[1], self.symStack[-1], node.module, 
+        self.create_local_symbols_from_import_stmt(node.module, 
                     [(name.name, name.asname) for name in node.names], node.level, 
                     node.lineno, node.end_lineno)
-        #self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
+
+    def create_local_symbols_from_import_stmt(self, from_stmt, names, level, lineno, end_lineno):
+        symbols = resolve_import_stmt(self.ls, self.symStack[1], self.symStack[-1], from_stmt, names, level, lineno, end_lineno)
+
+        for name, asname, symbol, _ in symbols:
+            if not symbol:
+                continue
+            if name != '*':
+                variable = Symbol(asname if asname else name, "variable", self.symStack[1].paths[0])
+                variable.startLine = lineno
+                variable.endLine = end_lineno
+                variable.evaluationType = weakref.ref(symbol)
+                self.symStack[-1].add_symbol(variable)
+            else:
+                allowed_sym = True
+                #in case of *, the symbol is the parent_symbol from which we will import all symbols
+                if "__all__" in symbol.symbols:
+                    allowed_sym = symbol.symbols["__all__"]
+                    # follow ref if the current __all__ is imported
+                    while allowed_sym and allowed_sym.type == "variable" and isinstance(allowed_sym.evaluationType, list):
+                        allowed_sym = Odoo.get().symbols.get_symbol([], allowed_sym.evaluationType)
+                    if allowed_sym:
+                        allowed_sym = allowed_sym.evaluationType
+                        if not allowed_sym or not allowed_sym.type == "primitive" and not allowed_sym.name == "list":
+                            print("debug= wrong __all__")
+                            allowed_sym = True
+                    if not isinstance(allowed_sym, Symbol):
+                        allowed_sym = True
+                for s in symbol.symbols.values():
+                    if allowed_sym == True or s.name in allowed_sym.evaluationType:
+                        variable = Symbol(s.name, "variable", self.symStack[1].paths[0])
+                        variable.startLine = lineno
+                        variable.endLine = end_lineno
+                        variable.evaluationType = weakref.ref(s)
+                        self.symStack[-1].add_symbol(variable)
 
     def visit_Try(self, node):
         safe = False

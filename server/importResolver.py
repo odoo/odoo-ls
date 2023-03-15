@@ -5,57 +5,44 @@ import weakref
 from .odoo import Odoo
 from .symbol import Symbol
 
-__all__ = ["loadSymbolsFromImportStmt", "resolve_packages"]
+__all__ = ["resolve_import_stmt"]
 
-def loadSymbolsFromImportStmt(ls, file_symbol, parent_symbol, from_stmt, names, level, 
+def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, names, level, 
                     lineno, end_lineno):
-    file_tree = resolve_packages(file_symbol, level, from_stmt)
-    from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, file_symbol, None, lineno, end_lineno)
+    """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist, 
+    it will be created if possible or None will be returned.
+    file_tree contains the the full file_tree to search for each name. Ex: from os import path => os
+    from .test import A => tree to current file + test"""
+    file_tree = _resolve_packages(source_file_symbol, level, from_stmt)
+    res = [[name, asname, None, file_tree] for name, asname in names]
+    from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, source_file_symbol, None, lineno, end_lineno)
+    if not from_symbol:
+        return res
 
+    name_index = -1
     for name, asname in names:
-        if name != '*':
-            variable = Symbol(asname if asname else name, "variable", file_symbol.paths[0])
-            variable.startLine = lineno
-            variable.endLine = end_lineno
-            variable.evaluationType = False
-            parent_symbol.add_symbol(variable)
-            if not from_symbol:
-                continue
-            from_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], file_symbol, None, lineno, end_lineno)
-            if not from_symbol:
-                continue
-            last_part_name = name.split(".")[-1]
-            name_symbol = from_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
-            if not name_symbol:
-                name_symbol = _resolve_new_symbol(ls, file_symbol, from_symbol, last_part_name, None, 
-                                                lineno, end_lineno)
-            if not name_symbol:
-                continue
-            variable.evaluationType = weakref.ref(name_symbol)
-        else:
-            if from_symbol:
-                allowed_sym = True
-                if "__all__" in from_symbol.symbols:
-                    allowed_sym = from_symbol.symbols["__all__"]
-                    # follow ref if the current __all__ is imported
-                    while allowed_sym and allowed_sym.type == "variable" and isinstance(allowed_sym.evaluationType, list):
-                        allowed_sym = Odoo.get().symbols.get_symbol([], allowed_sym.evaluationType)
-                    if allowed_sym:
-                        allowed_sym = allowed_sym.evaluationType
-                        if not allowed_sym or not allowed_sym.type == "primitive" and not allowed_sym.name == "list":
-                            print("debug= wrong __all__")
-                            allowed_sym = True
-                    if not isinstance(allowed_sym, Symbol):
-                        allowed_sym = True
-                for s in from_symbol.symbols.values():
-                    if allowed_sym == True or s.name in allowed_sym.evaluationType:
-                        variable = Symbol(s.name, "variable", file_symbol.paths[0])
-                        variable.startLine = lineno
-                        variable.endLine = end_lineno
-                        variable.evaluationType = weakref.ref(s)
-                        parent_symbol.add_symbol(variable)
+        name_index += 1
+        if name == '*':
+            res[name_index][2] = from_symbol
+            continue
+        #get the full file_tree, including the first part of the name import stmt. (os in import os.path) 
+        from_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
+        if not from_symbol:
+            continue
+        #now we can search for the last symbol, or create it if it doesn't exist
+        last_part_name = name.split(".")[-1]
+        name_symbol = from_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
+        if not name_symbol:
+            name_symbol = _resolve_new_symbol(ls, source_file_symbol, from_symbol, last_part_name, None, 
+                                            lineno, end_lineno)
+        if not name_symbol:
+            continue
+        #we found it ! store the result
+        res[name_index][2] = name_symbol
+        name_symbol.dependents.add(parent_symbol)
+    return res
 
-def resolve_packages(file_symbol, level, from_stmt):
+def _resolve_packages(file_symbol, level, from_stmt):
     """based on the file path and the from statement of an import statement, return the file tree
     to use in a get_symbol search"""
     file_tree = []
