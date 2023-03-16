@@ -208,7 +208,7 @@ class Odoo():
                 #rebuild validations
                 self.process_validations(ls)
                 if new_symbol:
-                    set_to_validate = self._search_symbols_to_rebuild(new_symbol.get_tree())
+                    set_to_validate = self._search_symbols_to_revalidate(new_symbol.get_tree())
                     self.validate_related_files(ls, set_to_validate)
         #snapshot2 = tracemalloc.take_snapshot()
 
@@ -232,7 +232,7 @@ class Odoo():
                 print("found: " + str(parent_symbol.get_tree()))
                 new_tree = parent_symbol.get_tree()
                 new_tree[1].append(new_path.split("/")[-1].replace(".py", ""))
-                set_to_validate = self._search_symbols_to_rebuild(new_tree)
+                set_to_validate = self._search_symbols_to_revalidate(new_tree)
                 if set_to_validate:
                     #if there is something that is trying to import the new file, build it.
                     #Else, don't add it to the architecture to not add useless symbols (and overrides)
@@ -256,14 +256,15 @@ class Odoo():
                 return
             if force:
                 file.validationStatus = 0
+            print(symbol.paths[0])
             self.to_validate.add(file)
 
-    def _search_symbols_to_rebuild(self, tree):
+    def _search_symbols_to_revalidate(self, tree):
         flat_tree = [item for l in tree for item in l]
         new_set_to_revalidate = weakref.WeakSet()
         for s in self.not_found_symbols:
             for p in s.not_found_paths:
-                if flat_tree[:len(p)] == p[:len(flat_tree)]:
+                if flat_tree[:len(p)] == p[:len(flat_tree)]: #TODO wrong
                     new_set_to_revalidate.add(s)
                     print("found one pending: " + str(s.get_tree()))
         return new_set_to_revalidate

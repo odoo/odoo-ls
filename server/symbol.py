@@ -59,8 +59,8 @@ class Symbol():
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
     
-    def __del__(self):
-        print("symbol deleted " + self.name)
+    #def __del__(self):
+    #    print("symbol deleted " + self.name)
     
     def all_symbols(self):
         for s in self.symbols.values():
@@ -72,23 +72,30 @@ class Symbol():
         return self.type not in ["namespace", "package", "file", "compiled"]
     
     def unload(self):
+        """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
         from .odoo import Odoo
         #1: collect all symbols to revalidate
         self.parent.symbols.pop(self.name, None)
         self.parent.moduleSymbols.pop(self.name, None)
         symbols = [self]
+        #first pass, we add all dependents to the validation list
+        # we have to do it before the unload because the unload will break the tree
         while symbols:
             for d in symbols[0].dependents:
-                if not d.is_symbol_in_parents(symbols[0]):
+                if d != self and not d.is_symbol_in_parents(self):
                     Odoo.get().add_to_validations(d, force=True) #As we are unloading, things are changing, we have to force the validation
+            for s in symbols[0].all_symbols():
+                symbols.append(s)
+            del symbols[0]
+        symbols = [self]
+        while symbols:
             for s in symbols[0].all_symbols():
                 symbols.append(s)
             symbols[0].moduleSymbols.clear()
             symbols[0].symbols.clear()
             symbols[0].parent = None
+            symbols[0].type = "dirty" #to help debugging
             del symbols[0]
-        #2: delete symbol
-        self.type = "dirty" #to help debugging
 
     def get_tree(self):
         tree = ([], [])
