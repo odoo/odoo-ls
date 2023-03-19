@@ -7,21 +7,18 @@ Imports:
     Validation level:
         -> follow imports to build inferences of symbols -> wrong, they should be real symbols
 
+Odoo specificities
+
+How to load a model? The difficulty come from the fact that everything has to be loaded to do inference and validation
+of Odoo stuff, but building odoo data knowledge require to run inferences and evaluations (_inherit = _name for example)
+
+
 Bugs
-=> when rebuild:
-    -> if a subsymbol (of package/namespace) is not imported by parents but by validators only, they are not imported
 => (to check) what happen if 1 sys.path is included in another one? Are all symbols duplicated?
     We can maybe have this issue in another cases? to check and try to avoid this situation?
 
 
-build a valid structure for hovering and go to definition
-    -> basic validation (complete arch build)
-        -> follow build construction and order, but validate files if an inference is needed ?
-    -> data rebuild on file change
 implement hover and go to definition "under cursor detetion"
-
-
-
 
 
 

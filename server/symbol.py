@@ -44,7 +44,6 @@ class Symbol():
         # but the other can be used locally)
         self.localSymbols = [] 
         self.dependents = weakref.WeakSet()
-        self.diagnostics = []
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -53,6 +52,7 @@ class Symbol():
         self.startLine = 0
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
+        self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
         self.not_found_paths = []
     

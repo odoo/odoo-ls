@@ -31,6 +31,7 @@ class FileMgr():
                 "uri": FileMgr.pathname2uri(path),
                 "d_synt": [],
                 "d_diag": [],
+                "d_odoo": [],
                 "d_val": []
             }
     
