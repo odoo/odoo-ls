@@ -7,20 +7,21 @@ from .symbol import Symbol
 
 __all__ = ["resolve_import_stmt"]
 
-def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, names, level, 
+def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_aliases, level, 
                     lineno, end_lineno):
     """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist, 
     it will be created if possible or None will be returned.
     file_tree contains the the full file_tree to search for each name. Ex: from os import path => os
     from .test import A => tree to current file + test"""
     file_tree = _resolve_packages(source_file_symbol, level, from_stmt)
-    res = [[name, asname, None, file_tree] for name, asname in names]
+    res = [[alias.name, alias.asname, None, file_tree] for alias in name_aliases]
     from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, source_file_symbol, None, lineno, end_lineno)
     if not from_symbol:
         return res
 
     name_index = -1
-    for name, asname in names:
+    for alias in name_aliases:
+        name = alias.name
         name_index += 1
         if name == '*':
             res[name_index][2] = from_symbol

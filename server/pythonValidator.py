@@ -7,7 +7,6 @@ from .odoo import *
 from .symbol import *
 from .model import *
 from .pythonUtils import *
-from .importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 class ClassContentCacheValidator():
@@ -27,7 +26,6 @@ class PythonValidator(ast.NodeVisitor):
         """Prepare a validator to validate the given file. """
         self.symStack = [symbol.get_in_parents(["file"]) or symbol] # we always validate at file level
         self.classContentCache = []
-        self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.currentModule = None
         self.filePath = None
@@ -53,56 +51,16 @@ class PythonValidator(ast.NodeVisitor):
             return
         self.validate_ast(fileInfo["ast"])
         self.symStack[0].validationStatus = 2
+        if self.diagnostics:
+            fileInfo["d_val"] = self.diagnostics
         #publish diag in all case to erase potential previous diag
-        self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
-        return
+        FileMgr.publish_diagnostics(self.ls, fileInfo)
 
     def validate_ast(self, ast):
         moduleName = self.symStack[-1].getModule()
         if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
             self.currentModule = Odoo.get().modules[moduleName]
         self.visit(ast)
-
-    def visit_Import(self, node):
-        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
-
-    def visit_ImportFrom(self, node):
-        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
-
-    def visit_Try(self, node):
-        safe = False
-        for handler in node.handlers:
-            if not isinstance(handler.type, ast.Name):
-                break
-            if handler.type.id == "ImportError":
-                safe = True
-                break
-        self.safeImport.append(safe)
-        ast.NodeVisitor.generic_visit(self, node)
-        self.safeImport.pop()
-
-
-    def _resolve_import(self, from_stmt, names, level, node):
-        symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, names, level, node.lineno, node.end_lineno)
-
-        for name, asname, symbol, file_tree in symbols:
-            if not symbol:
-                if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
-                    continue
-                if not self.safeImport[-1]:
-                    self.symStack[0].not_found_paths.append(file_tree + name.split("."))
-                    Odoo.get().not_found_symbols.add(self.symStack[0])
-                    self.diagnostics.append(Diagnostic(
-                        range = Range(
-                            start=Position(line=node.lineno-1, character=node.col_offset),
-                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                Position(line=node.lineno-1, character=node.end_col_offset)
-                        ),
-                        message = ".".join(file_tree + [name]) + " not found",
-                        source = EXTENSION_NAME,
-                        severity = 2
-                    ))
-                break
 
     def visit_Assign(self, node):
         return

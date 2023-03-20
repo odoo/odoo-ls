@@ -32,7 +32,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
-        self.currentModule = None
+        #self.currentModule = None
         self.subPathTree = subPathTree
         self.pathTree = [] #cache tree of the current symbol
 
@@ -76,28 +76,29 @@ class PythonArchBuilder(ast.NodeVisitor):
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
             else:
-                Odoo.get().to_validate.add(self.symStack[1])
-        if self.diagnostics: #TODO not on self anymore.... take diags from fileInfo
-            self.ls.publish_diagnostics(FileMgr.pathname2uri(self.filePath), self.diagnostics)
+                Odoo.get().to_init_odoo.add(self.symStack[1])
+            if self.diagnostics:
+                fileInfo["d_arch"] = self.diagnostics
+        FileMgr.publish_diagnostics(self.ls, fileInfo)
         return self.symStack[1]
 
     def load_symbols_from_ast(self, ast):
-        moduleName = self.symStack[-1].getModule()
-        if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
-            self.currentModule = Odoo.get().modules[moduleName]
+        #moduleName = self.symStack[-1].getModule()
+        #if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
+        #    self.currentModule = Odoo.get().modules[moduleName]
         self.visit(ast)
 
     def visit_Import(self, node):
         self.create_local_symbols_from_import_stmt(None, 
-                    [(name.name, name.asname) for name in node.names], 0, 
+                    node.names, 0, 
                     node.lineno, node.end_lineno)
 
     def visit_ImportFrom(self, node):
         self.create_local_symbols_from_import_stmt(node.module, 
-                    [(name.name, name.asname) for name in node.names], node.level, 
+                    node.names, node.level, 
                     node.lineno, node.end_lineno)
 
-    def create_local_symbols_from_import_stmt(self, from_stmt, names, level, lineno, end_lineno):
+    def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, lineno, end_lineno):
         symbols = resolve_import_stmt(self.ls, self.symStack[1], self.symStack[-1], from_stmt, names, level, lineno, end_lineno)
 
         for name, asname, symbol, _ in symbols:
@@ -167,7 +168,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                                 var.evaluationType = None
                                 self.symStack[-1].add_symbol(var)
                 else:
-                    print("Warning: symbol already defined " + variable)
+                    pass #print("Warning: symbol already defined " + variable)
 
     def visit_FunctionDef(self, node):
         symbol = Symbol(node.name, "function", self.filePath)

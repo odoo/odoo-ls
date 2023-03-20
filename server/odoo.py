@@ -51,7 +51,8 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", "root", [])
 
-    to_validate = weakref.WeakSet() # List of symbols that need to be revalidated
+    to_init_odoo = weakref.WeakSet() # Set of symbols that need a refresh of Odoo data
+    to_validate = weakref.WeakSet() # Set of symbols that need to be revalidated
 
     not_found_symbols = weakref.WeakSet() # Set of symbols that still have unresolved dependencies
 
@@ -132,6 +133,7 @@ class Odoo():
             self.symbols.paths += [self.odooPath]
             parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols)
             parser.load_arch()
+            self.process_odoo_init(ls)
             self.process_validations(ls)
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             addonsSymbol.paths += [
@@ -144,8 +146,17 @@ class Odoo():
             return False
         return False
 
+    def process_odoo_init(self, ls):
+        from server.pythonOdooBuilder import PythonOdooBuilder
+        print("init " + str(len(self.to_init_odoo)))
+        for symbol in self.to_init_odoo:
+            validation = PythonOdooBuilder(ls, symbol)
+            validation.load_odoo_content()
+        self.to_init_odoo.clear()
+
     def process_validations(self, ls):
         from server.pythonValidator import PythonValidator
+        print("validating " + str(len(self.to_validate)))
         for symbol in self.to_validate:
             validation = PythonValidator(ls, symbol)
             validation.validate()
@@ -161,6 +172,9 @@ class Odoo():
         if FULL_LOAD_AT_STARTUP:
             for module in Odoo.get().modules.values():
                 module.load_arch(ls)
+            print("start odoo loading")
+            self.process_odoo_init(ls)
+            print("start validation")
             self.process_validations(ls) #Maybe avoid this as the weakset can be quite big?
 
         try:
@@ -246,6 +260,18 @@ class Odoo():
             if new_symbol:
                 self.validate_related_files(ls, set_to_validate)
 
+    def add_to_init_odoo(self, symbol, force=False):
+        """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
+        he is already validated"""
+        if symbol:
+            file = symbol.get_in_parents(["file", "package", "namespace"])
+            if not file:
+                print("file not found, can't rebuild")
+                return
+            if force:
+                file.odooStatus = 0
+            self.to_init_odoo.add(file)
+
     def add_to_validations(self, symbol, force=False):
         """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
         he is already validated"""
@@ -256,7 +282,6 @@ class Odoo():
                 return
             if force:
                 file.validationStatus = 0
-            print(symbol.paths[0])
             self.to_validate.add(file)
 
     def _search_symbols_to_revalidate(self, tree):

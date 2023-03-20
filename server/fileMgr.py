@@ -30,7 +30,7 @@ class FileMgr():
                 "version": version,
                 "uri": FileMgr.pathname2uri(path),
                 "d_synt": [],
-                "d_diag": [],
+                "d_arch": [],
                 "d_odoo": [],
                 "d_val": []
             }
@@ -46,6 +46,10 @@ class FileMgr():
             f["ast"] = FileMgr._buildAST(path, f, content)
             f["version"] = version
         return f
+
+    @staticmethod
+    def publish_diagnostics(ls, file):
+        ls.publish_diagnostics(file["uri"], file["d_synt"] + file["d_arch"] + file["d_odoo"] + file["d_val"])
     
     @staticmethod
     def _buildAST(path, fileInfo, content):
