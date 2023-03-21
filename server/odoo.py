@@ -51,6 +51,7 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", "root", [])
 
+    to_rebuild = weakref.WeakSet() # Set of symbols to rebuild at arch level
     to_init_odoo = weakref.WeakSet() # Set of symbols that need a refresh of Odoo data
     to_validate = weakref.WeakSet() # Set of symbols that need to be revalidated
 
@@ -131,7 +132,7 @@ class Odoo():
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
             #set python path
             self.symbols.paths += [self.odooPath]
-            parser = PythonArchBuilder(ls, os.path.join(self.odooPath, "odoo"), self.symbols)
+            parser = PythonArchBuilder(ls, self.symbols, os.path.join(self.odooPath, "odoo"))
             parser.load_arch()
             self.process_odoo_init(ls)
             self.process_validations(ls)
@@ -145,6 +146,19 @@ class Odoo():
             print("Odoo not found at " + self.odooPath)
             return False
         return False
+
+    def process_arch_rebuild(self, ls):
+        from server.pythonArchBuilder import PythonArchBuilder
+        print("rebuild " + str(len(self.to_rebuild)))
+        for symbol in self.to_rebuild:
+            parent = symbol.parent
+            path = symbol.paths[0] #TODO if multiple? or can't?
+            symbol.unload()
+            del symbol
+            #build new
+            pp = PythonArchBuilder(ls, parent, path)
+            pp.load_arch()
+        self.to_rebuild.clear()
 
     def process_odoo_init(self, ls):
         from server.pythonOdooBuilder import PythonOdooBuilder
@@ -217,9 +231,11 @@ class Odoo():
                 file_symbol.unload()
                 del file_symbol
                 #build new
-                pp = PythonArchBuilder(ls, path, parent)
+                pp = PythonArchBuilder(ls, parent, path)
                 new_symbol = pp.load_arch()
                 #rebuild validations
+                self.process_arch_rebuild(ls)
+                self.process_odoo_init(ls)
                 self.process_validations(ls)
                 if new_symbol:
                     set_to_validate = self._search_symbols_to_revalidate(new_symbol.get_tree())
@@ -252,16 +268,23 @@ class Odoo():
                     #Else, don't add it to the architecture to not add useless symbols (and overrides)
                     if new_path.endswith("__init__.py"):
                         new_path = "/".join(new_path.split("/")[:-1])
-                    pp = PythonArchBuilder(ls, new_path, parent_symbol)
+                    pp = PythonArchBuilder(ls, parent_symbol, new_path)
                     del file_symbol
                     new_symbol = pp.load_arch()
             #rebuild validations
+            self.process_arch_rebuild(ls)
+            self.process_odoo_init(ls)
             self.process_validations(ls)
             if new_symbol:
                 self.validate_related_files(ls, set_to_validate)
 
+    def add_to_arch_rebuild(self, symbol):
+        """ add a symbol to the list of revalidation to do."""
+        if symbol:
+            self.to_rebuild.add(symbol)
+
     def add_to_init_odoo(self, symbol, force=False):
-        """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
+        """ add a symbol to the list of odoo loading to do. if Force, the symbol will be added even if
         he is already validated"""
         if symbol:
             file = symbol.get_in_parents(["file", "package", "namespace"])
@@ -270,6 +293,7 @@ class Odoo():
                 return
             if force:
                 file.odooStatus = 0
+                file.validationStatus = 0
             self.to_init_odoo.add(file)
 
     def add_to_validations(self, symbol, force=False):

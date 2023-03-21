@@ -43,6 +43,8 @@ class PythonValidator(ast.NodeVisitor):
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].validationStatus = 1
+        if (not Odoo.get().isLoading):
+            print("Load validation: " + self.filePath)
         self.symStack[0].not_found_paths = []
         Odoo.get().not_found_symbols.discard(self.symStack[0])
         self.tree = self.symStack[-1].get_tree()

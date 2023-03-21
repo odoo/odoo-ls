@@ -88,7 +88,7 @@ class Module():
         return []
 
     def _load_arch(self, ls, path):
-        parser = PythonArchBuilder(ls, path, Odoo.get().symbols.get_symbol(["odoo", "addons"]))
+        parser = PythonArchBuilder(ls, Odoo.get().symbols.get_symbol(["odoo", "addons"]), path)
         parser.load_arch()
         return []
     

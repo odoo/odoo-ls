@@ -14,7 +14,7 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
     file_tree contains the the full file_tree to search for each name. Ex: from os import path => os
     from .test import A => tree to current file + test"""
     file_tree = _resolve_packages(source_file_symbol, level, from_stmt)
-    res = [[alias.name, alias.asname, None, file_tree] for alias in name_aliases]
+    res = [[alias, None, file_tree] for alias in name_aliases]
     from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, source_file_symbol, None, lineno, end_lineno)
     if not from_symbol:
         return res
@@ -24,7 +24,7 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
         name = alias.name
         name_index += 1
         if name == '*':
-            res[name_index][2] = from_symbol
+            res[name_index][1] = from_symbol
             continue
         #get the full file_tree, including the first part of the name import stmt. (os in import os.path) 
         from_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
@@ -39,8 +39,7 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
         if not name_symbol:
             continue
         #we found it ! store the result
-        res[name_index][2] = name_symbol
-        name_symbol.dependents.add(parent_symbol)
+        res[name_index][1] = name_symbol
     return res
 
 def _resolve_packages(file_symbol, level, from_stmt):
@@ -92,10 +91,10 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
                     """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
                     It means we are in a file like odoo/*, and modules are not loaded yet."""
                     return
-            parser = PythonArchBuilder(ls, full_path, parent_symbol)
+            parser = PythonArchBuilder(ls, parent_symbol, full_path)
             return parser.load_arch()
         elif os.path.isfile(full_path + ".py"):
-            parser = PythonArchBuilder(ls, full_path + ".py", parent_symbol)
+            parser = PythonArchBuilder(ls, parent_symbol, full_path + ".py")
             return parser.load_arch()
         elif parent_symbol.get_tree()[0] != []: #don't try to glob on root and direct subpackages
             if os.name == "nt":

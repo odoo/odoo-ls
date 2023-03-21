@@ -24,60 +24,68 @@ class PythonArchBuilder(ast.NodeVisitor):
     can be thrown from here (invalid base class, etc...). Any validation diagnostics should be done byafter with
     the PythonValidator"""
 
-    def __init__(self, ls, path, parentSymbol, subPathTree=[]):
-        """Prepare an arch builder to parse the element at 'path' + subPathTree."""
-        self.filePath = path
+    def __init__(self, ls, parentSymbol, contentOrPath):
+        """Prepare an arch builder to parse an element.
+        if contentOrPath is string, it must be a path to a file/direcotry/package.
+        If not, it must be a ref to an ast node that contains the element to parse
+        """
+        if isinstance(contentOrPath, str):
+            self.ast_node = None
+            self.filePath = contentOrPath
+        else:
+            self.filePath = parentSymbol.get_in_parents(["file", "package"]).paths[0]
+            self.ast_node = contentOrPath
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
         #self.currentModule = None
-        self.subPathTree = subPathTree
-        self.pathTree = [] #cache tree of the current symbol
 
-    def load_arch(self, fileInfo = False, follow_imports = True):
-        """load all symbols at self.path, filtered by self.subPathTree. All dependencies (odoo modules) must have been loaded first.
+    def load_arch(self):
+        """load all symbols at self.path. All dependencies (odoo modules) must have been loaded first.
         Excpected behaviour:
         On new element, not present in tree: load symbol and subsequent symbols.
         The code will follow all found import statement and try to import symbols from them too.
         On an existing symbol, the symbol will be simply returned
         """
-        #TODO ensure that identical name in same file doesn't throw a reload on first one
-        existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]] + self.subPathTree)
-        if existing_symbol:
-            return existing_symbol
-        self.diagnostics = []
-        if not self.filePath.endswith(".py"):
-            #check if this is a package:
-            if os.path.exists(os.path.join(self.filePath, "__init__.py")):
-                symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
-                if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
-                    os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
-                     symbol.isModule = True
-                self.symStack[-1].add_symbol(symbol)
-                self.symStack.append(symbol)
-                self.filePath = os.path.join(self.filePath, "__init__.py")
+        if (not Odoo.get().isLoading):
+            print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        if not self.ast_node: #we are parsing a whole file based on path
+            existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
+            if existing_symbol:
+                return existing_symbol
+            self.diagnostics = []
+            if not self.filePath.endswith(".py"):
+                #check if this is a package:
+                if os.path.exists(os.path.join(self.filePath, "__init__.py")):
+                    symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
+                    if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
+                        os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
+                        symbol.isModule = True
+                    self.symStack[-1].add_symbol(symbol)
+                    self.symStack.append(symbol)
+                    self.filePath = os.path.join(self.filePath, "__init__.py")
+                else:
+                    symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
+                    self.symStack[-1].add_symbol(symbol)
+                    self.symStack.append(symbol)
+                    return self.symStack[1]
             else:
-                symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
+                symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
-                return self.symStack[1]
-        else:
-            symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
-            self.symStack[-1].add_symbol(symbol)
-            self.symStack.append(symbol)
         #parse the Python file
         self.tree = self.symStack[-1].get_tree()
-        if not fileInfo:
-            fileInfo = FileMgr.getFileInfo(self.filePath)
+        fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
-            self.load_symbols_from_ast(fileInfo["ast"])
+            self.symStack[-1].ast_node = weakref.ref(fileInfo["ast"])
+            self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
             else:
                 Odoo.get().to_init_odoo.add(self.symStack[1])
-            if self.diagnostics:
+            if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         FileMgr.publish_diagnostics(self.ls, fileInfo)
         return self.symStack[1]
@@ -90,25 +98,27 @@ class PythonArchBuilder(ast.NodeVisitor):
 
     def visit_Import(self, node):
         self.create_local_symbols_from_import_stmt(None, 
-                    node.names, 0, 
-                    node.lineno, node.end_lineno)
+                    node.names, 0, node)
 
     def visit_ImportFrom(self, node):
         self.create_local_symbols_from_import_stmt(node.module, 
-                    node.names, node.level, 
-                    node.lineno, node.end_lineno)
+                    node.names, node.level, node)
 
-    def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, lineno, end_lineno):
-        symbols = resolve_import_stmt(self.ls, self.symStack[1], self.symStack[-1], from_stmt, names, level, lineno, end_lineno)
+    def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
+        lineno = node.lineno
+        end_lineno = node.end_lineno
+        symbols = resolve_import_stmt(self.ls, self.symStack[1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
 
-        for name, asname, symbol, _ in symbols:
+        for node_alias, symbol, _ in symbols:
             if not symbol:
                 continue
-            if name != '*':
-                variable = Symbol(asname if asname else name, "variable", self.symStack[1].paths[0])
+            if node_alias.name != '*':
+                variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, "variable", self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
                 variable.evaluationType = weakref.ref(symbol)
+                variable.ast_node = weakref.ref(node)
+                node_alias.linked_symbol = weakref.WeakSet([variable])
                 self.symStack[-1].add_symbol(variable)
             else:
                 allowed_sym = True
@@ -131,6 +141,11 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.startLine = lineno
                         variable.endLine = end_lineno
                         variable.evaluationType = weakref.ref(s)
+                        variable.ast_node = weakref.ref(node)
+                        if hasattr(node_alias, "linked_symbols"):
+                            node_alias.linked_symbols.add(variable)
+                        else:
+                            node_alias.linked_symbols = weakref.WeakSet([variable])
                         self.symStack[-1].add_symbol(variable)
 
     def visit_Try(self, node):
@@ -153,6 +168,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     variable = Symbol(variable, "variable", self.filePath)
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
+                    variable.ast_node = weakref.ref(node)
                     variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
                     self.symStack[-1].add_symbol(variable)
                     if variable.name == "__all__" and self.symStack[-1].is_external():
@@ -174,6 +190,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = Symbol(node.name, "function", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
+        symbol.ast_node = weakref.ref(node)
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
         #self.symStack.append(symbol)
@@ -196,6 +213,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = Symbol(node.name, "class", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
+        symbol.ast_node = weakref.ref(node)
         symbol.classData = ClassData()
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)

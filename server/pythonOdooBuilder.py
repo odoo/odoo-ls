@@ -35,6 +35,8 @@ class PythonOdooBuilder(ast.NodeVisitor):
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].odooStatus = 1
+        if (not Odoo.get().isLoading):
+            print("Load odoo: " + self.filePath)
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
             return
@@ -62,15 +64,16 @@ class PythonOdooBuilder(ast.NodeVisitor):
         self.safeImport.pop()
 
     def visit_Import(self, node):
-        self._resolve_import(None, [(name.name, name.asname) for name in node.names], 0, node)
+        self._resolve_import(None, node.names, 0, node)
 
     def visit_ImportFrom(self, node):
-        self._resolve_import(node.module, [(name.name, name.asname) for name in node.names], node.level, node)
+        self._resolve_import(node.module, node.names, node.level, node)
 
-    def _resolve_import(self, from_stmt, names, level, node):
-        symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, names, level, node.lineno, node.end_lineno)
+    def _resolve_import(self, from_stmt, name_aliases, level, node):
+        symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, name_aliases, level, node.lineno, node.end_lineno)
 
-        for name, asname, symbol, file_tree in symbols:
+        for node_alias, symbol, file_tree in symbols:
+            name = node_alias.name
             if not symbol:
                 if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
                     continue
@@ -88,6 +91,13 @@ class PythonOdooBuilder(ast.NodeVisitor):
                         severity = 2
                     ))
                 break
+            else:
+                if hasattr(node_alias, "linked_symbol"):
+                    for linked_sym in node_alias.linked_symbol:
+                        if name == "*":
+                            symbol.arch_dependents.add(linked_sym)
+                        else:
+                            symbol.dependents.add(linked_sym)
 
     def visit_ClassDef(self, node):
         return

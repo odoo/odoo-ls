@@ -29,11 +29,17 @@ class Symbol():
     to get more information
     """
 
+    __slots__ = ("name", "type", "evaluationType", "paths", "ast_node", "symbols", "moduleSymbols",
+        "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
+        "external", "inferencer", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
+        "not_found_paths", "__weakref__")
+
     def __init__(self, name, type, paths):
         self.name = name
         self.type = type #root, package, file, compiled, class, function, variable
         self.evaluationType = None # actually either weakrefof a symbol or the symbol of a primitive (value stored in evaluationType of this one)
         self.paths = paths if isinstance(paths, list) else [paths]
+        self.ast_node = None
         #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
         #symbols contains classes, functions, variables (all file content)
         self.symbols = {}
@@ -43,6 +49,7 @@ class Symbol():
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
         self.localSymbols = [] 
+        self.arch_dependents = weakref.WeakSet()
         self.dependents = weakref.WeakSet()
         self.parent = None
         self.isModule = False
@@ -81,9 +88,12 @@ class Symbol():
         #first pass, we add all dependents to the validation list
         # we have to do it before the unload because the unload will break the tree
         while symbols:
+            for d in symbols[0].arch_dependents:
+                if d != self and not d.is_symbol_in_parents(self):
+                    Odoo.get().add_to_arch_rebuild(d)
             for d in symbols[0].dependents:
                 if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_validations(d, force=True) #As we are unloading, things are changing, we have to force the validation
+                    Odoo.get().add_to_init_odoo(d, force=True) #As we are unloading, things are changing, we have to force the validation
             for s in symbols[0].all_symbols():
                 symbols.append(s)
             del symbols[0]
