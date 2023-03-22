@@ -45,16 +45,13 @@ class PythonValidator(ast.NodeVisitor):
         self.symStack[0].validationStatus = 1
         if (not Odoo.get().isLoading):
             print("Load validation: " + self.filePath)
-        self.symStack[0].not_found_paths = []
-        Odoo.get().not_found_symbols.discard(self.symStack[0])
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
             return
         self.validate_ast(fileInfo["ast"])
         self.symStack[0].validationStatus = 2
-        if self.diagnostics:
-            fileInfo["d_val"] = self.diagnostics
+        fileInfo["d_val"] = self.diagnostics
         #publish diag in all case to erase potential previous diag
         FileMgr.publish_diagnostics(self.ls, fileInfo)
 

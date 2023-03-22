@@ -320,7 +320,9 @@ class Odoo():
     
     def validate_related_files(self, ls, set_to_validate):
         from server.pythonValidator import PythonValidator
+        from server.pythonOdooBuilder import PythonOdooBuilder
         for s in set_to_validate:
+            s.odooStatus = 0
             s.validationStatus = 0
+            PythonOdooBuilder(ls, s).load_odoo_content()
             PythonValidator(ls, s).validate()
-

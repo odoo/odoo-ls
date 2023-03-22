@@ -37,12 +37,13 @@ class PythonOdooBuilder(ast.NodeVisitor):
         self.symStack[0].odooStatus = 1
         if (not Odoo.get().isLoading):
             print("Load odoo: " + self.filePath)
+        self.symStack[0].not_found_paths = []
+        Odoo.get().not_found_symbols.discard(self.symStack[0])
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
             return
         self._load_ast(fileInfo["ast"])
-        if self.diagnostics:
-            fileInfo["d_odoo"] = self.diagnostics
+        fileInfo["d_odoo"] = self.diagnostics
         Odoo.get().to_validate.add(self.symStack[0])
         self.symStack[0].odooStatus = 2
         #never publish diagnostics? if a odooBuilder is involved, a validation should be too, so we can publish them together

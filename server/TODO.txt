@@ -16,7 +16,6 @@ To check: on rebuild, if an archlevel rebuild occur, we need to trigger missing 
 -> todo: at file level, add a listener to arch rebuild? (or trigger arch_dependents?)
 
 Bugs
-=> with new version (low level rebuild), missing symbols are not resolved
 => same with file renames
 
 => (to check) what happen if 1 sys.path is included in another one? Are all symbols duplicated?
