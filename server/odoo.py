@@ -51,7 +51,7 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", "root", [])
 
-    to_rebuild = weakref.WeakSet() # Set of symbols to rebuild at arch level
+    to_rebuild = [] # list of symbols (ref) to rebuild at arch level. see add_to_arch_rebuild
     to_init_odoo = weakref.WeakSet() # Set of symbols that need a refresh of Odoo data
     to_validate = weakref.WeakSet() # Set of symbols that need to be revalidated
 
@@ -150,15 +150,26 @@ class Odoo():
     def process_arch_rebuild(self, ls):
         from server.pythonArchBuilder import PythonArchBuilder
         print("rebuild " + str(len(self.to_rebuild)))
-        for symbol in self.to_rebuild:
+        already_rebuilt = set()
+        while self.to_rebuild:
+            symbol_ref = self.to_rebuild.pop()
+            symbol = symbol_ref()
+            if not symbol:
+                continue
+            tree = symbol.get_tree()
+            tree = (tuple(tree[0]), tuple(tree[1])) #make it hashable
+            if tree in already_rebuilt:
+                continue #TODO cyclic dependency
+            already_rebuilt.add(tree)
             parent = symbol.parent
-            path = symbol.paths[0] #TODO if multiple? or can't?
+            ast_node = symbol.ast_node()
             symbol.unload()
             del symbol
             #build new
-            pp = PythonArchBuilder(ls, parent, path)
-            pp.load_arch()
-        self.to_rebuild.clear()
+            if parent and ast_node:
+                pp = PythonArchBuilder(ls, parent, ast_node).load_arch()
+            else:
+                print("Can't rebuild " + str(tree))
 
     def process_odoo_init(self, ls):
         from server.pythonOdooBuilder import PythonOdooBuilder
@@ -279,9 +290,9 @@ class Odoo():
                 self.validate_related_files(ls, set_to_validate)
 
     def add_to_arch_rebuild(self, symbol):
-        """ add a symbol to the list of revalidation to do."""
+        """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            self.to_rebuild.add(symbol)
+            self.to_rebuild.append(weakref.ref(symbol))
 
     def add_to_init_odoo(self, symbol, force=False):
         """ add a symbol to the list of odoo loading to do. if Force, the symbol will be added even if

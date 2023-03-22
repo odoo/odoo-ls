@@ -93,8 +93,8 @@ class PythonOdooBuilder(ast.NodeVisitor):
                     ))
                 break
             else:
-                if hasattr(node_alias, "linked_symbol"):
-                    for linked_sym in node_alias.linked_symbol:
+                if hasattr(node_alias, "linked_symbols"):
+                    for linked_sym in node_alias.linked_symbols:
                         if name == "*":
                             symbol.arch_dependents.add(linked_sym)
                         else:

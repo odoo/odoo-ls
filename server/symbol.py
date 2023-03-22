@@ -84,7 +84,21 @@ class Symbol():
         #1: collect all symbols to revalidate
         self.parent.symbols.pop(self.name, None)
         self.parent.moduleSymbols.pop(self.name, None)
+        #unlink other symbols related to same ast node (for "import *" nodes)
+        if hasattr(self.ast_node, "linked_symbols"):
+            to_unlink = []
+            for s in self.ast_node.linked_symbols:
+                if s != self:
+                    to_unlink.append(s)
+            self.ast_node.linked_symbols.clear()
+            for s in to_unlink:
+                s.unload()
         symbols = [self]
+        # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
+        if self.parent:
+            for d in self.parent.arch_dependents:
+                if d != self and not d.is_symbol_in_parents(self):
+                    Odoo.get().add_to_arch_rebuild(d)
         #first pass, we add all dependents to the validation list
         # we have to do it before the unload because the unload will break the tree
         while symbols:

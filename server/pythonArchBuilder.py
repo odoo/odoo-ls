@@ -84,11 +84,11 @@ class PythonArchBuilder(ast.NodeVisitor):
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
             else:
-                Odoo.get().to_init_odoo.add(self.symStack[1])
+                Odoo.get().to_init_odoo.add(self.symStack[-1].get_in_parents(["file", "package"]))
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         FileMgr.publish_diagnostics(self.ls, fileInfo)
-        return self.symStack[1]
+        return self.symStack[-1]
 
     def load_symbols_from_ast(self, ast):
         #moduleName = self.symStack[-1].getModule()
@@ -107,7 +107,7 @@ class PythonArchBuilder(ast.NodeVisitor):
     def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
         lineno = node.lineno
         end_lineno = node.end_lineno
-        symbols = resolve_import_stmt(self.ls, self.symStack[1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
+        symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
 
         for node_alias, symbol, _ in symbols:
             if not symbol:
@@ -118,7 +118,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.endLine = end_lineno
                 variable.evaluationType = weakref.ref(symbol)
                 variable.ast_node = weakref.ref(node)
-                node_alias.linked_symbol = weakref.WeakSet([variable])
+                node_alias.linked_symbols = weakref.WeakSet([variable])
                 self.symStack[-1].add_symbol(variable)
             else:
                 allowed_sym = True
@@ -137,11 +137,11 @@ class PythonArchBuilder(ast.NodeVisitor):
                         allowed_sym = True
                 for s in symbol.symbols.values():
                     if allowed_sym == True or s.name in allowed_sym.evaluationType:
-                        variable = Symbol(s.name, "variable", self.symStack[1].paths[0])
+                        variable = Symbol(s.name, "variable", self.symStack[-1].paths[0])
                         variable.startLine = lineno
                         variable.endLine = end_lineno
                         variable.evaluationType = weakref.ref(s)
-                        variable.ast_node = weakref.ref(node)
+                        variable.ast_node = weakref.ref(node) #TODO ref to node prevent unload to find other linked symbols
                         if hasattr(node_alias, "linked_symbols"):
                             node_alias.linked_symbols.add(variable)
                         else:
