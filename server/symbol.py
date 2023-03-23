@@ -85,12 +85,13 @@ class Symbol():
         self.parent.symbols.pop(self.name, None)
         self.parent.moduleSymbols.pop(self.name, None)
         #unlink other symbols related to same ast node (for "import *" nodes)
-        if hasattr(self.ast_node, "linked_symbols"):
+        ast_node = self.ast_node()
+        if ast_node and hasattr(ast_node, "linked_symbols"):
             to_unlink = []
-            for s in self.ast_node.linked_symbols:
+            for s in ast_node.linked_symbols:
                 if s != self:
                     to_unlink.append(s)
-            self.ast_node.linked_symbols.clear()
+            ast_node.linked_symbols.clear()
             for s in to_unlink:
                 s.unload()
         symbols = [self]

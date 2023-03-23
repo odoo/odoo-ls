@@ -118,7 +118,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.endLine = end_lineno
                 variable.evaluationType = weakref.ref(symbol)
                 variable.ast_node = weakref.ref(node)
-                node_alias.linked_symbols = weakref.WeakSet([variable])
+                if hasattr(node, "linked_symbols"):
+                    node.linked_symbols.add(variable)
+                else:
+                    node.linked_symbols = weakref.WeakSet([variable])
                 self.symStack[-1].add_symbol(variable)
             else:
                 allowed_sym = True
@@ -142,10 +145,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.endLine = end_lineno
                         variable.evaluationType = weakref.ref(s)
                         variable.ast_node = weakref.ref(node) #TODO ref to node prevent unload to find other linked symbols
-                        if hasattr(node_alias, "linked_symbols"):
-                            node_alias.linked_symbols.add(variable)
+                        if hasattr(node, "linked_symbols"):
+                            node.linked_symbols.add(variable)
                         else:
-                            node_alias.linked_symbols = weakref.WeakSet([variable])
+                            node.linked_symbols = weakref.WeakSet([variable])
                         self.symStack[-1].add_symbol(variable)
 
     def visit_Try(self, node):
