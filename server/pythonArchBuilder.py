@@ -40,6 +40,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
+        self.__all__symbols_to_add = []
         #self.currentModule = None
 
     def load_arch(self):
@@ -49,8 +50,8 @@ class PythonArchBuilder(ast.NodeVisitor):
         The code will follow all found import statement and try to import symbols from them too.
         On an existing symbol, the symbol will be simply returned
         """
-        if (not Odoo.get().isLoading):
-            print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        #if (not Odoo.get().isLoading):
+        print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         if not self.ast_node: #we are parsing a whole file based on path
             existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
             if existing_symbol:
@@ -83,12 +84,21 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
+                self.resolve__all__symbols()
             else:
                 Odoo.get().to_init_odoo.add(self.symStack[-1].get_in_parents(["file", "package"]))
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         FileMgr.publish_diagnostics(self.ls, fileInfo)
+        print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         return self.symStack[-1]
+
+    def resolve__all__symbols(self):
+        #at the end, add all symbols from __all__ statement that couldn't be loaded (because of dynamical import)
+        #Mainly for external packages
+        for symbol in self.__all__symbols_to_add:
+            if symbol not in self.symStack[-1].symbols:
+                self.symStack[-1].add_symbol(symbol)
 
     def load_symbols_from_ast(self, ast):
         #moduleName = self.symStack[-1].getModule()
@@ -185,7 +195,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                                 var.startLine = node.lineno
                                 var.endLine = node.end_lineno
                                 var.evaluationType = None
-                                self.symStack[-1].add_symbol(var)
+                                self.__all__symbols_to_add.append(var)
                 else:
                     pass #print("Warning: symbol already defined " + variable)
 
@@ -210,9 +220,6 @@ class PythonArchBuilder(ast.NodeVisitor):
         return ""
 
     def visit_ClassDef(self, node):
-        old_sym = self.symStack[-1].symbols.pop(node.name, False)
-        if old_sym:
-            self.symStack[-1].localSymbols.append(old_sym)
         symbol = Symbol(node.name, "class", self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno

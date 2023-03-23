@@ -9,9 +9,6 @@ Imports:
 
 Odoo specificities
 
-How to load a model? The difficulty come from the fact that everything has to be loaded to do inference and validation
-of Odoo stuff, but building odoo data knowledge require to run inferences and evaluations (_inherit = _name for example)
-
 To check: on rebuild, if an archlevel rebuild occur, we need to trigger missing symbols validation too
 -> todo: at file level, add a listener to arch rebuild? (or trigger arch_dependents?)
 

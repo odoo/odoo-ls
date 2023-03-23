@@ -80,10 +80,22 @@ class Symbol():
     
     def unload(self):
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
-        from .odoo import Odoo
         #1: collect all symbols to revalidate
         self.parent.symbols.pop(self.name, None)
         self.parent.moduleSymbols.pop(self.name, None)
+        self.invalidate()
+        symbols = [self]
+        while symbols:
+            for s in symbols[0].all_symbols():
+                symbols.append(s)
+            symbols[0].moduleSymbols.clear()
+            symbols[0].symbols.clear()
+            symbols[0].parent = None
+            symbols[0].type = "dirty" #to help debugging
+            del symbols[0]
+    
+    def invalidate(self):
+        from .odoo import Odoo
         #unlink other symbols related to same ast node (for "import *" nodes)
         ast_node = self.ast_node()
         if ast_node and hasattr(ast_node, "linked_symbols"):
@@ -94,14 +106,12 @@ class Symbol():
             ast_node.linked_symbols.clear()
             for s in to_unlink:
                 s.unload()
-        symbols = [self]
         # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
         if self.parent:
             for d in self.parent.arch_dependents:
                 if d != self and not d.is_symbol_in_parents(self):
                     Odoo.get().add_to_arch_rebuild(d)
-        #first pass, we add all dependents to the validation list
-        # we have to do it before the unload because the unload will break the tree
+        symbols = [self]
         while symbols:
             for d in symbols[0].arch_dependents:
                 if d != self and not d.is_symbol_in_parents(self):
@@ -112,15 +122,7 @@ class Symbol():
             for s in symbols[0].all_symbols():
                 symbols.append(s)
             del symbols[0]
-        symbols = [self]
-        while symbols:
-            for s in symbols[0].all_symbols():
-                symbols.append(s)
-            symbols[0].moduleSymbols.clear()
-            symbols[0].symbols.clear()
-            symbols[0].parent = None
-            symbols[0].type = "dirty" #to help debugging
-            del symbols[0]
+
 
     def get_tree(self):
         tree = ([], [])
@@ -222,13 +224,15 @@ class Symbol():
         if symbol.is_file_content():
             sym_dict = self.symbols
         symbol.parent = self
-        if symbol.name in sym_dict:
-            #TODO we don't want to handle this case for now. It can occur for directory of addons
-            # because it has already been added, but it can occur too if two files or directories
-            # have the same name, or even two same classes in a file. We should handle this case in the future
-            pass # print("Symbol already exists: " + str(self.get_tree()) + " - " + str(symbol.name)) 
-        else:
+        if symbol.name not in sym_dict:
             sym_dict[symbol.name] = symbol
+        elif symbol.is_file_content():
+            if symbol.startLine < self.symbols[symbol.name].startLine:
+                self.localSymbols.append(symbol)
+            else:
+                self.symbols[symbol.name].invalidate()
+                self.localSymbols.append(self.symbols[symbol.name])
+                self.symbols[symbol.name] = symbol
         
     def add_module_symbol(self, symbol_names, symbol):
         pass
