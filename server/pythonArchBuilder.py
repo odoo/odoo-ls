@@ -50,8 +50,8 @@ class PythonArchBuilder(ast.NodeVisitor):
         The code will follow all found import statement and try to import symbols from them too.
         On an existing symbol, the symbol will be simply returned
         """
-        #if (not Odoo.get().isLoading):
-        print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        if (not Odoo.get().isLoading):
+            print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         if not self.ast_node: #we are parsing a whole file based on path
             existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
             if existing_symbol:
@@ -90,7 +90,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         FileMgr.publish_diagnostics(self.ls, fileInfo)
-        print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         return self.symStack[-1]
 
     def resolve__all__symbols(self):
@@ -143,6 +143,9 @@ class PythonArchBuilder(ast.NodeVisitor):
                         allowed_sym = Odoo.get().symbols.get_symbol([], allowed_sym.evaluationType)
                     if allowed_sym:
                         allowed_sym = allowed_sym.evaluationType
+                        while allowed_sym and isinstance(allowed_sym, weakref.ref):
+                            sym = allowed_sym()
+                            allowed_sym = sym.evaluationType if sym else None
                         if not allowed_sym or not allowed_sym.type == "primitive" and not allowed_sym.name == "list":
                             print("debug= wrong __all__")
                             allowed_sym = True

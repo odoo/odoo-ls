@@ -83,6 +83,16 @@ class Symbol():
         #1: collect all symbols to revalidate
         self.parent.symbols.pop(self.name, None)
         self.parent.moduleSymbols.pop(self.name, None)
+        #unlink other symbols related to same ast node (for "import *" nodes)
+        ast_node = self.ast_node()
+        if ast_node and hasattr(ast_node, "linked_symbols"):
+            to_unlink = []
+            for s in ast_node.linked_symbols:
+                if s != self:
+                    to_unlink.append(s)
+            ast_node.linked_symbols.clear()
+            for s in to_unlink:
+                s.unload()
         self.invalidate()
         symbols = [self]
         while symbols:
@@ -96,16 +106,6 @@ class Symbol():
     
     def invalidate(self):
         from .odoo import Odoo
-        #unlink other symbols related to same ast node (for "import *" nodes)
-        ast_node = self.ast_node()
-        if ast_node and hasattr(ast_node, "linked_symbols"):
-            to_unlink = []
-            for s in ast_node.linked_symbols:
-                if s != self:
-                    to_unlink.append(s)
-            ast_node.linked_symbols.clear()
-            for s in to_unlink:
-                s.unload()
         # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
         if self.parent:
             for d in self.parent.arch_dependents:
@@ -122,7 +122,6 @@ class Symbol():
             for s in symbols[0].all_symbols():
                 symbols.append(s)
             del symbols[0]
-
 
     def get_tree(self):
         tree = ([], [])
