@@ -42,7 +42,33 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
-        }
+        },
+        {
+            "name": "Launch Test Setup",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_setup.py", "-s"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Test OdooLS",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_odoo_ls.py", "-s"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
     ],
     "compounds": [
         {

@@ -102,7 +102,7 @@ class Odoo():
                 Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
                 Odoo.instance.start_build_time = time.time()
                 Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
-                Odoo.instance.build_database(ls)
+                Odoo.instance.build_database(ls, config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])])
                 print("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 print(traceback.format_exc())
@@ -110,12 +110,12 @@ class Odoo():
             Odoo.isLoading = False
         return Odoo.instance
     
-    def build_database(self, ls):
-        if not self.build_base(ls):
+    def build_database(self, ls, used_config):
+        if not self.build_base(ls, used_config):
             return False
         self.build_modules(ls)
 
-    def build_base(self, ls):
+    def build_base(self, ls, used_config):
         from server.pythonArchBuilder import PythonArchBuilder
         releasePath = os.path.join(self.odooPath, "odoo", "release.py")
         if os.path.exists(releasePath):
@@ -141,6 +141,7 @@ class Odoo():
                 os.path.join(self.odooPath, "addons"), 
                 #"/home/odoo/Documents/odoo-servers/false_odoo/enterprise"
                 ]
+            addonsSymbol.paths += used_config['addons']
             return True
         else:
             print("Odoo not found at " + self.odooPath)
