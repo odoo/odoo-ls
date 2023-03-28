@@ -10,8 +10,9 @@ from pygls.server import StdOutTransportAdapter
 from pygls.workspace import Document, Workspace
 
 from ...server import (
-    did_change
+    _did_change_after_delay
 )
+from ...fileMgr import FileMgr
 from .setup import *
 from ...odoo import Odoo
 
@@ -78,8 +79,12 @@ def test_load_classes():
 
 
 def test_imports_dynamic():
+    file_uri = pathlib.Path(__file__).parent.parent.resolve()
+    file_uri = os.path.join(file_uri, 'data', 'addons', 'module_1', 'constants', 'data', 'constants.py')
+    file_uri = FileMgr.pathname2uri(file_uri)
+    
     server.workspace.get_document = Mock(return_value=Document(
-        uri="file://server/tests/data/addons/module_1/constants/data/constants.py",
+        uri=file_uri,
         source="""
 __all__ = ["CONSTANT_1"]
 
@@ -89,8 +94,24 @@ CONSTANT_3 = 3"""
     params = DidChangeTextDocumentParams(
         text_document = VersionedTextDocumentIdentifier(
             version = 2,
-            uri="will be mock by workspace.get_document"
+            uri=file_uri
         ),
         content_changes = []
     )
-    did_change(server, params)
+    _did_change_after_delay(server, params, 0) #call deferred func
+    base_test_models = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
+    assert "CONSTANT_1" in base_test_models.symbols
+    assert "CONSTANT_2" in base_test_models.symbols, "even if CONSTANT_2 is not in file anymore, the symbol should still exist"
+    assert not "CONSTANT_3" in base_test_models.symbols
+    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+    assert "CONSTANT_1" in constants_dir.symbols
+    assert not "CONSTANT_2" in constants_dir.symbols
+    assert not "CONSTANT_3" in constants_dir.symbols
+    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+    assert "CONSTANT_1" in constants_data_dir.symbols
+    assert not "CONSTANT_2" in constants_data_dir.symbols
+    assert not "CONSTANT_3" in constants_data_dir.symbols
+    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+    assert "CONSTANT_1" in constants_data_file.symbols
+    assert not "CONSTANT_2" in constants_data_file.symbols
+    assert not "CONSTANT_3" in constants_data_file.symbols

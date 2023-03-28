@@ -222,7 +222,7 @@ class Odoo():
             return self.symbols.get_symbol(tree)
         for addonPath in self.symbols.get_symbol(["odoo", "addons"]).paths:
             if path.startswith(addonPath):
-                return self.symbols.get_symbol(["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].split("/"))
+                return self.symbols.get_symbol(["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].replace("\\", "/").split("/"))
         return []
 
     def file_change(self, ls, path, text, version):
