@@ -36,7 +36,7 @@ class Symbol():
 
     def __init__(self, name, type, paths):
         self.name = name
-        self.type = type #root, package, file, compiled, class, function, variable
+        self.type: SymType = type
         self.evaluationType = None # actually either weakrefof a symbol or the symbol of a primitive (value stored in evaluationType of this one)
         self.paths = paths if isinstance(paths, list) else [paths]
         self.ast_node = None
@@ -76,7 +76,7 @@ class Symbol():
             yield s
     
     def is_file_content(self):
-        return self.type not in ["namespace", "package", "file", "compiled"]
+        return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
     
     def unload(self):
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
@@ -126,7 +126,7 @@ class Symbol():
     def get_tree(self):
         tree = ([], [])
         curr_symbol = self
-        while curr_symbol.type != "root" and curr_symbol.parent:
+        while curr_symbol.type != SymType.ROOT and curr_symbol.parent:
             if curr_symbol.is_file_content():
                 if tree[0]:
                     print("impossible") #TODO remove this test
@@ -163,7 +163,7 @@ class Symbol():
             if next_sym and current_symbol != excl:
                 current_symbol = next_sym
                 symbol_tree_content = symbol_tree_content[1:]
-            elif current_symbol.type == "compiled":
+            elif current_symbol.type == SymType.COMPILED:
                 # always accept symbols in compiled files
                 return current_symbol
             else:
@@ -239,7 +239,7 @@ class Symbol():
     def get_in_parents(self, types, stop_same_file = True):
         if self.type in types:
             return self
-        if stop_same_file and self.type in ["file", "package"]: #a __init__.py file is encoded as a Symbol package
+        if stop_same_file and self.type in [SymType.FILE, SymType.PACKAGE]: #a __init__.py file is encoded as a Symbol package
             return None
         if self.parent:
             return self.parent.get_in_parents(types, stop_same_file)
@@ -264,20 +264,20 @@ class Symbol():
         #TODO search in localSymbols too
         symbol = self
         assert self.type == "file", "can only be called on file symbols"
-        if self.type == 'class':
+        if self.type == SymType.CLASS:
             return self
         for s in self.symbols.values():
             if s.startLine <= line and s.endLine >= line:
                 symbol = s.get_class_scope_symbol(line)
                 break
-        if symbol.type != 'class':
+        if symbol.type != SymType.CLASS:
             symbol = None
         return symbol
     
     def inferName(self, name, line):
         #TODO search in localSymbols too?
         local = self.inferencer.inferName(name, line)
-        if self.type in ["file", "package"]:
+        if self.type in [SymType.FILE, SymType.PACKAGE]:
             return local
         if not local:
             return self.parent.inferName(name, line)
@@ -301,7 +301,7 @@ class RootSymbol(Symbol):
     def add_symbol(self, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
         super().add_symbol(symbol)
-        if symbol.type in ["package", "file"]:
+        if symbol.type in [SymType.FILE, SymType.PACKAGE]:
             for path in symbol.paths:
                 for sysPath in sys.path:
                     if sysPath == "":

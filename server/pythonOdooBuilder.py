@@ -1,5 +1,6 @@
 import ast
 import os
+from .constants import *
 from .odoo import *
 from .importResolver import *
 from .server import FileMgr
@@ -19,7 +20,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
     def __init__(self, ls, symbol):
         """Prepare an odoo builder to parse the symbol"""
         self.ls = ls
-        self.symStack = [symbol.get_in_parents(["file"]) or symbol] # we always load at file level
+        self.symStack = [symbol.get_in_parents([SymType.FILE]) or symbol] # we always load at file level
         self.diagnostics = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.filePath = ""
@@ -28,9 +29,9 @@ class PythonOdooBuilder(ast.NodeVisitor):
         self.diagnostics = []
         if self.symStack[0].odooStatus:
             return
-        if self.symStack[0].type in ['namespace']:
+        if self.symStack[0].type in [SymType.NAMESPACE]:
             return
-        elif self.symStack[0].type == 'package':
+        elif self.symStack[0].type == SymType.PACKAGE:
             self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
         else:
             self.filePath = self.symStack[0].paths[0]

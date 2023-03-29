@@ -49,7 +49,7 @@ class Odoo():
     modules = {}
 
     # symbols is the list of declared symbols and their related declaration, filtered by name
-    symbols = RootSymbol("root", "root", [])
+    symbols = RootSymbol("root", SymType.ROOT, [])
 
     to_rebuild = [] # list of symbols (ref) to rebuild at arch level. see add_to_arch_rebuild
     to_init_odoo = weakref.WeakSet() # Set of symbols that need a refresh of Odoo data
@@ -299,7 +299,7 @@ class Odoo():
         """ add a symbol to the list of odoo loading to do. if Force, the symbol will be added even if
         he is already validated"""
         if symbol:
-            file = symbol.get_in_parents(["file", "package", "namespace"])
+            file = symbol.get_in_parents([SymType.FILE, SymType.PACKAGE, SymType.NAMESPACE])
             if not file:
                 print("file not found, can't rebuild")
                 return
@@ -312,7 +312,7 @@ class Odoo():
         """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
         he is already validated"""
         if symbol:
-            file = symbol.get_in_parents(["file", "package", "namespace"])
+            file = symbol.get_in_parents([SymType.FILE, SymType.PACKAGE, SymType.NAMESPACE])
             if not file:
                 print("file not found, can't rebuild")
                 return

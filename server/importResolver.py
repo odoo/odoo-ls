@@ -2,6 +2,7 @@ import glob
 import os
 from pathlib import Path
 import weakref
+from .constants import *
 from .odoo import Odoo
 from .symbol import Symbol
 
@@ -50,7 +51,7 @@ def _resolve_packages(file_symbol, level, from_stmt):
         if level > len(Path(file_symbol.paths[0]).parts):
             print("ERROR: level is too big ! The current path doesn't have enough parents")
             return
-        if file_symbol.type == "package":
+        if file_symbol.type == SymType.PACKAGE:
             #as the __init__.py is one level higher, we lower of 1 to match the directory level
             level -= 1
         if level == 0:
@@ -75,9 +76,9 @@ def _get_or_create_symbol(ls, symbol, names, file_symbol, asname, lineno, end_li
 def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, end_lineno):
     """ Return a new symbol for the name and given parent_Symbol, that is matching what is on disk"""
     from .pythonArchBuilder import PythonArchBuilder
-    if parent_symbol and parent_symbol.type == "compiled":
+    if parent_symbol and parent_symbol.type == SymType.COMPILED:
         #in case of compiled file, import symbols to resolve imports
-        variable = Symbol(asname if asname else name, "variable", file_symbol.paths[0])
+        variable = Symbol(asname if asname else name, SymType.VARIABLE, file_symbol.paths[0])
         variable.startLine = lineno
         variable.endLine = end_lineno
         variable.evaluationType = False
@@ -100,13 +101,13 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
             if os.name == "nt":
                 paths = glob.glob(full_path + r".*.pyd")
                 if paths:
-                    sym = Symbol(name, "compiled", paths)
+                    sym = Symbol(name, SymType.COMPILED, paths)
                     parent_symbol.add_symbol(sym)
                     return sym
             else:
                 paths = glob.glob(full_path + r".*.so")
                 if paths:
-                    sym = Symbol(name, "compiled", paths)
+                    sym = Symbol(name, SymType.COMPILED, paths)
                     parent_symbol.add_symbol(sym)
                     return sym
     return False

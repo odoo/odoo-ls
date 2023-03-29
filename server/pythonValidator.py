@@ -24,7 +24,7 @@ class PythonValidator(ast.NodeVisitor):
 
     def __init__(self, ls, symbol):
         """Prepare a validator to validate the given file. """
-        self.symStack = [symbol.get_in_parents(["file"]) or symbol] # we always validate at file level
+        self.symStack = [symbol.get_in_parents([SymType.FILE]) or symbol] # we always validate at file level
         self.classContentCache = []
         self.ls = ls
         self.currentModule = None
@@ -36,9 +36,9 @@ class PythonValidator(ast.NodeVisitor):
         self.diagnostics = []
         if self.symStack[0].validationStatus:
             return
-        if self.symStack[0].type in ['namespace']:
+        if self.symStack[0].type in [SymType.NAMESPACE]:
             return
-        elif self.symStack[0].type == 'package':
+        elif self.symStack[0].type == SymType.PACKAGE:
             self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
         else:
             self.filePath = self.symStack[0].paths[0]
@@ -215,10 +215,10 @@ class PythonValidator(ast.NodeVisitor):
     
     def add_magic_fields(self, symbol, node, data):
         def create_symbol(name, type, lineno):
-            variable = Symbol(name, "variable", self.filePath)
+            variable = Symbol(name, SymType.VARIABLE, self.filePath)
             variable.startLine = lineno
             variable.endLine = lineno
-            variable.evaluationType = Symbol(type, "primitive", "")
+            variable.evaluationType = Symbol(type, SymType.PRIMITIVE, "")
             symbol.add_symbol(variable)
             return variable
         if symbol.get_tree() == ["odoo", "models", "Model"]:

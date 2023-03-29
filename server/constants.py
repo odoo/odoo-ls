@@ -1,3 +1,5 @@
+from enum import Enum
+
 EXTENSION_NAME = "Odoo"
 EXTENSION_VERSION = "0.1.0"
 
@@ -15,6 +17,17 @@ CONFIGURATION_SECTION = 'Odoo'
 #DEBUG PARAMETERS
 
 FULL_LOAD_AT_STARTUP = True
+
+class SymType(Enum):
+    ROOT      = 0,
+    NAMESPACE = 1,
+    PACKAGE   = 2,
+    FILE      = 3,
+    COMPILED  = 4,
+    CLASS     = 5,
+    FUNCTION  = 6,
+    VARIABLE  = 7,
+    PRIMITIVE = 8
 
 BUILT_IN_LIBS = ["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",
 "datetime", "zoneinfo", "calendar", "collections", "heapq", "bisect", "array", "weakref", "types", "copy", "pprint",

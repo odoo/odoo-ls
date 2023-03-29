@@ -11,11 +11,11 @@ class PythonUtils():
     def evaluateTypeAST(node, symbol):
         """try to return the symbol corresponding to the expression, evaluated in the context of 'symbol' (a function, class or file)"""
         if isinstance(node, ast.Constant):
-            return Symbol("constant", "primitive", "")
+            return Symbol("constant", SymType.PRIMITIVE, "")
         elif isinstance(node, ast.Dict):
-            return Symbol("dict", "primitive", "")
+            return Symbol("dict", SymType.PRIMITIVE, "")
         elif isinstance(node, ast.List):
-            s = Symbol("list", "primitive", "")
+            s = Symbol("list", SymType.PRIMITIVE, "")
             res = []
             for n in node.elts:
                 if not isinstance(n, ast.Constant):

@@ -33,9 +33,9 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.ast_node = None
             self.filePath = contentOrPath
         else:
-            parent_file = parentSymbol.get_in_parents(["file", "package"])
+            parent_file = parentSymbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
             self.filePath = parent_file.paths[0]
-            if parent_file.type == "package":
+            if parent_file.type == SymType.PACKAGE:
                 self.filePath = os.path.join(self.filePath, "__init__.py")
             self.ast_node = contentOrPath
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
@@ -63,7 +63,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             if not self.filePath.endswith(".py"):
                 #check if this is a package:
                 if os.path.exists(os.path.join(self.filePath, "__init__.py")):
-                    symbol = Symbol(self.filePath.split(os.sep)[-1], "package", self.filePath)
+                    symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
                     if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
                         os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
                         symbol.isModule = True
@@ -71,12 +71,12 @@ class PythonArchBuilder(ast.NodeVisitor):
                     self.symStack.append(symbol)
                     self.filePath = os.path.join(self.filePath, "__init__.py")
                 else:
-                    symbol = Symbol(self.filePath.split(os.sep)[-1], "namespace", self.filePath)
+                    symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.NAMESPACE, self.filePath)
                     self.symStack[-1].add_symbol(symbol)
                     self.symStack.append(symbol)
                     return self.symStack[1]
             else:
-                symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], "file", self.filePath)
+                symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], SymType.FILE, self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
         #parse the Python file
@@ -89,7 +89,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 fileInfo["ast"] = None
                 self.resolve__all__symbols()
             else:
-                Odoo.get().to_init_odoo.add(self.symStack[-1].get_in_parents(["file", "package"]))
+                Odoo.get().to_init_odoo.add(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         FileMgr.publish_diagnostics(self.ls, fileInfo)
@@ -126,7 +126,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             if not symbol:
                 continue
             if node_alias.name != '*':
-                variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, "variable", self.symStack[1].paths[0])
+                variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, SymType.VARIABLE, self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
                 variable.evaluationType = weakref.ref(symbol)
@@ -142,21 +142,21 @@ class PythonArchBuilder(ast.NodeVisitor):
                 if "__all__" in symbol.symbols:
                     allowed_sym = symbol.symbols["__all__"]
                     # follow ref if the current __all__ is imported
-                    while allowed_sym and allowed_sym.type == "variable" and isinstance(allowed_sym.evaluationType, list):
+                    while allowed_sym and allowed_sym.type == SymType.VARIABLE and isinstance(allowed_sym.evaluationType, list):
                         allowed_sym = Odoo.get().symbols.get_symbol([], allowed_sym.evaluationType)
                     if allowed_sym:
                         allowed_sym = allowed_sym.evaluationType
                         while allowed_sym and isinstance(allowed_sym, weakref.ref):
                             sym = allowed_sym()
                             allowed_sym = sym.evaluationType if sym else None
-                        if not allowed_sym or not allowed_sym.type == "primitive" and not allowed_sym.name == "list":
+                        if not allowed_sym or not allowed_sym.type == SymType.PRIMITIVE and not allowed_sym.name == "list":
                             print("debug= wrong __all__")
                             allowed_sym = True
                     if not isinstance(allowed_sym, Symbol):
                         allowed_sym = True
                 for s in symbol.symbols.values():
                     if allowed_sym == True or s.name in allowed_sym.evaluationType:
-                        variable = Symbol(s.name, "variable", self.symStack[-1].paths[0])
+                        variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
                         variable.startLine = lineno
                         variable.endLine = end_lineno
                         variable.evaluationType = weakref.ref(s)
@@ -182,9 +182,9 @@ class PythonArchBuilder(ast.NodeVisitor):
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
         for variable, value in assigns.items():
-            if self.symStack[-1].type in ["class", "file", "package"]:
+            if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 if variable not in self.symStack[-1].symbols:
-                    variable = Symbol(variable, "variable", self.filePath)
+                    variable = Symbol(variable, SymType.VARIABLE, self.filePath)
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
                     variable.ast_node = weakref.ref(node)
@@ -195,9 +195,9 @@ class PythonArchBuilder(ast.NodeVisitor):
                         # or with meta programmation like globals["var"] = __get_func().
                         # we don't want to handle that, so just declare __all__ content
                         # as symbols to not raise any error.
-                        if variable.evaluationType and variable.evaluationType.type == "primitive":
+                        if variable.evaluationType and variable.evaluationType.type == SymType.PRIMITIVE:
                             for var_name in variable.evaluationType.evaluationType:
-                                var = Symbol(var_name, "variable", self.filePath)
+                                var = Symbol(var_name, SymType.VARIABLE, self.filePath)
                                 var.startLine = node.lineno
                                 var.endLine = node.end_lineno
                                 var.evaluationType = None
@@ -206,7 +206,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     pass #print("Warning: symbol already defined " + variable)
 
     def visit_FunctionDef(self, node):
-        symbol = Symbol(node.name, "function", self.filePath)
+        symbol = Symbol(node.name, SymType.FUNCTION, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         symbol.ast_node = weakref.ref(node)
@@ -226,7 +226,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         return ""
 
     def visit_ClassDef(self, node):
-        symbol = Symbol(node.name, "class", self.filePath)
+        symbol = Symbol(node.name, SymType.CLASS, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         symbol.ast_node = weakref.ref(node)
