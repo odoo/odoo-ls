@@ -114,4 +114,4 @@ CONSTANT_3 = 3"""
     constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
     assert "CONSTANT_1" in constants_data_file.symbols
     assert not "CONSTANT_2" in constants_data_file.symbols
-    assert not "CONSTANT_3" in constants_data_file.symbols
+    assert "CONSTANT_3" in constants_data_file.symbols

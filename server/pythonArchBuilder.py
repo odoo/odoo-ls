@@ -33,7 +33,10 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.ast_node = None
             self.filePath = contentOrPath
         else:
-            self.filePath = parentSymbol.get_in_parents(["file", "package"]).paths[0]
+            parent_file = parentSymbol.get_in_parents(["file", "package"])
+            self.filePath = parent_file.paths[0]
+            if parent_file.type == "package":
+                self.filePath = os.path.join(self.filePath, "__init__.py")
             self.ast_node = contentOrPath
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.classContentCache = []
