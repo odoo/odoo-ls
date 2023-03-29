@@ -183,27 +183,24 @@ class PythonArchBuilder(ast.NodeVisitor):
         assigns = self.unpack_assign(node.targets, node.value, {})
         for variable, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                if variable not in self.symStack[-1].symbols:
-                    variable = Symbol(variable, SymType.VARIABLE, self.filePath)
-                    variable.startLine = node.lineno
-                    variable.endLine = node.end_lineno
-                    variable.ast_node = weakref.ref(node)
-                    variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
-                    self.symStack[-1].add_symbol(variable)
-                    if variable.name == "__all__" and self.symStack[-1].is_external():
-                        # external packages often import symbols from compiled files 
-                        # or with meta programmation like globals["var"] = __get_func().
-                        # we don't want to handle that, so just declare __all__ content
-                        # as symbols to not raise any error.
-                        if variable.evaluationType and variable.evaluationType.type == SymType.PRIMITIVE:
-                            for var_name in variable.evaluationType.evaluationType:
-                                var = Symbol(var_name, SymType.VARIABLE, self.filePath)
-                                var.startLine = node.lineno
-                                var.endLine = node.end_lineno
-                                var.evaluationType = None
-                                self.__all__symbols_to_add.append(var)
-                else:
-                    pass #print("Warning: symbol already defined " + variable)
+                variable = Symbol(variable, SymType.VARIABLE, self.filePath)
+                variable.startLine = node.lineno
+                variable.endLine = node.end_lineno
+                variable.ast_node = weakref.ref(node)
+                variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
+                self.symStack[-1].add_symbol(variable)
+                if variable.name == "__all__" and self.symStack[-1].is_external():
+                    # external packages often import symbols from compiled files 
+                    # or with meta programmation like globals["var"] = __get_func().
+                    # we don't want to handle that, so just declare __all__ content
+                    # as symbols to not raise any error.
+                    if variable.evaluationType and variable.evaluationType.type == SymType.PRIMITIVE:
+                        for var_name in variable.evaluationType.evaluationType:
+                            var = Symbol(var_name, SymType.VARIABLE, self.filePath)
+                            var.startLine = node.lineno
+                            var.endLine = node.end_lineno
+                            var.evaluationType = None
+                            self.__all__symbols_to_add.append(var)
 
     def visit_FunctionDef(self, node):
         symbol = Symbol(node.name, SymType.FUNCTION, self.filePath)

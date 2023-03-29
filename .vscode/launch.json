@@ -61,7 +61,7 @@
             "type": "python",
             "request": "launch",
             "module": "pytest",
-            "args": ["test_odoo_ls.py", "-s"],
+            "args": ["test_odoo_ls.py", "-s", "--disable-warnings"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
             "cwd": "${workspaceFolder}/server/tests/unit",

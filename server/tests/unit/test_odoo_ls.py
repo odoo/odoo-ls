@@ -66,6 +66,12 @@ def test_imports():
     assert not "CONSTANT_3" in constants_dir.symbols
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
+    found_in_local = False
+    for sym in constants_data_dir.localSymbols:
+        if sym.name == "CONSTANT_2":
+            found_in_local = True
+            break
+    assert found_in_local
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not "CONSTANT_3" in constants_data_dir.symbols
 
@@ -109,7 +115,7 @@ CONSTANT_3 = 3"""
     assert not "CONSTANT_3" in constants_dir.symbols
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
-    assert not "CONSTANT_2" in constants_data_dir.symbols
+    assert "CONSTANT_2" in constants_data_dir.symbols
     assert not "CONSTANT_3" in constants_data_dir.symbols
     constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
     assert "CONSTANT_1" in constants_data_file.symbols

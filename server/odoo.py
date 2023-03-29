@@ -157,6 +157,7 @@ class Odoo():
             symbol = symbol_ref()
             if not symbol:
                 continue
+            print("triggering arch rebuild of " + symbol.name + " from " + symbol.paths[0])
             tree = symbol.get_tree()
             tree = (tuple(tree[0]), tuple(tree[1])) #make it hashable
             if tree in already_rebuilt:

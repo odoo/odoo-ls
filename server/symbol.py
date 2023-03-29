@@ -1,3 +1,4 @@
+import gc
 import sys
 import weakref
 from server.inferencer import *
@@ -66,8 +67,8 @@ class Symbol():
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
     
-    #def __del__(self):
-    #    print("symbol deleted " + self.name)
+    def __del__(self):
+        print("symbol deleted " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
     
     def all_symbols(self):
         for s in self.symbols.values():
@@ -81,8 +82,8 @@ class Symbol():
     def unload(self):
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
         #1: collect all symbols to revalidate
-        self.parent.symbols.pop(self.name, None)
-        self.parent.moduleSymbols.pop(self.name, None)
+        print("unload " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
+        self.parent.remove_symbol(self)
         #unlink other symbols related to same ast node (for "import *" nodes)
         ast_node = self.ast_node()
         if ast_node and hasattr(ast_node, "linked_symbols"):
@@ -92,17 +93,22 @@ class Symbol():
                     to_unlink.append(s)
             ast_node.linked_symbols.clear()
             for s in to_unlink:
+                print("trigger unload of " + s.name + " at " + "/".join(s.paths[0].split("/")[-3:]))
                 s.unload()
+            to_unlink.clear()
         self.invalidate()
         symbols = [self]
         while symbols:
+            print("is now dirty : " + symbols[0].name + " at " + "/".join(symbols[0].paths[0].split("/")[-3:]))
             for s in symbols[0].all_symbols():
                 symbols.append(s)
+            symbols[0].localSymbols.clear()
             symbols[0].moduleSymbols.clear()
             symbols[0].symbols.clear()
             symbols[0].parent = None
             symbols[0].type = "dirty" #to help debugging
             del symbols[0]
+        gc.collect()
     
     def invalidate(self):
         from .odoo import Odoo
@@ -122,6 +128,35 @@ class Symbol():
             for s in symbols[0].all_symbols():
                 symbols.append(s)
             del symbols[0]
+
+    def remove_symbol(self, symbol):
+        if symbol.is_file_content():
+            in_symbols = self.symbols.get(self.name, None)
+            if in_symbols:
+                if symbol == in_symbols:
+                    print("symbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                    del self.symbols[self.name]
+                    last = None
+                    for localSym in self.localSymbols:
+                        if localSym.name == symbol.name:
+                            if not last or last.startLine < localSym.startLine:
+                                last = localSym
+                    if last:
+                        print("move sym - " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                        self.symbols[symbol.name] = weakref.ref(last)
+                        self.localSymbols.remove(last)
+                else:
+                    #ouch, the wanted symbol is not in Symbols. let's try to find it in localSymbols
+                    try:
+                        self.localSymbols.remove(symbol)
+                        print("localSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                    except ValueError:
+                        print("Symbol to delete not found")
+        else:
+            if symbol.name in self.moduleSymbols:
+                print("moduleSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                del self.moduleSymbols[symbol.name]
+
 
     def get_tree(self):
         tree = ([], [])
