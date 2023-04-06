@@ -165,6 +165,7 @@ class Odoo():
             already_rebuilt.add(tree)
             parent = symbol.parent
             ast_node = symbol.ast_node()
+            #WRONG, the context of the stacktrace will prevent ANY deletion, and making it buggy
             symbol.unload()
             del symbol
             #build new

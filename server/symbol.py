@@ -71,6 +71,8 @@ class Symbol():
         print("symbol deleted " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
     
     def all_symbols(self):
+        for s in self.localSymbols:
+            yield s
         for s in self.symbols.values():
             yield s
         for s in self.moduleSymbols.values():
@@ -107,8 +109,9 @@ class Symbol():
             symbols[0].symbols.clear()
             symbols[0].parent = None
             symbols[0].type = "dirty" #to help debugging
+            import sys
+            print(sys.getrefcount(symbols[0]))
             del symbols[0]
-        gc.collect()
     
     def invalidate(self):
         from .odoo import Odoo
