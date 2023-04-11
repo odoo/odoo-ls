@@ -239,7 +239,7 @@ class Odoo():
             with Odoo.get().acquire_write():
                 #1 unload
                 if path.endswith("__init__.py"):
-                    path = "/".join(path.split("/")[:-1])
+                    path = os.sep.join(path.split(os.sep)[:-1])
                 file_symbol = self.get_file_symbol(path)
                 parent = file_symbol.parent
                 file_symbol.unload(file_symbol)
@@ -267,7 +267,7 @@ class Odoo():
             if file_symbol:
                 file_symbol.unload(file_symbol)
             #build new
-            parent_path = "/".join(new_path.split("/")[:-1])
+            parent_path = os.sep.join(new_path.split(os.sep)[:-1])
             parent_symbol = self.get_file_symbol(parent_path)
             new_symbol = None
             if not parent_symbol:
@@ -275,13 +275,13 @@ class Odoo():
             else:
                 print("found: " + str(parent_symbol.get_tree()))
                 new_tree = parent_symbol.get_tree()
-                new_tree[1].append(new_path.split("/")[-1].replace(".py", ""))
+                new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
                 set_to_validate = self._search_symbols_to_revalidate(new_tree)
                 if set_to_validate:
                     #if there is something that is trying to import the new file, build it.
                     #Else, don't add it to the architecture to not add useless symbols (and overrides)
                     if new_path.endswith("__init__.py"):
-                        new_path = "/".join(new_path.split("/")[:-1])
+                        new_path = os.sep.join(new_path.split(os.sep)[:-1])
                     pp = PythonArchBuilder(ls, parent_symbol, new_path)
                     del file_symbol
                     new_symbol = pp.load_arch()

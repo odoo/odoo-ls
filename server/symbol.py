@@ -1,4 +1,5 @@
 import gc
+import os
 import sys
 import weakref
 from server.inferencer import *
@@ -69,7 +70,7 @@ class Symbol():
     
     def __del__(self):
         if DEBUG_MEMORY:
-            print("symbol deleted " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
+            print("symbol deleted " + self.name + " at " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
     
     def all_symbols(self):
         for s in self.localSymbols:
@@ -100,7 +101,7 @@ class Symbol():
 
             #no more children at this point, start unloading the symbol
             if DEBUG_MEMORY:
-                print("unload " + sym.name + " at " + "/".join(sym.paths[0].split("/")[-3:]))
+                print("unload " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
             ast_node = sym.ast_node()
@@ -111,14 +112,12 @@ class Symbol():
                 ast_node.linked_symbols.clear()
             sym.invalidate()
             if DEBUG_MEMORY:
-                print("is now dirty : " + sym.name + " at " + "/".join(sym.paths[0].split("/")[-3:]))
+                print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.localSymbols.clear()
             sym.moduleSymbols.clear()
             sym.symbols.clear()
             sym.parent = None
             sym.type = SymType.DIRTY
-            import sys
-            print(sys.getrefcount(sym))
             del sym
     
     def invalidate(self):
@@ -146,7 +145,7 @@ class Symbol():
             if in_symbols:
                 if symbol == in_symbols:
                     if DEBUG_MEMORY:
-                        print("symbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                        print("symbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                     del self.symbols[symbol.name]
                     last = None
                     for localSym in self.localSymbols:
@@ -155,7 +154,7 @@ class Symbol():
                                 last = localSym
                     if last:
                         if DEBUG_MEMORY:
-                            print("move sym - " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                            print("move sym - " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                         self.symbols[symbol.name] = weakref.ref(last)
                         self.localSymbols.remove(last)
                 else:
@@ -163,14 +162,14 @@ class Symbol():
                     try:
                         self.localSymbols.remove(symbol)
                         if DEBUG_MEMORY:
-                            print("localSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                            print("localSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                     except ValueError:
                         if DEBUG_MEMORY:
                             print("Symbol to delete not found")
         else:
             if symbol.name in self.moduleSymbols:
                 if DEBUG_MEMORY:
-                    print("moduleSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                    print("moduleSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                 del self.moduleSymbols[symbol.name]
 
 
