@@ -35,6 +35,14 @@ def _reset_mocks(stdin=None, stdout=None):
     server.show_message.reset_mock()
     server.show_message_log.reset_mock()
 
+def search_in_local(symbol, name):
+    found_in_local = False
+    for sym in symbol.localSymbols:
+        if sym.name == name:
+            found_in_local = True
+            break
+    return found_in_local
+
 def test_load_modules():
     assert Odoo.get().symbols.get_symbol(["odoo", "addons", "module_2"]), "OdooLS Test Module2 has not been loaded from custom addons path"
     assert not Odoo.get().symbols.get_symbol(["odoo", "addons", "not_a_module"]), "NotAModule is present in symbols, but it should not have been loaded"
@@ -66,12 +74,7 @@ def test_imports():
     assert not "CONSTANT_3" in constants_dir.symbols
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
-    found_in_local = False
-    for sym in constants_data_dir.localSymbols:
-        if sym.name == "CONSTANT_2":
-            found_in_local = True
-            break
-    assert found_in_local
+    assert search_in_local(constants_data_dir, "CONSTANT_2")
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not "CONSTANT_3" in constants_data_dir.symbols
 
@@ -111,11 +114,12 @@ CONSTANT_3 = 3"""
     assert not "CONSTANT_3" in base_test_models.symbols
     constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
     assert "CONSTANT_1" in constants_dir.symbols
-    assert not "CONSTANT_2" in constants_dir.symbols
+    assert "CONSTANT_2" in constants_dir.symbols
     assert not "CONSTANT_3" in constants_dir.symbols
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
     assert "CONSTANT_2" in constants_data_dir.symbols
+    assert not search_in_local(constants_data_dir, "CONSTANT_2")
     assert not "CONSTANT_3" in constants_data_dir.symbols
     constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
     assert "CONSTANT_1" in constants_data_file.symbols

@@ -166,7 +166,7 @@ class Odoo():
             parent = symbol.parent
             ast_node = symbol.ast_node()
             #WRONG, the context of the stacktrace will prevent ANY deletion, and making it buggy
-            symbol.unload()
+            symbol.unload(symbol)
             del symbol
             #build new
             if parent and ast_node:
@@ -242,7 +242,7 @@ class Odoo():
                     path = "/".join(path.split("/")[:-1])
                 file_symbol = self.get_file_symbol(path)
                 parent = file_symbol.parent
-                file_symbol.unload()
+                file_symbol.unload(file_symbol)
                 del file_symbol
                 #build new
                 pp = PythonArchBuilder(ls, parent, path)
@@ -265,7 +265,7 @@ class Odoo():
             #unload old
             file_symbol = self.get_file_symbol(old_path)
             if file_symbol:
-                file_symbol.unload()
+                file_symbol.unload(file_symbol)
             #build new
             parent_path = "/".join(new_path.split("/")[:-1])
             parent_symbol = self.get_file_symbol(parent_path)

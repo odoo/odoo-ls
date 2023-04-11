@@ -68,7 +68,8 @@ class Symbol():
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
     
     def __del__(self):
-        print("symbol deleted " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
+        if DEBUG_MEMORY:
+            print("symbol deleted " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
     
     def all_symbols(self):
         for s in self.localSymbols:
@@ -81,37 +82,44 @@ class Symbol():
     def is_file_content(self):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
     
-    def unload(self):
+    @staticmethod
+    def unload(symbol): #can't delete because of self? :o
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
-        #1: collect all symbols to revalidate
-        print("unload " + self.name + " at " + "/".join(self.paths[0].split("/")[-3:]))
-        self.parent.remove_symbol(self)
-        #unlink other symbols related to same ast node (for "import *" nodes)
-        ast_node = self.ast_node()
-        if ast_node and hasattr(ast_node, "linked_symbols"):
-            to_unlink = []
-            for s in ast_node.linked_symbols:
-                if s != self:
-                    to_unlink.append(s)
-            ast_node.linked_symbols.clear()
-            for s in to_unlink:
-                print("trigger unload of " + s.name + " at " + "/".join(s.paths[0].split("/")[-3:]))
-                s.unload()
-            to_unlink.clear()
-        self.invalidate()
-        symbols = [self]
-        while symbols:
-            print("is now dirty : " + symbols[0].name + " at " + "/".join(symbols[0].paths[0].split("/")[-3:]))
-            for s in symbols[0].all_symbols():
-                symbols.append(s)
-            symbols[0].localSymbols.clear()
-            symbols[0].moduleSymbols.clear()
-            symbols[0].symbols.clear()
-            symbols[0].parent = None
-            symbols[0].type = "dirty" #to help debugging
+        to_unload = [symbol]
+        while to_unload:
+            sym = to_unload[0]
+            #1: collect all symbols to revalidate
+            found_one = False
+            for s in sym.all_symbols():
+                found_one = True
+                to_unload.insert(0, s)
+            if found_one: 
+                continue
+            else:
+                to_unload.remove(sym)
+
+            #no more children at this point, start unloading the symbol
+            if DEBUG_MEMORY:
+                print("unload " + sym.name + " at " + "/".join(sym.paths[0].split("/")[-3:]))
+            sym.parent.remove_symbol(sym)
+            #add other symbols related to same ast node (for "import *" nodes)
+            ast_node = sym.ast_node()
+            if ast_node and hasattr(ast_node, "linked_symbols"):
+                for s in ast_node.linked_symbols:
+                    if s != sym:
+                        to_unload.append(s)
+                ast_node.linked_symbols.clear()
+            sym.invalidate()
+            if DEBUG_MEMORY:
+                print("is now dirty : " + sym.name + " at " + "/".join(sym.paths[0].split("/")[-3:]))
+            sym.localSymbols.clear()
+            sym.moduleSymbols.clear()
+            sym.symbols.clear()
+            sym.parent = None
+            sym.type = SymType.DIRTY
             import sys
-            print(sys.getrefcount(symbols[0]))
-            del symbols[0]
+            print(sys.getrefcount(sym))
+            del sym
     
     def invalidate(self):
         from .odoo import Odoo
@@ -134,30 +142,35 @@ class Symbol():
 
     def remove_symbol(self, symbol):
         if symbol.is_file_content():
-            in_symbols = self.symbols.get(self.name, None)
+            in_symbols = self.symbols.get(symbol.name, None)
             if in_symbols:
                 if symbol == in_symbols:
-                    print("symbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
-                    del self.symbols[self.name]
+                    if DEBUG_MEMORY:
+                        print("symbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                    del self.symbols[symbol.name]
                     last = None
                     for localSym in self.localSymbols:
                         if localSym.name == symbol.name:
                             if not last or last.startLine < localSym.startLine:
                                 last = localSym
                     if last:
-                        print("move sym - " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                        if DEBUG_MEMORY:
+                            print("move sym - " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
                         self.symbols[symbol.name] = weakref.ref(last)
                         self.localSymbols.remove(last)
                 else:
                     #ouch, the wanted symbol is not in Symbols. let's try to find it in localSymbols
                     try:
                         self.localSymbols.remove(symbol)
-                        print("localSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                        if DEBUG_MEMORY:
+                            print("localSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
                     except ValueError:
-                        print("Symbol to delete not found")
+                        if DEBUG_MEMORY:
+                            print("Symbol to delete not found")
         else:
             if symbol.name in self.moduleSymbols:
-                print("moduleSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
+                if DEBUG_MEMORY:
+                    print("moduleSymbols - remove " + symbol.name + " from " + "/".join(self.paths[0].split("/")[-3:]))
                 del self.moduleSymbols[symbol.name]
 
 

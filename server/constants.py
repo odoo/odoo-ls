@@ -17,8 +17,10 @@ CONFIGURATION_SECTION = 'Odoo'
 #DEBUG PARAMETERS
 
 FULL_LOAD_AT_STARTUP = True
+DEBUG_MEMORY = False
 
 class SymType(Enum):
+    DIRTY     = -1,
     ROOT      = 0,
     NAMESPACE = 1,
     PACKAGE   = 2,
