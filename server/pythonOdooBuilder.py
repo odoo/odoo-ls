@@ -5,6 +5,16 @@ from .odoo import *
 from .importResolver import *
 from .server import FileMgr
 
+
+class ClassContentCache():
+
+    def __init__(self):
+        self.modelName = None
+        self.modelInherit = []
+        self.modelInherits = []
+        self.log_access = True
+
+
 class PythonOdooBuilder(ast.NodeVisitor):
     """The Python Odoo Builder is the step that extracts Odoo models info for the validation.
     It represents data that are loaded and built by Odoo at loading time (model declarations, etc...)
