@@ -81,7 +81,7 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
         variable = Symbol(asname if asname else name, SymType.VARIABLE, file_symbol.paths[0])
         variable.startLine = lineno
         variable.endLine = end_lineno
-        variable.evaluationType = None
+        variable.eval = None
         return variable
     for path in parent_symbol.paths:
         full_path = os.path.join(path, name)

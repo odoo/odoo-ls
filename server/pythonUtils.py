@@ -5,41 +5,6 @@ from .model import *
 import ast
 
 class PythonUtils():
-
-    #TODO evaluateType should not be based on ast?
-    @staticmethod
-    def evaluateTypeAST(node, symbol):
-        """try to return the symbol corresponding to the expression, evaluated in the context of 'symbol' (a function, class or file)"""
-        if isinstance(node, ast.Constant):
-            return Symbol("constant", SymType.PRIMITIVE, "")
-        elif isinstance(node, ast.Dict):
-            return Symbol("dict", SymType.PRIMITIVE, "")
-        elif isinstance(node, ast.List):
-            s = Symbol("list", SymType.PRIMITIVE, "")
-            res = []
-            for n in node.elts:
-                if not isinstance(n, ast.Constant):
-                    return s
-                res.append(n.value)
-            s.evaluationType = res
-            return s
-        elif isinstance(node, ast.Call):
-            f = node.func
-            if isinstance(f, ast.Name):
-                infered = Inferencer.inferNameInScope(f.id, f.lineno, symbol)
-                if infered:
-                    return infered.ref_symbol
-            elif isinstance(f, ast.Attribute):
-                return PythonUtils.evaluateTypeAST(f, symbol)
-        elif isinstance(node, ast.Attribute):
-            v = PythonUtils.evaluateTypeAST(node.value, symbol)
-            if v and node.attr in v.symbols: #TODO wrong, don't use .symbols?
-                return v.symbols[node.attr]
-        elif isinstance(node, ast.Name):
-            infered = Inferencer.inferNameInScope(node.id, node.lineno, symbol)
-            if infered:
-                return infered.ref_symbol
-        return None
     
     @staticmethod
     def inferTypeParso(expr):

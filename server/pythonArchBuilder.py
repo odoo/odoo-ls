@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 from .constants import *
+from .evaluation import Evaluation
 from .odoo import *
 from .symbol import *
 from .model import *
@@ -129,7 +130,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, SymType.VARIABLE, self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
-                variable.evaluationType = weakref.ref(symbol)
+                variable.eval = Evaluation()
+                variable.eval.type = weakref.ref(symbol)
+                if symbol.type not in [SymType.CLASS, SymType.FUNCTION]:
+                    variable.eval.instance = True
                 variable.ast_node = weakref.ref(node)
                 if hasattr(node, "linked_symbols"):
                     node.linked_symbols.add(variable)
@@ -187,19 +191,20 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
-                variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
+                variable.eval = Evaluation(value, self.symStack[-1])
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__" and self.symStack[-1].is_external():
                     # external packages often import symbols from compiled files 
                     # or with meta programmation like globals["var"] = __get_func().
                     # we don't want to handle that, so just declare __all__ content
                     # as symbols to not raise any error.
-                    if variable.evaluationType and variable.evaluationType.type == SymType.PRIMITIVE:
-                        for var_name in variable.evaluationType.evaluationType:
+                    evaluation = variable.eval
+                    if evaluation and evaluation.type == SymType.PRIMITIVE:
+                        for var_name in evaluation.type.eval:
                             var = Symbol(var_name, SymType.VARIABLE, self.filePath)
                             var.startLine = node.lineno
                             var.endLine = node.end_lineno
-                            var.evaluationType = None
+                            var.eval = None
                             self.__all__symbols_to_add.append(var)
 
     def visit_FunctionDef(self, node):
@@ -228,6 +233,26 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.endLine = node.end_lineno
         symbol.ast_node = weakref.ref(node)
         symbol.classData = ClassData()
+        #load inheritance
+        for base in node.bases:
+            full_base = PythonArchBuilder._extract_base_name(base)
+            if full_base:
+                inference = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
+                if not inference or not inference.evaluationType or not inference.evaluationType():
+                    continue
+                base_symbol = inference.evaluationType()
+                if len(full_base.split(".")) > 1:
+                    base_symbol = base_symbol.get_symbol(full_base.split(".")[1:])
+                if not base_symbol:
+                    continue
+                while base_symbol.type != "class":
+                    if base_symbol.type == "variable":
+                        if base_symbol.evaluationType():
+                            base_symbol = base_symbol.evaluationType()
+                            continue
+                    break
+                if base_symbol.type == "class":
+                    base += [weakref.ref(base_symbol)]                      
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         self.classContentCache.append(ClassContentCache())

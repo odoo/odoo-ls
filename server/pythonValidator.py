@@ -7,6 +7,7 @@ from .odoo import *
 from .symbol import *
 from .model import *
 from .pythonUtils import *
+from .importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 class ClassContentCacheValidator():
@@ -29,6 +30,7 @@ class PythonValidator(ast.NodeVisitor):
         self.ls = ls
         self.currentModule = None
         self.filePath = None
+        self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.pathTree = [] #cache tree of the current symbol
 
     def validate(self):
@@ -61,6 +63,54 @@ class PythonValidator(ast.NodeVisitor):
             self.currentModule = Odoo.get().modules[moduleName]
         self.visit(ast)
 
+    def visit_Try(self, node):
+        safe = False
+        for handler in node.handlers:
+            if not isinstance(handler.type, ast.Name):
+                break
+            if handler.type.id == "ImportError":
+                safe = True
+                break
+        self.safeImport.append(safe)
+        ast.NodeVisitor.generic_visit(self, node)
+        self.safeImport.pop()
+    
+    def visit_Import(self, node):
+        self._resolve_import(None, node.names, 0, node)
+
+    def visit_ImportFrom(self, node):
+        self._resolve_import(node.module, node.names, node.level, node)
+
+    def _resolve_import(self, from_stmt, name_aliases, level, node):
+        symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, name_aliases, level, node.lineno, node.end_lineno)
+
+        for node_alias, symbol, file_tree in symbols:
+            name = node_alias.name
+            if not symbol:
+                if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
+                    continue
+                if not self.safeImport[-1]:
+                    self.symStack[0].not_found_paths.append(file_tree + name.split("."))
+                    Odoo.get().not_found_symbols.add(self.symStack[0])
+                    self.diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=node.lineno-1, character=node.col_offset),
+                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                Position(line=node.lineno-1, character=node.end_col_offset)
+                        ),
+                        message = ".".join(file_tree + [name]) + " not found",
+                        source = EXTENSION_NAME,
+                        severity = 2
+                    ))
+                break
+            else:
+                if hasattr(node, "linked_symbols"):
+                    for linked_sym in node.linked_symbols:
+                        if name == "*":
+                            symbol.arch_dependents.add(linked_sym)
+                        else:
+                            symbol.dependents.add(linked_sym)
+
     def visit_Assign(self, node):
         return
         assigns = self.unpack_assign(node.targets, node.value, {})
@@ -78,7 +128,7 @@ class PythonValidator(ast.NodeVisitor):
             if isinstance(value, ast.Call):
                 symbol_infer = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
                 if symbol_infer:
-                    symbol_infer = symbol_infer.evaluationType
+                    symbol_infer = symbol_infer.eval
                 self.symStack[-1].inferencer.addInference(Inference(
                     variable,
                     symbol_infer,
@@ -110,7 +160,7 @@ class PythonValidator(ast.NodeVisitor):
                     variable = Symbol(variable, "variable", self.filePath)
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
-                    variable.evaluationType = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
+                    variable.eval = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
                     self.symStack[-1].add_symbol(variable)
                 else:
                     print("Warning: symbol already defined")
@@ -218,7 +268,8 @@ class PythonValidator(ast.NodeVisitor):
             variable = Symbol(name, SymType.VARIABLE, self.filePath)
             variable.startLine = lineno
             variable.endLine = lineno
-            variable.evaluationType = Symbol(type, SymType.PRIMITIVE, "")
+            #TODO adapt
+            #variable.eval = Symbol(type, SymType.PRIMITIVE, "")
             symbol.add_symbol(variable)
             return variable
         if symbol.get_tree() == ["odoo", "models", "Model"]:

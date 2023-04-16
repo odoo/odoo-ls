@@ -16,7 +16,6 @@
 ############################################################################
 
 from . import constants
-from . import inferencer
 from . import model
 from . import odoo
 from . import module

@@ -2,7 +2,7 @@ import gc
 import os
 import sys
 import weakref
-from server.inferencer import *
+from .constants import *
 
 class ModelData():
 
@@ -20,6 +20,7 @@ class ClassData():
         self.bases = [] #list of tree names
         self.modelData = None
 
+
 class Symbol():
     """A symbol is an object representing an element of the code architecture.
     It can be either a python package, a file, a class, a function, or even a variable.
@@ -31,15 +32,15 @@ class Symbol():
     to get more information
     """
 
-    __slots__ = ("name", "type", "evaluationType", "paths", "ast_node", "symbols", "moduleSymbols",
+    __slots__ = ("name", "type", "eval", "paths", "ast_node", "symbols", "moduleSymbols",
         "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
-        "external", "inferencer", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
+        "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "__weakref__")
 
     def __init__(self, name, type, paths):
         self.name = name
         self.type: SymType = type
-        self.evaluationType = None # actually either weakrefof a symbol or the symbol of a primitive (value stored in evaluationType of this one)
+        self.eval = None
         self.paths = paths if isinstance(paths, list) else [paths]
         self.ast_node = None
         #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
@@ -57,7 +58,6 @@ class Symbol():
         self.isModule = False
         self.classData = None
         self.external = False
-        self.inferencer = Inferencer()
         self.startLine = 0
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
@@ -325,13 +325,13 @@ class Symbol():
         return symbol
     
     def inferName(self, name, line):
-        #TODO search in localSymbols too?
-        local = self.inferencer.inferName(name, line)
-        if self.type in [SymType.FILE, SymType.PACKAGE]:
-            return local
-        if not local:
+        selected = False
+        for symbol in self.all_symbols():
+            if symbol.name == name and symbol.startLine < line and (not selected or symbol.startLine > selected.startLine):
+                selected = symbol
+        if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:
             return self.parent.inferName(name, line)
-        return local
+        return selected
     
     def isClass(self):
         return bool(self.classData)
@@ -345,6 +345,17 @@ class Symbol():
         if self.parent:
             return self.parent.is_external()
         return False
+
+    def get_ordered_symbols(self):
+        """return all symbols from local, moduleSymbols and symbols ordered by line declaration"""
+        symbols = []
+        for s in self.localSymbols:
+            symbols.append((s.startLine, s))
+        for s in self.moduleSymbols.values():
+            symbols.append((s.startLine, s))
+        for s in self.symbols.values():
+            symbols.append((s.startLine, s))
+        return sorted(symbols, key=lambda x: x[0])
 
 class RootSymbol(Symbol):
 
