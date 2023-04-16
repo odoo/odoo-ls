@@ -12,13 +12,6 @@ from .pythonUtils import *
 from .importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
-class ClassContentCache():
-
-    def __init__(self):
-        self.modelName = None
-        self.modelInherit = []
-        self.modelInherits = []
-        self.log_access = True
 
 class PythonArchBuilder(ast.NodeVisitor):
     """The python arch builder aims to build symbols from files and directories. Only structural diagnostics
@@ -40,7 +33,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.filePath = os.path.join(self.filePath, "__init__.py")
             self.ast_node = contentOrPath
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
-        self.classContentCache = []
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
@@ -255,9 +247,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     base += [weakref.ref(base_symbol)]                      
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
-        self.classContentCache.append(ClassContentCache())
         ast.NodeVisitor.generic_visit(self, node)
-        data = self.classContentCache.pop()
         self.symStack.pop()
 
 
