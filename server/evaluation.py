@@ -1,4 +1,5 @@
 import ast
+import weakref
 from .constants import *
 from .symbol import Symbol
 
@@ -22,18 +23,34 @@ class Evaluation():
 
     """
 
-    def __init__(self, node = None, parentSymbol = None):
+    def __init__(self):
         """try to return the symbol corresponding to the expression, evaluated in the context 
         of 'symbol' (a function, class or file)."""
-        if node:
-            self.type, self.instance = self.evaluateAST(node, parentSymbol)
-        else:
-            self.type = None
-            self.instance = False
+        self.type = None
+        self.instance = False
         self.value = None #for primitives
-        
+
     
-    def evaluateAST(self, node, parentSymbol):
+    def eval_import(self, target_symbol):
+        """set the evaluation used in a import symbol, for a target_symbol"""
+        self.type = weakref.ref(target_symbol)
+        if target_symbol.type in [SymType.VARIABLE, SymType.PRIMITIVE]:
+            self.instance = True
+        return self
+    
+    def getType(self):
+        if isinstance(self.type, weakref.ref):
+            return self.type()
+        return self.type
+    
+    def evalAST(self, node, parentSymbol):
+        if node:
+            self.type, self.instance = self._evaluateAST(node, parentSymbol)
+        return self
+    
+    def _evaluateAST(self, node, parentSymbol):
+        """evaluateAST returns for an AST node an a parent Symbol the type and if it is an instance or not.
+        type is not a weakref only if the symbol is created here"""
         type = None
         instance = True
         if isinstance(node, ast.Constant):
@@ -55,16 +72,16 @@ class Evaluation():
             if isinstance(f, ast.Name):
                 infered = parentSymbol.inferName(f.id, f.lineno)
                 if infered and infered.eval:
-                    type = infered.eval.type
+                    type = weakref.ref(infered.eval.getType())
                     instance = infered.eval.instance
             elif isinstance(f, ast.Attribute):
-                return self.evaluateAST(f, parentSymbol)
+                return self._evaluateAST(f, parentSymbol)#TODO probably wrong
         elif isinstance(node, ast.Attribute):
-            v = self.evaluateAST(node.value, parentSymbol)
-            if v and node.attr in v.symbols: #TODO wrong, don't use .symbols?
-                return v.symbols[node.attr]
+            sym, inst = self._evaluateAST(node.value, parentSymbol)
+            if sym and node.attr in sym.symbols: #TODO wrong, don't use .symbols?
+                type = sym.symbols[node.attr]
         elif isinstance(node, ast.Name):
             infered = parentSymbol.inferName(node.id, node.lineno)
             if infered and infered.eval:
-                type = infered.eval.type
+                type = infered.eval.getType()
         return (type, instance)

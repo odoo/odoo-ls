@@ -25,6 +25,7 @@ To run / setup tests, please see setup.py
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 """
 
+Odoo.import_odoo_addons = False
 Odoo.get(server)
 
 def _reset_mocks(stdin=None, stdout=None):

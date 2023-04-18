@@ -62,6 +62,8 @@ class Odoo():
     write_lock = threading.Lock()
     thread_access_condition = ReadWriteCondition(10) #should match the number of threads
 
+    import_odoo_addons = True #can be set to False for speed up tests
+
     def __init__(self):
         pass
 
@@ -137,10 +139,11 @@ class Odoo():
             self.process_odoo_init(ls)
             self.process_validations(ls)
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
-            addonsSymbol.paths += [
-                os.path.join(self.odooPath, "addons"), 
-                #"/home/odoo/Documents/odoo-servers/false_odoo/enterprise"
-                ]
+            if Odoo.import_odoo_addons:
+                addonsSymbol.paths += [
+                    os.path.join(self.odooPath, "addons"), 
+                    #"/home/odoo/Documents/odoo-servers/false_odoo/enterprise"
+                    ]
             addonsSymbol.paths += used_config['addons']
             return True
         else:

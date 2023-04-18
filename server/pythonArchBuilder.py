@@ -122,10 +122,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, SymType.VARIABLE, self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
-                variable.eval = Evaluation()
-                variable.eval.type = weakref.ref(symbol)
-                if symbol.type not in [SymType.CLASS, SymType.FUNCTION]:
-                    variable.eval.instance = True
+                variable.eval = Evaluation().eval_import(symbol)
                 variable.ast_node = weakref.ref(node)
                 if hasattr(node, "linked_symbols"):
                     node.linked_symbols.add(variable)
@@ -138,24 +135,20 @@ class PythonArchBuilder(ast.NodeVisitor):
                 if "__all__" in symbol.symbols:
                     allowed_sym = symbol.symbols["__all__"]
                     # follow ref if the current __all__ is imported
-                    while allowed_sym and allowed_sym.type == SymType.VARIABLE and isinstance(allowed_sym.evaluationType, list):
-                        allowed_sym = Odoo.get().symbols.get_symbol([], allowed_sym.evaluationType)
+                    while allowed_sym and allowed_sym.type == SymType.VARIABLE and isinstance(allowed_sym.eval.type, weakref.ref):
+                        allowed_sym = allowed_sym.eval.type()
                     if allowed_sym:
-                        allowed_sym = allowed_sym.evaluationType
-                        while allowed_sym and isinstance(allowed_sym, weakref.ref):
-                            sym = allowed_sym()
-                            allowed_sym = sym.evaluationType if sym else None
                         if not allowed_sym or not allowed_sym.type == SymType.PRIMITIVE and not allowed_sym.name == "list":
                             print("debug= wrong __all__")
                             allowed_sym = True
                     if not isinstance(allowed_sym, Symbol):
                         allowed_sym = True
                 for s in symbol.symbols.values():
-                    if allowed_sym == True or s.name in allowed_sym.evaluationType:
+                    if allowed_sym == True or s.name in allowed_sym.eval.value:
                         variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
                         variable.startLine = lineno
                         variable.endLine = end_lineno
-                        variable.evaluationType = weakref.ref(s)
+                        variable.eval = Evaluation().eval_import(s)
                         variable.ast_node = weakref.ref(node) #TODO ref to node prevent unload to find other linked symbols
                         if hasattr(node, "linked_symbols"):
                             node.linked_symbols.add(variable)
@@ -183,7 +176,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
-                variable.eval = Evaluation(value, self.symStack[-1])
+                variable.eval = Evaluation().evalAST(value, self.symStack[-1])
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__" and self.symStack[-1].is_external():
                     # external packages often import symbols from compiled files 
@@ -192,7 +185,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     # as symbols to not raise any error.
                     evaluation = variable.eval
                     if evaluation and evaluation.type == SymType.PRIMITIVE:
-                        for var_name in evaluation.type.eval:
+                        for var_name in evaluation.type.eval.value:
                             var = Symbol(var_name, SymType.VARIABLE, self.filePath)
                             var.startLine = node.lineno
                             var.endLine = node.end_lineno
@@ -226,25 +219,27 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.ast_node = weakref.ref(node)
         symbol.classData = ClassData()
         #load inheritance
-        for base in node.bases:
-            full_base = PythonArchBuilder._extract_base_name(base)
-            if full_base:
-                inference = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
-                if not inference or not inference.evaluationType or not inference.evaluationType():
-                    continue
-                base_symbol = inference.evaluationType()
-                if len(full_base.split(".")) > 1:
-                    base_symbol = base_symbol.get_symbol(full_base.split(".")[1:])
-                if not base_symbol:
-                    continue
-                while base_symbol.type != "class":
-                    if base_symbol.type == "variable":
-                        if base_symbol.evaluationType():
-                            base_symbol = base_symbol.evaluationType()
-                            continue
-                    break
-                if base_symbol.type == "class":
-                    base += [weakref.ref(base_symbol)]                      
+        # for base in node.bases:
+        #     full_base = PythonArchBuilder._extract_base_name(base)
+        #     if full_base:
+        #         imp_symbol = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
+        #         while imp_symbol and imp_symbol.type != SymType.CLASS:
+        #             if imp_symbol.eval:
+        #                 imp_symbol = imp_symbol.eval.getType()
+        #         if not imp_symbol:
+        #             continue
+        #         if len(full_base.split(".")) > 1:
+        #             imp_symbol = imp_symbol.get_symbol(full_base.split(".")[1:])
+        #         if not imp_symbol:
+        #             continue
+        #         while imp_symbol.type != "class":
+        #             if imp_symbol.type == "variable":
+        #                 if imp_symbol.evaluationType():
+        #                     imp_symbol = imp_symbol.evaluationType()
+        #                     continue
+        #             break
+        #         if imp_symbol.type == "class":
+        #             base += [weakref.ref(imp_symbol)]                      
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
