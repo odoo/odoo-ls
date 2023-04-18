@@ -130,21 +130,19 @@ class PythonArchBuilder(ast.NodeVisitor):
                     node.linked_symbols = weakref.WeakSet([variable])
                 self.symStack[-1].add_symbol(variable)
             else:
-                allowed_sym = True
+                allowed_names = True
                 #in case of *, the symbol is the parent_symbol from which we will import all symbols
                 if "__all__" in symbol.symbols:
-                    allowed_sym = symbol.symbols["__all__"]
+                    all_sym = symbol.symbols["__all__"]
                     # follow ref if the current __all__ is imported
-                    while allowed_sym and allowed_sym.type == SymType.VARIABLE and isinstance(allowed_sym.eval.type, weakref.ref):
-                        allowed_sym = allowed_sym.eval.type()
-                    if allowed_sym:
-                        if not allowed_sym or not allowed_sym.type == SymType.PRIMITIVE and not allowed_sym.name == "list":
-                            print("debug= wrong __all__")
-                            allowed_sym = True
-                    if not isinstance(allowed_sym, Symbol):
+                    all_primitive_sym, _ = all_sym.follow_ref()
+                    if not all_primitive_sym or not all_primitive_sym.name == "list" or not all_primitive_sym.eval.value:
+                        print("debug= wrong __all__")
                         allowed_sym = True
+                    else:
+                        allowed_names = all_primitive_sym.eval.value
                 for s in symbol.symbols.values():
-                    if allowed_sym == True or s.name in allowed_sym.eval.value:
+                    if allowed_names == True or s.name in allowed_names:
                         variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
                         variable.startLine = lineno
                         variable.endLine = end_lineno

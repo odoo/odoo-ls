@@ -3,6 +3,7 @@ import weakref
 from .constants import *
 from .symbol import Symbol
 
+
 class Evaluation():
     """ Evaluation indicates, for a specific place how can be evaluated a specific symbol
     For example:
@@ -69,19 +70,32 @@ class Evaluation():
             type = s
         elif isinstance(node, ast.Call):
             f = node.func
-            if isinstance(f, ast.Name):
-                infered = parentSymbol.inferName(f.id, f.lineno)
-                if infered and infered.eval:
-                    type = weakref.ref(infered.eval.getType())
-                    instance = infered.eval.instance
-            elif isinstance(f, ast.Attribute):
-                return self._evaluateAST(f, parentSymbol)#TODO probably wrong
+            #1: get object to call
+            base, inst = self._evaluateAST(f, parentSymbol)
+            if not base:
+                return (None, False)
+            if base.type == SymType.CLASS and inst == False:
+                return base, True
+            elif base.type == SymType.CLASS and inst == True:
+                call_func = base.symbols.get("__call__", None)
+                if not call_func or call_func.eval:
+                    return (None, False)
+                return call_func.eval.getType(), call_func.eval.instance
+            elif base.type == SymType.FUNCTION and base.eval:
+                return base.eval.getType(), base.eval.instance
+            #TODO other types are errors?
         elif isinstance(node, ast.Attribute):
-            sym, inst = self._evaluateAST(node.value, parentSymbol)
-            if sym and node.attr in sym.symbols: #TODO wrong, don't use .symbols?
-                type = sym.symbols[node.attr]
+            v, instance = self._evaluateAST(node.value, parentSymbol)
+            if not v:
+                return (None, False)
+            base, instance = v.follow_ref()
+            attribute = v.symbols.get(node.attr, None)
+            if not attribute:
+                return (None, False)
+            return attribute, attribute.type == SymType.VARIABLE
         elif isinstance(node, ast.Name):
-            infered = parentSymbol.inferName(node.id, node.lineno)
-            if infered and infered.eval:
-                type = infered.eval.getType()
+            infered_sym = parentSymbol.inferName(node.id, node.lineno)
+            if not infered_sym:
+                return (None, False)
+            return infered_sym.follow_ref()
         return (type, instance)

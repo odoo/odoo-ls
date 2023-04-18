@@ -79,6 +79,14 @@ class Symbol():
             yield s
         for s in self.moduleSymbols.values():
             yield s
+
+    def follow_ref(self):
+        sym = self
+        instance = self.type in [SymType.VARIABLE]
+        while sym and sym.type == SymType.VARIABLE and sym.eval:
+            instance = sym.eval.instance
+            sym = sym.eval.getType()
+        return sym, instance
     
     def is_file_content(self):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
@@ -350,12 +358,12 @@ class Symbol():
         """return all symbols from local, moduleSymbols and symbols ordered by line declaration"""
         symbols = []
         for s in self.localSymbols:
-            symbols.append((s.startLine, s))
+            symbols.append(s)
         for s in self.moduleSymbols.values():
-            symbols.append((s.startLine, s))
+            symbols.append(s)
         for s in self.symbols.values():
-            symbols.append((s.startLine, s))
-        return sorted(symbols, key=lambda x: x[0])
+            symbols.append(s)
+        return sorted(symbols, key=lambda x: x.startLine)
 
 class RootSymbol(Symbol):
 

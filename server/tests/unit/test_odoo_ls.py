@@ -144,8 +144,8 @@ def test_rename():
     assert not "CONSTANT_3" in constants_dir.symbols
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
-    evaluation1 = constants_data_dir.symbols["CONSTANT_1"].evaluationType
-    assert evaluation1 == None or evaluation1() is None
+    evaluation1 = constants_data_dir.symbols["CONSTANT_1"].eval
+    assert not evaluation1.getType()
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not search_in_local(constants_data_dir, "CONSTANT_2")
     assert not "CONSTANT_3" in constants_data_dir.symbols
