@@ -14,3 +14,10 @@ class BaseTestModel(models.Model):
 
     def get_constant(self):
         return CONSTANT_1 + CONSTANT_2
+    
+BaseOtherName = BaseTestModel
+baseInstance1 = BaseTestModel()
+baseInstance2 = BaseOtherName()
+ref_funcBase1 = BaseTestModel.get_test_int
+ref_funcBase2 = baseInstance1.get_test_int
+return_funcBase2 = baseInstance2.get_test_int()

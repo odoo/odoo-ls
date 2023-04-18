@@ -182,8 +182,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                     # we don't want to handle that, so just declare __all__ content
                     # as symbols to not raise any error.
                     evaluation = variable.eval
-                    if evaluation and evaluation.type == SymType.PRIMITIVE:
-                        for var_name in evaluation.type.eval.value:
+                    if evaluation and evaluation.getSymbol() and evaluation.getSymbol().type == SymType.PRIMITIVE:
+                        for var_name in evaluation.getSymbol().eval.value:
                             var = Symbol(var_name, SymType.VARIABLE, self.filePath)
                             var.startLine = node.lineno
                             var.endLine = node.end_lineno
@@ -223,7 +223,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         #         imp_symbol = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
         #         while imp_symbol and imp_symbol.type != SymType.CLASS:
         #             if imp_symbol.eval:
-        #                 imp_symbol = imp_symbol.eval.getType()
+        #                 imp_symbol = imp_symbol.eval.getSymbol()
         #         if not imp_symbol:
         #             continue
         #         if len(full_base.split(".")) > 1:

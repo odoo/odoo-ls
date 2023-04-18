@@ -83,9 +83,9 @@ class Symbol():
     def follow_ref(self):
         sym = self
         instance = self.type in [SymType.VARIABLE]
-        while sym and sym.type == SymType.VARIABLE and sym.eval:
+        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.symbol:
             instance = sym.eval.instance
-            sym = sym.eval.getType()
+            sym = sym.eval.symbol()
         return sym, instance
     
     def is_file_content(self):

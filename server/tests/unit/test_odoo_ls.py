@@ -3,6 +3,7 @@ import io
 import json
 import threading
 import time
+import weakref
 
 import pytest
 from lsprotocol.types import (DidChangeTextDocumentParams, VersionedTextDocumentIdentifier, RenameFilesParams, FileRename)
@@ -16,6 +17,8 @@ from ...server import (
 from ...fileMgr import FileMgr
 from .setup import *
 from ...odoo import Odoo
+from ...symbol import Symbol
+from ...constants import *
 
 """
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -94,6 +97,73 @@ def test_load_classes():
     assert "get_test_int" in base_class.symbols
     assert "get_constant" in base_class.symbols
 
+def test_evaluation():
+    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+    evaluation = constants_data_file.get_symbol([], ["CONSTANT_1"]).eval
+    assert evaluation and evaluation.getSymbol()
+    assert isinstance(evaluation.symbol, weakref.ref)
+    assert evaluation.getSymbol().type == SymType.PRIMITIVE
+    assert evaluation.instance == True
+    evaluation = constants_data_file.get_symbol([], ["__all__"]).eval
+    assert evaluation and evaluation.getSymbol()
+    assert isinstance(evaluation.symbol, weakref.ref)
+    assert evaluation.getSymbol().type == SymType.PRIMITIVE
+    assert evaluation.instance == True
+    assert evaluation.getSymbol().name == "list"
+    assert evaluation.getSymbol().eval.value == ["CONSTANT_1", "CONSTANT_2"]
+
+    data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+    evaluation = data_dir.get_symbol([], ["CONSTANT_1"]).eval
+    assert evaluation
+    assert isinstance(evaluation.symbol, weakref.ref)
+    assert evaluation.symbol() #Symbol of variable in constants.py
+    assert evaluation.instance == True
+    var_symbol = evaluation.symbol()
+    assert var_symbol.type == SymType.VARIABLE
+    assert var_symbol.name == "CONSTANT_1"
+    
+    base_test_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
+    evaluation = base_test_file.get_symbol([], ["BaseOtherName"]).eval
+    assert evaluation.symbol
+    assert evaluation.symbol()
+    assert evaluation.symbol().type == SymType.CLASS
+    assert evaluation.symbol().name == "BaseTestModel"
+    assert evaluation.instance == False
+
+    evaluation = base_test_file.get_symbol([], ["baseInstance1"]).eval
+    assert evaluation.symbol
+    assert evaluation.symbol()
+    assert evaluation.symbol().type == SymType.CLASS
+    assert evaluation.symbol().name == "BaseTestModel"
+    assert evaluation.instance == True
+
+    evaluation = base_test_file.get_symbol([], ["baseInstance2"]).eval
+    assert evaluation.symbol
+    assert evaluation.symbol()
+    assert evaluation.symbol().type == SymType.CLASS
+    assert evaluation.symbol().name == "BaseTestModel"
+    assert evaluation.instance == True
+
+    evaluation = base_test_file.get_symbol([], ["ref_funcBase1"]).eval
+    assert evaluation.symbol
+    assert evaluation.symbol()
+    assert evaluation.symbol().type == SymType.FUNCTION
+    assert evaluation.symbol().name == "get_test_int"
+    assert evaluation.instance == False
+
+    evaluation = base_test_file.get_symbol([], ["ref_funcBase2"]).eval
+    assert evaluation.symbol
+    assert evaluation.symbol()
+    assert evaluation.symbol().type == SymType.FUNCTION
+    assert evaluation.symbol().name == "get_test_int"
+    assert evaluation.instance == False
+    
+    evaluation = base_test_file.get_symbol([], ["return_funcBase2"]).eval
+    #the return evaluation of a function is not really 100% accurate. Let's at least test that the function is not returned
+    if evaluation.symbol and evaluation.symbol():
+        assert evaluation.symbol().type != SymType.FUNCTION
+        assert evaluation.symbol().name != "get_test_int"
+
 
 def test_imports_dynamic():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
@@ -145,7 +215,7 @@ def test_rename():
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
     evaluation1 = constants_data_dir.symbols["CONSTANT_1"].eval
-    assert not evaluation1.getType()
+    assert not evaluation1.symbol()
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not search_in_local(constants_data_dir, "CONSTANT_2")
     assert not "CONSTANT_3" in constants_data_dir.symbols
