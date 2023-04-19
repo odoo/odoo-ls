@@ -17,7 +17,7 @@ class ClassData():
     
     def __init__(self):
         #data related to classes symbols
-        self.bases = [] #list of tree names
+        self.bases = weakref.WeakSet() #set of weakref to base classes
         self.modelData = None
 
 
@@ -81,6 +81,7 @@ class Symbol():
             yield s
 
     def follow_ref(self):
+        #follow the reference to the real symbol and returns it (not a weakref)
         sym = self
         instance = self.type in [SymType.VARIABLE]
         while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.symbol:
@@ -204,7 +205,12 @@ class Symbol():
         This implementation allows to fix ambiguity in the case of a package P holds a symbol A
         in its __init__.py and a file A.py in the directory. An import from elswhere that would 
         type 'from P.A import c' would have to call get_symbol(["P", "A"], ["c"]) because P and A
-        can't be file content (because theyr're in the from clause)"""
+        can't be file content (because theyr're in the from clause)
+        in-deep note: it does not respect the precedence of packages over modules. If you have
+        a/foo.py and a/foo/test.py, calling get_symbol([], ["a", "foo", "test"]) will return the content of
+        the file, but a true import return the test.py file. BUT, as foo.py should be impossible to import,
+        it should be not available in the tree, and so the directory is taken
+        """
         #This function of voluntarily non recursive
         if isinstance(symbol_tree_files, str) or isinstance(symbol_tree_content, str):
             raise Exception("get_symbol can only be used with list")

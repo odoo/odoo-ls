@@ -209,6 +209,28 @@ class PythonArchBuilder(ast.NodeVisitor):
         elif isinstance(attr, ast.Call):
             pass
         return ""
+    
+    def load_base_class(self, symbol, node):
+        for base in node.bases:
+            full_base = PythonArchBuilder._extract_base_name(base)
+            if full_base:
+                base_elements = full_base.split(".")
+                iter_element = self.symStack[-1].inferName(base_elements[0], node.lineno)
+                if not iter_element:
+                    continue
+                iter_element, _ = iter_element.follow_ref()
+                found = True
+                for base_element in base_elements[1:]:
+                    iter_element = iter_element.get_symbol([], [base_element])
+                    if not iter_element:
+                        found = False
+                        break
+                    iter_element, _ = iter_element.follow_ref()
+                if not found:
+                    continue #TODO generate error?
+                if iter_element.type != SymType.CLASS:
+                    continue #TODO generate error?
+                symbol.classData.bases.add(iter_element)
 
     def visit_ClassDef(self, node):
         symbol = Symbol(node.name, SymType.CLASS, self.filePath)
@@ -217,27 +239,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.ast_node = weakref.ref(node)
         symbol.classData = ClassData()
         #load inheritance
-        # for base in node.bases:
-        #     full_base = PythonArchBuilder._extract_base_name(base)
-        #     if full_base:
-        #         imp_symbol = self.symStack[-1].inferName(full_base.split(".")[0], node.lineno)
-        #         while imp_symbol and imp_symbol.type != SymType.CLASS:
-        #             if imp_symbol.eval:
-        #                 imp_symbol = imp_symbol.eval.getSymbol()
-        #         if not imp_symbol:
-        #             continue
-        #         if len(full_base.split(".")) > 1:
-        #             imp_symbol = imp_symbol.get_symbol(full_base.split(".")[1:])
-        #         if not imp_symbol:
-        #             continue
-        #         while imp_symbol.type != "class":
-        #             if imp_symbol.type == "variable":
-        #                 if imp_symbol.evaluationType():
-        #                     imp_symbol = imp_symbol.evaluationType()
-        #                     continue
-        #             break
-        #         if imp_symbol.type == "class":
-        #             base += [weakref.ref(imp_symbol)]                      
+        self.load_base_class(symbol, node)
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)

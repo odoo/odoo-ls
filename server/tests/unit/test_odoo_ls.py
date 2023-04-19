@@ -165,6 +165,20 @@ def test_evaluation():
         assert evaluation.symbol().name != "get_test_int"
 
 
+def test_base_class():
+    test_class = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
+    model_symbol = Odoo.get().symbols.get_symbol(["odoo", "models"], ["Model"])
+    abstract_model = Odoo.get().symbols.get_symbol(["odoo", "models"], ["AbstractModel"])
+    base_model = Odoo.get().symbols.get_symbol(["odoo", "models"], ["BaseModel"])
+    assert test_class and test_class.type == SymType.CLASS and test_class.classData
+    assert model_symbol and model_symbol.type == SymType.CLASS and test_class.classData
+    assert abstract_model and abstract_model.type == SymType.VARIABLE
+    assert base_model and base_model.type == SymType.CLASS and test_class.classData
+    assert model_symbol in test_class.classData.bases
+    assert abstract_model not in model_symbol.classData.bases
+    assert base_model in model_symbol.classData.bases
+
+
 def test_imports_dynamic():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
     
