@@ -179,6 +179,43 @@ def test_base_class():
     assert base_model in model_symbol.classData.bases
 
 
+def test_model_name_inherit():
+    model_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"])
+    model_name = model_file.get_symbol([], ["model_name"])
+    assert model_name and model_name.modelData
+    assert model_name.modelData.name == "pygls.tests.m_name"
+    assert model_name.modelData.inherit == ["base"]
+    model_name_inherit = model_file.get_symbol([], ["model_name_inherit"])
+    assert model_name_inherit and model_name_inherit.modelData
+    assert model_name_inherit.modelData.name == "pygls.tests.m_name"
+    assert model_name_inherit.modelData.inherit == ["pygls.tests.m_name", "base"]
+    model_name_inherit_no_name = model_file.get_symbol([], ["model_name_inherit_no_name"])
+    assert model_name_inherit_no_name and model_name_inherit_no_name.modelData
+    assert model_name_inherit_no_name.modelData.name == "pygls.tests.m_name"
+    assert model_name_inherit_no_name.modelData.inherit == ["pygls.tests.m_name", "base"]
+    model_name_inherit_diff_name = model_file.get_symbol([], ["model_name_inherit_diff_name"])
+    assert model_name_inherit_diff_name and model_name_inherit_diff_name.modelData
+    assert model_name_inherit_diff_name.modelData.name == "pygls.tests.m_diff_name"
+    assert model_name_inherit_diff_name.modelData.inherit == ["pygls.tests.m_name", "base"]
+    model_name_2 = model_file.get_symbol([], ["model_name_2"])
+    assert model_name_2 and model_name_2.modelData
+    assert model_name_2.modelData.name == "pygls.tests.m_name_2"
+    assert model_name_2.modelData.inherit == ["base"]
+    model_name_inherit_comb_name = model_file.get_symbol([], ["model_name_inherit_comb_name"])
+    assert model_name_inherit_comb_name and model_name_inherit_comb_name.modelData
+    assert model_name_inherit_comb_name.modelData.name == "pygls.tests.m_comb_name"
+    assert model_name_inherit_comb_name.modelData.inherit == ["pygls.tests.m_name", "pygls.tests.m_name_2", "base"]
+    model_no_register = model_file.get_symbol([], ["model_no_register"])
+    assert model_no_register and model_no_register.modelData
+    assert model_no_register.modelData.name == ""
+    assert model_no_register.modelData.inherit == []
+    #TODO can be wrong, I don't know if the _register=False should be inherited (I guess yes?)
+    model_no_register_inherit = model_file.get_symbol([], ["model_no_register_inherit"])
+    assert model_no_register_inherit and model_no_register_inherit.modelData
+    assert model_no_register_inherit.modelData.name == "pygls.tests.m_no_register"
+    assert model_no_register_inherit.modelData.inherit == ["pygls.tests.m_no_register", "base"]
+
+
 def test_imports_dynamic():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
     

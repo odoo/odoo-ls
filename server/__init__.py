@@ -16,10 +16,14 @@
 ############################################################################
 
 from . import constants
+from . import evaluation
+from . import fileMgr
+from . import importResolver
 from . import model
 from . import odoo
 from . import module
 from . import pythonArchBuilder
 from . import pythonUtils
+from . import pythonValidator
 from . import server
 from . import symbol

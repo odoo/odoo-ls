@@ -60,6 +60,8 @@ class Evaluation():
         instance = True
         if isinstance(node, ast.Constant):
             self._symbol = Symbol("constant", SymType.PRIMITIVE, "")
+            self._symbol.eval = Evaluation()
+            self._symbol.eval.value = node.value
             symbol = weakref.ref(self._symbol)
         elif isinstance(node, ast.Dict):
             self._symbol = Symbol("dict", SymType.PRIMITIVE, "")
@@ -85,7 +87,7 @@ class Evaluation():
                 return base_ref, True
             elif base.type == SymType.CLASS and inst == True:
                 call_func = base.symbols.get("__call__", None)
-                if not call_func or call_func.eval:
+                if not call_func or not call_func.eval:
                     return (None, False)
                 return call_func.eval.symbol, call_func.eval.instance
             elif base.type == SymType.FUNCTION and base.eval:

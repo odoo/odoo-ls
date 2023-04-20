@@ -19,6 +19,13 @@ class ClassData():
         #data related to classes symbols
         self.bases = weakref.WeakSet() #set of weakref to base classes
         self.modelData = None
+    
+    def inherits(self, symbol):
+        for base in self.bases:
+            if base == symbol:
+                return True
+            if base.classData.inherits(symbol):
+                return True
 
 
 class Symbol():
@@ -34,7 +41,7 @@ class Symbol():
 
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "symbols", "moduleSymbols",
         "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
-        "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
+        "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "__weakref__")
 
     def __init__(self, name, type, paths):
@@ -57,6 +64,7 @@ class Symbol():
         self.parent = None
         self.isModule = False
         self.classData = None
+        self.modelData = None
         self.external = False
         self.startLine = 0
         self.endLine = 0

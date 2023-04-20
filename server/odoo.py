@@ -112,6 +112,9 @@ class Odoo():
             Odoo.isLoading = False
         return Odoo.instance
     
+    def get_symbol(self, fileTree, nameTree = []):
+        return self.symbols.get_symbol(fileTree, nameTree)
+
     def build_database(self, ls, used_config):
         if not self.build_base(ls, used_config):
             return False
@@ -132,6 +135,8 @@ class Odoo():
                         self.version_minor = int(res[1])
                         self.version_micro = int(res[2])
                 print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
+                if self.version_major < 14:
+                    ls.show_message("Odoo version is too old. The tool only supports version 14 and above.")
             #set python path
             self.symbols.paths += [self.odooPath]
             parser = PythonArchBuilder(ls, self.symbols, os.path.join(self.odooPath, "odoo"))
