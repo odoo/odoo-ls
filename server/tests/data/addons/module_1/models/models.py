@@ -28,4 +28,3 @@ class model_no_register(models.Model):
 class model_no_register_inherit(models.Model):
     _name = "pygls.tests.m_no_register"
     _inherit = "pygls.tests.m_no_register"
-    #TODO are we heriting the _register = False?

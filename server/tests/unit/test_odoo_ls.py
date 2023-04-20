@@ -209,7 +209,6 @@ def test_model_name_inherit():
     assert model_no_register and model_no_register.modelData
     assert model_no_register.modelData.name == ""
     assert model_no_register.modelData.inherit == []
-    #TODO can be wrong, I don't know if the _register=False should be inherited (I guess yes?)
     model_no_register_inherit = model_file.get_symbol([], ["model_no_register_inherit"])
     assert model_no_register_inherit and model_no_register_inherit.modelData
     assert model_no_register_inherit.modelData.name == "pygls.tests.m_no_register"
