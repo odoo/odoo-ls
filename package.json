@@ -13,8 +13,8 @@
   ],
   "activationEvents": [
     "onView:explorer",
-    "onLanguage:python",
-    "onView:odoo-explorer"
+    "onView:odoo-explorer",
+    "workspaceContains:**/__manifest__.py"
   ],
   "contributes": {
     "commands": [

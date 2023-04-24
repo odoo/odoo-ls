@@ -20,8 +20,15 @@
 
 import * as net from "net";
 import * as path from "path";
-import * as vscode from 'vscode';
-import { ExtensionContext, ExtensionMode, workspace } from "vscode";
+import {
+    ConfigurationTarget,
+    ExtensionContext,
+    ExtensionMode,
+    StatusBarAlignment,
+    StatusBarItem,
+    workspace,
+    window
+} from "vscode";
 import { ConfigurationsExplorer } from './treeConfigurations';
 import { TreeDatabasesDataProvider } from './treeDatabases';
 import {
@@ -30,9 +37,10 @@ import {
     LanguageClientOptions,
     ServerOptions,
 } from "vscode-languageclient/node";
+import { WelcomeWebView } from "./welcomeWebView";
 
 let client: LanguageClient;
-let odooStatusBar: vscode.StatusBarItem;
+let odooStatusBar: StatusBarItem;
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -105,22 +113,23 @@ export function activate(context: ExtensionContext): void {
 
 	new ConfigurationsExplorer(context);
 
-    odooStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     odooStatusBar.text = "Odoo";
     odooStatusBar.show();
+    odooStatusBar.command = ""
     context.subscriptions.push(odooStatusBar);
 
-	vscode.window.registerTreeDataProvider(
+    window.registerTreeDataProvider(
 		'odoo-databases',
 		new TreeDatabasesDataProvider()
 	);/*
-	vscode.window.createTreeView('odoo-databases', {
+	window.createTreeView('odoo-databases', {
 		treeDataProvider: new TreeDatabasesDataProvider()
 	});*/
-
+    WelcomeWebView.render(context.extensionUri);
 	client.onReady().then(() => {
-		const configs: any = vscode.workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
-		const selectedConfig: integer = vscode.workspace.getConfiguration("Odoo").get("selectedConfigurations");
+        const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+        const selectedConfig: integer = workspace.getConfiguration("Odoo").get("selectedConfigurations");
 		console.log(configs);
 		console.log(selectedConfig);
 		if (selectedConfig != -1) {
@@ -128,11 +137,11 @@ export function activate(context: ExtensionContext): void {
 			console.log(config);
             // small hack to make Pylance import odoo modules in other workspaces
             //TODO only do it if addon directory is detected and do it for each root folder if multiple addons paths
-            if (vscode.workspace.getConfiguration("python.analysis")) {
-                const currentExtraPaths = vscode.workspace.getConfiguration("python.analysis").extraPaths;
+            if (workspace.getConfiguration("python.analysis")) {
+                const currentExtraPaths = workspace.getConfiguration("python.analysis").extraPaths;
                 if (currentExtraPaths.indexOf(config["odooPath"]) == -1) {
-                    //vscode.workspace.workspaceFolders.inspect() can help ?
-                    vscode.workspace.getConfiguration("python.analysis").update("extraPaths", currentExtraPaths.concat(config["odooPath"]), vscode.ConfigurationTarget.Workspace);
+                    //workspace.workspaceFolders.inspect() can help ?
+                    workspace.getConfiguration("python.analysis").update("extraPaths", currentExtraPaths.concat(config["odooPath"]), ConfigurationTarget.Workspace);
                 }
             }
             //TODO this is not calling anything...

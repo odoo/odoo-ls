@@ -27,3 +27,15 @@
     margin: 0 auto;
   }
 }
+.container {
+  width: '100%';
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+
+.logo {
+  width: 200px;
+  margin-top: 2em
+}
