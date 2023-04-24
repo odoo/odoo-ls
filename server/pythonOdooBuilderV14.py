@@ -8,7 +8,7 @@ from .pythonOdooBuilderBase import PythonOdooBuilder
 class PythonOdooBuilderV14(PythonOdooBuilder):
 
     def _load_class_inherit(self, symbol):
-        _inherit = symbol.get_symbol([], ["_inherit"])
+        _inherit = symbol.get_class_symbol("_inherit", prevent_comodel=True)
         if _inherit:
             inherit_value, _ = _inherit.eval.getSymbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
@@ -23,7 +23,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                 print("wrong inherit")
 
     def _evaluate_name(self, symbol):
-        _name = symbol.get_symbol([], ["_name"])
+        _name = symbol.get_class_symbol("_name", prevent_comodel=True)
         if _name:
             if _name.eval and _name.eval.getSymbol():
                 name_value, _ = _name.eval.getSymbol().follow_ref()
@@ -43,3 +43,16 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
             return
         if symbol.modelData.name != 'base':
             symbol.modelData.inherit.append('base')
+
+    def _load_class_inherits(self, symbol):
+        _inherits = symbol.get_class_symbol("_inherits", prevent_comodel=True)
+        if _inherits:
+            inherit_value, _ = _inherits.eval.getSymbol().follow_ref()
+            if inherit_value.type == SymType.PRIMITIVE:
+                inherit_names = inherit_value.eval.value
+                if isinstance(inherit_names, dict):
+                    symbol.modelData.inherits = inherit_names
+                else:
+                    print("wrong inherits")
+            else:
+                print("wrong inherits")

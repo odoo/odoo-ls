@@ -57,6 +57,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
                     self._load_class_name(symbol)
                     if not symbol.modelData:
                         continue
+                    self._load_class_inherits(symbol)
 
     def _load_class_inherit(self, symbol):
         """ load the model inherit list from the class definition """
@@ -64,6 +65,10 @@ class PythonOdooBuilder(ast.NodeVisitor):
 
     def _load_class_name(self, symbol):
         """ load the model name from the class definition """
+        raise NotImplementedError
+
+    def _load_class_inherits(self, symbol):
+        """ load the model inherits list from the class definition """
         raise NotImplementedError
 
     def is_model(self, symbol):

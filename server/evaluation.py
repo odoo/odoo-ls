@@ -53,6 +53,14 @@ class Evaluation():
             self.symbol, self.instance = self._evaluateAST(node, parentSymbol)
         return self
     
+    def _extract_literal_dict(self, node):
+        res = {}
+        for k, v in zip(node.keys, node.values):
+            if not isinstance(k, ast.Constant) or not isinstance(v, ast.Constant):
+                return None
+            res[k.value] = v.value
+        return res
+    
     def _evaluateAST(self, node, parentSymbol):
         """evaluateAST returns for an AST node an a parent Symbol the symbol and if it is an instance or not.
         symbol is always a weakref"""
@@ -65,6 +73,8 @@ class Evaluation():
             symbol = weakref.ref(self._symbol)
         elif isinstance(node, ast.Dict):
             self._symbol = Symbol("dict", SymType.PRIMITIVE, "")
+            self._symbol.eval = Evaluation()
+            self._symbol.eval.value = self._extract_literal_dict(node)
             symbol = weakref.ref(self._symbol)
         elif isinstance(node, ast.List):
             self._symbol = Symbol("list", SymType.PRIMITIVE, "")

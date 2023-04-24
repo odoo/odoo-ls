@@ -1,7 +1,12 @@
-from odoo import models
+from odoo import models, fields
 
 class model_name(models.Model):
     _name = "pygls.tests.m_name"
+
+    f1 = fields.Char()
+
+    def func_1(self):
+        pass
 
 class model_name_inherit(models.Model):
     _name = "pygls.tests.m_name"
@@ -28,3 +33,9 @@ class model_no_register(models.Model):
 class model_no_register_inherit(models.Model):
     _name = "pygls.tests.m_no_register"
     _inherit = "pygls.tests.m_no_register"
+
+class model_inherits(models.Model):
+    _name = "pygls.tests.m_inherits"
+    _inherits = {"pygls.tests.m_name": "field_m_name_id"}
+    
+    field_m_name_id = fields.Many2one("pygls.tests.m_name")

@@ -213,6 +213,11 @@ def test_model_name_inherit():
     assert model_no_register_inherit and model_no_register_inherit.modelData
     assert model_no_register_inherit.modelData.name == "pygls.tests.m_no_register"
     assert model_no_register_inherit.modelData.inherit == ["pygls.tests.m_no_register", "base"]
+    model_inherits = model_file.get_symbol([], ["model_inherits"])
+    assert model_inherits and model_inherits.modelData
+    assert model_inherits.modelData.name == "pygls.tests.m_inherits"
+    assert model_inherits.modelData.inherits == {"pygls.tests.m_name": "field_m_name_id"}
+
 
 
 def test_imports_dynamic():
