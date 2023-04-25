@@ -33,9 +33,11 @@ class PythonUtils():
                     symbol = scope_symbol.get_in_parents(["class"]) #should be able to take it in func param, no?
                 else:
                     infer = scope_symbol.inferName(node.value, node.line)
-                    if not infer or not infer.symbol:
+                    if not infer:
                         return None
-                    symbol = infer.symbol
+                    symbol, _ = infer.follow_ref()
+                    if symbol.type == SymType.VARIABLE:
+                        return None
             else:
                 if node.type == "trailer":
                     if node.children[0].type == "operator" and node.children[0].value == ".":
@@ -147,10 +149,8 @@ class PythonUtils():
         return (last_atomic_expr, list_expr, current)
 
     @staticmethod
-    def getSymbol(fileSymbol, line, character):
+    def getSymbol(fileSymbol, content, line, character):
         "return the Symbol at the given position in a file"
-        with open(fileSymbol.paths[0], "rb") as f:
-            content = f.read()
         scope_symbol = fileSymbol.get_scope_symbol(line)
         parsoTree = Odoo.get().grammar.parse(content, error_recovery=False, path=fileSymbol.paths[0], cache = False)
         atom_expr, parent_expr, expr = PythonUtils.get_atom_expr(parsoTree, line, character)

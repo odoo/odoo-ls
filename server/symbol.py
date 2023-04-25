@@ -96,7 +96,7 @@ class Symbol():
             instance = sym.eval.instance
             sym = sym.eval.symbol()
         return sym, instance
-    
+
     def is_file_content(self):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
     
