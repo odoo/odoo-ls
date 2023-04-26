@@ -54,5 +54,5 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                     symbol.modelData.inherits = inherit_names
                 else:
                     print("wrong inherits")
-            elif inherit_value.name != "frozendict" or not instance:
+            elif inherit_value.name != "frozendict" or instance:
                 print("wrong inherits")
