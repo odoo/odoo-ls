@@ -205,6 +205,9 @@ def test_model_name_inherit():
     assert model_name_inherit_comb_name and model_name_inherit_comb_name.modelData
     assert model_name_inherit_comb_name.modelData.name == "pygls.tests.m_comb_name"
     assert model_name_inherit_comb_name.modelData.inherit == ["pygls.tests.m_name", "pygls.tests.m_name_2", "base"]
+    model_no_name = model_file.get_symbol([], ["model_no_name"])
+    assert model_no_name and model_no_name.modelData
+    assert model_no_name.modelData.name == "model_no_name"
     model_no_register = model_file.get_symbol([], ["model_no_register"])
     assert model_no_register and model_no_register.modelData
     assert model_no_register.modelData.name == ""

@@ -18,7 +18,6 @@ class ClassData():
     def __init__(self):
         #data related to classes symbols
         self.bases = weakref.WeakSet() #set of weakref to base classes
-        self.modelData = None
     
     def inherits(self, symbol):
         for base in self.bases:
@@ -257,24 +256,23 @@ class Symbol():
         s = self
         while s and not s.isModule:
             s = s.parent
-        return s and s.name or None
+        return s
 
     def get_class_symbol(self, name, prevent_comodel = False):
         """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
         search on bases or on comodels for odoo models"""
+        from .odoo import Odoo
         if name in self.symbols:
             return self.symbols[name]
         if self.isModel() and not prevent_comodel:
-            from .odoo import Odoo
-            model = Odoo.get().models[self.classData.modelData.name]
+            model = Odoo.get().models[self.modelData.name]
             sym = model.get_symbols(self.getModule())
             for s in sym:
                 r = s.get_class_symbol(name, True)
                 if r:
                     return r
         for base in self.classData.bases:
-            base_sym = Odoo.get().symbols.get_symbol(base)
-            s = base_sym.get_class_symbol(name)
+            s = base.get_class_symbol(name, prevent_comodel=prevent_comodel)
             if s:
                 return s
         return None
@@ -359,7 +357,7 @@ class Symbol():
         return bool(self.classData)
     
     def isModel(self):
-        return self.isClass() and bool(self.classData.modelData)
+        return self.isClass() and bool(self.modelData)
     
     def is_external(self):
         if self.external:

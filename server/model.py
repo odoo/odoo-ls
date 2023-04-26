@@ -7,35 +7,38 @@ class Model():
         self.name = name
         self.impl_sym = [symbol]
     
-    def get_main_symbol(self):
-        return self.impl_sym[0]
+    def add_symbol(self, symbol):
+        self.impl_sym.append(symbol)
     
-    def get_symbols(self, module_scope_name):
+    def get_main_symbols(self, from_module):
+        """Return all the symbols that declare the module in the dependencies of the from_module"""
+        res = []
+        for sym in self.impl_sym:
+            if sym.modelData.name not in sym.modelData.inherit:
+                if from_module.is_in_deps(sym.getModule().name):
+                    res.append(sym)
+        return res
+    
+    def get_symbols(self, from_module):
         """Return a list of symbols that extends this model but are in your dependencies."""
         symbols = []
-        module_scope = Odoo.get().modules.get(module_scope_name, False)
-        if not module_scope:
-            return symbols
         for symbol in self.impl_sym:
             module = symbol.getModule()
-            if module_scope:
-                if module and module_scope.is_in_deps(module):
+            if from_module:
+                if module and from_module.is_in_deps(module.name):
                     symbols.append(symbol)
             else:
                 symbols.append(symbol)
         return symbols
     
-    def get_inherit(self, module_scope_name):
+    def get_inherit(self, from_module):
         """Return a list of model names that are inherited by this model.
         If module_scope is not None, only return inheritance coming from files that are in dependencies"""
         inherit = set()
-        module_scope = Odoo.get().modules.get(module_scope_name, False)
-        if not module_scope:
-            return [] #TODO maybe raise an error
         for symbol in self.impl_sym:
             module = symbol.getModule()
-            if module_scope:
-                if module and module_scope.is_in_deps(module):
+            if from_module:
+                if module and from_module.is_in_deps(module.name):
                     inherit.update(symbol.inherit)
             else:
                 inherit.update(symbol.inherit)

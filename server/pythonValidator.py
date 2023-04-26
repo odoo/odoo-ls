@@ -58,9 +58,9 @@ class PythonValidator(ast.NodeVisitor):
         FileMgr.publish_diagnostics(self.ls, fileInfo)
 
     def validate_ast(self, ast):
-        moduleName = self.symStack[-1].getModule()
-        if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
-            self.currentModule = Odoo.get().modules[moduleName]
+        module = self.symStack[-1].getModule()
+        if module and (module.name != 'base' or module.name in Odoo.get().modules): #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
+            self.currentModule = Odoo.get().modules[module.name]
         self.visit(ast)
 
     def visit_Try(self, node):

@@ -42,9 +42,6 @@ class Odoo():
 
     fileMgr = FileMgr()
 
-    # for each model, the list of symbols implementing it
-    # models = {
-    # "account.test": Model}
     models = {} 
     modules = {}
 

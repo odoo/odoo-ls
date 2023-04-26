@@ -1,5 +1,7 @@
 import ast
 import os
+
+from server.model import Model
 from .constants import *
 from .odoo import *
 from .server import FileMgr
@@ -58,6 +60,12 @@ class PythonOdooBuilder(ast.NodeVisitor):
                     if not symbol.modelData:
                         continue
                     self._load_class_inherits(symbol)
+                    model = Odoo.get().models.get(symbol.modelData.name, None)
+                    if not model:
+                        model = Model(symbol.modelData.name, symbol)
+                        Odoo.get().models[symbol.modelData.name] = model
+                    else:
+                        model.add_symbol(symbol)
 
     def _load_class_inherit(self, symbol):
         """ load the model inherit list from the class definition """
