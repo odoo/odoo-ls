@@ -104,6 +104,18 @@ class PythonValidator(ast.NodeVisitor):
                     ))
                 break
             else:
+                module = symbol.getModule()
+                if module and not self.currentModule.is_in_deps(module.name):
+                    self.diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=node.lineno-1, character=node.col_offset),
+                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                Position(line=node.lineno-1, character=node.end_col_offset)
+                        ),
+                        message = module.name + " is not in the dependencies of the module",
+                        source = EXTENSION_NAME,
+                        severity = 2
+                    ))
                 if hasattr(node, "linked_symbols"):
                     for linked_sym in node.linked_symbols:
                         if name == "*":

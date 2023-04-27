@@ -56,7 +56,7 @@ class Symbol():
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "symbols", "moduleSymbols",
         "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
-        "not_found_paths", "__weakref__")
+        "not_found_paths", "doc", "__weakref__")
 
     def __init__(self, name, type, paths):
         self.name = name
@@ -86,6 +86,7 @@ class Symbol():
         self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
         self.not_found_paths = []
+        self.doc = None
     
     def __str__(self):
         return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
@@ -361,6 +362,8 @@ class Symbol():
     
     def inferName(self, name, line):
         selected = False
+        if name == "__doc__":
+            return self.doc
         for symbol in self.all_symbols():
             if symbol.name == name and symbol.startLine < line and (not selected or symbol.startLine > selected.startLine):
                 selected = symbol

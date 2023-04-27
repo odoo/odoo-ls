@@ -63,7 +63,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
     
     def _get_attribute(self, symbol, attr):
         attr_sym = symbol.get_class_symbol(attr, prevent_comodel=True)
-        if attr_sym:
+        if attr_sym and attr_sym.eval.getSymbol():
             attr_ref, instance = attr_sym.eval.getSymbol().follow_ref()
             if attr_ref.type == SymType.PRIMITIVE:
                 attr_value = attr_ref.eval.value

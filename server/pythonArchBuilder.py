@@ -195,6 +195,11 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         symbol.ast_node = weakref.ref(node)
+        doc = ast.get_docstring(node)
+        if doc:
+            symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
+            symbol.doc.eval = Evaluation()
+            symbol.doc.eval.value = doc
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
         #self.symStack.append(symbol)
@@ -238,6 +243,11 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.endLine = node.end_lineno
         symbol.ast_node = weakref.ref(node)
         symbol.classData = ClassData()
+        doc = ast.get_docstring(node)
+        if doc:
+            symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
+            symbol.doc.eval = Evaluation()
+            symbol.doc.eval.value = doc
         #load inheritance
         self.load_base_class(symbol, node)
         self.symStack[-1].add_symbol(symbol)
