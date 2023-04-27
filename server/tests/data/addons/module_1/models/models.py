@@ -1,12 +1,25 @@
 from odoo import models, fields
 
+class model_model(models.Model):
+    pass
+
+class model_transient(models.TransientModel):
+    pass
+
+class model_abstract(models.AbstractModel):
+    pass
+
 class model_name(models.Model):
     _name = "pygls.tests.m_name"
+    _auto = False
 
     f1 = fields.Char()
 
     def func_1(self):
         pass
+
+class model_name_inh_python(model_name):
+    pass
 
 class model_name_inherit(models.Model):
     _name = "pygls.tests.m_name"
@@ -32,6 +45,9 @@ class model_no_name(models.Model):
 class model_no_register(models.Model):
     _name = "pygls.tests.m_no_register"
     _register = False
+
+class model_register(model_no_register):
+    _name = "pygls.tests.m_no_register"
 
 class model_no_register_inherit(models.Model):
     _name = "pygls.tests.m_no_register"

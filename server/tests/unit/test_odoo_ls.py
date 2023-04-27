@@ -212,6 +212,10 @@ def test_model_name_inherit():
     assert model_no_register and model_no_register.modelData
     assert model_no_register.modelData.name == ""
     assert model_no_register.modelData.inherit == []
+    model_no_register = model_file.get_symbol([], ["model_register"])
+    assert model_no_register and model_no_register.modelData
+    assert model_no_register.modelData.name == "pygls.tests.m_no_register"
+    assert model_no_register.modelData.inherit == ['base']
     model_no_register_inherit = model_file.get_symbol([], ["model_no_register_inherit"])
     assert model_no_register_inherit and model_no_register_inherit.modelData
     assert model_no_register_inherit.modelData.name == "pygls.tests.m_no_register"
@@ -221,7 +225,30 @@ def test_model_name_inherit():
     assert model_inherits.modelData.name == "pygls.tests.m_inherits"
     assert model_inherits.modelData.inherits == {"pygls.tests.m_name": "field_m_name_id"}
 
-
+def test_magic_fields():
+    model_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"])
+    if Odoo.instance.version_major == 14:
+        model_model = model_file.get_symbol([], ["model_model"])
+        assert model_model and model_model.modelData
+        assert model_model and model_model.modelData.auto == True
+        model_model = model_file.get_symbol([], ["model_transient"])
+        assert model_model and model_model.modelData
+        assert model_model and model_model.modelData.auto == True
+        model_model = model_file.get_symbol([], ["model_abstract"])
+        assert model_model and model_model.modelData
+        assert model_model and model_model.modelData.auto == False
+        model_model = model_file.get_symbol([], ["model_name"])
+        assert model_model and model_model.modelData
+        assert model_model and model_model.modelData.auto == False
+        model_model = model_file.get_symbol([], ["model_name_inh_python"])
+        assert model_model and model_model.modelData
+        assert model_model and model_model.modelData.auto == False
+    elif Odoo.instance.version_major == 15:
+        assert True
+    elif Odoo.instance.version_major == 16:
+        assert True
+    else:
+        assert False
 
 def test_imports_dynamic():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
