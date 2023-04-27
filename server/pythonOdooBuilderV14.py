@@ -5,6 +5,10 @@ from .odoo import *
 from .pythonOdooBuilderBase import PythonOdooBuilder
 
 
+class AttributeNotFound():
+    pass
+
+
 class PythonOdooBuilderV14(PythonOdooBuilder):
 
     def _load_class_inherit(self, symbol):
@@ -56,3 +60,58 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                     print("wrong inherits")
             elif inherit_value.name != "frozendict" or instance:
                 print("wrong inherits")
+    
+    def _get_attribute(self, symbol, attr):
+        attr_sym = symbol.get_class_symbol(attr, prevent_comodel=True)
+        if attr_sym:
+            attr_ref, instance = attr_sym.eval.getSymbol().follow_ref()
+            if attr_ref.type == SymType.PRIMITIVE:
+                attr_value = attr_ref.eval.value
+                return attr_value
+        return AttributeNotFound
+    
+    def _load_class_attributes(self, symbol):
+        #TODO this doesn't make this symbols available in the class... So attributes can't be called
+        symbol.modelData.description = self._get_attribute(symbol, "_description")
+        if symbol.modelData.description == AttributeNotFound or symbol.modelData.description == None: #should not happen, as auto is defined on BaseModel
+            symbol.modelData.description = symbol.modelData.name
+        symbol.modelData.auto = self._get_attribute(symbol, "_auto")
+        if symbol.modelData.auto == AttributeNotFound: #should not happen, as auto is defined on BaseModel
+            symbol.modelData.auto = False
+        symbol.modelData.log_access = self._get_attribute(symbol, "_log_access")
+        if symbol.modelData.log_access == AttributeNotFound:
+            symbol.modelData.log_access = symbol.modelData.auto
+        symbol.modelData.table = self._get_attribute(symbol, "_table")
+        if symbol.modelData.table == AttributeNotFound or symbol.modelData.table == None:
+            symbol.modelData.table = symbol.modelData.name.replace(".", "_")
+        symbol.modelData.sequence = self._get_attribute(symbol, "_sequence")
+        if symbol.modelData.sequence == AttributeNotFound or symbol.modelData.sequence == None:
+            symbol.modelData.sequence = symbol.modelData.table + "_id_seq"
+        symbol.modelData.abstract = self._get_attribute(symbol, "_abstract")
+        if symbol.modelData.abstract == AttributeNotFound:
+            symbol.modelData.abstract = True
+        symbol.modelData.transient = self._get_attribute(symbol, "_transient")
+        if symbol.modelData.transient == AttributeNotFound:
+            symbol.modelData.transient = False
+        #TODO check that rec_name is pointing to a valid field in the model
+        symbol.modelData.rec_name = self._get_attribute(symbol, "_rec_name")
+        if symbol.modelData.rec_name == AttributeNotFound or symbol.modelData.rec_name == None:
+            symbol.modelData.rec_name = 'name' #TODO if name is not in the model, take 'id'
+        symbol.modelData.check_company_auto = self._get_attribute(symbol, "_check_company_auto")
+        if symbol.modelData.check_company_auto == AttributeNotFound:
+            symbol.modelData.check_company_auto = False
+        symbol.modelData.parent_name = self._get_attribute(symbol, "_parent_name")
+        if symbol.modelData.parent_name == AttributeNotFound:
+            symbol.modelData.parent_name = 'parent_id'
+        symbol.modelData.parent_store = self._get_attribute(symbol, "_parent_store")
+        if symbol.modelData.parent_store == AttributeNotFound:
+            symbol.modelData.parent_store = False
+        symbol.modelData.active_name = self._get_attribute(symbol, "_active_name")
+        if symbol.modelData.active_name == AttributeNotFound:
+            symbol.modelData.active_name = None
+        symbol.modelData.date_name = self._get_attribute(symbol, "_date_name")
+        if symbol.modelData.date_name == AttributeNotFound:
+            symbol.modelData.date_name = 'date'
+        symbol.modelData.fold_name = self._get_attribute(symbol, "_fold_name")
+        if symbol.modelData.fold_name == AttributeNotFound:
+            symbol.modelData.fold_name = 'fold'

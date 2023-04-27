@@ -9,9 +9,24 @@ class ModelData():
     def __init__(self):
         #data related to model symbols
         self.name = ""
+        self.description = ""
         self.inherit = []
         self.inherits = []
-        self.log_access = []
+        self.register = False
+        self.auto = False
+        self.log_access = False
+        self.table = False
+        self.sequence = None
+        self.sql_constraints = []
+        self.abstract = False
+        self.transient = False
+        self.rec_name = None
+        self.order = 'id'
+        self.check_company_auto = False
+        self.parent_name = 'parent_id'
+        self.parent_store = False
+        self.data_name = 'date'
+        self.fold_name = 'fold'
 
 class ClassData():
     

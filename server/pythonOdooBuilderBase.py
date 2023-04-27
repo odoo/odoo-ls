@@ -60,6 +60,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
                     if not symbol.modelData:
                         continue
                     self._load_class_inherits(symbol)
+                    self._load_class_attributes(symbol)
                     model = Odoo.get().models.get(symbol.modelData.name, None)
                     if not model:
                         model = Model(symbol.modelData.name, symbol)
@@ -80,6 +81,10 @@ class PythonOdooBuilder(ast.NodeVisitor):
         """ load the model inherits list from the class definition """
         raise NotImplementedError
 
+    def _load_class_attributes(self, symbol):
+        """ load the model attributes list from the class definition """
+        raise NotImplementedError
+
     def _is_model(self, symbol):
         """return True if the symbol inherit from odoo.models.BaseModel. It differs on the 
         is_model on symbol as it can be used before the OdooBuilder execution"""
@@ -87,10 +92,12 @@ class PythonOdooBuilder(ast.NodeVisitor):
             print("class has no classData, something is broken")
             return
         baseModel = Odoo.get().get_symbol(["odoo", "models"], ["BaseModel"])
+        # _register is always set to True at each inheritance, so no need to check for parent classes
         _register = symbol.get_symbol([], ["_register"])
         if _register and _register.eval:
             value = _register.eval.getSymbol().follow_ref()[0]
             if value.type == SymType.PRIMITIVE:
+                symbol.modelData.register = value.eval.value
                 if value.eval.value == False:
                     return False
         return symbol.classData.inherits(baseModel)
