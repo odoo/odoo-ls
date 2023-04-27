@@ -1,3 +1,4 @@
+import weakref
 from .symbol import Symbol
 from .odoo import *
 
@@ -5,10 +6,11 @@ class Model():
 
     def __init__(self, name, symbol):
         self.name = name
-        self.impl_sym = [symbol]
+        self.impl_sym = weakref.WeakSet()
+        self.add_symbol(symbol)
     
     def add_symbol(self, symbol):
-        self.impl_sym.append(symbol)
+        self.impl_sym.add(symbol)
     
     def get_main_symbols(self, from_module):
         """Return all the symbols that declare the module in the dependencies of the from_module"""

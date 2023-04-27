@@ -1,11 +1,5 @@
-Imports:
-    Arch level:
-        -> follow and import all symbols 
-            -> odoo.addons... import odoo, import odoo.addons (if not already done)
-            -> import sys => ignore
-            -> import difflib => import it from sys.path, load symbols and drop ast (no validation)
-    Validation level:
-        -> follow imports to build inferences of symbols -> wrong, they should be real symbols
+-> change fileMgr: don't use dict, but create a True class (?), and use a dirty variable to know if we have to republish
+diagnostics or not.
 
 Odoo specificities
 

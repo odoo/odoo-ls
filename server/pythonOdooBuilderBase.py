@@ -54,7 +54,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
         for symbol in self.symStack[0].get_ordered_symbols():
             if symbol.type == SymType.CLASS:
                 symbol.modelData = ModelData()
-                if self.is_model(symbol):
+                if self._is_model(symbol):
                     self._load_class_inherit(symbol)
                     self._load_class_name(symbol)
                     if not symbol.modelData:
@@ -66,6 +66,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
                         Odoo.get().models[symbol.modelData.name] = model
                     else:
                         model.add_symbol(symbol)
+
 
     def _load_class_inherit(self, symbol):
         """ load the model inherit list from the class definition """
@@ -79,8 +80,9 @@ class PythonOdooBuilder(ast.NodeVisitor):
         """ load the model inherits list from the class definition """
         raise NotImplementedError
 
-    def is_model(self, symbol):
-        """return True if the symbol inherit from odoo.models.BaseModel"""
+    def _is_model(self, symbol):
+        """return True if the symbol inherit from odoo.models.BaseModel. It differs on the 
+        is_model on symbol as it can be used before the OdooBuilder execution"""
         if not symbol.classData:
             print("class has no classData, something is broken")
             return
