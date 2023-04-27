@@ -52,6 +52,7 @@ class PythonValidator(ast.NodeVisitor):
         if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
             return
         self.validate_ast(fileInfo["ast"])
+        self.validate_structure()
         self.symStack[0].validationStatus = 2
         fileInfo["d_val"] = self.diagnostics
         #publish diag in all case to erase potential previous diag
@@ -329,3 +330,46 @@ class PythonValidator(ast.NodeVisitor):
         except Exception as e:
             print("here")
         return acc
+
+    def validate_structure(self):
+        for symbol in self.symStack[0].get_ordered_symbols():
+            if symbol.type == SymType.CLASS:
+                if symbol.modelData:
+                    node = symbol.ast_node()
+                    for inherit in symbol.modelData.inherit:
+                        model = Odoo.get().models.get(inherit)
+                        if not model:
+                            self.diagnostics.append(Diagnostic(
+                                range = Range(
+                                    start=Position(line=node.lineno-1, character=node.col_offset),
+                                    end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                        Position(line=node.lineno-1, character=node.end_col_offset)
+                                ),
+                                message = inherit + " does not exist",
+                                source = EXTENSION_NAME,
+                                severity = 1
+                            ))
+                        else:
+                            inherited_models = model.get_main_symbols(self.currentModule)
+                            if len(inherited_models) > 1:
+                                self.diagnostics.append(Diagnostic(
+                                range = Range(
+                                    start=Position(line=node.lineno-1, character=node.col_offset),
+                                    end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                        Position(line=node.lineno-1, character=node.end_col_offset)
+                                ),
+                                message = "This model is ambiguous. Please fix your dependencies or avoid using same model name in different modules",
+                                source = EXTENSION_NAME,
+                                severity = 1
+                            ))
+                            elif not inherited_models:
+                                self.diagnostics.append(Diagnostic(
+                                    range = Range(
+                                        start=Position(line=node.lineno-1, character=node.col_offset),
+                                        end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                            Position(line=node.lineno-1, character=node.end_col_offset)
+                                    ),
+                                    message = inherit + " does not exist",
+                                    source = EXTENSION_NAME,
+                                    severity = 1
+                                ))
