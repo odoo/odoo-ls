@@ -336,6 +336,9 @@ class PythonValidator(ast.NodeVisitor):
             if symbol.type == SymType.CLASS:
                 if symbol.modelData:
                     node = symbol.ast_node()
+                    _inherit_decl = symbol.get_symbol([], ["_inherit"])
+                    if _inherit_decl:
+                        node = _inherit_decl.ast_node()
                     for inherit in symbol.modelData.inherit:
                         model = Odoo.get().models.get(inherit)
                         if not model:
