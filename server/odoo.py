@@ -345,3 +345,26 @@ class Odoo():
             s.validationStatus = 0
             PythonOdooBuilder(ls, s).load_odoo_content()
             PythonValidator(ls, s).validate()
+
+    def parso_get_instruction(self, parsoTree, line, char):
+        element = parsoTree
+        while element and hasattr(element, "children") and element.type != "trailer":
+            if element.type == "atom_expr":
+                break
+            for e in element.children:
+                if e.end_pos[0] > line or e.end_pos[0] == line and e.end_pos[1] >= char:
+                    if (e.start_pos[0] < line or e.start_pos[0] == line and e.start_pos[1] <= char):
+                        element = e
+                        break
+            else:
+                return None
+        return element
+
+
+    def autocomplete(self, path, content, line, char):
+        from .pythonUtils import PythonUtils
+        parsoTree = Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
+        element = self.parso_get_instruction(parsoTree, line, char)
+        if element.value in ['"', "'"]:
+            if element.parent
+

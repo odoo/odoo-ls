@@ -7,6 +7,7 @@ from pygls.workspace import Document, Workspace
 from ...server import (
     OdooLanguageServer
 )
+from ...fileMgr import FileMgr
 """
 To run tests:
 
@@ -15,6 +16,7 @@ cd server/tests/unit
 set up the next constants to match your local configuration, then
 pytest test_setup.py -- test that your setup is correct and that OdooLS is starting correctly
 pytest test_odoo_ls.py -- test the different OdooLS functionalities
+pytest test_odoo_requests.py -- test the different OdooLS requests
 
 add -s if you want to see the logs from OdooLS
 """
@@ -52,3 +54,9 @@ config_result.set_result([{
 )
 
 server.lsp.get_configuration = Mock(return_value=config_result)
+
+def get_uri(path):
+    #return an uri from the "tests" level with a path like ["data", "module1"]
+    file_uri = pathlib.Path(__file__).parent.parent.resolve()
+    file_uri = os.path.join(file_uri, *path)
+    return FileMgr.pathname2uri(file_uri)

@@ -74,12 +74,28 @@ def _validate(ls, params):
 
     #ls.publish_diagnostics(text_doc.uri, diagnostics)
 
-@odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',']))
-def completions(params: Optional[CompletionParams] = None) -> CompletionList:
+def get_path_file(uri):
+    path = urllib.parse.urlparse(urllib.parse.unquote(uri)).path
+    path = urllib.request.url2pathname(path)
+    #TODO find better than this small hack for windows (get disk letter in capital)
+    if os.name == "nt":
+        path = path[0].capitalize() + path[1:]
+    return path
+
+@odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',', '.', '"', "'"]))
+def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
     """Returns completion items."""
     if Odoo.isLoading:
         return None
+    if not params:
+        print("no params")
+        return None
     print("completion")
+    text_doc = ls.workspace.get_document(params.text_document.uri)
+    content = text_doc.source
+    path = get_path_file(params.text_document.uri)
+    with Odoo.get().acquire_read():
+        return Odoo.get().autocomplete(path, content, params.position.line, params.position.character)
     return CompletionList(
         is_incomplete=False,
         items=[
@@ -97,13 +113,9 @@ def hover(ls, params: TextDocumentPositionParams):
         return None
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
-    final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
-    final_path = urllib.request.url2pathname(final_path)
-    #TODO find better than this small hack for windows (get disk letter in capital)
-    if os.name == "nt":
-        final_path = final_path[0].capitalize() + final_path[1:]
+    path = get_path_file(params.text_document.uri)
     with Odoo.get().acquire_read():
-        file_symbol = Odoo.get().get_file_symbol(final_path)
+        file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
             symbol = PythonUtils.getSymbol(file_symbol, content, params.position.line + 1, params.position.character + 1)
         return Hover(symbol and symbol.name)
@@ -148,6 +160,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
 def did_change(ls, params: DidChangeTextDocumentParams):
     """Text document did change notification."""
     if Odoo.isLoading:
+        #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
         return
     with odoo_server.id_lock:
         odoo_server.id += 1
@@ -162,6 +175,7 @@ def did_change(ls, params: DidChangeTextDocumentParams):
 def did_rename_files(ls, params):
     """Workspace did rename files notification."""
     if Odoo.isLoading:
+        #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
         return
     for f in params.files:
         old_path = urllib.parse.urlparse(urllib.parse.unquote(f.old_uri)).path

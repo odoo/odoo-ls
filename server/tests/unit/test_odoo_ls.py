@@ -14,7 +14,6 @@ from ...server import (
     _did_change_after_delay,
     did_rename_files
 )
-from ...fileMgr import FileMgr
 from .setup import *
 from ...odoo import Odoo
 from ...symbol import Symbol
@@ -31,15 +30,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 Odoo.import_odoo_addons = False
 Odoo.get(server)
 
-def _reset_mocks(stdin=None, stdout=None):
-    stdin = stdin or io.StringIO()
-    stdout = stdout or io.StringIO()
-
-    server.lsp.transport = StdOutTransportAdapter(stdin, stdout)
-    server.publish_diagnostics.reset_mock()
-    server.show_message.reset_mock()
-    server.show_message_log.reset_mock()
-
 def search_in_local(symbol, name):
     found_in_local = False
     for sym in symbol.localSymbols:
@@ -47,12 +37,6 @@ def search_in_local(symbol, name):
             found_in_local = True
             break
     return found_in_local
-
-def get_uri(path):
-    #return an uri from the "tests" level with a path like ["data", "module1"]
-    file_uri = pathlib.Path(__file__).parent.parent.resolve()
-    file_uri = os.path.join(file_uri, *path)
-    return FileMgr.pathname2uri(file_uri)
 
 def test_load_modules():
     assert Odoo.get().symbols.get_symbol(["odoo", "addons", "module_2"]), "OdooLS Test Module2 has not been loaded from custom addons path"
@@ -309,35 +293,40 @@ def test_rename():
     assert constants_data_file == None
     constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
     assert constants_data_file == None #the file is not imported, so should not be available
+    server.workspace.get_document.reset_mock()
 
-    def test_missing_symbol_resolve():
-        file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
-        
-        server.workspace.get_document = Mock(return_value=Document(
-            uri=file_uri,
-            source="""
-from .variables import *
+def test_missing_symbol_resolve():
+    #TODO write test
+    pass
+#     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
+    
+#     server.workspace.get_document = Mock(return_value=Document(
+#         uri=file_uri,
+#         source="""
+# from .variables import *
 
-CONSTANT_2 = 22"""
-        ))
-        params = DidChangeTextDocumentParams(
-            text_document = VersionedTextDocumentIdentifier(
-                version = 2,
-                uri=file_uri
-            ),
-            content_changes = []
-        )
-        _did_change_after_delay(server, params, 0) #call deferred func
-        constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-        assert "CONSTANT_1" in constants_dir.symbols
-        assert "CONSTANT_2" in constants_dir.symbols
-        assert not "CONSTANT_3" in constants_dir.symbols
-        constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-        assert "CONSTANT_1" in constants_data_dir.symbols
-        assert "CONSTANT_2" in constants_data_dir.symbols
-        assert not search_in_local(constants_data_dir, "CONSTANT_2")
-        assert not "CONSTANT_3" in constants_data_dir.symbols
-        variables_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-        assert "CONSTANT_1" in variables_data_file.symbols
-        assert not "CONSTANT_2" in variables_data_file.symbols
-        assert "CONSTANT_3" in variables_data_file.symbols
+# CONSTANT_2 = 22"""
+#     ))
+#     params = DidChangeTextDocumentParams(
+#         text_document = VersionedTextDocumentIdentifier(
+#             version = 2,
+#             uri=file_uri
+#         ),
+#         content_changes = []
+#     )
+#     _did_change_after_delay(server, params, 0) #call deferred func
+#     constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+#     assert "CONSTANT_1" in constants_dir.symbols
+#     assert "CONSTANT_2" in constants_dir.symbols
+#     assert not "CONSTANT_3" in constants_dir.symbols
+#     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+#     assert "CONSTANT_1" not in constants_data_dir.symbols
+#     assert "CONSTANT_2" in constants_data_dir.symbols
+#     assert not search_in_local(constants_data_dir, "CONSTANT_2")
+#     assert not "CONSTANT_3" in constants_data_dir.symbols
+#     variables_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+#     assert "CONSTANT_1" in variables_data_file.symbols
+#     assert not "CONSTANT_2" in variables_data_file.symbols
+#     assert "CONSTANT_3" in variables_data_file.symbols
+    
+#     server.workspace.get_document.reset_mock()

@@ -1,6 +1,6 @@
 // A launch configuration that compiles the extension and then opens it inside a new window
 {
-    "version": "0.2.0",
+    "version": "1.0.0",
     "configurations": [
         {
             "name": "Launch Client",
@@ -62,6 +62,19 @@
             "request": "launch",
             "module": "pytest",
             "args": ["test_odoo_ls.py", "-s", "--disable-warnings"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Test OdooLS requests",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_odoo_requests.py", "-s", "--disable-warnings"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
             "cwd": "${workspaceFolder}/server/tests/unit",
