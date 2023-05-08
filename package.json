@@ -25,6 +25,10 @@
       {
         "command": "odoo.openConfiguration",
         "title": "Open configuration"
+      },
+      {
+        "command": "odoo.clickStatusBar",
+        "title": "Status Bar Click"
       }
     ],
     "viewsContainers": {

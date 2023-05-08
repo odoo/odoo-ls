@@ -22,6 +22,7 @@ import * as net from "net";
 import * as path from "path";
 import {
     ConfigurationTarget,
+    commands,
     ExtensionContext,
     ExtensionMode,
     StatusBarAlignment,
@@ -32,6 +33,7 @@ import {
 import { ConfigurationsExplorer } from './treeConfigurations';
 import { TreeDatabasesDataProvider } from './treeDatabases';
 import {
+    ConfigurationItem,
     integer,
     LanguageClient,
     LanguageClientOptions,
@@ -91,6 +93,24 @@ function startLangServer(
     return new LanguageClient(command, serverOptions, getClientOptions());
 }
 
+commands.registerCommand('odoo.clickStatusBar',async () => {
+    const configs: Array<Object> = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+    const configMap = new Map();
+    for (const configId in configs) configMap.set(configs[configId]["name"], configId);
+    const confPick = await window.showQuickPick(
+        Array.from(configMap.keys()),
+        {
+            title: 'Select a configuration'
+        }
+    );
+    if (confPick) {
+        await confPick.resolve(
+            workspace.getConfiguration("Odoo").update("selectedConfigurations", configMap.get(confPick), ConfigurationTarget.Global)
+        )
+    }
+});
+
+
 export function activate(context: ExtensionContext): void {
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
@@ -114,9 +134,9 @@ export function activate(context: ExtensionContext): void {
 	new ConfigurationsExplorer(context);
 
     odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-    odooStatusBar.text = "Odoo";
+    setStatusConfig(odooStatusBar);
     odooStatusBar.show();
-    odooStatusBar.command = ""
+    odooStatusBar.command = "odoo.clickStatusBar"
     context.subscriptions.push(odooStatusBar);
 
     window.registerTreeDataProvider(
@@ -126,15 +146,17 @@ export function activate(context: ExtensionContext): void {
 	window.createTreeView('odoo-databases', {
 		treeDataProvider: new TreeDatabasesDataProvider()
 	});*/
+    workspace.onDidChangeConfiguration(event => {
+        let affected = event.affectsConfiguration("Odoo.selectedConfigurations");
+        if (affected) setStatusConfig(odooStatusBar);
+    })
+
     WelcomeWebView.render(context.extensionUri);
 	client.onReady().then(() => {
-        const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
-        const selectedConfig: integer = workspace.getConfiguration("Odoo").get("selectedConfigurations");
-		console.log(configs);
-		console.log(selectedConfig);
-		if (selectedConfig != -1) {
-			const config = configs[selectedConfig];
+		const config = getCurrentConfig();
+		if (config) {
 			console.log(config);
+            odooStatusBar.text = `Odoo (${config["name"]})`
             // small hack to make Pylance import odoo modules in other workspaces
             //TODO only do it if addon directory is detected and do it for each root folder if multiple addons paths
             if (workspace.getConfiguration("python.analysis")) {
@@ -152,4 +174,15 @@ export function activate(context: ExtensionContext): void {
 
 export function deactivate(): Thenable<void> {
     return client ? client.stop() : Promise.resolve();
+}
+
+function getCurrentConfig() {
+    const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+    const selectedConfig: integer = workspace.getConfiguration("Odoo").get("selectedConfigurations");
+    return (selectedConfig != -1 ? configs[selectedConfig] : null);
+}
+
+function setStatusConfig(statusItem: StatusBarItem) {
+    const config = getCurrentConfig();
+    statusItem.text = (config ? `Odoo (${config["name"]})`:`Odoo`);
 }
