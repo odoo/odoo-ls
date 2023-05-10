@@ -20,7 +20,8 @@
     "commands": [
       {
         "command": "odoo.addConfiguration",
-        "title": "New configuration"
+        "title": "Add Configuration",
+        "icon": "$(add)"
       },
       {
         "command": "odoo.openConfiguration",

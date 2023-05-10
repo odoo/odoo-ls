@@ -7,6 +7,19 @@
   display: grid;
   grid-auto-flow: row;
   grid-row-gap: 1.5rem;
+  padding: var(--input-padding-vertical) var(--input-padding-horizontal);
+}
+
+input:not([type='checkbox']),
+textarea {
+	display: block;
+	width: 100%;
+	border: none;
+	font-family: var(--vscode-font-family);
+	padding: var(--input-padding-vertical) var(--input-padding-horizontal);
+	color: var(--vscode-input-foreground);
+	outline-color: var(--vscode-input-border);
+	background-color: var(--vscode-input-background);
 }
 
 #submit-button {
@@ -28,7 +41,7 @@
   }
 }
 .container {
-  width: '100%';
+  width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
