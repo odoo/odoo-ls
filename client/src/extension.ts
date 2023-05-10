@@ -25,10 +25,13 @@ import {
     commands,
     ExtensionContext,
     ExtensionMode,
+    QuickPick,
+    QuickPickItem,
     StatusBarAlignment,
     StatusBarItem,
     workspace,
-    window
+    window,
+    Uri
 } from "vscode";
 import { ConfigurationsExplorer } from './treeConfigurations';
 import { TreeDatabasesDataProvider } from './treeDatabases';
@@ -38,8 +41,10 @@ import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
+    URI,
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./welcomeWebView";
+import { PathLike, PathOrFileDescriptor } from "fs";
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
@@ -94,21 +99,70 @@ function startLangServer(
 }
 
 commands.registerCommand('odoo.clickStatusBar',async () => {
+    const qpick = window.createQuickPick();
     const configs: Array<Object> = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+    let currSelect = null;
+    const currentConfig = getCurrentConfig();
     const configMap = new Map();
-    for (const configId in configs) configMap.set(configs[configId]["name"], configId);
-    const confPick = await window.showQuickPick(
-        Array.from(configMap.keys()),
-        {
-            title: 'Select a configuration'
-        }
-    );
-    if (confPick) {
-        await confPick.resolve(
-            workspace.getConfiguration("Odoo").update("selectedConfigurations", configMap.get(confPick), ConfigurationTarget.Global)
-        )
+    const separator = {kind: -1};
+    const addConfigItem  = {
+        label: "$(add) Add new configuration"
+    };
+
+    for (const configId in configs) {
+        if (configId == currentConfig["id"]) continue; 
+        configMap.set({"label": configs[configId]["name"]}, configId)
     }
+    let picks = Array.from(configMap.keys());
+    const currentConfigItem = {"label": currentConfig["name"], "description": "(current)"};
+    picks.splice(currentConfig["id"], 0, currentConfigItem);
+    picks.push(...[separator, addConfigItem]);
+
+    qpick.title = "Select a configuration";
+    qpick.items = picks;
+    qpick.activeItems = [picks[currentConfig["id"]]];
+    qpick.onDidChangeSelection(selection => {
+        currSelect = selection[0];
+    });
+
+    qpick.onDidAccept(async () => {
+        if (currSelect == addConfigItem) {
+            await addNewConfiguration()
+        }
+        else if (currSelect && currSelect != currentConfigItem) {
+            workspace.getConfiguration("Odoo").update("selectedConfigurations", Number(configMap.get(currSelect)), ConfigurationTarget.Global)
+        }
+        qpick.hide();
+    })
+    qpick.onDidHide(() => qpick.dispose());
+    qpick.show();
 });
+
+async function addNewConfiguration() {
+    const configId = getConfigAmount();
+    await window.showInputBox({
+        title: "New configuration name",
+        value: `New Configuration ${configId}`,
+        valueSelection: undefined
+    }).then(async (name) => {
+        const newConfigName = name;
+        if (!newConfigName)
+            return;
+        await window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            openLabel: "Select Folder",
+            title: "Select Odoo folder"
+        }).then((folderPath) => {
+            if (!folderPath)
+                return;
+            const newConfigPath = folderPath[0].path;
+            let configs: Map<integer, any> = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+            workspace.getConfiguration("Odoo").update("userDefinedConfigurations", {...configs, [configId]: {"id": configId, "name": newConfigName, "odooPath": newConfigPath, "addons": []}}, ConfigurationTarget.Global);
+        })
+    })
+}
 
 
 export function activate(context: ExtensionContext): void {
@@ -185,4 +239,11 @@ function getCurrentConfig() {
 function setStatusConfig(statusItem: StatusBarItem) {
     const config = getCurrentConfig();
     statusItem.text = (config ? `Odoo (${config["name"]})`:`Odoo`);
+}
+
+function getConfigAmount() {
+    const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+    let count = 0;
+    for (const configId in configs) count++;
+    return count;
 }
