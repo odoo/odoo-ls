@@ -136,7 +136,7 @@ class Symbol():
                 print("unload " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
-            ast_node = sym.ast_node()
+            ast_node = sym.ast_node and sym.ast_node()
             if ast_node and hasattr(ast_node, "linked_symbols"):
                 for s in ast_node.linked_symbols:
                     if s != sym:
