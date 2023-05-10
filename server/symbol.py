@@ -187,7 +187,7 @@ class Symbol():
                     if last:
                         if DEBUG_MEMORY:
                             print("move sym - " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
-                        self.symbols[symbol.name] = weakref.ref(last)
+                        self.symbols[symbol.name] = last
                         self.localSymbols.remove(last)
                 else:
                     #ouch, the wanted symbol is not in Symbols. let's try to find it in localSymbols
