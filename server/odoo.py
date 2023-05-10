@@ -346,10 +346,22 @@ class Odoo():
             PythonOdooBuilder(ls, s).load_odoo_content()
             PythonValidator(ls, s).validate()
 
+    def get_models(self, module = None, start_name = ""):
+        res = []
+        for name, model in self.models.items():
+            if name.startswith(start_name):
+                if module:
+                    if model.get_main_symbols(module):
+                        res += [model]
+                else:
+                    res += [model]
+        return res
+                    
+
     def parso_get_instruction(self, parsoTree, line, char):
         element = parsoTree
         while element and hasattr(element, "children") and element.type != "trailer":
-            if element.type == "atom_expr":
+            if element.type == "expr_stmt":
                 break
             for e in element.children:
                 if e.end_pos[0] > line or e.end_pos[0] == line and e.end_pos[1] >= char:
@@ -364,7 +376,37 @@ class Odoo():
     def autocomplete(self, path, content, line, char):
         from .pythonUtils import PythonUtils
         parsoTree = Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
-        element = self.parso_get_instruction(parsoTree, line, char)
-        if element.value in ['"', "'"]:
-            if element.parent
+        element = self.parso_get_instruction(parsoTree, line+1, char)
+        #Test assignement
+        assigns = []
+        i = 1
+        while element and len(element.children) > i and element.children[i].type == "operator" and \
+            element.children[i].value == "=" and element.children[i-1].type == "name":
+                assigns.append(element.children[i-1].value)
+                i += 2
+        i -= 2
+        if assigns:
+            if "_inherit" in assigns:
+                assign_part = element.children[i+1]
+                if char < assign_part.start_pos[1] or char > assign_part.end_pos[1]:
+                    return []
+                before = assign_part.get_code()[:char-assign_part.start_pos[1]+1].strip()
+                if not before or before[0] not in ["'", '"']:
+                    return []
+                before = before[1:]
+                file_symbol = self.get_file_symbol(path)
+                module_symbol = file_symbol.getModule()
+                if not module_symbol:
+                    return []
+                module = self.modules.get(module_symbol.name, None)
+                if not module:
+                    return []
+                models = self.get_models(module, before)
+                res = CompletionList(
+                    is_incomplete=False,
+                    items=[CompletionItem(m.name) for m in models]
+                )
+                return res
+
+                    
 

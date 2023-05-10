@@ -12,12 +12,13 @@ class Model():
     def add_symbol(self, symbol):
         self.impl_sym.add(symbol)
     
-    def get_main_symbols(self, from_module):
-        """Return all the symbols that declare the module in the dependencies of the from_module"""
+    def get_main_symbols(self, from_module = None):
+        """Return all the symbols that declare the module in the dependencies of the from_module, or all main symbols
+        if from_module is None."""
         res = []
         for sym in self.impl_sym:
             if sym.modelData.name not in sym.modelData.inherit:
-                if from_module.is_in_deps(sym.getModule().name):
+                if not from_module or from_module.is_in_deps(sym.getModule().name):
                     res.append(sym)
         return res
     
