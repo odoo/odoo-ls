@@ -21,6 +21,28 @@ class Model():
                 if not from_module or from_module.is_in_deps(sym.getModule().name):
                     res.append(sym)
         return res
+
+    def is_abstract(self, from_module = None):
+        main_symbol = self.get_main_symbols(from_module)
+        if main_symbol and len(main_symbol) == 1:
+            for base in main_symbol[0].classData.bases:
+                if base.name == 'BaseModel': #TODO not perfect, what about ancestors? what about an "abstract = False" attribute?
+                    return True
+                else:
+                    return False
+        return False
+    
+    def get_documentation(self, from_module = None):
+        main_symbol = self.get_main_symbols(from_module)
+        if main_symbol and len(main_symbol) == 1:
+            description = main_symbol[0].get_class_symbol("_description", prevent_comodel=False)
+            description_text = main_symbol[0].name
+            if description:
+                description, _ = description.follow_ref()
+                if description:
+                    description_text = description.eval.value or main_symbol[0].name
+            return description_text + ": " + ((main_symbol[0].doc and main_symbol[0].doc.eval.value) or "")
+        return ""
     
     def get_symbols(self, from_module):
         """Return a list of symbols that extends this model but are in your dependencies."""

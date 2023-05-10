@@ -12,7 +12,7 @@ from .fileMgr import *
 from .threadCondition import ReadWriteCondition
 from contextlib import contextmanager
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
-                             CompletionParams, ConfigurationItem,
+                             CompletionParams, CompletionItemKind, ConfigurationItem,
                              ConfigurationParams, Diagnostic,
                              DidChangeTextDocumentParams,
                              DidCloseTextDocumentParams,
@@ -380,7 +380,7 @@ class Odoo():
         #Test assignement
         assigns = []
         i = 1
-        while element and len(element.children) > i and element.children[i].type == "operator" and \
+        while element and hasattr(element, "children") and len(element.children) > i and element.children[i].type == "operator" and \
             element.children[i].value == "=" and element.children[i-1].type == "name":
                 assigns.append(element.children[i-1].value)
                 i += 2
@@ -404,7 +404,11 @@ class Odoo():
                 models = self.get_models(module, before)
                 res = CompletionList(
                     is_incomplete=False,
-                    items=[CompletionItem(m.name) for m in models]
+                    items=[CompletionItem(
+                        label=m.name,
+                        documentation=m.get_documentation(module),
+                        kind = CompletionItemKind.Interface if m.is_abstract(module) else CompletionItemKind.Class,
+                    ) for m in models]
                 )
                 return res
 
