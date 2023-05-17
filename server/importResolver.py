@@ -28,14 +28,14 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
             res[name_index][1] = from_symbol
             continue
         #get the full file_tree, including the first part of the name import stmt. (os in import os.path) 
-        from_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
-        if not from_symbol:
+        next_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
+        if not next_symbol:
             continue
         #now we can search for the last symbol, or create it if it doesn't exist
         last_part_name = name.split(".")[-1]
-        name_symbol = from_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
+        name_symbol = next_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
         if not name_symbol:
-            name_symbol = _resolve_new_symbol(ls, source_file_symbol, from_symbol, last_part_name, None, 
+            name_symbol = _resolve_new_symbol(ls, source_file_symbol, next_symbol, last_part_name, None, 
                                             lineno, end_lineno)
         if not name_symbol:
             continue
