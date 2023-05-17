@@ -163,9 +163,12 @@ def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
     """Text document did close notification."""
     pass
 
-@odoo_server.thread()
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
-    odoo_server.send_notification("Odoo/test", "Test")
+    pass
+
+@odoo_server.thread()
+@odoo_server.feature("Odoo/clientReady")
+def client_ready(ls, params=None):
     Odoo.get(ls)
