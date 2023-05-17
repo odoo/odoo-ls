@@ -57,10 +57,14 @@ class Odoo():
         pass
 
     @contextmanager
-    def acquire_write(self):
+    def acquire_write(self, ls):
         with self.write_lock:
-            self.thread_access_condition.wait_empty()
+            ls.send_notification('Odoo/loading', 'start')
+            print("Odoo/loading: start")
+            self.thread_access_condition.wait_empty()   
             yield
+            ls.send_notification('Odoo/loading', 'stop')
+            print("Odoo/loading: stop")
 
     @contextmanager
     def acquire_read(self):
@@ -73,10 +77,8 @@ class Odoo():
     @staticmethod
     def get(ls = None):
         if not Odoo.instance:
-            Odoo.isLoading = True
             if not ls:
                 print(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
-            
             print("Creating new Odoo Base")
 
             try:
@@ -86,19 +88,19 @@ class Odoo():
                         section=CONFIGURATION_SECTION)
                 ])).result()
                 Odoo.instance = Odoo()
-                Odoo.instance.symbols.paths = []
-                for path in sys.path:
-                    if os.path.isdir(path):
-                        Odoo.instance.symbols.paths.append(path)
-                Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
-                Odoo.instance.start_build_time = time.time()
-                Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
-                Odoo.instance.build_database(ls, config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])])
-                print("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
+                with Odoo.instance.acquire_write(ls):
+                    Odoo.instance.symbols.paths = []
+                    for path in sys.path:
+                        if os.path.isdir(path):
+                            Odoo.instance.symbols.paths.append(path)
+                    Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
+                    Odoo.instance.start_build_time = time.time()
+                    Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
+                    Odoo.instance.build_database(ls, config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])])
+                    print("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 print(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}')
-            Odoo.isLoading = False
         return Odoo.instance
     
     def get_symbol(self, fileTree, nameTree = []):
@@ -233,7 +235,7 @@ class Odoo():
             file_info = FileMgr.getFileInfo(path, text, version)
             if not file_info["ast"]:
                 return #could emit syntax error in file_info["d_synt"]
-            with Odoo.get().acquire_write():
+            with Odoo.get(ls).acquire_write(ls):
                 #1 unload
                 if path.endswith("__init__.py"):
                     path = os.sep.join(path.split(os.sep)[:-1])
@@ -257,8 +259,13 @@ class Odoo():
         return
     
     def file_rename(self, ls, old_path, new_path):
+<<<<<<< HEAD:server/core/odoo.py
         from .pythonArchBuilder import PythonArchBuilder
         with Odoo.get().acquire_write():
+=======
+        from server.pythonArchBuilder import PythonArchBuilder
+        with Odoo.get(ls).acquire_write(ls):
+>>>>>>> Use acquire_write to send a loading notification to the client:server/odoo.py
             #unload old
             file_symbol = self.get_file_symbol(old_path)
             if file_symbol:

@@ -64,18 +64,6 @@ class OdooLanguageServer(LanguageServer):
 
 odoo_server = OdooLanguageServer()
 
-def _validate(ls, params):
-    if Odoo.isLoading:
-        return
-    ls.show_message_log('Validating odoo...')
-
-    text_doc = ls.workspace.get_document(params.text_document.uri)
-
-    source = text_doc.source
-    diagnostics = _validate_json(source) if source else []
-
-    #ls.publish_diagnostics(text_doc.uri, diagnostics)
-
 def get_path_file(uri):
     path = urllib.parse.urlparse(urllib.parse.unquote(uri)).path
     path = urllib.request.url2pathname(path)
@@ -87,8 +75,6 @@ def get_path_file(uri):
 @odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',', '.', '"', "'"]))
 def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
     """Returns completion items."""
-    if Odoo.isLoading:
-        return None
     if not params:
         print("no params")
         return None
@@ -101,8 +87,6 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
-    if Odoo.isLoading:
-        return None
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
@@ -115,8 +99,6 @@ def hover(ls, params: TextDocumentPositionParams):
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
-    if Odoo.isLoading:
-        return None
     final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
     final_path = urllib.request.url2pathname(final_path)
     #TODO find better than this small hack for windows (get disk letter in capital)
@@ -151,9 +133,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):
     """Text document did change notification."""
-    if Odoo.isLoading:
-        #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
-        return
+    #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
     with odoo_server.id_lock:
         odoo_server.id += 1
         id = odoo_server.id
@@ -166,9 +146,7 @@ def did_change(ls, params: DidChangeTextDocumentParams):
 ]))
 def did_rename_files(ls, params):
     """Workspace did rename files notification."""
-    if Odoo.isLoading:
-        #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
-        return
+    #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
     for f in params.files:
         old_path = urllib.parse.urlparse(urllib.parse.unquote(f.old_uri)).path
         old_path = urllib.request.url2pathname(old_path)
@@ -189,4 +167,5 @@ def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
+    odoo_server.send_notification("Odoo/test", "Test")
     Odoo.get(ls)

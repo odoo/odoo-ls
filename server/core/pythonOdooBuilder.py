@@ -1,6 +1,6 @@
 from .odoo import Odoo
 
-if (not Odoo.instance and not Odoo.isLoading) or Odoo.instance.version_major == 0:
+if (not Odoo.instance and not Odoo.write_lock.locked()) or Odoo.instance.version_major == 0:
     raise Exception("Don't load pythonOdooBuilder before Odoo is loaded")
 
 if Odoo.version_major <= 14:
