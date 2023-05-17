@@ -48,6 +48,8 @@ import { PathLike, PathOrFileDescriptor } from "fs";
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
+let oldStatusBarText: string;
+let isLoading: boolean;
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -211,18 +213,23 @@ export function activate(context: ExtensionContext): void {
 		if (config) {
 			console.log(config);
             odooStatusBar.text = `Odoo (${config["name"]})`
-            // small hack to make Pylance import odoo modules in other workspaces
-            //TODO only do it if addon directory is detected and do it for each root folder if multiple addons paths
-            if (workspace.getConfiguration("python.analysis")) {
-                const currentExtraPaths = workspace.getConfiguration("python.analysis").extraPaths;
-                if (currentExtraPaths.indexOf(config["odooPath"]) == -1) {
-                    //workspace.workspaceFolders.inspect() can help ?
-                    workspace.getConfiguration("python.analysis").update("extraPaths", currentExtraPaths.concat(config["odooPath"]), ConfigurationTarget.Workspace);
-                }
-            }
             //TODO this is not calling anything...
 			client.sendNotification("Odoo/initWorkspace", [config["odooPath"]]);
 		}
+
+        client.onNotification("Odoo/loading", (state: String) => {
+            switch (state) {
+                case "start":
+                    isLoading = true;
+                    break;
+                case "stop":
+                    isLoading = false;
+                    break;
+            }
+            setStatusConfig(odooStatusBar);
+        });
+
+        client.sendNotification("Odoo/clientReady");
 	});
 }
 
@@ -238,7 +245,8 @@ function getCurrentConfig() {
 
 function setStatusConfig(statusItem: StatusBarItem) {
     const config = getCurrentConfig();
-    statusItem.text = (config ? `Odoo (${config["name"]})`:`Odoo`);
+    let text = (config ? `Odoo (${config["name"]})`:`Odoo`);
+    statusItem.text = (isLoading) ? "$(loading~spin) " + text : text;
 }
 
 function getConfigAmount() {

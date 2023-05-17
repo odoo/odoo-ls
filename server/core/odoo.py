@@ -259,13 +259,8 @@ class Odoo():
         return
     
     def file_rename(self, ls, old_path, new_path):
-<<<<<<< HEAD:server/core/odoo.py
         from .pythonArchBuilder import PythonArchBuilder
-        with Odoo.get().acquire_write():
-=======
-        from server.pythonArchBuilder import PythonArchBuilder
         with Odoo.get(ls).acquire_write(ls):
->>>>>>> Use acquire_write to send a loading notification to the client:server/odoo.py
             #unload old
             file_symbol = self.get_file_symbol(old_path)
             if file_symbol:
