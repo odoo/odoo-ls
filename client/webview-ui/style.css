@@ -1,9 +1,17 @@
-#webview-body {
+#config-body {
   display: flex;
   flex-direction: column;
 }
 
-#notes-form {
+@media screen and (min-width: 1024px) {
+  #config-body {
+    padding: 0 8rem;
+    max-width: 1024px;
+    margin-right: auto;
+  }
+}
+
+#config-form {
   display: grid;
   grid-auto-flow: row;
   grid-row-gap: 1.5rem;
@@ -22,25 +30,11 @@ textarea {
 	background-color: var(--vscode-input-background);
 }
 
-#submit-button {
+#save-config {
   width: fit-content;
 }
 
-#tags-container {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  grid-column-gap: 0.5rem;
-}
-
-@media screen and (min-width: 1024px) {
-  #webview-body {
-    padding: 0 8rem;
-    max-width: 1024px;
-    margin: 0 auto;
-  }
-}
-.container {
+#welcome-container {
   width: 100%;
   display: flex;
   justify-content: center;
@@ -48,7 +42,7 @@ textarea {
   flex-direction: column;
 }
 
-.logo {
+#welcome-logo {
   width: 200px;
   margin-top: 2em
 }

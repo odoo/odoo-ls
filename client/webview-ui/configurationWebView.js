@@ -6,8 +6,8 @@ const vscode = acquireVsCodeApi();
 window.addEventListener("load", main);
 
 function main() {
-  const howdyButton = document.getElementById("save_config");
-  howdyButton.addEventListener("click", saveConfigClick);
+  const saveConfigButton = document.getElementById("save-config");
+  saveConfigButton.addEventListener("click", saveConfigClick);
 }
 
 function saveConfigClick() {

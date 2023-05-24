@@ -118,10 +118,10 @@ export class WelcomeWebView {
                     <script type="module" src="${mainUri}"></script>
                     <link rel="stylesheet" href="${styleUri}">
                 </head>
-                <body>
-                <div class='container'>
+                <body id="welcome-body">
+                <div id='welcome-container'>
                     <a href = "https://odoo.com">
-                        <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" class="logo" />
+                        <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" id="welcome-logo" />
                     </a>
                     <h1>Welcome to Odoo Extension</h1>
                     <section>                        
