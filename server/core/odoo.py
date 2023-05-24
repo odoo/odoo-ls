@@ -59,11 +59,11 @@ class Odoo():
     @contextmanager
     def acquire_write(self, ls):
         with self.write_lock:
-            ls.send_notification('Odoo/loading', 'start')
+            ls.send_notification('Odoo/loadingStatusUpdate', 'start')
             print("Odoo/loading: start")
             self.thread_access_condition.wait_empty()   
             yield
-            ls.send_notification('Odoo/loading', 'stop')
+            ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
             print("Odoo/loading: stop")
 
     @contextmanager

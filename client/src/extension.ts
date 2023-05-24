@@ -217,7 +217,7 @@ export function activate(context: ExtensionContext): void {
 			client.sendNotification("Odoo/initWorkspace", [config["odooPath"]]);
 		}
 
-        client.onNotification("Odoo/loading", (state: String) => {
+        client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
             switch (state) {
                 case "start":
                     isLoading = true;
