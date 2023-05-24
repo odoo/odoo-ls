@@ -203,8 +203,9 @@ export function activate(context: ExtensionContext): void {
 		treeDataProvider: new TreeDatabasesDataProvider()
 	});*/
     workspace.onDidChangeConfiguration(event => {
-        let affected = event.affectsConfiguration("Odoo.selectedConfigurations");
-        if (affected) setStatusConfig(odooStatusBar);
+        const selectedConfigAffected = event.affectsConfiguration("Odoo.selectedConfigurations");
+        const userConfigAffected = event.affectsConfiguration("Odoo.userDefinedConfigurations");
+        if (selectedConfigAffected || userConfigAffected) setStatusConfig(odooStatusBar);
     })
 
     WelcomeWebView.render(context.extensionUri);
@@ -228,7 +229,6 @@ export function activate(context: ExtensionContext): void {
             }
             setStatusConfig(odooStatusBar);
         });
-
         client.sendNotification("Odoo/clientReady");
 	});
 }

@@ -1,7 +1,6 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 import { getUri } from "./getUri";
 import * as vscode from 'vscode';
-import { cp } from "fs";
 
 /**
  * This class manages the state and behavior of ConfigurationWebView webview panels.
@@ -128,12 +127,12 @@ export class ConfigurationWebView {
                     <link rel="stylesheet" href="${styleUri}">
                     <title>Odoo Configuration ${config["id"]}</title>
                 </head>
-                <body>
-                    <h1>Odoo Configuration ${config["id"]}</h1>
-                    <section id="notes-form">                        
+                <body id="config-body">
+                    <h1>Odoo Configuration</h1>
+                    <section id="config-form">                        
                         <vscode-text-field id="name" value="${config["name"]}" placeholder="Configuration name">Name</vscode-text-field>
                         <vscode-text-field id="odooPath" value="${config["odooPath"]}" placeholder="Enter the full path to your Odoo directory">Odoo path</vscode-text-field>
-                        <vscode-button id="save_config">Save</vscode-button>
+                        <vscode-button id="save-config">Save</vscode-button>
                     </section>
                 </body>
             </html>
@@ -171,4 +170,4 @@ export class ConfigurationWebView {
         this._disposables
         );
     }
-    }
+}
