@@ -18,7 +18,7 @@ class Model():
         res = []
         for sym in self.impl_sym:
             if sym.modelData.name not in sym.modelData.inherit:
-                if not from_module or from_module.is_in_deps(sym.getModule().name):
+                if not from_module or from_module.is_in_deps(sym.get_module().name):
                     res.append(sym)
         return res
 
@@ -48,7 +48,7 @@ class Model():
         """Return a list of symbols that extends this model but are in your dependencies."""
         symbols = []
         for symbol in self.impl_sym:
-            module = symbol.getModule()
+            module = symbol.get_module()
             if from_module:
                 if module and from_module.is_in_deps(module.name):
                     symbols.append(symbol)
@@ -61,7 +61,7 @@ class Model():
         If module_scope is not None, only return inheritance coming from files that are in dependencies"""
         inherit = set()
         for symbol in self.impl_sym:
-            module = symbol.getModule()
+            module = symbol.get_module()
             if from_module:
                 if module and from_module.is_in_deps(module.name):
                     inherit.update(symbol.inherit)

@@ -2,12 +2,12 @@ import ast
 import os
 import sys
 from pathlib import Path
-from .constants import *
-from .odoo import *
-from .symbol import *
-from .model import *
-from .pythonUtils import *
-from .importResolver import *
+from server.constants import *
+from server.core.odoo import *
+from server.core.symbol import *
+from server.core.model import *
+from server.pythonUtils import *
+from server.core.importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 class ClassContentCacheValidator():
@@ -59,7 +59,7 @@ class PythonValidator(ast.NodeVisitor):
         FileMgr.publish_diagnostics(self.ls, fileInfo)
 
     def validate_ast(self, ast):
-        module = self.symStack[-1].getModule()
+        module = self.symStack[-1].get_module()
         if module and (module.name != 'base' or module.name in Odoo.get().modules): #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
             self.currentModule = Odoo.get().modules[module.name]
         self.visit(ast)
@@ -105,7 +105,7 @@ class PythonValidator(ast.NodeVisitor):
                     ))
                 break
             else:
-                module = symbol.getModule()
+                module = symbol.get_module()
                 if module and not self.currentModule.is_in_deps(module.name):
                     self.diagnostics.append(Diagnostic(
                         range = Range(
@@ -252,7 +252,7 @@ class PythonValidator(ast.NodeVisitor):
             for inh in data.modelInherit:
                 orig_module = ""
                 if inh in Odoo.get().models:
-                    orig_module = Odoo.get().models[inh].get_main_symbol().getModule()
+                    orig_module = Odoo.get().models[inh].get_main_symbol().get_module()
                 if not orig_module or (not self.currentModule.is_in_deps(orig_module) and \
                     orig_module != self.currentModule.dir_name):
                     self.diagnostics.append(Diagnostic(

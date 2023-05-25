@@ -31,6 +31,9 @@ class SymType(Enum):
     VARIABLE  = 7,
     PRIMITIVE = 8
 
+    def __str__(self):
+        return self.name
+
 BUILT_IN_LIBS = ["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",
 "datetime", "zoneinfo", "calendar", "collections", "heapq", "bisect", "array", "weakref", "types", "copy", "pprint",
 "reprlib", "enum", "graphlib", "numbers", "math", "cmath", "decimal", "fractions", "random", "statistics", "itertools",

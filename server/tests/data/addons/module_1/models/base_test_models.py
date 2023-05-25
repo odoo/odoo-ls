@@ -1,4 +1,4 @@
-from odoo import api, fields, models, _, tools
+from server.core.odoo import api, fields, models, _, tools
 from odoo.addons.module_1.constants import CONSTANT_1, CONSTANT_2
 
 class BaseTestModel(models.Model):

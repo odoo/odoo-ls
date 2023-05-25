@@ -15,8 +15,12 @@
 # limitations under the License.                                           #
 ############################################################################
 
-from . import constants
-from . import core
-from . import pythonUtils
-from . import features
-from . import server
+from . import evaluation
+from . import fileMgr
+from . import importResolver
+from . import model
+from . import module
+from . import odoo
+from . import pythonArchBuilder
+from . import symbol
+from . import threadCondition

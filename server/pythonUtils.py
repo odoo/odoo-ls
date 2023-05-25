@@ -1,7 +1,7 @@
 from .constants import *
-from .odoo import Odoo
-from .symbol import *
-from .model import *
+from .core.odoo import Odoo
+from .core.symbol import *
+from .core.model import *
 import ast
 
 class PythonUtils():
@@ -30,7 +30,7 @@ class PythonUtils():
             node = node_list[node_iter]
             if not symbol:
                 if node.type == "name" and node.value == "self":
-                    symbol = scope_symbol.get_in_parents(["class"]) #should be able to take it in func param, no?
+                    symbol = scope_symbol.get_in_parents([SymType.CLASS]) #should be able to take it in func param, no?
                 else:
                     infer = scope_symbol.inferName(node.value, node.line)
                     if not infer:
@@ -49,7 +49,10 @@ class PythonUtils():
                             node_iter += 1
                             model = Odoo.get().models[node_list[node_iter].children[1].value.replace("'", "").replace('"', '')]
                             if model:
-                                symbol = model.get_main_symbol()
+                                module = scope_symbol.get_module()
+                                symbols = model.get_main_symbols(module) #TODO ouch
+                                if symbols:
+                                    symbol = symbols[0] #TODO double ouch
                         else:
                             symbol = symbol.get_class_symbol(node.children[1].value)
                         if not symbol:
@@ -148,11 +151,3 @@ class PythonUtils():
         print(list_expr)
         return (last_atomic_expr, list_expr, current)
 
-    @staticmethod
-    def getSymbol(fileSymbol, content, line, character):
-        "return the Symbol at the given position in a file"
-        scope_symbol = fileSymbol.get_scope_symbol(line)
-        parsoTree = Odoo.get().grammar.parse(content, error_recovery=False, path=fileSymbol.paths[0], cache = False)
-        atom_expr, parent_expr, expr = PythonUtils.get_atom_expr(parsoTree, line, character)
-        symbol = PythonUtils.evaluateTypeParso(parent_expr, scope_symbol)
-        return symbol

@@ -1,10 +1,10 @@
 import ast
 import os
 
-from server.model import Model
-from .constants import *
+from server.core.model import Model
+from ..constants import *
 from .odoo import *
-from .server import FileMgr
+from server.core.fileMgr import FileMgr
 
 
 class PythonOdooBuilder(ast.NodeVisitor):

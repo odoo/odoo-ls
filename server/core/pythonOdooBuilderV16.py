@@ -1,6 +1,6 @@
 import ast
 import os
-from .constants import *
+from ..constants import *
 from .odoo import *
 from .pythonOdooBuilderBase import PythonOdooBuilder
 

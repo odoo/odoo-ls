@@ -13,9 +13,9 @@ from pygls.workspace import Document, Workspace
 from ...server import (
     completions,
 )
-from ...fileMgr import FileMgr
+from ...core.fileMgr import FileMgr
 from .setup import *
-from ...odoo import Odoo
+from ...core.odoo import Odoo
 from ...symbol import Symbol
 from ...constants import *
 
@@ -48,9 +48,10 @@ class TestModel(odoo.Models):
             uri=file_uri,
         ),
         position=Position(
-            line=7,
+            line=6,
             character=15,
         )
     )
 
     items = completions(server, params)
+    print(items)

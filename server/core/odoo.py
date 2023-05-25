@@ -6,22 +6,14 @@ import re
 import sys
 import traceback
 import threading
-from .constants import *
+from ..constants import *
 from .symbol import *
 from .fileMgr import *
 from .threadCondition import ReadWriteCondition
 from contextlib import contextmanager
-from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
-                             CompletionParams, CompletionItemKind, ConfigurationItem,
-                             ConfigurationParams, Diagnostic,
-                             DidChangeTextDocumentParams,
-                             DidCloseTextDocumentParams,
-                             DidOpenTextDocumentParams, MessageType, Position,
-                             Range, Registration, RegistrationParams,
-                             SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
-                             Unregistration, UnregistrationParams, WorkspaceConfigurationParams)
+from lsprotocol.types import (ConfigurationItem, WorkspaceConfigurationParams)
 
-from .constants import CONFIGURATION_SECTION
+from ..constants import CONFIGURATION_SECTION
 
 #for debug
 import time
@@ -118,7 +110,7 @@ class Odoo():
         self.build_modules(ls)
 
     def build_base(self, ls, used_config):
-        from server.pythonArchBuilder import PythonArchBuilder
+        from .pythonArchBuilder import PythonArchBuilder
         releasePath = os.path.join(self.odooPath, "odoo", "release.py")
         if os.path.exists(releasePath):
             with open(releasePath, "r") as f:
@@ -154,7 +146,7 @@ class Odoo():
         return False
 
     def process_arch_rebuild(self, ls):
-        from server.pythonArchBuilder import PythonArchBuilder
+        from .pythonArchBuilder import PythonArchBuilder
         print("rebuild " + str(len(self.to_rebuild)))
         already_rebuilt = set()
         while self.to_rebuild:
@@ -180,7 +172,7 @@ class Odoo():
                 print("Can't rebuild " + str(tree))
 
     def process_odoo_init(self, ls):
-        from server.pythonOdooBuilder import PythonOdooBuilder
+        from .pythonOdooBuilder import PythonOdooBuilder
         print("init " + str(len(self.to_init_odoo)))
         for symbol in self.to_init_odoo:
             validation = PythonOdooBuilder(ls, symbol)
@@ -188,7 +180,7 @@ class Odoo():
         self.to_init_odoo.clear()
 
     def process_validations(self, ls):
-        from server.pythonValidator import PythonValidator
+        from server.features.validation.pythonValidator import PythonValidator
         print("validating " + str(len(self.to_validate)))
         for symbol in self.to_validate:
             validation = PythonValidator(ls, symbol)
@@ -196,7 +188,7 @@ class Odoo():
         self.to_validate.clear()
 
     def build_modules(self, ls):
-        from server.module import Module
+        from .module import Module
         addonPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
         for path in addonPaths:
             dirs = os.listdir(path)
@@ -233,7 +225,7 @@ class Odoo():
         return []
 
     def file_change(self, ls, path, text, version):
-        from server.pythonArchBuilder import PythonArchBuilder
+        from .pythonArchBuilder import PythonArchBuilder
 
         #snapshot1 = tracemalloc.take_snapshot()
         if path.endswith(".py"):
@@ -265,7 +257,7 @@ class Odoo():
         return
     
     def file_rename(self, ls, old_path, new_path):
-        from server.pythonArchBuilder import PythonArchBuilder
+        from .pythonArchBuilder import PythonArchBuilder
         with Odoo.get().acquire_write():
             #unload old
             file_symbol = self.get_file_symbol(old_path)
@@ -338,8 +330,8 @@ class Odoo():
         return new_set_to_revalidate
     
     def validate_related_files(self, ls, set_to_validate):
-        from server.pythonValidator import PythonValidator
-        from server.pythonOdooBuilder import PythonOdooBuilder
+        from server.features.validation.pythonValidator import PythonValidator
+        from .pythonOdooBuilder import PythonOdooBuilder
         for s in set_to_validate:
             s.odooStatus = 0
             s.validationStatus = 0
@@ -356,61 +348,3 @@ class Odoo():
                 else:
                     res += [model]
         return res
-                    
-
-    def parso_get_instruction(self, parsoTree, line, char):
-        element = parsoTree
-        while element and hasattr(element, "children") and element.type != "trailer":
-            if element.type == "expr_stmt":
-                break
-            for e in element.children:
-                if e.end_pos[0] > line or e.end_pos[0] == line and e.end_pos[1] >= char:
-                    if (e.start_pos[0] < line or e.start_pos[0] == line and e.start_pos[1] <= char):
-                        element = e
-                        break
-            else:
-                return None
-        return element
-
-
-    def autocomplete(self, path, content, line, char):
-        from .pythonUtils import PythonUtils
-        parsoTree = Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
-        element = self.parso_get_instruction(parsoTree, line+1, char)
-        #Test assignement
-        assigns = []
-        i = 1
-        while element and hasattr(element, "children") and len(element.children) > i and element.children[i].type == "operator" and \
-            element.children[i].value == "=" and element.children[i-1].type == "name":
-                assigns.append(element.children[i-1].value)
-                i += 2
-        i -= 2
-        if assigns:
-            if "_inherit" in assigns:
-                assign_part = element.children[i+1]
-                if char < assign_part.start_pos[1] or char > assign_part.end_pos[1]:
-                    return []
-                before = assign_part.get_code()[:char-assign_part.start_pos[1]+1].strip()
-                if not before or before[0] not in ["'", '"']:
-                    return []
-                before = before[1:]
-                file_symbol = self.get_file_symbol(path)
-                module_symbol = file_symbol.getModule()
-                if not module_symbol:
-                    return []
-                module = self.modules.get(module_symbol.name, None)
-                if not module:
-                    return []
-                models = self.get_models(module, before)
-                res = CompletionList(
-                    is_incomplete=False,
-                    items=[CompletionItem(
-                        label=m.name,
-                        documentation=m.get_documentation(module),
-                        kind = CompletionItemKind.Interface if m.is_abstract(module) else CompletionItemKind.Class,
-                    ) for m in models]
-                )
-                return res
-
-                    
-

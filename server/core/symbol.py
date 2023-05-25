@@ -2,7 +2,7 @@ import gc
 import os
 import sys
 import weakref
-from .constants import *
+from ..constants import *
 
 class ModelData():
 
@@ -89,15 +89,16 @@ class Symbol():
         self.doc = None
     
     def __str__(self):
-        return "(" + self.name + " - " + self.type + " - " + str(self.paths) + ")"
+        return "(" + self.name + " - " + str(self.type) + " - " + str(self.paths) + ")"
     
     def __del__(self):
         if DEBUG_MEMORY:
             print("symbol deleted " + self.name + " at " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
     
-    def all_symbols(self):
-        for s in self.localSymbols:
-            yield s
+    def all_symbols(self, local=False):
+        if local:
+            for s in self.localSymbols:
+                yield s
         for s in self.symbols.values():
             yield s
         for s in self.moduleSymbols.values():
@@ -123,7 +124,7 @@ class Symbol():
             sym = to_unload[0]
             #1: collect all symbols to revalidate
             found_one = False
-            for s in sym.all_symbols():
+            for s in sym.all_symbols(local=True):
                 found_one = True
                 to_unload.insert(0, s)
             if found_one: 
@@ -167,7 +168,7 @@ class Symbol():
             for d in symbols[0].dependents:
                 if d != self and not d.is_symbol_in_parents(self):
                     Odoo.get().add_to_init_odoo(d, force=True) #As we are unloading, things are changing, we have to force the validation
-            for s in symbols[0].all_symbols():
+            for s in symbols[0].all_symbols(local=True):
                 symbols.append(s)
             del symbols[0]
 
@@ -268,7 +269,7 @@ class Symbol():
             if inference and inference.symbol:
                 return inference.symbol
 
-    def getModule(self):
+    def get_module(self):
         s = self
         while s and not s.isModule:
             s = s.parent
@@ -282,7 +283,7 @@ class Symbol():
             return self.symbols[name]
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
-            sym = model.get_symbols(self.getModule())
+            sym = model.get_symbols(self.get_module())
             for s in sym:
                 r = s.get_class_symbol(name, True)
                 if r:
@@ -364,7 +365,7 @@ class Symbol():
         selected = False
         if name == "__doc__":
             return self.doc
-        for symbol in self.all_symbols():
+        for symbol in self.all_symbols(local=True):
             if symbol.name == name and symbol.startLine < line and (not selected or symbol.startLine > selected.startLine):
                 selected = symbol
         if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:

@@ -23,10 +23,12 @@ import uuid
 import threading
 from json import JSONDecodeError
 from typing import Optional
-from .odoo import Odoo
-from server.pythonArchBuilder import PythonArchBuilder
+from .core.odoo import Odoo
+from server.core.pythonArchBuilder import PythonArchBuilder
 from server.pythonUtils import PythonUtils
-from server.fileMgr import *
+from server.core.fileMgr import *
+from server.features.autocomplete import AutoCompleteFeature
+from server.features.hover import HoverFeature
 import urllib.parse
 import urllib.request
 
@@ -95,17 +97,7 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
     with Odoo.get().acquire_read():
-        return Odoo.get().autocomplete(path, content, params.position.line, params.position.character)
-    return CompletionList(
-        is_incomplete=False,
-        items=[
-            CompletionItem(label='"'),
-            CompletionItem(label='['),
-            CompletionItem(label=']'),
-            CompletionItem(label='{'),
-            CompletionItem(label='}'),
-        ]
-    )
+        return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
@@ -117,7 +109,7 @@ def hover(ls, params: TextDocumentPositionParams):
     with Odoo.get().acquire_read():
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
-            symbol = PythonUtils.getSymbol(file_symbol, content, params.position.line + 1, params.position.character + 1)
+            symbol = HoverFeature.getSymbol(file_symbol, content, params.position.line + 1, params.position.character + 1)
         return Hover(symbol and symbol.name)
 
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)

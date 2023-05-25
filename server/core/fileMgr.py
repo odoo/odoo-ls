@@ -4,7 +4,7 @@ import sys
 from lsprotocol.types import (Diagnostic,Position, Range)
 from urllib.request import quote
 
-from .constants import *
+from ..constants import *
 
 class FileMgr():
 

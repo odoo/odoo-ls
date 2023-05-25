@@ -15,7 +15,7 @@ from ...server import (
     did_rename_files
 )
 from .setup import *
-from ...odoo import Odoo
+from ...core.odoo import Odoo
 from ...symbol import Symbol
 from ...constants import *
 

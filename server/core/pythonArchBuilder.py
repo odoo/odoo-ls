@@ -3,12 +3,12 @@ import glob
 import os
 import sys
 from pathlib import Path
-from .constants import *
+from ..constants import *
 from .evaluation import Evaluation
 from .odoo import *
 from .symbol import *
 from .model import *
-from .pythonUtils import *
+from ..pythonUtils import *
 from .importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
@@ -97,7 +97,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.symStack[-1].add_symbol(symbol)
 
     def load_symbols_from_ast(self, ast):
-        #moduleName = self.symStack[-1].getModule()
+        #moduleName = self.symStack[-1].get_module()
         #if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
         #    self.currentModule = Odoo.get().modules[moduleName]
         self.visit(ast)
