@@ -1,5 +1,7 @@
 from server.constants import *
 from server.core.odoo import Odoo
+from server.core.symbol import Symbol
+from server.features.parsoUtils import ParsoUtils
 from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItemKind, CompletionItem)
 
 class AutoCompleteFeature:
@@ -47,17 +49,23 @@ class AutoCompleteFeature:
                 )
         #Try to complete expression
         if element and element.type == 'operator' and element.value == ".":
-            containers = []
-            previous = element.get_previous_leaf()
-            first_leaf = element.search_ancestor("error_node").get_first_leaf()
-            while previous:
-                containers.insert(0, previous)
-                if previous == first_leaf:
-                    break
-                previous = previous.get_previous_leaf()
+            # containers = []
+            # previous = element.get_previous_leaf()
+            # first_leaf = element.search_ancestor("error_node").get_first_leaf()
+            # while previous:
+            #     containers.insert(0, previous)
+            #     if previous == first_leaf:
+            #         break
+            #     previous = previous.get_previous_leaf()
+            # print(containers)
+            expr = ParsoUtils.get_previous_leafs_expr(element)
             file_symbol = Odoo.get().get_file_symbol(path)
+            module_symbol = file_symbol.get_module()
+            if not module_symbol:
+                return []
+            module = Odoo.get().modules.get(module_symbol.name, None)
             scope_symbol = file_symbol.get_scope_symbol(line)
-            symbol_ancestors = PythonUtils.evaluateTypeParso(containers, scope_symbol)
+            symbol_ancestors = ParsoUtils.evaluateType(expr, scope_symbol)
             if symbol_ancestors:
                 return CompletionList(
                     is_incomplete=False,
@@ -65,9 +73,17 @@ class AutoCompleteFeature:
                         label=symbol.name,
                         #documentation=symbol.doc,
                         kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                    ) for symbol in symbol_ancestors.all_symbols(local=False)]
+                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module)]
                 )
             return []
+    
+    @staticmethod
+    def _get_symbols_from_obj(obj, module):
+        """ For a symbol or model, get all sub symbols"""
+        if isinstance(obj, Symbol):
+            return obj.all_symbols(local = False)
+        else:
+            return obj.get_attributes(module)
 
     @staticmethod
     def _getCompletionItemKind(symbol):

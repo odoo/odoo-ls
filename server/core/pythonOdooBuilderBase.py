@@ -36,7 +36,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].odooStatus = 1
-        if (not Odoo.get().isLoading):
+        if DEBUG_ODOO_BUILDER:
             print("Load odoo: " + self.filePath)
         self.symStack[0].not_found_paths = []
         Odoo.get().not_found_symbols.discard(self.symStack[0])

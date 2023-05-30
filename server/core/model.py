@@ -69,3 +69,32 @@ class Model():
                 inherit.update(symbol.inherit)
         return list(inherit)
 
+    def get_attributes(self, from_module):
+        """Return all attributes that are in the model from the "from_module" perspective"""
+        impl = self.get_symbols(from_module)
+        #TODO respect dependencies and don't take overrding functions
+        #TODO return only fields variables
+        res = {}
+        for sym in impl:
+            for sub_sym in sym.all_symbols():
+                res[sub_sym.name] = sub_sym
+        return res.values()
+
+###################################
+#  Symbol compatibility methods   #
+###################################
+# These methods are there to allow usage of Model objects as Symbol objects
+
+    def isModel():
+        return True
+
+    def get_class_symbol(self, name, from_module):
+        """ Return the first definition of the name in the model from the "from_module" perspective"""
+        impl = self.get_symbols(from_module)
+        #TODO actually we are searching for the first one, and we could return an override. It would be better if we 
+        #could search in sorted modules (by dep)
+        for sym in impl:
+            res = sym.get_class_symbol(name)
+            if res:
+                return res
+        return None

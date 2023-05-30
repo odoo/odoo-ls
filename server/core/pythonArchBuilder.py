@@ -46,7 +46,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         The code will follow all found import statement and try to import symbols from them too.
         On an existing symbol, the symbol will be simply returned
         """
-        if (not Odoo.get().isLoading):
+        if DEBUG_ARCH_BUILDER:
             print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         if not self.ast_node: #we are parsing a whole file based on path
             existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])

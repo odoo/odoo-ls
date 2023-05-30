@@ -9,56 +9,42 @@ class PythonUtils():
     @staticmethod
     def inferTypeParso(expr):
         return None
-    
-    @staticmethod
-    def _parso_split_node_dot(exprs):
-        results = [exprs[0]]
-        for c in results[1:]:
-            if c.type == "operator" and c.value == ".":
-                results.append([])
-            else:
-                results[-1].append(c)
-        return results
 
     @staticmethod
     def evaluateTypeParso(node_list, scope_symbol):
         """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned.
         If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
-        symbol = None
+        obj = None #symbol or model
         node_iter = 0
         while node_iter != len(node_list):
             node = node_list[node_iter]
-            if not symbol:
+            if not obj:
                 if node.type == "name" and node.value == "self":
-                    symbol = scope_symbol.get_in_parents([SymType.CLASS]) #should be able to take it in func param, no?
+                    obj = scope_symbol.get_in_parents([SymType.CLASS]) #should be able to take it in func param, no?
                 else:
                     infer = scope_symbol.inferName(node.value, node.line)
                     if not infer:
                         return None
-                    symbol, _ = infer.follow_ref()
-                    if symbol.type == SymType.VARIABLE:
+                    obj, _ = infer.follow_ref()
+                    if obj.type == SymType.VARIABLE:
                         return None
             else:
                 if node.type == "trailer":
                     if node.children[0].type == "operator" and node.children[0].value == ".":
-                        if symbol.isModel() and node.children[1].value == "env" \
+                        if obj.isModel() and node.children[1].value == "env" \
                             and node_iter != len(node_list) and node_list[node_iter+1].type == "trailer" \
                             and node_list[node_iter+1].children[0].type == "operator" \
                             and node_list[node_iter+1].children[0].value == "[" \
                             and node_list[node_iter+1].children[1].type == "string":
                             node_iter += 1
-                            model = Odoo.get().models[node_list[node_iter].children[1].value.replace("'", "").replace('"', '')]
-                            if model:
-                                module = scope_symbol.get_module()
-                                symbols = model.get_main_symbols(module) #TODO ouch
-                                if symbols:
-                                    symbol = symbols[0] #TODO double ouch
+                            obj = Odoo.get().models[node_list[node_iter].children[1].value.replace("'", "").replace('"', '')]
                         else:
-                            symbol = symbol.get_class_symbol(node.children[1].value)
-                        if not symbol:
+                            module = scope_symbol.get_module()
+                            obj = obj.get_class_symbol(node.children[1].value, module)
+                        if not obj:
                             return None
             node_iter += 1
-        return symbol
+        return obj
 
     @staticmethod
     def get_complete_expr(content, line, character):

@@ -24,7 +24,6 @@ import tracemalloc
 class Odoo():
 
     odooPath = ""
-    isLoading = False
 
     version_major = 0
     version_minor = 0
@@ -61,7 +60,7 @@ class Odoo():
         with self.write_lock:
             ls.send_notification('Odoo/loadingStatusUpdate', 'start')
             print("Odoo/loading: start")
-            self.thread_access_condition.wait_empty()   
+            self.thread_access_condition.wait_empty()
             yield
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
             print("Odoo/loading: stop")
@@ -259,7 +258,7 @@ class Odoo():
         return
     
     def file_rename(self, ls, old_path, new_path):
-        from .pythonArchBuilder import PythonArchBuilder
+        from server.core.pythonArchBuilder import PythonArchBuilder
         with Odoo.get(ls).acquire_write(ls):
             #unload old
             file_symbol = self.get_file_symbol(old_path)

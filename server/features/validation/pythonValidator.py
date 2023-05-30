@@ -45,7 +45,7 @@ class PythonValidator(ast.NodeVisitor):
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].validationStatus = 1
-        if (not Odoo.get().isLoading):
+        if DEBUG_VALIDATION:
             print("Load validation: " + self.filePath)
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
