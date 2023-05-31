@@ -7,7 +7,7 @@ from pygls.workspace import Document, Workspace
 from ...server import (
     OdooLanguageServer
 )
-from ...core.fileMgr import FileMgr
+from server.core.fileMgr import FileMgr
 """
 To run tests:
 

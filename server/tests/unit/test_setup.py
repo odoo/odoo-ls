@@ -2,7 +2,7 @@ import os
 import pytest
 
 from .setup import *
-from ...core.odoo import *
+from server.core.odoo import *
 
 
 @pytest.mark.dependency()

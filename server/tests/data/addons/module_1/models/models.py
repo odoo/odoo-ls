@@ -1,4 +1,4 @@
-from server.core.odoo import models, fields
+from odoo import models, fields
 
 class model_model(models.Model):
     pass

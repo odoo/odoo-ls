@@ -16,7 +16,7 @@ from ...server import (
 from ...core.fileMgr import FileMgr
 from .setup import *
 from ...core.odoo import Odoo
-from ...symbol import Symbol
+from server.core.symbol import Symbol
 from ...constants import *
 
 """
