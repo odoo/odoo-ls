@@ -87,7 +87,7 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
         full_path = os.path.join(path, name)
         if os.path.isdir(full_path):
             if parent_symbol.get_tree()[0] == ["odoo", "addons"]:
-                module = parent_symbol.get_module()
+                module = parent_symbol.get_module_sym()
                 if not module:
                     """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
                     It means we are in a file like odoo/*, and modules are not loaded yet."""

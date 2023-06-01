@@ -3,13 +3,14 @@ import glob
 import os
 import sys
 from pathlib import Path
-from ..constants import *
-from .evaluation import Evaluation
-from .odoo import *
-from .symbol import *
-from .model import *
-from ..pythonUtils import *
-from .importResolver import *
+from server.core.pythonArchBuilderOdooHooks import PythonArchBuilderOdooHooks
+from server.constants import *
+from server.core.evaluation import Evaluation
+from server.core.odoo import *
+from server.core.symbol import *
+from server.core.model import *
+from server.pythonUtils import *
+from server.core.importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
 
@@ -254,6 +255,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()
+        PythonArchBuilderOdooHooks.on_class_declaration(symbol)
 
 
     def unpack_assign(self, node_targets, node_values, acc = {}):

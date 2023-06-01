@@ -32,10 +32,7 @@ class AutoCompleteFeature:
                     return []
                 before = before[1:]
                 file_symbol = Odoo.get().get_file_symbol(path)
-                module_symbol = file_symbol.get_module()
-                if not module_symbol:
-                    return []
-                module = Odoo.get().modules.get(module_symbol.name, None)
+                module = file_symbol.get_module()
                 if not module:
                     return []
                 models = Odoo.get().get_models(module, before)
@@ -60,10 +57,7 @@ class AutoCompleteFeature:
             # print(containers)
             expr = ParsoUtils.get_previous_leafs_expr(element)
             file_symbol = Odoo.get().get_file_symbol(path)
-            module_symbol = file_symbol.get_module()
-            if not module_symbol:
-                return []
-            module = Odoo.get().modules.get(module_symbol.name, None)
+            module = file_symbol.get_module()
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors = ParsoUtils.evaluateType(expr, scope_symbol)
             if symbol_ancestors:
@@ -80,10 +74,11 @@ class AutoCompleteFeature:
     @staticmethod
     def _get_symbols_from_obj(obj, module):
         """ For a symbol or model, get all sub symbols"""
-        if isinstance(obj, Symbol):
-            return obj.all_symbols(local = False)
+        def_obj = obj.follow_ref()[0] 
+        if isinstance(def_obj, Symbol):
+            return def_obj.all_symbols(local = False)
         else:
-            return obj.get_attributes(module)
+            return def_obj.get_attributes(module)
 
     @staticmethod
     def _getCompletionItemKind(symbol):

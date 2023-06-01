@@ -115,6 +115,9 @@ class Symbol():
 
     def is_file_content(self):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
+
+    def get_range(self):
+        return (self.startLine, self.endLine)
     
     @staticmethod
     def unload(symbol): #can't delete because of self? :o
@@ -269,11 +272,18 @@ class Symbol():
             if inference and inference.symbol:
                 return inference.symbol
 
-    def get_module(self):
+    def get_module_sym(self):
         s = self
         while s and not s.isModule:
             s = s.parent
         return s
+
+    def get_module(self):
+        from server.core.odoo import Odoo
+        s = self.get_module_sym()
+        if not s:
+            return None
+        return Odoo.get().modules.get(s.name, None)
 
     def get_class_symbol(self, name, prevent_comodel = False):
         """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
@@ -283,7 +293,7 @@ class Symbol():
             return self.symbols[name]
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
-            sym = model.get_symbols(self.get_module())
+            sym = model.get_symbols(self.get_module_sym())
             for s in sym:
                 r = s.get_class_symbol(name, True)
                 if r:

@@ -27,12 +27,12 @@ class Evaluation():
 
     """
 
-    def __init__(self):
+    def __init__(self, symbol=None, instance=False, value=None):
         """try to return the symbol corresponding to the expression, evaluated in the context 
         of 'symbol' (a function, class or file)."""
-        self.symbol = None
-        self.instance = False
-        self.value = None #for primitives
+        self.symbol = symbol
+        self.instance = instance
+        self.value = value #for primitives
         self._symbol = None #to hold ref for local symbols
 
     

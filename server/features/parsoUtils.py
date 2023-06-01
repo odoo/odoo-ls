@@ -32,15 +32,15 @@ class ParsoUtils:
                             return []
                         brackets.pop(0)
                     else:
-                        print("Invalid expression")
-                        return []
+                        break
                 elif previous.value == '.':
                     pass
                 elif len(brackets) == 0:
                     break
+            if previous.type == 'newline':
+                break
             leafs.insert(0, previous)
             previous = previous.get_previous_leaf()
-        print(leafs)
         return leafs
 
     @staticmethod
@@ -73,6 +73,7 @@ class ParsoUtils:
                         node_iter += 4
                     else:
                         module = scope_symbol.get_module()
+                        obj = obj.follow_ref()[0]
                         obj = obj.get_class_symbol(next_element.value, module)
                     if not obj:
                         return None

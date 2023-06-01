@@ -18,7 +18,7 @@ class Model():
         res = []
         for sym in self.impl_sym:
             if sym.modelData.name not in sym.modelData.inherit:
-                if not from_module or from_module.is_in_deps(sym.get_module().name):
+                if not from_module or from_module.is_in_deps(sym.get_module_sym().name):
                     res.append(sym)
         return res
 
@@ -85,7 +85,7 @@ class Model():
 ###################################
 # These methods are there to allow usage of Model objects as Symbol objects
 
-    def isModel():
+    def isModel(self):
         return True
 
     def get_class_symbol(self, name, from_module):
