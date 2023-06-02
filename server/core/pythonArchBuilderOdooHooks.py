@@ -46,3 +46,17 @@ class PythonArchBuilderOdooHooks:
                     cr_var.endLine = envModel.endLine
                 cr_var.doc = "the current user id (for access rights checks)"
                 envModel.add_symbol(cr_var)
+                # ---------- env.context ----------
+                context_var = Symbol("context", SymType.VARIABLE, envModel.paths)
+                if envModel:
+                    context_var.startLine = envModel.startLine
+                    context_var.endLine = envModel.endLine
+                context_var.doc = "the current context dictionary (arbitrary metadata)"
+                envModel.add_symbol(context_var)
+                # ---------- env.su ----------
+                attr_var = Symbol("context", SymType.VARIABLE, envModel.paths)
+                if envModel:
+                    attr_var.startLine = envModel.startLine
+                    attr_var.endLine = envModel.endLine
+                attr_var.doc = "whether in superuser mode"
+                envModel.add_symbol(attr_var)

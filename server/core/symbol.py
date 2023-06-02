@@ -95,10 +95,13 @@ class Symbol():
         if DEBUG_MEMORY:
             print("symbol deleted " + self.name + " at " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
     
-    def all_symbols(self, local=False):
+    def all_symbols(self, local=False, include_inherits=False):
         if local:
             for s in self.localSymbols:
                 yield s
+        if include_inherits and self.classData:
+            for s in self.classData.bases:
+                yield s.all_symbols(local=local, include_inherits=include_inherits)
         for s in self.symbols.values():
             yield s
         for s in self.moduleSymbols.values():
