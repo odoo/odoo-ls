@@ -29,6 +29,7 @@ import {
     QuickPickItem,
     StatusBarAlignment,
     StatusBarItem,
+    ThemeIcon,
     workspace,
     window,
     Uri
@@ -44,6 +45,7 @@ import {
     URI,
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./welcomeWebView";
+import { ConfigurationWebView } from './configurationWebView';
 import { PathLike, PathOrFileDescriptor } from "fs";
 
 let client: LanguageClient;
@@ -100,45 +102,152 @@ function startLangServer(
     return new LanguageClient(command, serverOptions, getClientOptions());
 }
 
-commands.registerCommand('odoo.clickStatusBar',async () => {
-    const qpick = window.createQuickPick();
-    const configs: Array<Object> = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
-    let currSelect = null;
-    const currentConfig = getCurrentConfig();
-    const configMap = new Map();
-    const separator = {kind: -1};
-    const addConfigItem  = {
-        label: "$(add) Add new configuration"
-    };
+export function activate(context: ExtensionContext): void {
+    if (context.extensionMode === ExtensionMode.Development) {
+        // Development - Run the server manually
+        client = startLangServerTCP(2087);
+    } else {
+        // Production - Client is going to run the server (for use within `.vsix` package)
+        const cwd = path.join(__dirname, "..", "..");
+        const pythonPath = workspace
+            .getConfiguration("python")
+            .get<string>("interpreterPath");
 
-    for (const configId in configs) {
-        if (configId == currentConfig["id"]) continue; 
-        configMap.set({"label": configs[configId]["name"]}, configId)
+        if (!pythonPath) {
+            throw new Error("`python.interpreterPath` is not set");
+        }
+
+        client = startLangServer(pythonPath, ["-m", "server"], cwd);
     }
-    let picks = Array.from(configMap.keys());
-    const currentConfigItem = {"label": currentConfig["name"], "description": "(current)"};
-    picks.splice(currentConfig["id"], 0, currentConfigItem);
-    picks.push(...[separator, addConfigItem]);
 
-    qpick.title = "Select a configuration";
-    qpick.items = picks;
-    qpick.activeItems = [picks[currentConfig["id"]]];
-    qpick.onDidChangeSelection(selection => {
-        currSelect = selection[0];
+	new ConfigurationsExplorer(context);
+
+    odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
+    setStatusConfig(odooStatusBar);
+    odooStatusBar.show();
+    odooStatusBar.command = "odoo.clickStatusBar"
+    context.subscriptions.push(odooStatusBar);
+
+    commands.registerCommand('odoo.clickStatusBar', async () => {
+        const qpick = window.createQuickPick();
+        const configs: Array<Object> = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+        let selectedConfiguration = null;
+        const currentConfig = getCurrentConfig();
+        let currentConfigItem: QuickPickItem;
+        const configMap = new Map();
+        const separator = {kind: -1};
+        const addConfigItem  = {
+            label: "$(add) Add new configuration"
+        };
+        const gearIcon = new ThemeIcon("gear");
+    
+        for (const configId in configs) {
+            if (currentConfig && configId == currentConfig["id"])
+                continue; 
+            configMap.set({"label": configs[configId]["name"], "buttons": [{iconPath: gearIcon}]}, configId)
+        }
+        
+        let picks = Array.from(configMap.keys());
+        if (picks.length)
+            picks.push(separator);
+
+        if (currentConfig) {
+            currentConfigItem = {"label": currentConfig["name"], "description": "(current)", "buttons": [{iconPath: gearIcon}]};
+            picks.splice(currentConfig["id"], 0, currentConfigItem);
+        }
+        
+        picks.push(addConfigItem);
+        qpick.title = "Select a configuration";
+        qpick.items = picks;
+        qpick.activeItems = currentConfig ? [picks[currentConfig["id"]]] : [];
+
+        qpick.onDidChangeSelection(selection => {
+            selectedConfiguration = selection[0];
+        });
+    
+        qpick.onDidTriggerItemButton(buttonEvent => {
+            if (buttonEvent.button.iconPath == gearIcon) {
+                let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
+                ConfigurationWebView.render(context.extensionUri, buttonConfigId);
+            }
+        });
+    
+        qpick.onDidAccept(async () => {
+            if (selectedConfiguration == addConfigItem) {
+                await addNewConfiguration()
+            }
+            else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
+                workspace.getConfiguration("Odoo").update("selectedConfigurations", Number(configMap.get(selectedConfiguration)), ConfigurationTarget.Global)
+            }
+            qpick.hide();
+        });
+        qpick.onDidHide(() => qpick.dispose());
+        qpick.show();
     });
 
-    qpick.onDidAccept(async () => {
-        if (currSelect == addConfigItem) {
-            await addNewConfiguration()
-        }
-        else if (currSelect && currSelect != currentConfigItem) {
-            workspace.getConfiguration("Odoo").update("selectedConfigurations", Number(configMap.get(currSelect)), ConfigurationTarget.Global)
-        }
-        qpick.hide();
+    window.registerTreeDataProvider(
+		'odoo-databases',
+		new TreeDatabasesDataProvider()
+	);/*
+	window.createTreeView('odoo-databases', {
+		treeDataProvider: new TreeDatabasesDataProvider()
+	});*/
+    workspace.onDidChangeConfiguration(event => {
+        const selectedConfigAffected = event.affectsConfiguration("Odoo.selectedConfigurations");
+        const userConfigAffected = event.affectsConfiguration("Odoo.userDefinedConfigurations");
+        if (selectedConfigAffected || userConfigAffected) setStatusConfig(odooStatusBar);
     })
-    qpick.onDidHide(() => qpick.dispose());
-    qpick.show();
-});
+
+    WelcomeWebView.render(context.extensionUri);
+    const config = getCurrentConfig();
+    if (config) {
+        console.log(config);
+        odooStatusBar.text = `Odoo (${config["name"]})`
+        //TODO this is not calling anything...
+        client.sendNotification("Odoo/initWorkspace", [config["odooPath"]]);
+    }
+
+    client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
+        switch (state) {
+            case "start":
+                isLoading = true;
+                break;
+            case "stop":
+                isLoading = false;
+                break;
+        }
+        setStatusConfig(odooStatusBar);
+    });
+
+    client.sendNotification("Odoo/clientReady");
+    client.start();
+}
+
+export function deactivate(): Thenable<void> | undefined {
+	if (!client) {
+		return undefined;
+	}
+	return client.stop();
+}
+
+function getCurrentConfig() {
+    const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+    const activeConfig: integer = workspace.getConfiguration("Odoo").get("selectedConfigurations");
+    return (activeConfig != -1 ? configs[activeConfig] : null);
+}
+
+function setStatusConfig(statusItem: StatusBarItem) {
+    const config = getCurrentConfig();
+    let text = (config ? `Odoo (${config["name"]})`:`Odoo`);
+    statusItem.text = (isLoading) ? "$(loading~spin) " + text : text;
+}
+
+function getConfigAmount() {
+    const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
+    let count = 0;
+    for (const configId in configs) count++;
+    return count;
+}
 
 async function addNewConfiguration() {
     const configId = getConfigAmount();
@@ -164,94 +273,4 @@ async function addNewConfiguration() {
             workspace.getConfiguration("Odoo").update("userDefinedConfigurations", {...configs, [configId]: {"id": configId, "name": newConfigName, "odooPath": newConfigPath, "addons": []}}, ConfigurationTarget.Global);
         })
     })
-}
-
-
-export function activate(context: ExtensionContext): void {
-    if (context.extensionMode === ExtensionMode.Development) {
-        // Development - Run the server manually
-        client = startLangServerTCP(2087);
-    } else {
-        // Production - Client is going to run the server (for use within `.vsix` package)
-        const cwd = path.join(__dirname, "..", "..");
-        const pythonPath = workspace
-            .getConfiguration("python")
-            .get<string>("interpreterPath");
-
-        if (!pythonPath) {
-            throw new Error("`python.interpreterPath` is not set");
-        }
-
-        client = startLangServer(pythonPath, ["-m", "server"], cwd);
-    }
-
-    context.subscriptions.push(client.start());
-
-	new ConfigurationsExplorer(context);
-
-    odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-    setStatusConfig(odooStatusBar);
-    odooStatusBar.show();
-    odooStatusBar.command = "odoo.clickStatusBar"
-    context.subscriptions.push(odooStatusBar);
-
-    window.registerTreeDataProvider(
-		'odoo-databases',
-		new TreeDatabasesDataProvider()
-	);/*
-	window.createTreeView('odoo-databases', {
-		treeDataProvider: new TreeDatabasesDataProvider()
-	});*/
-    workspace.onDidChangeConfiguration(event => {
-        const selectedConfigAffected = event.affectsConfiguration("Odoo.selectedConfigurations");
-        const userConfigAffected = event.affectsConfiguration("Odoo.userDefinedConfigurations");
-        if (selectedConfigAffected || userConfigAffected) setStatusConfig(odooStatusBar);
-    })
-
-    WelcomeWebView.render(context.extensionUri);
-	client.onReady().then(() => {
-		const config = getCurrentConfig();
-		if (config) {
-			console.log(config);
-            odooStatusBar.text = `Odoo (${config["name"]})`
-            //TODO this is not calling anything...
-			client.sendNotification("Odoo/initWorkspace", [config["odooPath"]]);
-		}
-
-        client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
-            switch (state) {
-                case "start":
-                    isLoading = true;
-                    break;
-                case "stop":
-                    isLoading = false;
-                    break;
-            }
-            setStatusConfig(odooStatusBar);
-        });
-        client.sendNotification("Odoo/clientReady");
-	});
-}
-
-export function deactivate(): Thenable<void> {
-    return client ? client.stop() : Promise.resolve();
-}
-
-function getCurrentConfig() {
-    const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
-    const selectedConfig: integer = workspace.getConfiguration("Odoo").get("selectedConfigurations");
-    return (selectedConfig != -1 ? configs[selectedConfig] : null);
-}
-
-function setStatusConfig(statusItem: StatusBarItem) {
-    const config = getCurrentConfig();
-    let text = (config ? `Odoo (${config["name"]})`:`Odoo`);
-    statusItem.text = (isLoading) ? "$(loading~spin) " + text : text;
-}
-
-function getConfigAmount() {
-    const configs: any = workspace.getConfiguration("Odoo").get("userDefinedConfigurations");
-    let count = 0;
-    for (const configId in configs) count++;
-    return count;
 }
