@@ -111,9 +111,9 @@ class Symbol():
         #follow the reference to the real symbol and returns it (not a weakref)
         sym = self
         instance = self.type in [SymType.VARIABLE]
-        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.symbol:
+        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_wr(sym):
             instance = sym.eval.instance
-            sym = sym.eval.symbol()
+            sym = sym.eval.getSymbol(sym)
         return sym, instance
 
     def is_file_content(self):

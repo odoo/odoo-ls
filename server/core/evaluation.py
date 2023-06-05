@@ -30,7 +30,7 @@ class Evaluation():
     def __init__(self, symbol=None, instance=False, value=None):
         """try to return the symbol corresponding to the expression, evaluated in the context 
         of 'symbol' (a function, class or file)."""
-        self.symbol = symbol
+        self.symbol = symbol #always use getSymbol to get symbol
         self.instance = instance
         self.value = value #for primitives
         self._symbol = None #to hold ref for local symbols
@@ -43,10 +43,18 @@ class Evaluation():
             self.instance = True
         return self
     
-    def getSymbol(self):
-        if not self.symbol or not self.symbol():
+    def get_symbol_wr(self, context_sym=None):
+        return self._get_symbol_hook(self.symbol, context_sym)
+    
+    def getSymbol(self, context_sym=None):
+        """ context_sym is a symbol that is used to defined the evaluation. Usually the symbol that hold the evaluation"""
+        if not self.get_symbol_wr(context_sym) or not self.get_symbol_wr(context_sym)():
             return None
-        return self.symbol()
+        return self.get_symbol_wr(context_sym)()
+
+    def _get_symbol_hook(self, symbol, context_sym):
+        """To be overriden for specific contextual evaluations"""
+        return symbol
     
     def evalAST(self, node, parentSymbol):
         if node:
@@ -99,9 +107,9 @@ class Evaluation():
                 call_func = base.symbols.get("__call__", None)
                 if not call_func or not call_func.eval:
                     return (None, False)
-                return call_func.eval.symbol, call_func.eval.instance
+                return call_func.eval.get_symbol_wr(call_func), call_func.eval.instance
             elif base.type == SymType.FUNCTION and base.eval:
-                return base.eval.symbol, base.eval.instance
+                return base.eval.get_symbol_wr(base), base.eval.instance
             #TODO other types are errors?
         elif isinstance(node, ast.Attribute):
             v, instance = self._evaluateAST(node.value, parentSymbol)

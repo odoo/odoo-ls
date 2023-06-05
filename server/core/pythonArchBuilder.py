@@ -1,8 +1,10 @@
+from _ast import AnnAssign
 import ast
 import glob
 import os
 import sys
 from pathlib import Path
+from typing import Any
 from server.core.pythonArchBuilderOdooHooks import PythonArchBuilderOdooHooks
 from server.constants import *
 from server.core.evaluation import Evaluation
@@ -167,11 +169,22 @@ class PythonArchBuilder(ast.NodeVisitor):
         ast.NodeVisitor.generic_visit(self, node)
         self.safeImport.pop()
     
+    def visit_AnnAssign(self, node: AnnAssign) -> Any:
+        assigns = self.unpack_assign(node.target, node.value, {})
+        for variable_name, value in assigns.items():
+            if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
+                variable = Symbol(variable_name, SymType.VARIABLE, self.filePath)
+                variable.startLine = node.lineno
+                variable.endLine = node.end_lineno
+                variable.ast_node = weakref.ref(node)
+                variable.eval = Evaluation().evalAST(value, self.symStack[-1])
+                self.symStack[-1].add_symbol(variable)
+
     def visit_Assign(self, node):
         assigns = self.unpack_assign(node.targets, node.value, {})
-        for variable, value in assigns.items():
+        for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                variable = Symbol(variable, SymType.VARIABLE, self.filePath)
+                variable = Symbol(variable_name, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)

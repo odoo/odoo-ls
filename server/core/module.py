@@ -89,7 +89,10 @@ class Module():
 
     def _load_arch(self, ls, path):
         parser = PythonArchBuilder(ls, Odoo.get().symbols.get_symbol(["odoo", "addons"]), path)
-        parser.load_arch()
+        module = parser.load_arch()
+        if os.path.exists(os.path.join(path, "tests")):
+            tests_parser = PythonArchBuilder(ls, module, os.path.join(path, "tests"))
+            tests_parser.load_arch()
         return []
     
     def is_in_deps(self, module_name):

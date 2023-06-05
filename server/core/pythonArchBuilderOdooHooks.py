@@ -3,6 +3,14 @@ from server.core.symbol import Symbol
 from server.constants import SymType
 from server.core.evaluation import Evaluation
 
+class EvaluationTestCursor(Evaluation):
+
+    def _get_symbol_hook(self, symbol, context_sym):
+        """To be overriden for specific contextual evaluations"""
+        if context_sym and context_sym.eval and hasattr(context_sym.eval, "test_mode") and context_sym.eval.test_mode:
+            return self.test_cursor
+        return symbol
+
 class PythonArchBuilderOdooHooks:
 
     @staticmethod
@@ -24,6 +32,7 @@ class PythonArchBuilderOdooHooks:
                         symbol=weakref.ref(envModel),
                         instance = True
                     )
+                    env_var.eval.test_mode = False # used to define the Cursor type
                     envModel.arch_dependents.add(env_var)
                     env_var.doc = ""
                 symbol.add_symbol(env_var)
@@ -34,10 +43,12 @@ class PythonArchBuilderOdooHooks:
                     cr_var.endLine = envModel.endLine
                 cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["Cursor"])
                 if cursor_sym:
-                    cr_var.eval = Evaluation(
+                    cr_var.eval = EvaluationTestCursor(
                         symbol=weakref.ref(cursor_sym),
                         instance = True
                     )
+                    test_cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["TestCursor"])
+                    cr_var.eval.test_cursor = weakref.ref(test_cursor_sym)
                     cursor_sym.arch_dependents.add(cr_var)
                     cr_var.doc = ""
                 envModel.add_symbol(cr_var)
@@ -62,3 +73,16 @@ class PythonArchBuilderOdooHooks:
                     attr_var.endLine = envModel.endLine
                 attr_var.doc = "whether in superuser mode"
                 envModel.add_symbol(attr_var)
+        elif symbol.name == "TransactionCase": #fast, basic check
+            if symbol.get_tree() == (["odoo", "tests", "common"], ["TransactionCase"]): #slower but more precise verification
+                # ---------- env ----------
+                envModel = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
+                env_var = symbol.get_symbol([], ["env"]) #should already exists
+                if env_var and envModel:
+                    env_var.eval = Evaluation(
+                        symbol=weakref.ref(envModel),
+                        instance = True
+                    )
+                    env_var.eval.test_mode = True # used to define the Cursor type
+                    envModel.arch_dependents.add(env_var)
+                    env_var.doc = ""
