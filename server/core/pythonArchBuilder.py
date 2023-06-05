@@ -15,9 +15,9 @@ from lsprotocol.types import (Diagnostic,Position, Range)
 
 
 class PythonArchBuilder(ast.NodeVisitor):
-    """The python arch builder aims to build symbols from files and directories. Only structural diagnostics
-    can be thrown from here (invalid base class, etc...). Any validation diagnostics should be done byafter with
-    the PythonValidator"""
+    """The python arch builder is responsible to extract any symbol in a file or a directory and try to evaluate them.
+    Of course the evaluation won't work for odoo stuff at this stage.
+    There is no validation done at this step. It will only build a tree of symbols"""
 
     def __init__(self, ls, parentSymbol, contentOrPath):
         """Prepare an arch builder to parse an element.

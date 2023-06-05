@@ -62,7 +62,7 @@ class Evaluation():
         return res
     
     def _evaluateAST(self, node, parentSymbol):
-        """evaluateAST returns for an AST node an a parent Symbol the symbol and if it is an instance or not.
+        """evaluateAST returns for an AST node and a parent Symbol the symbol and if it is an instance or not.
         symbol is always a weakref"""
         symbol = None
         instance = True

@@ -24,6 +24,7 @@ class PythonArchBuilderOdooHooks:
                         symbol=weakref.ref(envModel),
                         instance = True
                     )
+                    envModel.arch_dependents.add(env_var)
                     env_var.doc = ""
                 symbol.add_symbol(env_var)
                 # ---------- env.cr ----------
@@ -37,6 +38,7 @@ class PythonArchBuilderOdooHooks:
                         symbol=weakref.ref(cursor_sym),
                         instance = True
                     )
+                    cursor_sym.arch_dependents.add(cr_var)
                     cr_var.doc = ""
                 envModel.add_symbol(cr_var)
                 # ---------- env.uid ----------
