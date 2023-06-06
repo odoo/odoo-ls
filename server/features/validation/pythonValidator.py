@@ -340,6 +340,8 @@ class PythonValidator(ast.NodeVisitor):
                     if _inherit_decl:
                         node = _inherit_decl.ast_node()
                     for inherit in symbol.modelData.inherit:
+                        if inherit == "base":
+                            continue
                         model = Odoo.get().models.get(inherit)
                         if not model:
                             self.diagnostics.append(Diagnostic(

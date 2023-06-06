@@ -1,5 +1,6 @@
 from server.constants import *
 from server.core.odoo import Odoo
+from server.core.model import Model
 
 class ParsoUtils:
 
@@ -58,14 +59,15 @@ class ParsoUtils:
                 else:
                     infer = scope_symbol.inferName(node.value, node.line)
                     if not infer:
-                        return None
+                        return None, context
                     obj, _ = infer.follow_ref()
                     if obj.type == SymType.VARIABLE:
-                        return None
+                        return None, context
             else:
                 if node.type == "operator" and node.value == "." and len(node_list) > node_iter+1:
                     next_element = node_list[node_iter+1]
-                    if obj.isModel() and next_element.value == "env" \
+                    #if obj.isModel() and next_element.value == "env" \
+                    if next_element.value == "env" \
                         and len(node_list) > node_iter + 4 \
                         and node_list[node_iter+2].type == "operator" \
                         and node_list[node_iter+2].value == "[" \
@@ -74,9 +76,10 @@ class ParsoUtils:
                         node_iter += 4
                     else:
                         module = scope_symbol.get_module()
-                        obj = obj.follow_ref(context)[0]
+                        if not isinstance(obj, Model):
+                            obj = obj.follow_ref(context)[0]
                         obj = obj.get_class_symbol(next_element.value, module)
                     if not obj:
-                        return None
+                        return None, context
             node_iter += 1
         return obj, context

@@ -298,7 +298,7 @@ class Symbol():
             return self.symbols[name]
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
-            sym = model.get_symbols(self.get_module_sym())
+            sym = model.get_symbols(self.get_module())
             for s in sym:
                 r = s.get_class_symbol(name, True)
                 if r:

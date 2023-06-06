@@ -50,7 +50,7 @@ class Model():
         for symbol in self.impl_sym:
             module = symbol.get_module()
             if from_module:
-                if module and from_module.is_in_deps(module.name):
+                if module and module.is_in_deps(from_module.dir_name):
                     symbols.append(symbol)
             else:
                 symbols.append(symbol)

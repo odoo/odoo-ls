@@ -1,6 +1,7 @@
 from server.features.parsoUtils import ParsoUtils
 from server.core.model import Model
 from server.core.odoo import Odoo
+from server.constants import *
 from lsprotocol.types import (Hover, MarkupContent, MarkupKind, Range, Position)
 
 class HoverFeature:
@@ -41,10 +42,12 @@ class HoverFeature:
         type = str(symbol.type).lower()
         class_doc = type_ref[0].doc and type_ref[0].doc.eval.value if type_ref[1] else ""
         value = "(" + type + ") **" + symbol.name + "**" + infered_type
+        if symbol.type == SymType.FUNCTION and symbol.ast_node():
+            value += "(" + ", ".join(arg.arg for arg in symbol.ast_node().args.args) + ")"
         if symbol.doc:
-            value += "  \n-  \n**" + symbol.name + "**:" + symbol.doc.eval.value
+            value += "  \n-  \n**" + symbol.name + "** : " + symbol.doc.eval.value
         if infered_type:
-            value += "  \n-  \n**" + infered_type[2:] + "**: " + class_doc
+            value += "  \n-  \n**" + infered_type[2:] + "** : " + class_doc
         content = MarkupContent(
             kind=MarkupKind.Markdown,
             value=value

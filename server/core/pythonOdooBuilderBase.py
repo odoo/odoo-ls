@@ -53,7 +53,6 @@ class PythonOdooBuilder(ast.NodeVisitor):
     def _load(self):
         for symbol in self.symStack[0].get_ordered_symbols():
             if symbol.type == SymType.CLASS:
-                symbol.modelData = ModelData()
                 if self._is_model(symbol):
                     self._load_class_inherit(symbol)
                     self._load_class_name(symbol)
@@ -91,13 +90,16 @@ class PythonOdooBuilder(ast.NodeVisitor):
         if not symbol.classData:
             print("class has no classData, something is broken")
             return
-        baseModel = Odoo.get().get_symbol(["odoo", "models"], ["BaseModel"])
+        baseModel = Odoo.get().get_symbol(["odoo", "models"], ["Model"])
         # _register is always set to True at each inheritance, so no need to check for parent classes
-        _register = symbol.get_symbol([], ["_register"])
-        if _register and _register.eval:
-            value = _register.eval.getSymbol().follow_ref()[0]
-            if value.type == SymType.PRIMITIVE:
-                symbol.modelData.register = value.eval.value
-                if value.eval.value == False:
-                    return False
-        return symbol.classData.inherits(baseModel)
+        if symbol.classData.inherits(baseModel) and symbol != baseModel:
+            symbol.modelData = ModelData()
+            _register = symbol.get_symbol([], ["_register"])
+            if _register and _register.eval:
+                value = _register.eval.getSymbol().follow_ref()[0]
+                if value.type == SymType.PRIMITIVE:
+                    symbol.modelData.register = value.eval.value
+                    if value.eval.value == False:
+                        return False
+            return True
+        return False
