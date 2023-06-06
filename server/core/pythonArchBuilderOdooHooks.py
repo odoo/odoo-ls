@@ -11,6 +11,11 @@ class EvaluationTestCursor(Evaluation):
             return self.test_cursor
         return symbol
 
+class EvaluationEnvGetItem(Evaluation):
+
+    def _get_symbol_hook(self, symbol, context):
+        return super()._get_symbol_hook(symbol, context)
+
 class PythonArchBuilderOdooHooks:
 
     @staticmethod
@@ -86,3 +91,7 @@ class PythonArchBuilderOdooHooks:
                     env_var.eval.context["test_mode"] = True # used to define the Cursor type
                     envModel.arch_dependents.add(env_var)
                     env_var.doc = ""
+        elif symbol.name == "Environment":
+            if symbol.get_tree() == (["odoo", "api"], ["Environment"]):
+                get_item = symbol.get_symbol([], ["__getitem__"])
+                get_item.eval = EvaluationEnvGetItem()

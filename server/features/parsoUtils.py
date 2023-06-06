@@ -67,6 +67,7 @@ class ParsoUtils:
                 if node.type == "operator" and node.value == "." and len(node_list) > node_iter+1:
                     next_element = node_list[node_iter+1]
                     #if obj.isModel() and next_element.value == "env" \
+                    # TODO change to get_item
                     if next_element.value == "env" \
                         and len(node_list) > node_iter + 4 \
                         and node_list[node_iter+2].type == "operator" \
