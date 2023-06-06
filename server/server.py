@@ -93,8 +93,8 @@ def hover(ls, params: TextDocumentPositionParams):
     with Odoo.get().acquire_read():
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
-            symbol, range = HoverFeature.getSymbol(file_symbol, content, params.position.line + 1, params.position.character + 1)
-        return HoverFeature.get_Hover(symbol, range)
+            symbol, range, context = HoverFeature.getSymbol(file_symbol, content, params.position.line + 1, params.position.character + 1)
+        return HoverFeature.get_Hover(symbol, range, context)
 
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(params: TextDocumentPositionParams):

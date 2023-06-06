@@ -5,9 +5,9 @@ from server.core.evaluation import Evaluation
 
 class EvaluationTestCursor(Evaluation):
 
-    def _get_symbol_hook(self, symbol, context_sym):
+    def _get_symbol_hook(self, symbol, context):
         """To be overriden for specific contextual evaluations"""
-        if context_sym and context_sym.eval and hasattr(context_sym.eval, "test_mode") and context_sym.eval.test_mode:
+        if context and context.get("test_mode", False):
             return self.test_cursor
         return symbol
 
@@ -32,7 +32,7 @@ class PythonArchBuilderOdooHooks:
                         symbol=weakref.ref(envModel),
                         instance = True
                     )
-                    env_var.eval.test_mode = False # used to define the Cursor type
+                    env_var.eval.context["test_mode"] = False # used to define the Cursor type
                     envModel.arch_dependents.add(env_var)
                     env_var.doc = ""
                 symbol.add_symbol(env_var)
@@ -83,6 +83,6 @@ class PythonArchBuilderOdooHooks:
                         symbol=weakref.ref(envModel),
                         instance = True
                     )
-                    env_var.eval.test_mode = True # used to define the Cursor type
+                    env_var.eval.context["test_mode"] = True # used to define the Cursor type
                     envModel.arch_dependents.add(env_var)
                     env_var.doc = ""

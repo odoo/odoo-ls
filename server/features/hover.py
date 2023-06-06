@@ -18,7 +18,7 @@ class HoverFeature:
         )
         expr = ParsoUtils.get_previous_leafs_expr(element)
         expr.append(element)
-        evaluation = ParsoUtils.evaluateType(expr, scope_symbol)
+        evaluation, context = ParsoUtils.evaluateType(expr, scope_symbol)
         if isinstance(evaluation, Model):
             module = fileSymbol.get_module()
             if not module:
@@ -28,13 +28,13 @@ class HoverFeature:
                 evaluation = evaluation[0]
             else:
                 return None
-        return evaluation, range
+        return evaluation, range, context
 
     @staticmethod
-    def get_Hover(symbol, range):
+    def get_Hover(symbol, range, context):
         if not symbol:
             return Hover(None)
-        type_ref = symbol.follow_ref()
+        type_ref = symbol.follow_ref(context)
         infered_type = ""
         if type_ref[1]:
             infered_type = ": " + type_ref[0].name

@@ -49,6 +49,7 @@ class ParsoUtils:
         If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
         obj = None #symbol or model
         node_iter = 0
+        context = {}
         while node_iter != len(node_list):
             node = node_list[node_iter]
             if not obj:
@@ -73,9 +74,9 @@ class ParsoUtils:
                         node_iter += 4
                     else:
                         module = scope_symbol.get_module()
-                        obj = obj.follow_ref()[0]
+                        obj = obj.follow_ref(context)[0]
                         obj = obj.get_class_symbol(next_element.value, module)
                     if not obj:
                         return None
             node_iter += 1
-        return obj
+        return obj, context

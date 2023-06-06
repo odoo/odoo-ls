@@ -107,13 +107,15 @@ class Symbol():
         for s in self.moduleSymbols.values():
             yield s
 
-    def follow_ref(self):
+    def follow_ref(self, context=None):
         #follow the reference to the real symbol and returns it (not a weakref)
         sym = self
         instance = self.type in [SymType.VARIABLE]
-        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_wr(sym):
+        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_wr(context):
             instance = sym.eval.instance
-            sym = sym.eval.getSymbol(sym)
+            if sym.eval.context:
+                context.update(sym.eval.context)
+            sym = sym.eval.getSymbol(context)
         return sym, instance
 
     def is_file_content(self):

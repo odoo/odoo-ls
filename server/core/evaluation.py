@@ -32,6 +32,7 @@ class Evaluation():
         of 'symbol' (a function, class or file)."""
         self.symbol = symbol #always use getSymbol to get symbol
         self.instance = instance
+        self.context = {} #evaluation context
         self.value = value #for primitives
         self._symbol = None #to hold ref for local symbols
 
@@ -43,16 +44,16 @@ class Evaluation():
             self.instance = True
         return self
     
-    def get_symbol_wr(self, context_sym=None):
-        return self._get_symbol_hook(self.symbol, context_sym)
+    def get_symbol_wr(self, context = None):
+        return self._get_symbol_hook(self.symbol, context)
     
-    def getSymbol(self, context_sym=None):
+    def getSymbol(self, context = None):
         """ context_sym is a symbol that is used to defined the evaluation. Usually the symbol that hold the evaluation"""
-        if not self.get_symbol_wr(context_sym) or not self.get_symbol_wr(context_sym)():
+        if not self.get_symbol_wr(context) or not self.get_symbol_wr(context)():
             return None
-        return self.get_symbol_wr(context_sym)()
+        return self.get_symbol_wr(context)()
 
-    def _get_symbol_hook(self, symbol, context_sym):
+    def _get_symbol_hook(self, symbol, context):
         """To be overriden for specific contextual evaluations"""
         return symbol
     
@@ -107,9 +108,9 @@ class Evaluation():
                 call_func = base.symbols.get("__call__", None)
                 if not call_func or not call_func.eval:
                     return (None, False)
-                return call_func.eval.get_symbol_wr(call_func), call_func.eval.instance
+                return call_func.eval.get_symbol_wr(), call_func.eval.instance
             elif base.type == SymType.FUNCTION and base.eval:
-                return base.eval.get_symbol_wr(base), base.eval.instance
+                return base.eval.get_symbol_wr(), base.eval.instance
             #TODO other types are errors?
         elif isinstance(node, ast.Attribute):
             v, instance = self._evaluateAST(node.value, parentSymbol)
