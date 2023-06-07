@@ -64,23 +64,28 @@ class ParsoUtils:
                     if obj.type == SymType.VARIABLE:
                         return None, context
             else:
-                if node.type == "operator" and node.value == "." and len(node_list) > node_iter+1:
-                    next_element = node_list[node_iter+1]
-                    #if obj.isModel() and next_element.value == "env" \
-                    # TODO change to get_item
-                    if next_element.value == "env" \
-                        and len(node_list) > node_iter + 4 \
-                        and node_list[node_iter+2].type == "operator" \
-                        and node_list[node_iter+2].value == "[" \
-                        and node_list[node_iter+3].type == "string":
-                        obj = Odoo.get().models[node_list[node_iter+3].value.replace("'", "").replace('"', '')]
-                        node_iter += 4
-                    else:
-                        module = scope_symbol.get_module()
-                        if not isinstance(obj, Model):
-                            obj = obj.follow_ref(context)[0]
-                        obj = obj.get_class_symbol(next_element.value, module)
-                    if not obj:
-                        return None, context
+                if node.type == "operator":
+                    if node.value == "." and len(node_list) > node_iter+1:
+                        next_element = node_list[node_iter+1]
+                        #if obj.isModel() and next_element.value == "env" \
+                        # TODO change to get_item
+                        if next_element.value == "env" \
+                            and len(node_list) > node_iter + 4 \
+                            and node_list[node_iter+2].type == "operator" \
+                            and node_list[node_iter+2].value == "[" \
+                            and node_list[node_iter+3].type == "string":
+                            obj = Odoo.get().models[node_list[node_iter+3].value.replace("'", "").replace('"', '')]
+                            node_iter += 4
+                        else:
+                            module = scope_symbol.get_module()
+                            if not isinstance(obj, Model):
+                                obj = obj.follow_ref(context)[0]
+                            obj = obj.get_class_symbol(next_element.value, module)
+                        if not obj:
+                            return None, context
+                    elif node.value == "[" and len(node_list) > node_iter+1:
+                        inner_part = []
+                        
+                        pass
             node_iter += 1
         return obj, context

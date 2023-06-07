@@ -16,6 +16,7 @@ class EvaluationEnvGetItem(Evaluation):
     def _get_symbol_hook(self, symbol, context):
         return super()._get_symbol_hook(symbol, context)
 
+
 class PythonArchBuilderOdooHooks:
 
     @staticmethod
