@@ -59,6 +59,8 @@ class ParsoUtils:
                 else:
                     infer = scope_symbol.inferName(node.value, node.line)
                     if not infer:
+                        if node.type == "string":
+                            return node.value[1:-1], context
                         return None, context
                     obj, _ = infer.follow_ref()
                     if obj.type == SymType.VARIABLE:
@@ -66,26 +68,31 @@ class ParsoUtils:
             else:
                 if node.type == "operator":
                     if node.value == "." and len(node_list) > node_iter+1:
-                        next_element = node_list[node_iter+1]
-                        #if obj.isModel() and next_element.value == "env" \
-                        # TODO change to get_item
-                        if next_element.value == "env" \
-                            and len(node_list) > node_iter + 4 \
-                            and node_list[node_iter+2].type == "operator" \
-                            and node_list[node_iter+2].value == "[" \
-                            and node_list[node_iter+3].type == "string":
-                            obj = Odoo.get().models[node_list[node_iter+3].value.replace("'", "").replace('"', '')]
-                            node_iter += 4
-                        else:
-                            module = scope_symbol.get_module()
-                            if not isinstance(obj, Model):
-                                obj = obj.follow_ref(context)[0]
-                            obj = obj.get_class_symbol(next_element.value, module)
+                        node_iter += 1
+                        next_element = node_list[node_iter]
+                        module = scope_symbol.get_module()
+                        if not isinstance(obj, Model):
+                            obj = obj.follow_ref(context)[0]
+                        obj = obj.get_class_symbol(next_element.value, module)
                         if not obj:
                             return None, context
                     elif node.value == "[" and len(node_list) > node_iter+1:
                         inner_part = []
-                        
-                        pass
+                        node_iter += 1
+                        while node_iter < len(node_list) and (node_list[node_iter].value != "]" or node_list[node_iter].parent != node.parent):
+                            inner_part.append(node_list[node_iter])
+                            node_iter += 1
+                        if node_iter >= len(node_list) or node_list[node_iter].value != "]" or node_list[node_iter].parent != node.parent:
+                            return None, context
+                        content = ParsoUtils.evaluateType(inner_part, scope_symbol)[0]
+                        module = scope_symbol.get_module()
+                        if not isinstance(obj, Model):
+                            obj = obj.follow_ref(context)[0]
+                        get_item_sym = obj.get_class_symbol("__getitem__", module)
+                        if not get_item_sym:
+                            return None, context
+                        get_item_sym = get_item_sym.follow_ref(context)[0]
+                        context.update({"args": content, "module": module})
+                        obj = get_item_sym.eval.getSymbol(context)
             node_iter += 1
         return obj, context

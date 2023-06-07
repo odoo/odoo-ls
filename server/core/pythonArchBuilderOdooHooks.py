@@ -14,7 +14,13 @@ class EvaluationTestCursor(Evaluation):
 class EvaluationEnvGetItem(Evaluation):
 
     def _get_symbol_hook(self, symbol, context):
-        return super()._get_symbol_hook(symbol, context)
+        from server.core.odoo import Odoo
+        model = Odoo.get().models.get(context["args"], None)
+        if model:
+            main_sym = model.get_main_symbols(context["module"])
+            if main_sym:
+                return weakref.ref(main_sym[0])
+        return None
 
 
 class PythonArchBuilderOdooHooks:
