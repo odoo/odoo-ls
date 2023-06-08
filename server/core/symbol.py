@@ -83,6 +83,7 @@ class Symbol():
         self.startLine = 0
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
+        #self.enhanced = False
         self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
         self.not_found_paths = []
@@ -290,6 +291,13 @@ class Symbol():
             return None
         return Odoo.get().modules.get(s.name, None)
 
+    def get_eval(self):
+        if self.type == SymType.FUNCTION:
+            if not self.enhanced:
+                from server.core.pythonLocalArchBuilder import PythonLocalArchBuilder
+                PythonLocalArchBuilder(self).enhance()
+        return self.eval
+
     def get_class_symbol(self, name, prevent_comodel = False):
         """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
         search on bases or on comodels for odoo models"""
@@ -356,8 +364,10 @@ class Symbol():
         #TODO search in localSymbols too
         symbol = self
         for s in self.symbols.values():
-            if s.startLine <= line and s.endLine >= line:
+            if s.startLine <= line and s.endLine >= line and s.type in [SymType.CLASS, SymType.FUNCTION]:
                 symbol = s.get_scope_symbol(line)
+                break
+            elif s.startLine > line:
                 break
         return symbol
     
@@ -380,8 +390,10 @@ class Symbol():
         selected = False
         if name == "__doc__":
             return self.doc
+        if name == "self":
+            return self.get_in_parents([SymType.CLASS])
         for symbol in self.all_symbols(local=True):
-            if symbol.name == name and symbol.startLine < line and (not selected or symbol.startLine > selected.startLine):
+            if symbol.name == name and symbol.startLine <= line and (not selected or symbol.startLine > selected.startLine):
                 selected = symbol
         if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:
             return self.parent.inferName(name, line)

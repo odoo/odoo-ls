@@ -40,6 +40,8 @@ class ParsoUtils:
                     break
             if previous.type == 'newline':
                 break
+            if previous.type == "keyword":
+                break
             leafs.insert(0, previous)
             previous = previous.get_previous_leaf()
         return leafs
@@ -54,17 +56,14 @@ class ParsoUtils:
         while node_iter != len(node_list):
             node = node_list[node_iter]
             if not obj:
-                if node.type == "name" and node.value == "self":
-                    obj = scope_symbol.get_in_parents([SymType.CLASS]) #should be able to take it in func param, no?
-                else:
-                    infer = scope_symbol.inferName(node.value, node.line)
-                    if not infer:
-                        if node.type == "string":
-                            return node.value[1:-1], context
-                        return None, context
-                    obj, _ = infer.follow_ref()
-                    if obj.type == SymType.VARIABLE:
-                        return None, context
+                infer = scope_symbol.inferName(node.value, node.line)
+                if not infer:
+                    if node.type == "string":
+                        return node.value[1:-1], context
+                    return None, context
+                obj, _ = infer.follow_ref()
+                if obj.type == SymType.VARIABLE:
+                    return None, context
             else:
                 if node.type == "operator":
                     if node.value == "." and len(node_list) > node_iter+1:

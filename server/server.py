@@ -166,7 +166,12 @@ def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
-    pass
+    from server.core.pythonLocalArchBuilder import PythonLocalArchBuilder
+    with Odoo.get().acquire_write():
+        path = get_path_file(params.text_document.uri)
+        file_symbol = Odoo.get().get_file_symbol(path)
+        PythonLocalArchBuilder(file_symbol).enhance(file_symbol)
+
 
 @odoo_server.thread()
 @odoo_server.feature("Odoo/clientReady")

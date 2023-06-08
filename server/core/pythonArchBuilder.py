@@ -1,4 +1,4 @@
-from _ast import AnnAssign
+from _ast import AnnAssign, For
 import ast
 import glob
 import os
@@ -170,7 +170,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.safeImport.pop()
     
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
-        assigns = self.unpack_assign(node.target, node.value, {})
+        assigns = PythonUtils.unpack_assign(node.target, node.value, {})
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable = Symbol(variable_name, SymType.VARIABLE, self.filePath)
@@ -181,7 +181,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.symStack[-1].add_symbol(variable)
 
     def visit_Assign(self, node):
-        assigns = self.unpack_assign(node.targets, node.value, {})
+        assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable = Symbol(variable_name, SymType.VARIABLE, self.filePath)
@@ -216,9 +216,9 @@ class PythonArchBuilder(ast.NodeVisitor):
             symbol.doc.eval.value = doc
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
-        #self.symStack.append(symbol)
-        #ast.NodeVisitor.generic_visit(self, node)
-        #self.symStack.pop()
+        self.symStack.append(symbol)
+        ast.NodeVisitor.generic_visit(self, node)
+        self.symStack.pop()
     
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
@@ -270,38 +270,21 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack.pop()
         PythonArchBuilderOdooHooks.on_class_declaration(symbol)
 
-
-    def unpack_assign(self, node_targets, node_values, acc = {}):
-        """ Unpack assignement to extract variables and values.
-            This method will return a dictionnary that hold each variables and the set value (still in ast node)
-            example: variable = variable2 = "test" (2 targets, 1 value)
-            ast.Assign => {"variable": ast.Node("test"), "variable2": ast.Node("test")}
-         """
-        if isinstance(node_targets, ast.Attribute) or isinstance(node_targets, ast.Subscript):
-            return acc
-        if isinstance(node_targets, ast.Name):
-            acc[node_targets.id] = node_values
-            return acc
-        if isinstance(node_targets, ast.Tuple) and not isinstance(node_values, ast.Tuple):
-            #we can't unpack (a,b) = c as we can't unpack c here
-            return acc
-        for target in node_targets:
-            if isinstance(target, ast.Name):
-                acc[target.id] = node_values
-            elif isinstance(target, ast.Tuple) and isinstance(node_values, ast.Tuple):
-                if len(target.elts) != len(node_values.elts):
-                    print("ERROR: unable to unpack assignement")
-                    return acc
-                else:
-                    #TODO handle a,b = b,a
-                    for nt, nv in zip(target.elts, node_values.elts):
-                        self.unpack_assign(nt, nv, acc)
-            elif isinstance(target, ast.Tuple):
-                for elt in target.elts:
-                    #We only want local variables
-                    if isinstance(elt, ast.Name):
-                        pass #TODO to infer this, we should be able to follow right values (func for example) and unsplit it
-            else:
-                pass
-                # print("ERROR: unpack_assign not implemented for " + str(node_targets) + " and " + str(node_values))
-        return acc
+    def visit_For(self, node):
+        if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE, SymType.FUNCTION]:
+            if isinstance(node.target, ast.Name): #do not handle tuples for now
+                variable = Symbol(node.target.id, SymType.VARIABLE, self.filePath)
+                variable.startLine = node.lineno
+                variable.endLine = node.end_lineno
+                variable.ast_node = weakref.ref(node)
+                if isinstance(node.iter, ast.Name):
+                    variable.eval = Evaluation().evalAST(node.iter, self.symStack[-1])
+                    if variable.eval.getSymbol() and variable.eval.getSymbol().type == SymType.CLASS:
+                        iter = variable.eval.getSymbol().get_class_symbol("__iter__")
+                        if iter:
+                            variable.eval = iter.eval.get_symbol({"self": variable.eval})
+                            iter.dependents.add(variable)
+                        else:
+                            variable.eval = None
+                self.symStack[-1].add_symbol(variable)
+        ast.NodeVisitor.generic_visit(self, node)

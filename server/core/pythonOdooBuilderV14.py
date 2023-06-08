@@ -50,7 +50,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
 
     def _load_class_inherits(self, symbol):
         _inherits = symbol.get_class_symbol("_inherits", prevent_comodel=True)
-        if _inherits:
+        if _inherits and _inherits.eval.getSymbol():
             inherit_value, instance = _inherits.eval.getSymbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
                 inherit_names = inherit_value.eval.value
