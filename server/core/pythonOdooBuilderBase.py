@@ -90,9 +90,10 @@ class PythonOdooBuilder(ast.NodeVisitor):
         if not symbol.classData:
             print("class has no classData, something is broken")
             return
-        baseModel = Odoo.get().get_symbol(["odoo", "models"], ["Model"])
+        baseModel = Odoo.get().get_symbol(["odoo", "models"], ["BaseModel"])
+        model = Odoo.get().get_symbol(["odoo", "models"], ["Model"])
         # _register is always set to True at each inheritance, so no need to check for parent classes
-        if symbol.classData.inherits(baseModel) and symbol != baseModel:
+        if symbol.classData.inherits(baseModel) and symbol != model:
             symbol.modelData = ModelData()
             _register = symbol.get_symbol([], ["_register"])
             if _register and _register.eval:
