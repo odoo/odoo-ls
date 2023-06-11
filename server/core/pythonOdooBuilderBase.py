@@ -92,8 +92,9 @@ class PythonOdooBuilder(ast.NodeVisitor):
             return
         baseModel = Odoo.get().get_symbol(["odoo", "models"], ["BaseModel"])
         model = Odoo.get().get_symbol(["odoo", "models"], ["Model"])
+        transient = Odoo.get().get_symbol(["odoo", "models"], ["TransientModel"])
         # _register is always set to True at each inheritance, so no need to check for parent classes
-        if symbol.classData.inherits(baseModel) and symbol not in [baseModel, model]:
+        if symbol.classData.inherits(baseModel) and symbol not in [baseModel, model, transient]:
             symbol.modelData = ModelData()
             _register = symbol.get_symbol([], ["_register"])
             if _register and _register.eval:

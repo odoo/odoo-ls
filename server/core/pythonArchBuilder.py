@@ -205,6 +205,12 @@ class PythonArchBuilder(ast.NodeVisitor):
                             self.__all__symbols_to_add.append(var)
 
     def visit_FunctionDef(self, node):
+        #test if static:
+        is_static = False
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "staticmethod":
+                is_static = True
+                break
         symbol = Symbol(node.name, SymType.FUNCTION, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
@@ -214,6 +220,17 @@ class PythonArchBuilder(ast.NodeVisitor):
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
             symbol.doc.eval = Evaluation()
             symbol.doc.eval.value = doc
+        if not is_static and node.args:
+            class_sym = self.symStack[-1]
+            if class_sym and class_sym.type == SymType.CLASS and node.args.args:
+                self_name = node.args.args[0].arg
+                self_sym = Symbol(self_name, SymType.VARIABLE, self.filePath)
+                self_sym.startLine = node.lineno
+                self_sym.endLine = node.end_lineno
+                self_sym.ast_node = weakref.ref(node)
+                self_sym.eval = Evaluation()
+                self_sym.eval.symbol = weakref.ref(class_sym)
+                symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
         self.symStack.append(symbol)
@@ -278,11 +295,12 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
                 if isinstance(node.iter, ast.Name):
-                    variable.eval = Evaluation().evalAST(node.iter, self.symStack[-1])
-                    if variable.eval.getSymbol() and variable.eval.getSymbol().type == SymType.CLASS:
-                        iter = variable.eval.getSymbol().get_class_symbol("__iter__")
-                        if iter:
-                            variable.eval = iter.eval.get_symbol({"self": variable.eval})
+                    eval_iter_node = Evaluation().evalAST(node.iter, self.symStack[-1])
+                    if eval_iter_node.getSymbol() and eval_iter_node.getSymbol().type == SymType.CLASS:
+                        iter = eval_iter_node.getSymbol().get_class_symbol("__iter__")
+                        if iter and iter.eval:
+                            variable.eval = Evaluation()
+                            variable.eval.symbol = iter.eval.get_symbol_wr({"self": eval_iter_node.getSymbol()})
                             iter.dependents.add(variable)
                         else:
                             variable.eval = None

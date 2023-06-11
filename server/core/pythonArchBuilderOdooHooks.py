@@ -22,6 +22,14 @@ class EvaluationEnvGetItem(Evaluation):
                 return weakref.ref(main_sym[0])
         return None
 
+class EvaluationModelIter(Evaluation):
+
+    def _get_symbol_hook(self, symbol, context):
+        from server.core.odoo import Odoo
+        class_sym = context.get("self", None)
+        if not class_sym:
+            return None
+        return weakref.ref(class_sym)
 
 class PythonArchBuilderOdooHooks:
 
@@ -31,6 +39,8 @@ class PythonArchBuilderOdooHooks:
         from server.core.odoo import Odoo
         if symbol.name == "BaseModel": #fast, basic check
             if symbol.get_tree() == (["odoo", "models"], ["BaseModel"]): #slower but more precise verification
+                iter = symbol.get_symbol([], ["__iter__"])
+                iter.eval = EvaluationModelIter()
                 # ---------- env ----------
                 envModel = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
                 env_var = Symbol("env", SymType.VARIABLE, symbol.paths)
