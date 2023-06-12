@@ -1,0 +1,3 @@
+[submodule "server/typeshed"]
+	path = server/typeshed
+	url = https://github.com/python/typeshed

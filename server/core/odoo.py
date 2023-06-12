@@ -2,6 +2,7 @@ import ast
 import asyncio
 import os
 import parso
+import pathlib
 import re
 import sys
 import traceback
@@ -89,6 +90,9 @@ class Odoo():
                 Odoo.instance = Odoo()
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
+                    #add stubs first to avoid taking modules from sys.path
+                    Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs"))
+                    Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     for path in sys.path:
                         if os.path.isdir(path):
                             Odoo.instance.symbols.paths.append(path)
@@ -236,7 +240,7 @@ class Odoo():
                 return #could emit syntax error in file_info["d_synt"]
             with Odoo.get(ls).acquire_write(ls):
                 #1 unload
-                if path.endswith("__init__.py"):
+                if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
                     path = os.sep.join(path.split(os.sep)[:-1])
                 file_symbol = self.get_file_symbol(path)
                 parent = file_symbol.parent
@@ -278,7 +282,7 @@ class Odoo():
                 if set_to_validate:
                     #if there is something that is trying to import the new file, build it.
                     #Else, don't add it to the architecture to not add useless symbols (and overrides)
-                    if new_path.endswith("__init__.py"):
+                    if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi"):
                         new_path = os.sep.join(new_path.split(os.sep)[:-1])
                     pp = PythonArchBuilder(ls, parent_symbol, new_path)
                     del file_symbol

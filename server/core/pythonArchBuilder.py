@@ -33,7 +33,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             parent_file = parentSymbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
             self.filePath = parent_file.paths[0]
             if parent_file.type == SymType.PACKAGE:
-                self.filePath = os.path.join(self.filePath, "__init__.py")
+                self.filePath = os.path.join(self.filePath, "__init__.py" + parent_file.i_ext)
             self.ast_node = contentOrPath
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
@@ -56,16 +56,20 @@ class PythonArchBuilder(ast.NodeVisitor):
             if existing_symbol:
                 return existing_symbol
             self.diagnostics = []
-            if not self.filePath.endswith(".py"):
+            if not self.filePath.endswith(".py") and not self.filePath.endswith(".pyi"):
                 #check if this is a package:
-                if os.path.exists(os.path.join(self.filePath, "__init__.py")):
+                if os.path.exists(os.path.join(self.filePath, "__init__.py")) or os.path.exists(os.path.join(self.filePath, "__init__.pyi")):
                     symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
                     if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
                         os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
                         symbol.isModule = True
                     self.symStack[-1].add_symbol(symbol)
                     self.symStack.append(symbol)
-                    self.filePath = os.path.join(self.filePath, "__init__.py")
+                    if os.path.exists(os.path.join(self.filePath, "__init__.py")):
+                        self.filePath = os.path.join(self.filePath, "__init__.py")
+                    else:
+                        self.filePath = os.path.join(self.filePath, "__init__.pyi")
+                        symbol.i_ext = "i"
                 else:
                     symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.NAMESPACE, self.filePath)
                     self.symStack[-1].add_symbol(symbol)
@@ -233,6 +237,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
+        if self.symStack[-1].is_external():
+            return
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()

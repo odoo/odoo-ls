@@ -32,7 +32,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
         if self.symStack[0].type in [SymType.NAMESPACE]:
             return
         elif self.symStack[0].type == SymType.PACKAGE:
-            self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py")
+            self.filePath = os.path.join(self.symStack[0].paths[0], "__init__.py" + self.symStack[0].i_ext)
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].odooStatus = 1

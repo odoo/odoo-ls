@@ -59,7 +59,7 @@ class AutoCompleteFeature:
             file_symbol = Odoo.get().get_file_symbol(path)
             module = file_symbol.get_module()
             scope_symbol = file_symbol.get_scope_symbol(line)
-            symbol_ancestors = ParsoUtils.evaluateType(expr, scope_symbol)
+            symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)
             if symbol_ancestors:
                 return CompletionList(
                     is_incomplete=False,

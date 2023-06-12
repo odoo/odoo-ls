@@ -97,6 +97,9 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
         elif os.path.isfile(full_path + ".py"):
             parser = PythonArchBuilder(ls, parent_symbol, full_path + ".py")
             return parser.load_arch()
+        elif os.path.isfile(full_path + ".pyi"):
+            parser = PythonArchBuilder(ls, parent_symbol, full_path + ".pyi")
+            return parser.load_arch()
         elif parent_symbol.get_tree()[0] != []: #don't try to glob on root and direct subpackages
             if os.name == "nt":
                 paths = glob.glob(full_path + r".*.pyd")

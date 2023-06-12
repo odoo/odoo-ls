@@ -56,13 +56,14 @@ class Symbol():
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "symbols", "moduleSymbols",
         "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
-        "not_found_paths", "doc", "__weakref__")
+        "not_found_paths", "i_ext", "doc", "__weakref__")
 
     def __init__(self, name, type, paths):
         self.name = name
         self.type: SymType = type
         self.eval = None
         self.paths = paths if isinstance(paths, list) else [paths]
+        self.i_ext = "" # indicates if i should be added at the end of the path (for __init__.pyi for example)
         self.ast_node = None
         #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
         #symbols contains classes, functions, variables (all file content)
@@ -271,12 +272,6 @@ class Symbol():
                 else:
                     return None
         return current_symbol
-
-        #last chance, if we are in a file, we can return any declared var
-        if self.type not in ["root", "namespace"]:
-            inference = self.inferName(symbol_names[0], 99999999)
-            if inference and inference.symbol:
-                return inference.symbol
 
     def get_module_sym(self):
         s = self
