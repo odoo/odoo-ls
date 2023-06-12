@@ -292,10 +292,6 @@ class Symbol():
         return Odoo.get().modules.get(s.name, None)
 
     def get_eval(self):
-        if self.type == SymType.FUNCTION:
-            if not self.enhanced:
-                from server.core.pythonLocalArchBuilder import PythonLocalArchBuilder
-                PythonLocalArchBuilder(self).enhance()
         return self.eval
 
     def get_class_symbol(self, name, prevent_comodel = False):
