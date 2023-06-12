@@ -197,8 +197,24 @@ export function activate(context: ExtensionContext): void {
         const userConfigAffected = event.affectsConfiguration("Odoo.userDefinedConfigurations");
         if (selectedConfigAffected || userConfigAffected) setStatusConfig(odooStatusBar);
     })
+    
+    context.subscriptions.push(
+        commands.registerCommand("odoo.openWelcomeView", () => {
+            WelcomeWebView.render(context);
+        })
+    );
 
-    WelcomeWebView.render(context.extensionUri);
+    switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
+        case null:
+            context.globalState.update('Odoo.displayWelcomeView', false);
+            WelcomeWebView.render(context);
+            break;
+        case true:
+            WelcomeWebView.render(context);
+            break;
+    }
+    
+
     const config = getCurrentConfig();
     if (config) {
         console.log(config);

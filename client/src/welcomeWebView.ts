@@ -1,69 +1,47 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 import { getUri } from "./getUri";
 import * as vscode from 'vscode';
-import { cp } from "fs";
-/**
- * This class manages the state and behavior of WelcomeWebView webview panels.
- *
- * It contains all the data and methods for:
- *
- * - Creating and rendering WelcomeWebView webview panels
- * - Properly cleaning up and disposing of webview resources when the panel is closed
- * - Setting the HTML (and by proxy CSS/JavaScript) content of the webview panel
- * - Setting message listeners so data can be passed between the webview and extension
- */
+
+
 export class WelcomeWebView {
     public static currentPanel: WelcomeWebView | undefined;
     private readonly _panel: WebviewPanel;
+    private readonly _context: vscode.ExtensionContext;
     private _disposables: Disposable[] = [];
 
-    /**
-     * The WelcomeWebView class private constructor (called only from the render method).
-     *
-     * @param panel A reference to the webview panel
-     * @param extensionUri The URI of the directory containing the extension
-     */
-    private constructor(panel: WebviewPanel, extensionUri: Uri) {
+    private constructor(panel: WebviewPanel, context: vscode.ExtensionContext) {
         this._panel = panel;
 
-
+        this._context = context;
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
         this._panel.onDidDispose(this.dispose, null, this._disposables);
 
         // Set the HTML content for the webview panel
-        this._panel.webview.html = this._getWebviewContent(this._panel.webview, extensionUri);
+        this._panel.webview.html = this._getWebviewContent(this._panel.webview, this._context.extensionUri);
+
+        this._setWebviewMessageListener(this._panel.webview, this._context);
     }
 
     /**
      * Renders the current webview panel if it exists otherwise a new webview panel
      * will be created and displayed.
-     *
-     * @param extensionUri The URI of the directory containing the extension.
      */
-    public static render(extensionUri: Uri) {
+    public static render(context: vscode.ExtensionContext) {
         if (WelcomeWebView.currentPanel) {
-            // If the webview panel already exists reveal it
             WelcomeWebView.currentPanel._panel.reveal(ViewColumn.One);
-            //update view
-            WelcomeWebView.currentPanel._panel.webview.html = WelcomeWebView.currentPanel._getWebviewContent(WelcomeWebView.currentPanel._panel.webview, extensionUri);
+            WelcomeWebView.currentPanel._panel.webview.html = WelcomeWebView.currentPanel._getWebviewContent(WelcomeWebView.currentPanel._panel.webview, context.extensionUri);
         } else {
-            // If a webview panel does not already exist create and show a new one
             const panel = window.createWebviewPanel(
-                // Panel view type
                 "showWelcomePanel",
-                // Panel title
                 "Welcome to Odoo",
-                // The editor column the panel should be displayed in
                 ViewColumn.One,
-                // Extra panel configurations
                 {
-                    // Enable JavaScript in the webview
                     enableScripts: true,
                 }
             );
-            panel.iconPath = vscode.Uri.joinPath(extensionUri, "images", "odoo_favicon");
-            WelcomeWebView.currentPanel = new WelcomeWebView(panel, extensionUri);
+            panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "images", "odoo_favicon");
+            WelcomeWebView.currentPanel = new WelcomeWebView(panel, context);
         }
     }
 
@@ -72,11 +50,8 @@ export class WelcomeWebView {
      */
     public dispose() {
         WelcomeWebView.currentPanel = undefined;
-
-        // Dispose of the current webview panel
         this._panel.dispose();
 
-        // Dispose of all disposables (i.e. commands) for the current webview panel
         while (this._disposables.length) {
             const disposable = this._disposables.pop();
             if (disposable) {
@@ -87,14 +62,6 @@ export class WelcomeWebView {
 
     /**
      * Defines and returns the HTML that should be rendered within the webview panel.
-     *
-     * @remarks This is also the place where references to CSS and JavaScript files/packages
-     * (such as the Webview UI Toolkit) are created and inserted into the webview HTML.
-     *
-     * @param webview A reference to the extension webview
-     * @param extensionUri The URI of the directory containing the extension
-     * @returns A template string literal containing the HTML that should be
-     * rendered within the webview panel
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
         const toolkitUri = getUri(webview, extensionUri, [
@@ -104,10 +71,11 @@ export class WelcomeWebView {
             "dist",
             "toolkit.js",
         ]);
-        const styleUri = getUri(webview, extensionUri, ["client", "webview-ui", "style.css"]);
-        const mainUri = getUri(webview, extensionUri, ["client", "webview-ui"]);
 
-        // Tip: Install the es6-string-html VS Code extension to enable code highlighting below
+        const styleUri = getUri(webview, extensionUri, ["client", "webview-ui", "style.css"]);
+        const mainUri = getUri(webview, extensionUri, ["client", "webview-ui", "welcomeWebView.js"]);
+        const defaultState = this._context.globalState.get('Odoo.displayWelcomeView', null);
+
         return /*html*/ `
             <!DOCTYPE html>
             <html lang="en">
@@ -119,17 +87,36 @@ export class WelcomeWebView {
                     <link rel="stylesheet" href="${styleUri}">
                 </head>
                 <body id="welcome-body">
-                <div id='welcome-container'>
-                    <a href = "https://odoo.com">
-                        <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" id="welcome-logo" />
-                    </a>
-                    <h1>Welcome to Odoo Extension</h1>
-                    <section>                        
-                        <h3> More info about how to use extension </h3>
-                    </section>
-                </div>
+                    <div id="welcome-container">
+                        <a href = "https://odoo.com">
+                            <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" id="welcome-logo" />
+                        </a>
+                        <h1>Welcome to Odoo Extension</h1>
+                        <section>                        
+                            <h3> More info about how to use extension </h3>
+                        </section>
+                        <div class="display-welcome-checkbox">
+                            <vscode-checkbox id="displayOdooWelcomeOnStart" ${defaultState ? 'checked': ''}>Show Odoo welcome page on startup</vscode-checkbox>
+                        </div>
+                    </div>
                 </body>
             </html>
         `;
+    }
+
+    private _setWebviewMessageListener(webview: Webview, context: vscode.ExtensionContext) {
+        webview.onDidReceiveMessage(
+        (message: any) => {
+            const command = message.command;
+            const toggled = message.toggled;
+            switch (command) {
+            case "changeWelcomeDisplayValue":
+                context.globalState.update('Odoo.displayWelcomeView', toggled);
+                return;
+            }
+        },
+        undefined,
+        this._disposables
+        );
     }
 }
