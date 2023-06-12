@@ -123,13 +123,12 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
 
         for node_alias, symbol, _ in symbols:
-            if not symbol:
-                continue
             if node_alias.name != '*':
                 variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, SymType.VARIABLE, self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
-                variable.eval = Evaluation().eval_import(symbol)
+                if symbol:
+                    variable.eval = Evaluation().eval_import(symbol)
                 variable.ast_node = weakref.ref(node)
                 if hasattr(node, "linked_symbols"):
                     node.linked_symbols.add(variable)
@@ -137,17 +136,19 @@ class PythonArchBuilder(ast.NodeVisitor):
                     node.linked_symbols = weakref.WeakSet([variable])
                 self.symStack[-1].add_symbol(variable)
             else:
+                if not symbol:
+                    continue
                 allowed_names = True
                 #in case of *, the symbol is the parent_symbol from which we will import all symbols
                 if "__all__" in symbol.symbols:
                     all_sym = symbol.symbols["__all__"]
                     # follow ref if the current __all__ is imported
                     all_primitive_sym, _ = all_sym.follow_ref()
-                    if not all_primitive_sym or not all_primitive_sym.name == "list" or not all_primitive_sym.eval.value:
+                    if not all_primitive_sym or not all_primitive_sym.name in ["list", "tuple"] or not all_primitive_sym.eval.value:
                         print("debug= wrong __all__")
                         allowed_sym = True
                     else:
-                        allowed_names = all_primitive_sym.eval.value
+                        allowed_names = list(all_primitive_sym.eval.value)
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
                         variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])

@@ -53,6 +53,8 @@ class Odoo():
 
     import_odoo_addons = True #can be set to False for speed up tests
 
+    stubs_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs")
+
     def __init__(self):
         pass
 
@@ -90,12 +92,12 @@ class Odoo():
                 Odoo.instance = Odoo()
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
-                    #add stubs first to avoid taking modules from sys.path
-                    Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs"))
-                    Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     for path in sys.path:
                         if os.path.isdir(path):
                             Odoo.instance.symbols.paths.append(path)
+                    # add stubs for not installed packages
+                    Odoo.instance.symbols.paths.append(Odoo.stubs_dir)
+                    Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
@@ -166,7 +168,9 @@ class Odoo():
                 continue #TODO cyclic dependency
             already_rebuilt.add(tree)
             parent = symbol.parent
-            ast_node = symbol.ast_node()
+            ast_node = None
+            if symbol.ast_node:
+                ast_node = symbol.ast_node()
             #WRONG, the context of the stacktrace will prevent ANY deletion, and making it buggy
             symbol.unload(symbol)
             del symbol
@@ -236,6 +240,7 @@ class Odoo():
         if path.endswith(".py"):
             print("reload triggered on " + path + " version " + str(version))
             file_info = FileMgr.getFileInfo(path, text, version)
+            FileMgr.publish_diagnostics(ls, file_info)
             if not file_info["ast"]:
                 return #could emit syntax error in file_info["d_synt"]
             with Odoo.get(ls).acquire_write(ls):

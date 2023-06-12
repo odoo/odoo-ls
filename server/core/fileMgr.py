@@ -61,6 +61,7 @@ class FileMgr():
                     content = f.read()
                 #tree = self.grammar.parse(content, error_recovery=False, path=self.filePath, cache = False)
                 tree = ast.parse(content, path)
+            fileInfo["d_synt"] = []
         except SyntaxError as e:
             diag = [Diagnostic(
                 range = Range(
@@ -71,6 +72,10 @@ class FileMgr():
                 message = type(e).__name__ + ": " + e.msg,
                 source = EXTENSION_NAME
             )]
+            #if syntax is invalid, we have to drop all other diagnostics
+            fileInfo["d_arch"] = []
+            fileInfo["d_odoo"] = []
+            fileInfo["d_val"] = []
             fileInfo["d_synt"] = diag
             return False
         except ValueError as e:

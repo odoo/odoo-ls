@@ -85,8 +85,10 @@ class Evaluation():
             self._symbol.eval = Evaluation()
             self._symbol.eval.value = self._extract_literal_dict(node)
             symbol = weakref.ref(self._symbol)
-        elif isinstance(node, ast.List):
+        elif isinstance(node, ast.List) or isinstance(node, ast.Tuple):
             self._symbol = Symbol("list", SymType.PRIMITIVE, "")
+            if isinstance(node, ast.Tuple):
+                self._symbol.name = "tuple"
             res = []
             for n in node.elts:
                 if not isinstance(n, ast.Constant):
