@@ -4,6 +4,8 @@ import sys
 import weakref
 from ..constants import *
 
+import base64
+
 class ModelData():
 
     def __init__(self):

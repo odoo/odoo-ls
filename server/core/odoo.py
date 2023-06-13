@@ -203,7 +203,7 @@ class Odoo():
             dirs = os.listdir(path)
             for dir in dirs:
                 Module(ls, os.path.join(path, dir))
-        if FULL_LOAD_AT_STARTUP:
+        if not DEBUG_BUILD_ONLY_BASE:
             for module in Odoo.get().modules.values():
                 module.load_arch(ls)
             print("start odoo loading")

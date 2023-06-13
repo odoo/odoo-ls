@@ -56,13 +56,10 @@ class ParsoUtils:
         while node_iter != len(node_list):
             node = node_list[node_iter]
             if not obj:
-                infer = scope_symbol.inferName(node.value, node.line)
-                if not infer:
+                obj = scope_symbol.inferName(node.value, node.line)
+                if not obj:
                     if node.type == "string":
                         return node.value[1:-1], context
-                    return None, context
-                obj, _ = infer.follow_ref()
-                if obj.type == SymType.VARIABLE:
                     return None, context
             else:
                 if node.type == "operator":
@@ -72,6 +69,8 @@ class ParsoUtils:
                         module = scope_symbol.get_module()
                         if not isinstance(obj, Model):
                             obj = obj.follow_ref(context)[0]
+                            if obj.type == SymType.VARIABLE:
+                                return None, context
                         obj = obj.get_class_symbol(next_element.value, module)
                         if not obj:
                             return None, context
@@ -87,6 +86,8 @@ class ParsoUtils:
                         module = scope_symbol.get_module()
                         if not isinstance(obj, Model):
                             obj = obj.follow_ref(context)[0]
+                            if obj.type == SymType.VARIABLE:
+                                return None, context
                         get_item_sym = obj.get_class_symbol("__getitem__", module)
                         if not get_item_sym:
                             return None, context
