@@ -41,6 +41,8 @@ class HoverFeature:
         if type_ref[0] != symbol:
             infered_type = ": [" + type_ref[0].name + "](" + FileMgr.pathname2uri(type_ref[0].paths[0]) + "#" + str(type_ref[0].startLine) + ")"
         type = str(symbol.type).lower()
+        if symbol.type == SymType.VARIABLE and not type_ref[1]:
+            type = type_ref[0].type
         class_doc = type_ref[0].doc and type_ref[0].doc.eval.value if type_ref[1] else ""
         value = "(" + type + ") **" + symbol.name + "**" + infered_type #Add a link to declaration
         if symbol.type == SymType.FUNCTION and symbol.ast_node():
