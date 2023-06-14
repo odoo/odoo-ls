@@ -64,7 +64,10 @@ class Odoo():
             ls.send_notification('Odoo/loadingStatusUpdate', 'start')
             print("Odoo/loading: start")
             self.thread_access_condition.wait_empty()
+            context = threading.local()
+            context.lock_type = "write"
             yield
+            context.lock_type = "none"
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
             print("Odoo/loading: stop")
 
@@ -72,9 +75,21 @@ class Odoo():
     def acquire_read(self):
         with self.write_lock:
             self.thread_access_condition.acquire()
+        context = threading.local()
+        context.lock_type = "read"
         yield
         self.thread_access_condition.release()
+        context.lock_type = "none"
 
+    @contextmanager
+    def upgrade_to_write(self):
+        if threading.local().lock_type != "read":
+            raise Exception("Can't upgrade to write from a non read lock")
+        self.thread_access_condition.release()
+        with self.acquire_write():
+            yield
+        with self.write_lock:
+            self.thread_access_condition.acquire()
 
     @staticmethod
     def get(ls = None):
