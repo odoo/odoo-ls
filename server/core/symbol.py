@@ -292,8 +292,8 @@ class Symbol():
         return self.eval
 
     def get_class_symbol(self, name, prevent_comodel = False):
-        """Only on type=='class'. Try to find a symbol with the right 'name'. If not present in the symbol, will
-        search on bases or on comodels for odoo models"""
+        """similar to get_symbol: will return the symbol that is under this one with the specified name.
+        However, if the symbol is a class or a model, it will search in the base class or in comodel classes"""
         from .odoo import Odoo
         if name in self.symbols:
             return self.symbols[name]
@@ -304,10 +304,11 @@ class Symbol():
                 r = s.get_class_symbol(name, True)
                 if r:
                     return r
-        for base in self.classData.bases:
-            s = base.get_class_symbol(name, prevent_comodel=prevent_comodel)
-            if s:
-                return s
+        if self.classData:
+            for base in self.classData.bases:
+                s = base.get_class_symbol(name, prevent_comodel=prevent_comodel)
+                if s:
+                    return s
         return None
     
     def is_inheriting_from(self, class_tree):
