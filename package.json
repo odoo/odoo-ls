@@ -21,15 +21,23 @@
       {
         "command": "odoo.addConfiguration",
         "title": "Add Configuration",
+        "category": "Odoo",
         "icon": "$(add)"
       },
       {
         "command": "odoo.openConfiguration",
-        "title": "Open configuration"
+        "title": "Open configuration",
+        "category": "Odoo"
       },
       {
         "command": "odoo.clickStatusBar",
-        "title": "Status Bar Click"
+        "title": "Change Configuration",
+        "category": "Odoo"
+      },
+      {
+        "command": "odoo.openWelcomeView",
+        "title": "Open the Welcome page",
+        "category": "Odoo"
       }
     ],
     "viewsContainers": {
