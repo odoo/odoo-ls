@@ -93,7 +93,9 @@ def hover(ls, params: TextDocumentPositionParams):
     with Odoo.get().acquire_read():
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
-            symbol, range, context = HoverFeature.getSymbol(file_symbol, content, params.position.line + 1, params.position.character + 1)
+            #Force the parsoTree to be loaded by giving file content and opened==True
+            parsoTree = FileMgr.getFileInfo(file_symbol.paths[0], content, opened=True)["parsoTree"]
+            symbol, range, context = HoverFeature.getSymbol(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
             return HoverFeature.get_Hover(symbol, range, context)
     return None
 
@@ -162,12 +164,16 @@ def did_rename_files(ls, params):
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
     """Text document did close notification."""
-    pass
+    path = get_path_file(params.text_document.uri)
+    FileMgr.removeParsoTree(path)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
-    pass
+    text_doc = ls.workspace.get_document(params.text_document.uri)
+    content = text_doc.source
+    path = get_path_file(params.text_document.uri)
+    FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
 
 @odoo_server.thread()

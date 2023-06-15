@@ -29,6 +29,7 @@ class FileMgr():
                 "ast": None,
                 "version": version,
                 "uri": FileMgr.pathname2uri(path),
+                "parsoTree": None, #parso tree is set only for opened documents
                 "d_synt": [],
                 "d_arch": [],
                 "d_odoo": [],
@@ -36,21 +37,39 @@ class FileMgr():
             }
     
     @staticmethod
-    def getFileInfo(path, content=False, version=1):
+    def getFileInfo(path, content=False, version=1, opened=False):
         f = FileMgr.files.get(path, None)
         if not f:
             f = FileMgr._getDefaultDict(path, version)
             f["ast"] = FileMgr._buildAST(path, f, content)
             FileMgr.files[path] = f
-        elif content and f["version"] < version:
-            f["ast"] = FileMgr._buildAST(path, f, content)
+        elif content:
+            if f["version"] < version:
+                f["ast"] = FileMgr._buildAST(path, f, content)
+                if opened:
+                    f["parsoTree"] = FileMgr._buildParsoTree(path, f, content)
+            elif opened and not f["parsoTree"]:
+                f["parsoTree"] = FileMgr._buildParsoTree(path, f, content)
             f["version"] = version
         return f
+    
+    @staticmethod
+    def removeParsoTree(path):
+        f = FileMgr.files.get(path, None)
+        if f:
+            print("remove parsoTree")
+            f["parsoTree"] = None
 
     @staticmethod
     def publish_diagnostics(ls, file):
         ls.publish_diagnostics(file["uri"], file["d_synt"] + file["d_arch"] + file["d_odoo"] + file["d_val"])
     
+    @staticmethod
+    def _buildParsoTree(path, fileInfo, content):
+        from server.core.odoo import Odoo
+        print("build parsoTree for " + path)
+        return Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
+
     @staticmethod
     def _buildAST(path, fileInfo, content):
         try:
