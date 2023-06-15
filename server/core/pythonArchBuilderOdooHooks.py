@@ -100,7 +100,7 @@ class PythonArchBuilderOdooHooks:
                 context_var.doc = "the current context dictionary (arbitrary metadata)"
                 envModel.add_symbol(context_var)
                 # ---------- env.su ----------
-                attr_var = Symbol("context", SymType.VARIABLE, envModel.paths)
+                attr_var = Symbol("su", SymType.VARIABLE, envModel.paths)
                 if envModel:
                     attr_var.startLine = envModel.startLine
                     attr_var.endLine = envModel.endLine
