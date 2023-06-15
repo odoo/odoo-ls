@@ -20,7 +20,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                 if isinstance(inherit_names, str):
                     symbol.modelData.inherit = [inherit_names]
                 elif isinstance(inherit_names, list):
-                    symbol.modelData.inherit = inherit_names
+                    symbol.modelData.inherit = inherit_names[:]
                 else:
                     print("wrong inherit")
             else:
