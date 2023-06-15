@@ -92,6 +92,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 Odoo.get().to_init_odoo.add(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
+        if self.filePath.endswith("__init__.py"):
+            PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
         FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         return self.symStack[-1]

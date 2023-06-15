@@ -33,6 +33,17 @@ class EvaluationModelIter(Evaluation):
 
 class PythonArchBuilderOdooHooks:
 
+    def on_module_declaration(symbol):
+        if symbol.name == "logging":
+            if symbol.get_tree() == (["logging"], []):
+                get_logger = symbol.get_symbol([], ["getLogger"])
+                logger = symbol.get_symbol([], ["Logger"])
+                if get_logger and logger:
+                    get_logger.eval = Evaluation(
+                        symbol=weakref.ref(logger),
+                        instance = True
+                    )
+
     @staticmethod
     def on_class_declaration(symbol):
         """ called when ArchBuilder create a new class Symbol """
