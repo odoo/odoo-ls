@@ -295,6 +295,52 @@ def test_rename():
     assert constants_data_file == None #the file is not imported, so should not be available
     server.workspace.get_document.reset_mock()
 
+def test_rename_inherit():
+    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+    assert model
+    assert model.classData
+    assert model.classData.bases
+    file_uri = os.path.join(ODOO_COMMUNITY_PATH, 'odoo', 'models.py')
+    source = ""
+    with open(file_uri, 'r') as f:
+        source = f.read()
+    assert source
+    source.replace("class Model", "class Model2")
+    
+    server.workspace.get_document = Mock(return_value=Document(
+        uri=file_uri,
+        source=source
+    ))
+    params = DidChangeTextDocumentParams(
+        text_document = VersionedTextDocumentIdentifier(
+            version = 2,
+            uri=file_uri
+        ),
+        content_changes = []
+    )
+    _did_change_after_delay(server, params, 0) #call deferred func
+    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+    assert model
+    assert model.classData
+    assert not model.classData.bases
+    source.replace("class Model2", "class Model")
+    
+    server.workspace.get_document = Mock(return_value=Document(
+        uri=file_uri,
+        source=source
+    ))
+    params = DidChangeTextDocumentParams(
+        text_document = VersionedTextDocumentIdentifier(
+            version = 2,
+            uri=file_uri
+        ),
+        content_changes = []
+    )
+    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+    assert model
+    assert model.classData
+    assert model.classData.bases
+
 def test_missing_symbol_resolve():
     #TODO write test
     pass

@@ -272,7 +272,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         break
                     iter_element, _ = iter_element.follow_ref()
                 if not found:
-                    continue #TODO generate error?
+                    continue #TODO generate error? add to unresolved
                 if iter_element.type != SymType.CLASS:
                     continue #TODO generate error?
                 symbol.classData.bases.add(iter_element)
