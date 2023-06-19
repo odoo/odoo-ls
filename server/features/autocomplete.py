@@ -61,6 +61,7 @@ class AutoCompleteFeature:
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)
             if symbol_ancestors:
+                symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
                 return CompletionList(
                     is_incomplete=False,
                     items=[CompletionItem(
@@ -74,11 +75,11 @@ class AutoCompleteFeature:
     @staticmethod
     def _get_symbols_from_obj(obj, module):
         """ For a symbol or model, get all sub symbols"""
-        def_obj = obj.follow_ref()[0] 
-        if isinstance(def_obj, Symbol):
+        if isinstance(obj, Symbol):
+            def_obj = obj.follow_ref()[0] 
             return def_obj.all_symbols(local = False)
         else:
-            return def_obj.get_attributes(module)
+            return obj.get_attributes(module)
 
     @staticmethod
     def _getCompletionItemKind(symbol):

@@ -291,6 +291,12 @@ class Symbol():
     def get_eval(self):
         return self.eval
 
+    def get_model(self):
+        if self.isModel():
+            from .odoo import Odoo
+            return Odoo.get().models[self.modelData.name]
+        return None
+
     def get_class_symbol(self, name, prevent_comodel = False):
         """similar to get_symbol: will return the symbol that is under this one with the specified name.
         However, if the symbol is a class or a model, it will search in the base class or in comodel classes"""

@@ -254,7 +254,7 @@ class Odoo():
         #snapshot1 = tracemalloc.take_snapshot()
         if path.endswith(".py"):
             print("reload triggered on " + path + " version " + str(version))
-            file_info = FileMgr.getFileInfo(path, text, version)
+            file_info = FileMgr.getFileInfo(path, text, version, opened=True)
             FileMgr.publish_diagnostics(ls, file_info)
             if not file_info["ast"]:
                 return #could emit syntax error in file_info["d_synt"]
