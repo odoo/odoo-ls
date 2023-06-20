@@ -12,12 +12,13 @@ Un symbole peut donc être de plusieurs types:
 - VARIABLE: une variable
 - FUNCTION: une fonction
 - PRIMITIVE: une évaluation d'un type primitif
+
 Les symboles entre eux forment un graphe, de la manière suivante:
-Un symbole a un et un seul parent.
-Un symbole a trois listes d'enfants:
-- les `symbols`: la liste des sous-symboles exposés provenant d'un fichier python
-- les `modulesSymbols`: la liste des sous-symbols provenant de la structure des fichiers sur le disque
-- les `localSymbols`: les candidats à la liste 'symbols' qui se sont fait rejetés car écrasés par un autre du même nom, conservés pour une évaluation locale potentielle
+  - Un symbole a un et un seul parent.
+  - Un symbole a trois listes d'enfants:
+    - les `symbols`: la liste des sous-symboles exposés provenant d'un fichier python
+    - les `modulesSymbols`: la liste des sous-symbols provenant de la structure des fichiers sur le disque
+    - les `localSymbols`: les candidats à la liste 'symbols' qui se sont fait rejetés car écrasés par un autre du même nom, conservés pour une évaluation locale potentielle
 
 Exemple:
 
