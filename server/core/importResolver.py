@@ -8,6 +8,7 @@ from .symbol import Symbol
 
 __all__ = ["resolve_import_stmt"]
 
+
 def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_aliases, level, 
                     lineno, end_lineno):
     """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist, 
@@ -33,12 +34,14 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
             continue
         #now we can search for the last symbol, or create it if it doesn't exist
         last_part_name = name.split(".")[-1]
-        name_symbol = next_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
+        name_symbol = next_symbol.get_symbol([last_part_name], excl=parent_symbol) #find the last part of the name
         if not name_symbol:
             name_symbol = _resolve_new_symbol(ls, source_file_symbol, next_symbol, last_part_name, None, 
                                             lineno, end_lineno)
         if not name_symbol:
-            continue
+            name_symbol = next_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
+            if not name_symbol:
+                continue
         #we found it ! store the result
         res[name_index][1] = name_symbol
     return res
@@ -64,7 +67,7 @@ def _resolve_packages(file_symbol, level, from_stmt):
 def _get_or_create_symbol(ls, symbol, names, file_symbol, asname, lineno, end_lineno):
     """try to return sub symbol that is a file or package, or create the symbol"""
     for branch in names:
-        next_symbol = symbol.get_symbol([branch])
+        next_symbol = symbol.get_symbol([branch], excl=file_symbol)
         if not next_symbol:
             next_symbol = _resolve_new_symbol(ls, file_symbol, symbol, branch, asname, 
                                                 lineno, end_lineno)

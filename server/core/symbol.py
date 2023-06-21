@@ -55,7 +55,7 @@ class Symbol():
     to get more information
     """
 
-    __slots__ = ("name", "type", "eval", "paths", "ast_node", "symbols", "moduleSymbols",
+    __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
         "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc", "__weakref__")
@@ -67,6 +67,7 @@ class Symbol():
         self.paths = paths if isinstance(paths, list) else [paths]
         self.i_ext = "" # indicates if i should be added at the end of the path (for __init__.pyi for example)
         self.ast_node = None
+        self.value = None #ref to ast node that can be used to evalute the symbol
         #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
         #symbols contains classes, functions, variables (all file content)
         self.symbols = {}
@@ -247,7 +248,7 @@ class Symbol():
         the file, but a true import return the test.py file. BUT, as foo.py should be impossible to import,
         it should be not available in the tree, and so the directory is taken
         """
-        #This function of voluntarily non recursive
+        #This function is voluntarily non recursive
         if isinstance(symbol_tree_files, str) or isinstance(symbol_tree_content, str):
             raise Exception("get_symbol can only be used with list")
         current_symbol = self

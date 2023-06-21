@@ -147,14 +147,14 @@ class PythonUtils():
         if isinstance(node_targets, ast.Attribute) or isinstance(node_targets, ast.Subscript):
             return acc
         if isinstance(node_targets, ast.Name):
-            acc[node_targets.id] = node_values
+            acc[node_targets] = node_values
             return acc
         if isinstance(node_targets, ast.Tuple) and not isinstance(node_values, ast.Tuple):
             #we can't unpack (a,b) = c as we can't unpack c here
             return acc
         for target in node_targets:
             if isinstance(target, ast.Name):
-                acc[target.id] = node_values
+                acc[target] = node_values
             elif isinstance(target, ast.Tuple) and isinstance(node_values, ast.Tuple):
                 if len(target.elts) != len(node_values.elts):
                     print("ERROR: unable to unpack assignement")

@@ -158,7 +158,7 @@ représente le fichier, tandis que
 (["addons", "module"], ["file"])
 ```
 représente la variable.
-En effet, la première liste prend en priorité les symboles représentant la structure sur le disque (`moduleSymbols`), et en second les éléments contenus dans un fichier (`symbols`), tandis que la deuxième liste ne prend que les éléments de `symbols`.
+En effet, la première liste représente la structure sur le disque (`moduleSymbols`), et la seconde les éléments contenus dans un fichier (`symbols`), avec en fallback les symbols du disque (`moduleSymbols`).
 Toutefois, sans ambiguïté dans l'arbre, le chemin complet peut se mettre dans la première liste.
 
 
@@ -194,18 +194,21 @@ Demander un accès en écriture revient à rendre le plugin monothread pour la d
 
 L'arbre de symbol doit bien entendu être construit et maintenu à jour. Ce processus est fait de la manière suivante:
 
-- A) construire l'architecture (+Evaluation)
-- B) Initialiser les objets Odoo
-- C) répéter A et B pour base, puis les modules
-- C) Valider le code
+- A) construire l'architecture 
+- B) Evaluation de l'architecture
+- C) Initialiser les objets Odoo
+- D) répéter A et B pour base, puis les modules
+- E) Valider le code
 
-### Construire l'architecture + Evaluation
+### Construire l'architecture
 
 Cette étape prépare l'arbre de base en construisant tous les symboles détectés dans les fichiers. Cette partie charge tous les fichiers python en suivant les différents imports (+ les dossiers `tests` dans les modules) et construit l'arbre correspondant.
 
 *Note: Les librairies externes sont aussi parsées si trouvées. Si pas, le code cherche un stubs existant dans le repo `typeshed` embarqué. Toutefois, afin de réduire la mémoire utilisée, l'arbre est figé une fois parsé, aucun changement ne peut y être apporté par la suite et les caches sont figés. (TODO: généraliser à tout dossier hors workspace)*
 
-Cette partie contient aussi l'évaluation des symboles. Si possible, le code va essayer d'évaluer et associer la valeur trouvée au symbole.
+### Evaluation de l'architecture
+
+Cette partie contient l'évaluation des symboles. Si possible, le code va essayer d'évaluer et associer la valeur trouvée au symbole.
 Cette évaluation concerne toutes les variables à la racine d'un fichier ou d'une classe uniquement. Les symboles sous une fonction ne sont pas évalués à cette étape, car ils ont souvent besoin d'avoir la structure Odoo de construite. Néanmoins, si une doc existe pour la fonction, la valeur de retour peut déjà être évaluée (TODO ?)
 
 ### Initialiser les objets Odoo

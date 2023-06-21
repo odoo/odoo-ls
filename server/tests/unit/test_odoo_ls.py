@@ -66,7 +66,7 @@ def test_imports():
     constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
     assert "CONSTANT_1" in constants_dir.symbols
     assert "CONSTANT_2" in constants_dir.symbols
-    assert not "CONSTANT_3" in constants_dir.symbols
+    assert not "CONSTANT_3" in constants_dir.symbols, "CONSTANT_3 should not be loaded, as __all__ variable should prevent import in constants.py"
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
     assert search_in_local(constants_data_dir, "CONSTANT_2")

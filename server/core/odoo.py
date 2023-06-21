@@ -40,9 +40,10 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", SymType.ROOT, [])
 
-    to_rebuild = [] # list of symbols (ref) to rebuild at arch level. see add_to_arch_rebuild
-    to_init_odoo = weakref.WeakSet() # Set of symbols that need a refresh of Odoo data
-    to_validate = weakref.WeakSet() # Set of symbols that need to be revalidated
+    rebuild_arch = weakref.WeakSet()
+    rebuild_arch_eval = weakref.WeakSet()
+    rebuild_odoo = weakref.WeakSet()
+    rebuild_validation = weakref.WeakSet()
 
     not_found_symbols = weakref.WeakSet() # Set of symbols that still have unresolved dependencies
 
@@ -152,8 +153,7 @@ class Odoo():
             self.symbols.paths += [self.odooPath]
             parser = PythonArchBuilder(ls, self.symbols, os.path.join(self.odooPath, "odoo"))
             parser.load_arch()
-            self.process_odoo_init(ls)
-            self.process_validations(ls)
+            self.process_rebuilds(ls)
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             if Odoo.import_odoo_addons:
                 addonsSymbol.paths += [
@@ -166,50 +166,61 @@ class Odoo():
             print("Odoo not found at " + self.odooPath)
             return False
         return False
-
-    def process_arch_rebuild(self, ls):
+    
+    def process_rebuilds(self, ls):
         from .pythonArchBuilder import PythonArchBuilder
-        print("rebuild " + str(len(self.to_rebuild)))
-        already_rebuilt = set()
-        while self.to_rebuild:
-            symbol_ref = self.to_rebuild.pop()
-            symbol = symbol_ref()
-            if not symbol:
-                continue
-            print("triggering arch rebuild of " + symbol.name + " from " + symbol.paths[0])
-            tree = symbol.get_tree()
-            tree = (tuple(tree[0]), tuple(tree[1])) #make it hashable
-            if tree in already_rebuilt:
-                continue #TODO cyclic dependency
-            already_rebuilt.add(tree)
-            parent = symbol.parent
-            ast_node = None
-            if symbol.ast_node:
-                ast_node = symbol.ast_node()
-            #WRONG, the context of the stacktrace will prevent ANY deletion, and making it buggy
-            symbol.unload(symbol)
-            del symbol
-            #build new
-            if parent and ast_node:
-                pp = PythonArchBuilder(ls, parent, ast_node).load_arch()
-            else:
-                print("Can't rebuild " + str(tree))
-
-    def process_odoo_init(self, ls):
+        from .pythonArchEval import PythonArchEval
         from .pythonOdooBuilder import PythonOdooBuilder
-        print("init " + str(len(self.to_init_odoo)))
-        for symbol in self.to_init_odoo:
-            validation = PythonOdooBuilder(ls, symbol)
-            validation.load_odoo_content()
-        self.to_init_odoo.clear()
-
-    def process_validations(self, ls):
         from server.features.validation.pythonValidator import PythonValidator
-        print("validating " + str(len(self.to_validate)))
-        for symbol in self.to_validate:
-            validation = PythonValidator(ls, symbol)
-            validation.validate()
-        self.to_validate.clear()
+        if DEBUG_REBUILD:
+            print("starting rebuilds")
+        already_arch_rebuilt = set()
+        while True:
+            if self.rebuild_arch:
+                sym = self.rebuild_arch.pop()
+                if not sym:
+                    continue
+                tree = sym.get_tree()
+                tree = (tuple(tree[0]), tuple(tree[1])) #make it hashable
+                if tree in already_arch_rebuilt:
+                    if DEBUG_REBUILD:
+                        print("arch rebuild skipped - already rebuilt")
+                    continue
+                already_arch_rebuilt.add(tree)
+                parent = sym.parent
+                ast_node = None
+                if sym.ast_node:
+                    ast_node = sym.ast_node()
+                sym.unload(sym)
+                del sym
+                #build new
+                if parent and ast_node:
+                    pp = PythonArchBuilder(ls, parent, ast_node).load_arch()
+                elif DEBUG_REBUILD:
+                    print("Can't rebuild " + str(tree))
+                continue
+            elif self.rebuild_arch_eval:
+                sym = self.rebuild_arch_eval.pop()
+                if not sym:
+                    continue
+                evaluator = PythonArchEval(ls, sym)
+                evaluator.eval_arch()
+                continue
+            elif self.rebuild_odoo:
+                sym = self.rebuild_odoo.pop()
+                if not sym:
+                    continue
+                validation = PythonOdooBuilder(ls, sym)
+                validation.load_odoo_content()
+                continue
+            elif self.rebuild_validation:
+                sym = self.rebuild_validation.pop()
+                if not sym:
+                    continue
+                validation = PythonValidator(ls, sym)
+                validation.validate()
+                continue
+            break
 
     def build_modules(self, ls):
         from .module import Module
@@ -221,10 +232,7 @@ class Odoo():
         if not DEBUG_BUILD_ONLY_BASE:
             for module in Odoo.get().modules.values():
                 module.load_arch(ls)
-            print("start odoo loading")
-            self.process_odoo_init(ls)
-            print("start validation")
-            self.process_validations(ls) #Maybe avoid this as the weakset can be quite big?
+            self.process_rebuilds(ls)
 
         try:
             import psutil
@@ -270,9 +278,7 @@ class Odoo():
                 pp = PythonArchBuilder(ls, parent, path)
                 new_symbol = pp.load_arch()
                 #rebuild validations
-                self.process_arch_rebuild(ls)
-                self.process_odoo_init(ls)
-                self.process_validations(ls)
+                self.process_rebuilds(ls)
                 if new_symbol:
                     set_to_validate = self._search_symbols_to_revalidate(new_symbol.get_tree())
                     self.validate_related_files(ls, set_to_validate)
@@ -308,16 +314,19 @@ class Odoo():
                     del file_symbol
                     new_symbol = pp.load_arch()
             #rebuild validations
-            self.process_arch_rebuild(ls)
-            self.process_odoo_init(ls)
-            self.process_validations(ls)
+            self.process_rebuilds(ls)
             if new_symbol:
                 self.validate_related_files(ls, set_to_validate)
 
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            self.to_rebuild.append(weakref.ref(symbol))
+            self.rebuild_arch.add(symbol)
+    
+    def add_to_arch_eval(self, symbol):
+        """ add a symbol to the list of arch rebuild to do."""
+        if symbol:
+            self.rebuild_arch_eval.add(symbol)
 
     def add_to_init_odoo(self, symbol, force=False):
         """ add a symbol to the list of odoo loading to do. if Force, the symbol will be added even if
@@ -330,7 +339,7 @@ class Odoo():
             if force:
                 file.odooStatus = 0
                 file.validationStatus = 0
-            self.to_init_odoo.add(file)
+            self.rebuild_odoo.add(file)
 
     def add_to_validations(self, symbol, force=False):
         """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
@@ -342,7 +351,7 @@ class Odoo():
                 return
             if force:
                 file.validationStatus = 0
-            self.to_validate.add(file)
+            self.rebuild_validation.add(file)
 
     def _search_symbols_to_revalidate(self, tree):
         flat_tree = [item for l in tree for item in l]
