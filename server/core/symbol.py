@@ -43,6 +43,7 @@ class ClassData():
             if base.classData.inherits(symbol):
                 return True
 
+__debug_symbol_tracker__ = weakref.WeakSet()
 
 class Symbol():
     """A symbol is an object representing an element of the code architecture.
@@ -55,8 +56,8 @@ class Symbol():
     to get more information
     """
 
-    __slots__ = ("name", "type", "eval", "paths", "ast_node", "symbols", "moduleSymbols",
-        "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
+    __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
+        "localSymbols",  "arch_dependents", "eval_dependents", "odoo_dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc", "__weakref__")
 
@@ -67,6 +68,7 @@ class Symbol():
         self.paths = paths if isinstance(paths, list) else [paths]
         self.i_ext = "" # indicates if i should be added at the end of the path (for __init__.pyi for example)
         self.ast_node = None
+        self.value = None #ref to ast node that can be used to evalute the symbol
         #symbols and moduleSymbols is a dictionnary of all symbols that is contained by the current symbol
         #symbols contains classes, functions, variables (all file content)
         self.symbols = {}
@@ -76,8 +78,18 @@ class Symbol():
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
         self.localSymbols = [] 
-        self.arch_dependents = weakref.WeakSet()
-        self.dependents = weakref.WeakSet()
+        self.arch_dependents = {
+            BuildSteps.ARCH: weakref.WeakSet(),
+            BuildSteps.ARCH_EVAL: weakref.WeakSet(),
+            BuildSteps.ODOO: weakref.WeakSet(),
+            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is modified at arch level
+        self.eval_dependents = {
+            BuildSteps.ARCH_EVAL: weakref.WeakSet(),
+            BuildSteps.ODOO: weakref.WeakSet(),
+            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is re-evaluated
+        self.odoo_dependents = {
+            BuildSteps.ODOO: weakref.WeakSet(),
+            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -127,10 +139,47 @@ class Symbol():
 
     def get_range(self):
         return (self.startLine, self.endLine)
-    
+
+    @staticmethod
+    def test_deletability(symbol):
+        to_delete = weakref.WeakSet()
+        to_check = [symbol]
+        acc = []
+        while to_check:
+            for s in to_check:
+                for s2 in s.all_symbols(local=True):
+                    acc.append(s2)
+            to_check = acc[:]
+            for s in acc:
+                to_delete.add(s)
+            acc = []
+        print("to delete: " + str(len(to_delete)))
+        for s in to_delete:
+            print("delete: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
+        deletion = [symbol]
+        while deletion:
+            sym = deletion.pop(0)
+            sym.parent.remove_symbol(sym)
+            sym.parent = None
+            for s in sym.all_symbols(local=True):
+                deletion.append(s)
+        deletion = []
+        to_check = []
+        acc = []
+        print("remains: " + str(len(to_delete)))
+        def namestr(obj, namespace):
+            return [name for name in namespace if namespace[name] is obj]
+        for s in to_delete:
+            print("not delete: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
+        print("end test")
+
     @staticmethod
     def unload(symbol): #can't delete because of self? :o
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
+        if symbol.type == SymType.DIRTY:
+            print("trying to unload a dirty symbol, skipping")
+            __debug_symbol_tracker__.add(symbol)
+            return
         to_unload = [symbol]
         while to_unload:
             sym = to_unload[0]
@@ -147,15 +196,18 @@ class Symbol():
             #no more children at this point, start unloading the symbol
             if DEBUG_MEMORY:
                 print("unload " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
+                for s in __debug_symbol_tracker__:
+                    print("REMAIN: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
+                __debug_symbol_tracker__.add(sym)
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
-            ast_node = sym.ast_node and sym.ast_node()
-            if ast_node and hasattr(ast_node, "linked_symbols"):
-                for s in ast_node.linked_symbols:
-                    if s != sym:
-                        to_unload.append(s)
-                ast_node.linked_symbols.clear()
-            sym.invalidate()
+            # ast_node = sym.ast_node and sym.ast_node()
+            # if ast_node and hasattr(ast_node, "linked_symbols"):
+            #     for s in ast_node.linked_symbols:
+            #         if s != sym:
+            #             to_unload.append(s)
+            #     ast_node.linked_symbols.clear()
+            sym.invalidate(BuildSteps.ARCH)
             if DEBUG_MEMORY:
                 print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.localSymbols.clear()
@@ -165,21 +217,56 @@ class Symbol():
             sym.type = SymType.DIRTY
             del sym
     
-    def invalidate(self):
+    def invalidate(self, step):
+        #signal that a change occur to this symbol. "step" indicates which level of change occured.
+        #it can be arch, arch_eval, odoo or validation
         from .odoo import Odoo
-        # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
-        if self.parent:
-            for d in self.parent.arch_dependents:
-                if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_arch_rebuild(d)
+        if step == BuildSteps.ARCH:
+            # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
+            if self.parent:
+                for to_rebuild_level, syms in self.parent.arch_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ARCH:
+                                Odoo.get().add_to_arch_rebuild(sym)
+                            elif to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                Odoo.get().add_to_arch_eval(sym)
+                            elif to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym)
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym)
         symbols = [self]
         while symbols:
-            for d in symbols[0].arch_dependents:
-                if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_arch_rebuild(d)
-            for d in symbols[0].dependents:
-                if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_init_odoo(d, force=True) #As we are unloading, things are changing, we have to force the validation
+            if step == BuildSteps.ARCH:
+                for to_rebuild_level, syms in symbols[0].arch_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ARCH:
+                                Odoo.get().add_to_arch_rebuild(sym)
+                            elif to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                Odoo.get().add_to_arch_eval(sym)
+                            elif to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym, force=True) #As we are unloading, things are changing, we have to force the validation
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym, force=True)
+            if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL]:
+                for to_rebuild_level, syms in symbols[0].eval_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                Odoo.get().add_to_arch_eval(sym)
+                            elif to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym, force=True)
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym, force=True)
+            if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL, BuildSteps.ODOO]:
+                for to_rebuild_level, syms in symbols[0].odoo_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym, force=True)
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym, force=True)
             for s in symbols[0].all_symbols(local=True):
                 symbols.append(s)
             del symbols[0]
@@ -247,7 +334,7 @@ class Symbol():
         the file, but a true import return the test.py file. BUT, as foo.py should be impossible to import,
         it should be not available in the tree, and so the directory is taken
         """
-        #This function of voluntarily non recursive
+        #This function is voluntarily non recursive
         if isinstance(symbol_tree_files, str) or isinstance(symbol_tree_content, str):
             raise Exception("get_symbol can only be used with list")
         current_symbol = self
@@ -339,7 +426,7 @@ class Symbol():
             if symbol.startLine < self.symbols[symbol.name].startLine:
                 self.localSymbols.append(symbol)
             else:
-                self.symbols[symbol.name].invalidate()
+                self.symbols[symbol.name].invalidate(BuildSteps.ARCH)
                 self.localSymbols.append(self.symbols[symbol.name])
                 self.symbols[symbol.name] = symbol
         

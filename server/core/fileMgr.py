@@ -32,6 +32,7 @@ class FileMgr():
                 "parsoTree": None, #parso tree is set only for opened documents
                 "d_synt": [],
                 "d_arch": [],
+                "d_arch_eval": [],
                 "d_odoo": [],
                 "d_val": []
             }
@@ -62,7 +63,7 @@ class FileMgr():
 
     @staticmethod
     def publish_diagnostics(ls, file):
-        ls.publish_diagnostics(file["uri"], file["d_synt"] + file["d_arch"] + file["d_odoo"] + file["d_val"])
+        ls.publish_diagnostics(file["uri"], file["d_synt"] + file["d_arch"] + file["d_arch_eval"] + file["d_odoo"] + file["d_val"])
     
     @staticmethod
     def _buildParsoTree(path, fileInfo, content):
@@ -93,6 +94,7 @@ class FileMgr():
             )]
             #if syntax is invalid, we have to drop all other diagnostics
             fileInfo["d_arch"] = []
+            fileInfo["d_arch_eval"] = []
             fileInfo["d_odoo"] = []
             fileInfo["d_val"] = []
             fileInfo["d_synt"] = diag

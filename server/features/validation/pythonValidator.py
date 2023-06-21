@@ -117,12 +117,6 @@ class PythonValidator(ast.NodeVisitor):
                         source = EXTENSION_NAME,
                         severity = 2
                     ))
-                if hasattr(node, "linked_symbols"):
-                    for linked_sym in node.linked_symbols:
-                        if name == "*":
-                            symbol.arch_dependents.add(linked_sym)
-                        else:
-                            symbol.dependents.add(linked_sym)
 
     def visit_Assign(self, node):
         return
@@ -294,42 +288,6 @@ class PythonValidator(ast.NodeVisitor):
                 create_symbol("create_uid", "constant", node.lineno)
                 create_symbol("write_date", "constant", node.lineno)
                 create_symbol("write_uid", "constant", node.lineno)
-
-
-    def unpack_assign(self, node_targets, node_values, acc = {}):
-        """ Unpack assignement to extract variables and values.
-            This method will return a dictionnary that hold each variables and the set value (still in ast node)
-            example: variable = variable2 = "test" (2 targets, 1 value)
-            ast.Assign => {"variable": ast.Node("test"), "variable2": ast.Node("test")}
-         """
-        try:
-            if isinstance(node_targets, ast.Attribute) or isinstance(node_targets, ast.Subscript):
-                return acc
-            if isinstance(node_targets, ast.Name):
-                acc[node_targets.id] = node_values
-                return acc
-            for target in node_targets:
-                if isinstance(target, ast.Name):
-                    acc[target.id] = node_values
-                elif isinstance(target, ast.Tuple) and isinstance(node_values, ast.Tuple):
-                    if len(target.elts) != len(node_values.elts):
-                        print("ERROR: unable to unpack assignement")
-                        return acc
-                    else:
-                        for nt, nv in zip(target.elts, node_values.elts):
-                            self.unpack_assign(nt, nv, acc)
-                elif isinstance(target, ast.Tuple):
-                    for elt in target.elts:
-                        #We only want local variables
-                        if isinstance(elt, ast.Name):
-                            pass #TODO to infer this, we should be able to follow right values (func for example) and unsplit it
-                else:
-                    pass
-                    # print("ERROR: unpack_assign not implemented for " + str(node_targets) + " and " + str(node_values))
-            
-        except Exception as e:
-            print("here")
-        return acc
 
     def validate_structure(self):
         for symbol in self.symStack[0].get_ordered_symbols():

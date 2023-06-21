@@ -48,6 +48,7 @@ class PythonArchBuilderOdooHooks:
     def on_class_declaration(symbol):
         """ called when ArchBuilder create a new class Symbol """
         from server.core.odoo import Odoo
+        return
         if symbol.name == "BaseModel": #fast, basic check
             if symbol.get_tree() == (["odoo", "models"], ["BaseModel"]): #slower but more precise verification
                 iter = symbol.get_symbol([], ["__iter__"])

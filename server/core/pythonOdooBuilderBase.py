@@ -45,7 +45,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
             return
         self._load()
         fileInfo["d_odoo"] = self.diagnostics
-        Odoo.get().to_validate.add(self.symStack[0])
+        Odoo.get().add_to_validations(self.symStack[0])
         self.symStack[0].odooStatus = 2
         #never publish diagnostics? if a odooBuilder is involved, a validation should be too, so we can publish them together
         #FileMgr.publish_diagnostics(self.ls, fileInfo)

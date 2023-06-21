@@ -17,10 +17,12 @@ CONFIGURATION_SECTION = 'Odoo'
 #DEBUG PARAMETERS
 
 DEBUG_BUILD_ONLY_BASE = False
-DEBUG_ARCH_BUILDER = False
-DEBUG_ODOO_BUILDER = False
-DEBUG_VALIDATION = False
-DEBUG_MEMORY = False
+DEBUG_ARCH_BUILDER = True
+DEBUG_ARCH_EVAL = True
+DEBUG_ODOO_BUILDER = True
+DEBUG_VALIDATION = True
+DEBUG_MEMORY = True
+DEBUG_REBUILD = True
 
 class SymType(Enum):
     DIRTY     = -1,
@@ -36,6 +38,12 @@ class SymType(Enum):
 
     def __str__(self):
         return self.name
+
+class BuildSteps(Enum):
+    ARCH        = 0,
+    ARCH_EVAL   = 1,
+    ODOO        = 2,
+    VALIDATION  = 3
 
 BUILT_IN_LIBS = ["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",
 "datetime", "zoneinfo", "calendar", "collections", "heapq", "bisect", "array", "weakref", "types", "copy", "pprint",

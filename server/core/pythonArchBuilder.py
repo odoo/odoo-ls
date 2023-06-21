@@ -36,7 +36,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.filePath = os.path.join(self.filePath, "__init__.py" + parent_file.i_ext)
             self.ast_node = contentOrPath
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
-        self.safeImport = [False] # if True, we are in a safe import (surrounded by try except)
         self.ls = ls
         self.diagnostics = []
         self.__all__symbols_to_add = []
@@ -84,12 +83,13 @@ class PythonArchBuilder(ast.NodeVisitor):
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
             self.symStack[-1].ast_node = weakref.ref(fileInfo["ast"])
+            #Odoo.get().rebuild_arch.remove(self.symStack[-1])
             self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
                 self.resolve__all__symbols()
             else:
-                Odoo.get().to_init_odoo.add(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                Odoo.get().add_to_arch_eval(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         if self.filePath.endswith("__init__.py"):
@@ -122,22 +122,11 @@ class PythonArchBuilder(ast.NodeVisitor):
     def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
         lineno = node.lineno
         end_lineno = node.end_lineno
-        symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
 
-        for node_alias, symbol, _ in symbols:
-            if node_alias.name != '*':
-                variable = Symbol(node_alias.asname if node_alias.asname else node_alias.name, SymType.VARIABLE, self.symStack[1].paths[0])
-                variable.startLine = lineno
-                variable.endLine = end_lineno
-                if symbol:
-                    variable.eval = Evaluation().eval_import(symbol)
-                variable.ast_node = weakref.ref(node)
-                if hasattr(node, "linked_symbols"):
-                    node.linked_symbols.add(variable)
-                else:
-                    node.linked_symbols = weakref.WeakSet([variable])
-                self.symStack[-1].add_symbol(variable)
-            else:
+        for import_name in name_aliases:
+            if import_name.name == '*':
+                symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
+                _, symbol, _ = symbols[0] #unpack
                 if not symbol:
                     continue
                 allowed_names = True
@@ -148,9 +137,9 @@ class PythonArchBuilder(ast.NodeVisitor):
                     all_primitive_sym, _ = all_sym.follow_ref()
                     if not all_primitive_sym or not all_primitive_sym.name in ["list", "tuple"] or not all_primitive_sym.eval.value:
                         print("debug= wrong __all__")
-                        allowed_sym = True
                     else:
                         allowed_names = list(all_primitive_sym.eval.value)
+                fileSymbol = self.symStack[1]
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
                         variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
@@ -158,58 +147,68 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.endLine = end_lineno
                         variable.eval = Evaluation().eval_import(s)
                         variable.ast_node = weakref.ref(node) #TODO ref to node prevent unload to find other linked symbols
-                        if hasattr(node, "linked_symbols"):
-                            node.linked_symbols.add(variable)
-                        else:
-                            node.linked_symbols = weakref.WeakSet([variable])
+                        #if hasattr(node, "linked_symbols"):
+                        #    node.linked_symbols.add(variable)
+                        #else:
+                        #    node.linked_symbols = weakref.WeakSet([variable])
+                        eval_sym = variable.eval.getSymbol()
+                        if eval_sym:
+                            eval_sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).arch_dependents[BuildSteps.ARCH].add(fileSymbol) #put file as dependent, to lower memory usage, as the rebuild is done at file level
                         self.symStack[-1].add_symbol(variable)
-
-    def visit_Try(self, node):
-        safe = False
-        for handler in node.handlers:
-            if not isinstance(handler.type, ast.Name):
-                break
-            if handler.type.id == "ImportError":
-                safe = True
-                break
-        self.safeImport.append(safe)
-        ast.NodeVisitor.generic_visit(self, node)
-        self.safeImport.pop()
+            else:
+                variable = Symbol(import_name.asname if import_name.asname else import_name.name, SymType.VARIABLE, self.symStack[1].paths[0])
+                variable.startLine = lineno
+                variable.endLine = end_lineno
+                import_name.symbol = weakref.ref(variable)
+                variable.ast_node = weakref.ref(node)
+                self.symStack[-1].add_symbol(variable)
     
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
         assigns = PythonUtils.unpack_assign(node.target, node.value, {})
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                variable = Symbol(variable_name, SymType.VARIABLE, self.filePath)
+                variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
-                variable.eval = Evaluation().evalAST(value, self.symStack[-1])
+                if value:
+                    variable.value = weakref.ref(value)
+                variable_name.symbol = weakref.ref(variable)
                 self.symStack[-1].add_symbol(variable)
 
     def visit_Assign(self, node):
         assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                variable = Symbol(variable_name, SymType.VARIABLE, self.filePath)
+                variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
-                variable.eval = Evaluation().evalAST(value, self.symStack[-1])
+                variable.value = weakref.ref(value)
                 self.symStack[-1].add_symbol(variable)
-                if variable.name == "__all__" and self.symStack[-1].is_external():
-                    # external packages often import symbols from compiled files 
-                    # or with meta programmation like globals["var"] = __get_func().
-                    # we don't want to handle that, so just declare __all__ content
-                    # as symbols to not raise any error.
-                    evaluation = variable.eval
-                    if evaluation and evaluation.getSymbol() and evaluation.getSymbol().type == SymType.PRIMITIVE:
-                        for var_name in evaluation.getSymbol().eval.value:
-                            var = Symbol(var_name, SymType.VARIABLE, self.filePath)
-                            var.startLine = node.lineno
-                            var.endLine = node.end_lineno
-                            var.eval = None
-                            self.__all__symbols_to_add.append(var)
+                if variable.name == "__all__":
+                    variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
+                    if variable.eval.getSymbol():
+                        eval_file_symbol = variable.eval.getSymbol().get_in_parents([SymType.FILE, SymType.PACKAGE])
+                        file_symbol = self.symStack[1]
+                        if eval_file_symbol != file_symbol:
+                            variable.eval.getSymbol().arch_dependents[BuildSteps.ARCH].add(file_symbol)
+                        
+                    if self.symStack[-1].is_external():
+                        # external packages often import symbols from compiled files 
+                        # or with meta programmation like globals["var"] = __get_func().
+                        # we don't want to handle that, so just declare __all__ content
+                        # as symbols to not raise any error.
+                        evaluation = variable.eval
+                        if evaluation and evaluation.getSymbol() and evaluation.getSymbol().type == SymType.PRIMITIVE:
+                            for var_name in evaluation.getSymbol().eval.value:
+                                var = Symbol(var_name, SymType.VARIABLE, self.filePath)
+                                var.startLine = node.lineno
+                                var.endLine = node.end_lineno
+                                var.eval = None
+                                self.__all__symbols_to_add.append(var)
+                else:
+                    variable_name.symbol = weakref.ref(variable)
 
     def visit_FunctionDef(self, node):
         #test if static:
@@ -236,7 +235,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_sym.endLine = node.end_lineno
                 self_sym.ast_node = weakref.ref(node)
                 self_sym.eval = Evaluation()
-                self_sym.eval.symbol = weakref.ref(class_sym)
+                self_sym.eval.symbol = weakref.ref(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
@@ -245,42 +244,12 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()
-    
-    def _extract_base_name(attr):
-        if isinstance(attr, ast.Name):
-            return attr.id
-        elif isinstance(attr, ast.Attribute):
-            return PythonArchBuilder._extract_base_name(attr.value) + "." + attr.attr
-        elif isinstance(attr, ast.Call):
-            pass
-        return ""
-    
-    def load_base_class(self, symbol, node):
-        for base in node.bases:
-            full_base = PythonArchBuilder._extract_base_name(base)
-            if full_base:
-                base_elements = full_base.split(".")
-                iter_element = self.symStack[-1].inferName(base_elements[0], node.lineno)
-                if not iter_element:
-                    continue
-                iter_element, _ = iter_element.follow_ref()
-                found = True
-                for base_element in base_elements[1:]:
-                    iter_element = iter_element.get_symbol([], [base_element])
-                    if not iter_element:
-                        found = False
-                        break
-                    iter_element, _ = iter_element.follow_ref()
-                if not found:
-                    continue #TODO generate error? add to unresolved
-                if iter_element.type != SymType.CLASS:
-                    continue #TODO generate error?
-                symbol.classData.bases.add(iter_element)
 
     def visit_ClassDef(self, node):
         symbol = Symbol(node.name, SymType.CLASS, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
+        node.symbol = weakref.ref(symbol)
         symbol.ast_node = weakref.ref(node)
         symbol.classData = ClassData()
         doc = ast.get_docstring(node)
@@ -288,8 +257,6 @@ class PythonArchBuilder(ast.NodeVisitor):
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
             symbol.doc.eval = Evaluation()
             symbol.doc.eval.value = doc
-        #load inheritance
-        self.load_base_class(symbol, node)
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
@@ -303,6 +270,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
+                #TODO move to arch_eval
                 if isinstance(node.iter, ast.Name):
                     eval_iter_node = Evaluation().evalAST(node.iter, self.symStack[-1])
                     if eval_iter_node.getSymbol() and eval_iter_node.getSymbol().type == SymType.CLASS:
@@ -310,7 +278,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         if iter and iter.eval:
                             variable.eval = Evaluation()
                             variable.eval.symbol = iter.eval.get_symbol_wr({"self": eval_iter_node.getSymbol()})
-                            iter.dependents.add(variable)
+                            #iter.dependents.add(variable)
                         else:
                             variable.eval = None
                 self.symStack[-1].add_symbol(variable)
