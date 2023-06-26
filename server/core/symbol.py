@@ -56,7 +56,7 @@ class Symbol():
     """
 
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
-        "localSymbols",  "arch_dependents", "dependents", "parent", "isModule", "classData",
+        "localSymbols",  "arch_dependents", "eval_dependents", "odoo_dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc", "__weakref__")
 
@@ -77,8 +77,18 @@ class Symbol():
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
         self.localSymbols = [] 
-        self.arch_dependents = weakref.WeakSet()
-        self.dependents = weakref.WeakSet()
+        self.arch_dependents = {
+            BuildSteps.ARCH: weakref.WeakSet(),
+            BuildSteps.ARCH_EVAL: weakref.WeakSet(),
+            BuildSteps.ODOO: weakref.WeakSet(),
+            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is modified at arch level
+        self.eval_dependents = {
+            BuildSteps.ARCH_EVAL: weakref.WeakSet(),
+            BuildSteps.ODOO: weakref.WeakSet(),
+            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is re-evaluated
+        self.odoo_dependents = {
+            BuildSteps.ODOO: weakref.WeakSet(),
+            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -156,7 +166,7 @@ class Symbol():
                     if s != sym:
                         to_unload.append(s)
                 ast_node.linked_symbols.clear()
-            sym.invalidate()
+            sym.invalidate(BuildSteps.ARCH)
             if DEBUG_MEMORY:
                 print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.localSymbols.clear()
@@ -166,21 +176,56 @@ class Symbol():
             sym.type = SymType.DIRTY
             del sym
     
-    def invalidate(self):
+    def invalidate(self, step):
+        #signal that a change occur to this symbol. "step" indicates which level of change occured.
+        #it can be arch, arch_eval, odoo or validation
         from .odoo import Odoo
-        # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
-        if self.parent:
-            for d in self.parent.arch_dependents:
-                if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_arch_rebuild(d)
+        if step == BuildSteps.ARCH:
+            # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
+            if self.parent:
+                for to_rebuild_level, syms in self.parent.arch_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ARCH:
+                                Odoo.get().add_to_arch_rebuild(sym)
+                            elif to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                Odoo.get().add_to_arch_eval(sym)
+                            elif to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym)
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym)
         symbols = [self]
         while symbols:
-            for d in symbols[0].arch_dependents:
-                if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_arch_rebuild(d)
-            for d in symbols[0].dependents:
-                if d != self and not d.is_symbol_in_parents(self):
-                    Odoo.get().add_to_init_odoo(d, force=True) #As we are unloading, things are changing, we have to force the validation
+            if step == BuildSteps.ARCH:
+                for to_rebuild_level, syms in symbols[0].arch_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ARCH:
+                                Odoo.get().add_to_arch_rebuild(sym)
+                            elif to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                Odoo.get().add_to_arch_eval(sym)
+                            elif to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym, force=True) #As we are unloading, things are changing, we have to force the validation
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym, force=True)
+            if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL]:
+                for to_rebuild_level, syms in symbols[0].eval_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                Odoo.get().add_to_arch_eval(sym)
+                            elif to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym, force=True)
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym, force=True)
+            if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL, BuildSteps.ODOO]:
+                for to_rebuild_level, syms in symbols[0].odoo_dependents.items():
+                    for sym in syms:
+                        if sym != self and not sym.is_symbol_in_parents(self):
+                            if to_rebuild_level == BuildSteps.ODOO:
+                                Odoo.get().add_to_init_odoo(sym, force=True)
+                            elif to_rebuild_level == BuildSteps.VALIDATION:
+                                Odoo.get().add_to_validations(sym, force=True)
             for s in symbols[0].all_symbols(local=True):
                 symbols.append(s)
             del symbols[0]
@@ -340,7 +385,7 @@ class Symbol():
             if symbol.startLine < self.symbols[symbol.name].startLine:
                 self.localSymbols.append(symbol)
             else:
-                self.symbols[symbol.name].invalidate()
+                self.symbols[symbol.name].invalidate(BuildSteps.ARCH)
                 self.localSymbols.append(self.symbols[symbol.name])
                 self.symbols[symbol.name] = symbol
         

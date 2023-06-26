@@ -84,8 +84,7 @@ class PythonArchEval(ast.NodeVisitor):
             variable = node_alias.symbol
             if variable and symbol:
                 variable().eval = Evaluation().eval_import(symbol)
-                if variable().eval.getSymbol() == variable():
-                    print("cyclic error")
+                symbol.eval_dependents[BuildSteps.ARCH_EVAL].add(variable().get_in_parents([SymType.FILE, SymType.PACKAGE]))
 
     def visit_Try(self, node):
         return
@@ -107,6 +106,8 @@ class PythonArchEval(ast.NodeVisitor):
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 if variable:
                     variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
+                    if variable.eval.getSymbol():
+                        variable.eval.getSymbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
 
     def visit_Assign(self, node):
         assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
@@ -115,6 +116,8 @@ class PythonArchEval(ast.NodeVisitor):
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 if variable:
                     variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
+                    if variable.eval.getSymbol():
+                        variable.eval.getSymbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
 
     def visit_FunctionDef(self, node):
         return
@@ -154,6 +157,7 @@ class PythonArchEval(ast.NodeVisitor):
                     continue #TODO generate error? add to unresolved
                 if iter_element.type != SymType.CLASS:
                     continue #TODO generate error?
+                iter_element.eval_dependents[BuildSteps.ARCH_EVAL].add(symbol.get_in_parents([SymType.FILE, SymType.PACKAGE]))
                 symbol.classData.bases.add(iter_element)
 
     def visit_ClassDef(self, node):

@@ -117,12 +117,6 @@ class PythonValidator(ast.NodeVisitor):
                         source = EXTENSION_NAME,
                         severity = 2
                     ))
-                if hasattr(node, "linked_symbols"):
-                    for linked_sym in node.linked_symbols:
-                        if name == "*":
-                            symbol.arch_dependents.add(linked_sym)
-                        else:
-                            symbol.dependents.add(linked_sym)
 
     def visit_Assign(self, node):
         return

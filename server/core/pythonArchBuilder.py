@@ -138,6 +138,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         print("debug= wrong __all__")
                     else:
                         allowed_names = list(all_primitive_sym.eval.value)
+                fileSymbol = self.symStack[1]
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
                         variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
@@ -149,6 +150,9 @@ class PythonArchBuilder(ast.NodeVisitor):
                             node.linked_symbols.add(variable)
                         else:
                             node.linked_symbols = weakref.WeakSet([variable])
+                        eval_sym = variable.eval.getSymbol()
+                        if eval_sym:
+                            eval_sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).arch_dependents[BuildSteps.ARCH].add(fileSymbol) #put file as dependent, to lower memory usage, as the rebuild is done at file level
                         self.symStack[-1].add_symbol(variable)
             else:
                 variable = Symbol(import_name.asname if import_name.asname else import_name.name, SymType.VARIABLE, self.symStack[1].paths[0])
@@ -183,6 +187,12 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__":
                     variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
+                    if variable.eval.getSymbol():
+                        eval_file_symbol = variable.eval.getSymbol().get_in_parents([SymType.FILE, SymType.PACKAGE])
+                        file_symbol = self.symStack[1]
+                        if eval_file_symbol != file_symbol:
+                            variable.eval.getSymbol().arch_dependents[BuildSteps.ARCH].add(file_symbol)
+                        
                     if self.symStack[-1].is_external():
                         # external packages often import symbols from compiled files 
                         # or with meta programmation like globals["var"] = __get_func().
@@ -224,7 +234,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_sym.endLine = node.end_lineno
                 self_sym.ast_node = weakref.ref(node)
                 self_sym.eval = Evaluation()
-                self_sym.eval.symbol = weakref.ref(class_sym)
+                self_sym.eval.symbol = weakref.ref(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
@@ -259,6 +269,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = weakref.ref(node)
+                #TODO move to arch_eval
                 if isinstance(node.iter, ast.Name):
                     eval_iter_node = Evaluation().evalAST(node.iter, self.symStack[-1])
                     if eval_iter_node.getSymbol() and eval_iter_node.getSymbol().type == SymType.CLASS:
@@ -266,7 +277,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         if iter and iter.eval:
                             variable.eval = Evaluation()
                             variable.eval.symbol = iter.eval.get_symbol_wr({"self": eval_iter_node.getSymbol()})
-                            iter.dependents.add(variable)
+                            #iter.dependents.add(variable)
                         else:
                             variable.eval = None
                 self.symStack[-1].add_symbol(variable)
