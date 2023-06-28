@@ -1,5 +1,5 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
-import { getUri } from "./getUri";
+import { getUri } from "../../utils/getUri";
 import * as vscode from 'vscode';
 
 
@@ -72,8 +72,8 @@ export class WelcomeWebView {
             "toolkit.js",
         ]);
 
-        const styleUri = getUri(webview, extensionUri, ["client", "webview-ui", "style.css"]);
-        const mainUri = getUri(webview, extensionUri, ["client", "webview-ui", "welcomeWebView.js"]);
+        const styleUri = getUri(webview, extensionUri, ["client", "src", "views", "welcome", "style.css"]);
+        const mainUri = getUri(webview, extensionUri, ["client", "src", "views", "welcome", "welcomeWebView.js"]);
         const defaultState = this._context.globalState.get('Odoo.displayWelcomeView', null);
 
         return /*html*/ `

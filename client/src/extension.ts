@@ -34,8 +34,8 @@ import {
     window,
     Uri
 } from "vscode";
-import { ConfigurationsExplorer } from './treeConfigurations';
-import { TreeDatabasesDataProvider } from './treeDatabases';
+import { ConfigurationsExplorer } from './views/configurations/treeConfigurations';
+import { TreeDatabasesDataProvider } from './views/configurations/treeDatabases';
 import {
     ConfigurationItem,
     integer,
@@ -44,8 +44,8 @@ import {
     ServerOptions,
     URI,
 } from "vscode-languageclient/node";
-import { WelcomeWebView } from "./welcomeWebView";
-import { ConfigurationWebView } from './configurationWebView';
+import { WelcomeWebView } from "./views/welcome/welcomeWebView";
+import { ConfigurationWebView } from './views/configurations/configurationWebView';
 import { PathLike, PathOrFileDescriptor } from "fs";
 
 let client: LanguageClient;
@@ -120,7 +120,7 @@ export function activate(context: ExtensionContext): void {
         client = startLangServer(pythonPath, ["-m", "server"], cwd);
     }
 
-	new ConfigurationsExplorer(context);
+	// new ConfigurationsExplorer(context);
 
     odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     setStatusConfig(odooStatusBar);
@@ -184,11 +184,11 @@ export function activate(context: ExtensionContext): void {
         qpick.onDidHide(() => qpick.dispose());
         qpick.show();
     });
-
+    /*
     window.registerTreeDataProvider(
 		'odoo-databases',
 		new TreeDatabasesDataProvider()
-	);/*
+	);
 	window.createTreeView('odoo-databases', {
 		treeDataProvider: new TreeDatabasesDataProvider()
 	});*/

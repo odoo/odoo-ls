@@ -7,6 +7,6 @@
         "outDir": "client/out",
         "sourceMap": true
     },
-    "include": ["client/src"],
-    "exclude": ["node_modules", "client/webview-ui"]
+    "include": ["client/src/*.ts", "client/src/**/*.ts"],
+    "exclude": ["node_modules"]
 }

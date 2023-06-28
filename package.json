@@ -40,15 +40,6 @@
         "category": "Odoo"
       }
     ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "odoo-explorer",
-          "title": "Odoo",
-          "icon": "images/logo.png"
-        }
-      ]
-    },
     "views": {
       "odoo-explorer": [
         {
@@ -122,6 +113,7 @@
     "watch": "tsc -b -w"
   },
   "devDependencies": {
+    "@types/ejs": "^3.1.2",
     "@types/node": "^16.11.6",
     "@types/vscode": "^1.78.0",
     "@types/vscode-webview": "^1.57.0",
@@ -131,8 +123,11 @@
     "typescript": "^4.4.4"
   },
   "dependencies": {
+    "@bendera/vscode-webview-elements": "^0.14.0",
+    "@vscode/codicons": "^0.0.33",
     "@vscode/vsce": "^2.18.0",
     "@vscode/webview-ui-toolkit": "^1.2.2",
+    "ejs": "^3.1.9",
     "vsce": "^2.15.0",
     "vscode-languageclient": "^8.1.0"
   }
