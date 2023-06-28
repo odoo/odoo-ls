@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script type="module" src="<%= webviewElementsUri %>"></script>
+        <script type="module" src="<%= mainUri %>"></script>
+        <link rel="stylesheet" href="<%= styleUri %>">
+        <link rel="stylesheet" href="<%= codiconStyleUri %>" id="vscode-codicon-stylesheet">
+        <title>Odoo Configuration <%= config.id %></title>
+    </head>
+    <body>
+        <h1>Odoo Configuration</h1>
+        <vscode-form-container>
+            <vscode-form-group variant="vertical">
+                <vscode-label for="config-name-textfield">
+                    Configuration name
+                </vscode-label>
+                <vscode-textfield id="config-name-textfield" value="<%= config.name %>" placeholder="Configuration name"></vscode-textfield>
+            </vscode-form-group>
+            <vscode-form-group variant="vertical">
+                <vscode-label for="config-path-textfield">
+                    Configuration path
+                </vscode-label>
+                <vscode-textfield id="config-path-textfield" value="<%= config.odooPath %>" placeholder="Path to the configuration's Odoo folder">
+                    <vscode-icon
+                        label="Open Odoo folder"
+                        title="Open Odoo folder"
+                        slot="content-after"
+                        name="folder-opened"
+                        id="config-path-button"
+                        action-icon
+                    >
+                    </vscode-icon>
+                </vscode-textfield>
+                <vscode-form-helper id="config-path-helper"></vscode-form-helper>
+            </vscode-form-group>
+            <vscode-form-group id="config-addons" variant="vertical">
+                <vscode-label for="addons-scrollable" side-aligned="end">Additional addons</vscode-label>
+                <vscode-scrollable id="addons-scrollable">
+                    <vscode-tree id="addons-tree"></vscode-tree>
+                </vscode-scrollable>
+                <div id="add-folder-container">
+                    <span id="add-folder-button"><vscode-icon name="add"></vscode-icon>&nbsp;Add folder</span>
+                </div>
+            </vscode-form-group>
+        </vscode-form-container>
+    </body>
+</html>

@@ -1,6 +1,4 @@
 /* eslint-disable no-undef */
-// file: webview-ui/main.js
-
 const vscode = acquireVsCodeApi();
 
 window.addEventListener("load", main);
