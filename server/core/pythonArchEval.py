@@ -12,6 +12,7 @@ from server.core.odoo import *
 from server.core.symbol import *
 from server.core.model import *
 from server.pythonUtils import *
+from server.references import *
 from server.core.importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
@@ -25,7 +26,7 @@ class PythonArchEval(ast.NodeVisitor):
         """
         if not hasattr(symbol, "ast_node"):
             raise Exception("Symbol must have an ast_node")
-        if not symbol.ast_node():
+        if not symbol.ast_node:
             raise Exception("Symbol must have a valid ast_node")
         self.symbol = symbol
         self.fileSymbol = self.symbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
@@ -37,7 +38,7 @@ class PythonArchEval(ast.NodeVisitor):
         """pass through the ast to find symbols to evaluate"""
         if DEBUG_ARCH_EVAL:
             print("Eval arch: " + self.fileSymbol.paths[0])
-        ast_node = self.symbol.ast_node()
+        ast_node = self.symbol.ast_node
         self.eval_from_ast(ast_node)
         if not self.symbol.is_external():
             Odoo.get().add_to_init_odoo(self.symbol)
@@ -83,8 +84,8 @@ class PythonArchEval(ast.NodeVisitor):
                 continue
             variable = node_alias.symbol
             if variable and symbol:
-                variable().eval = Evaluation().eval_import(symbol)
-                symbol.eval_dependents[BuildSteps.ARCH_EVAL].add(variable().get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                variable.ref.eval = Evaluation().eval_import(symbol)
+                symbol.eval_dependents[BuildSteps.ARCH_EVAL].add(variable.ref.get_in_parents([SymType.FILE, SymType.PACKAGE]))
 
     def visit_Try(self, node):
         return
@@ -102,22 +103,22 @@ class PythonArchEval(ast.NodeVisitor):
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
         assigns = PythonUtils.unpack_assign(node.target, node.value, {})
         for variable_name, value in assigns.items():
-            variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol() or None
+            variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol.ref or None
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 if variable:
-                    variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
-                    if variable.eval.getSymbol():
-                        variable.eval.getSymbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                    variable.eval = Evaluation().evalAST(variable.value and variable.value, variable.parent)
+                    if variable.eval.get_symbol():
+                        variable.eval.get_symbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
 
     def visit_Assign(self, node):
         assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
         for variable_name, value in assigns.items():
-            variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol() or None
+            variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol.ref or None
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 if variable:
-                    variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
-                    if variable.eval.getSymbol():
-                        variable.eval.getSymbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                    variable.eval = Evaluation().evalAST(variable.value, variable.parent)
+                    if variable.eval.get_symbol():
+                        variable.eval.get_symbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
 
     def visit_FunctionDef(self, node):
         return
@@ -163,7 +164,7 @@ class PythonArchEval(ast.NodeVisitor):
     def visit_ClassDef(self, node):
         if not hasattr(node, "symbol") or not node.symbol:
             return
-        symbol = node.symbol()
+        symbol = node.symbol and node.symbol.ref
         if not symbol:
             return
         self.load_base_class(symbol, node)

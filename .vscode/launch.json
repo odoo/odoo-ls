@@ -82,6 +82,19 @@
                 "PYTHONPATH": "${workspaceFolder}"
             }
         },
+        {
+            "name": "Launch Test References",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_references.py", "-s", "--disable-warnings"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
     ],
     "compounds": [
         {

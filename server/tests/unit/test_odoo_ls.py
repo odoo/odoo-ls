@@ -3,7 +3,6 @@ import io
 import json
 import threading
 import time
-import weakref
 
 import pytest
 from lsprotocol.types import (DidChangeTextDocumentParams, VersionedTextDocumentIdentifier, RenameFilesParams, FileRename)
@@ -18,6 +17,7 @@ from .setup import *
 from server.core.odoo import Odoo
 from server.core.symbol import Symbol
 from server.constants import *
+from server.references import RegisteredRef
 
 """
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -84,69 +84,69 @@ def test_load_classes():
 def test_evaluation():
     constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
     evaluation = constants_data_file.get_symbol([], ["CONSTANT_1"]).eval
-    assert evaluation and evaluation.getSymbol()
-    assert isinstance(evaluation.symbol, weakref.ref)
-    assert evaluation.getSymbol().type == SymType.PRIMITIVE
+    assert evaluation and evaluation.get_symbol()
+    assert isinstance(evaluation._symbol, RegisteredRef)
+    assert evaluation.get_symbol().type == SymType.PRIMITIVE
     assert evaluation.instance == True
     evaluation = constants_data_file.get_symbol([], ["__all__"]).eval
-    assert evaluation and evaluation.getSymbol()
-    assert isinstance(evaluation.symbol, weakref.ref)
-    assert evaluation.getSymbol().type == SymType.PRIMITIVE
+    assert evaluation and evaluation.get_symbol()
+    assert isinstance(evaluation._symbol, RegisteredRef)
+    assert evaluation.get_symbol().type == SymType.PRIMITIVE
     assert evaluation.instance == True
-    assert evaluation.getSymbol().name == "list"
-    assert evaluation.getSymbol().eval.value == ["CONSTANT_1", "CONSTANT_2"]
+    assert evaluation.get_symbol().name == "list"
+    assert evaluation.get_symbol().eval.value == ["CONSTANT_1", "CONSTANT_2"]
 
     data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     evaluation = data_dir.get_symbol([], ["CONSTANT_1"]).eval
     assert evaluation
-    assert isinstance(evaluation.symbol, weakref.ref)
-    assert evaluation.symbol() #Symbol of variable in constants.py
+    assert isinstance(evaluation._symbol, RegisteredRef)
+    assert evaluation.get_symbol() #Symbol of variable in constants.py
     assert evaluation.instance == True
-    var_symbol = evaluation.symbol()
+    var_symbol = evaluation.get_symbol()
     assert var_symbol.type == SymType.VARIABLE
     assert var_symbol.name == "CONSTANT_1"
     
     base_test_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
     evaluation = base_test_file.get_symbol([], ["BaseOtherName"]).eval
-    assert evaluation.symbol
-    assert evaluation.symbol()
-    assert evaluation.symbol().type == SymType.CLASS
-    assert evaluation.symbol().name == "BaseTestModel"
+    assert evaluation._symbol
+    assert evaluation.get_symbol()
+    assert evaluation.get_symbol().type == SymType.CLASS
+    assert evaluation.get_symbol().name == "BaseTestModel"
     assert evaluation.instance == False
 
     evaluation = base_test_file.get_symbol([], ["baseInstance1"]).eval
-    assert evaluation.symbol
-    assert evaluation.symbol()
-    assert evaluation.symbol().type == SymType.CLASS
-    assert evaluation.symbol().name == "BaseTestModel"
+    assert evaluation._symbol
+    assert evaluation.get_symbol()
+    assert evaluation.get_symbol().type == SymType.CLASS
+    assert evaluation.get_symbol().name == "BaseTestModel"
     assert evaluation.instance == True
 
     evaluation = base_test_file.get_symbol([], ["baseInstance2"]).eval
-    assert evaluation.symbol
-    assert evaluation.symbol()
-    assert evaluation.symbol().type == SymType.CLASS
-    assert evaluation.symbol().name == "BaseTestModel"
+    assert evaluation._symbol
+    assert evaluation.get_symbol()
+    assert evaluation.get_symbol().type == SymType.CLASS
+    assert evaluation.get_symbol().name == "BaseTestModel"
     assert evaluation.instance == True
 
     evaluation = base_test_file.get_symbol([], ["ref_funcBase1"]).eval
-    assert evaluation.symbol
-    assert evaluation.symbol()
-    assert evaluation.symbol().type == SymType.FUNCTION
-    assert evaluation.symbol().name == "get_test_int"
+    assert evaluation._symbol
+    assert evaluation.get_symbol()
+    assert evaluation.get_symbol().type == SymType.FUNCTION
+    assert evaluation.get_symbol().name == "get_test_int"
     assert evaluation.instance == False
 
     evaluation = base_test_file.get_symbol([], ["ref_funcBase2"]).eval
-    assert evaluation.symbol
-    assert evaluation.symbol()
-    assert evaluation.symbol().type == SymType.FUNCTION
-    assert evaluation.symbol().name == "get_test_int"
+    assert evaluation._symbol
+    assert evaluation.get_symbol()
+    assert evaluation.get_symbol().type == SymType.FUNCTION
+    assert evaluation.get_symbol().name == "get_test_int"
     assert evaluation.instance == False
     
     evaluation = base_test_file.get_symbol([], ["return_funcBase2"]).eval
     #the return evaluation of a function is not really 100% accurate. Let's at least test that the function is not returned
-    if evaluation.symbol and evaluation.symbol():
-        assert evaluation.symbol().type != SymType.FUNCTION
-        assert evaluation.symbol().name != "get_test_int"
+    if evaluation._symbol and evaluation.get_symbol():
+        assert evaluation.get_symbol().type != SymType.FUNCTION
+        assert evaluation.get_symbol().name != "get_test_int"
 
 
 def test_base_class():
@@ -234,6 +234,7 @@ def test_magic_fields():
     else:
         assert False
 
+@pytest.mark.dependency()
 def test_imports_dynamic():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
     
@@ -271,6 +272,7 @@ CONSTANT_3 = 3"""
     assert not "CONSTANT_2" in constants_data_file.symbols
     assert "CONSTANT_3" in constants_data_file.symbols
 
+@pytest.mark.dependency(depends=["test_imports_dynamic"])
 def test_rename():
     old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
     new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
@@ -284,7 +286,7 @@ def test_rename():
     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
     evaluation1 = constants_data_dir.symbols["CONSTANT_1"].eval
-    assert not evaluation1.symbol()
+    assert not evaluation1._symbol
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not search_in_local(constants_data_dir, "CONSTANT_2")
     assert not "CONSTANT_3" in constants_data_dir.symbols
@@ -308,13 +310,13 @@ def test_rename_inherit():
     source.replace("class Model", "class Model2")
     
     server.workspace.get_document = Mock(return_value=Document(
-        uri=file_uri,
+        uri=FileMgr.pathname2uri(file_uri),
         source=source
     ))
     params = DidChangeTextDocumentParams(
         text_document = VersionedTextDocumentIdentifier(
             version = 2,
-            uri=file_uri
+            uri=FileMgr.pathname2uri(file_uri)
         ),
         content_changes = []
     )
@@ -326,13 +328,13 @@ def test_rename_inherit():
     source.replace("class Model2", "class Model")
     
     server.workspace.get_document = Mock(return_value=Document(
-        uri=file_uri,
+        uri=FileMgr.pathname2uri(file_uri),
         source=source
     ))
     params = DidChangeTextDocumentParams(
         text_document = VersionedTextDocumentIdentifier(
             version = 2,
-            uri=file_uri
+            uri=FileMgr.pathname2uri(file_uri)
         ),
         content_changes = []
     )
@@ -376,6 +378,3 @@ def test_missing_symbol_resolve():
 #     assert "CONSTANT_3" in variables_data_file.symbols
     
 #     server.workspace.get_document.reset_mock()
-
-def test_memory_leak():
-    assert(len(Symbol.__debug_symbol_tracker__) == 0)

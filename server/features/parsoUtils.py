@@ -93,6 +93,6 @@ class ParsoUtils:
                             return None, context
                         get_item_sym = get_item_sym.follow_ref(context)[0]
                         context.update({"args": content, "module": module})
-                        obj = get_item_sym.eval.getSymbol(context)
+                        obj = get_item_sym.eval.get_symbol(context)
             node_iter += 1
         return obj, context

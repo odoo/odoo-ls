@@ -13,8 +13,8 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
 
     def _load_class_inherit(self, symbol):
         _inherit = symbol.get_class_symbol("_inherit", prevent_comodel=True)
-        if _inherit and _inherit.eval and _inherit.eval.getSymbol():
-            inherit_value, _ = _inherit.eval.getSymbol().follow_ref()
+        if _inherit and _inherit.eval and _inherit.eval.get_symbol():
+            inherit_value, _ = _inherit.eval.get_symbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
                 inherit_names = inherit_value.eval.value
                 if isinstance(inherit_names, str):
@@ -29,8 +29,8 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
     def _evaluate_name(self, symbol):
         _name = symbol.get_class_symbol("_name", prevent_comodel=True)
         if _name:
-            if _name.eval and _name.eval.getSymbol():
-                name_value, _ = _name.eval.getSymbol().follow_ref()
+            if _name.eval and _name.eval.get_symbol():
+                name_value, _ = _name.eval.get_symbol().follow_ref()
                 if name_value.type == SymType.PRIMITIVE and name_value.eval.value:
                     return name_value.eval.value
             else:
@@ -50,8 +50,8 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
 
     def _load_class_inherits(self, symbol):
         _inherits = symbol.get_class_symbol("_inherits", prevent_comodel=True)
-        if _inherits and _inherits.eval.getSymbol():
-            inherit_value, instance = _inherits.eval.getSymbol().follow_ref()
+        if _inherits and _inherits.eval.get_symbol():
+            inherit_value, instance = _inherits.eval.get_symbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
                 inherit_names = inherit_value.eval.value
                 if isinstance(inherit_names, dict):
@@ -63,8 +63,8 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
     
     def _get_attribute(self, symbol, attr):
         attr_sym = symbol.get_class_symbol(attr, prevent_comodel=True)
-        if attr_sym and attr_sym.eval.getSymbol():
-            attr_ref, instance = attr_sym.eval.getSymbol().follow_ref()
+        if attr_sym and attr_sym.eval.get_symbol():
+            attr_ref, instance = attr_sym.eval.get_symbol().follow_ref()
             if attr_ref.type == SymType.PRIMITIVE:
                 attr_value = attr_ref.eval.value
                 return attr_value

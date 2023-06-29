@@ -1,7 +1,6 @@
 import glob
 import os
 from pathlib import Path
-import weakref
 from ..constants import *
 from .odoo import Odoo
 from .symbol import Symbol

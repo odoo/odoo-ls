@@ -11,6 +11,7 @@ from ..constants import *
 from .symbol import *
 from .fileMgr import *
 from .threadCondition import ReadWriteCondition
+from server.references import RegisteredRefSet
 from contextlib import contextmanager
 from lsprotocol.types import (ConfigurationItem, WorkspaceConfigurationParams)
 
@@ -40,12 +41,12 @@ class Odoo():
     # symbols is the list of declared symbols and their related declaration, filtered by name
     symbols = RootSymbol("root", SymType.ROOT, [])
 
-    rebuild_arch = weakref.WeakSet()
-    rebuild_arch_eval = weakref.WeakSet()
-    rebuild_odoo = weakref.WeakSet()
-    rebuild_validation = weakref.WeakSet()
+    rebuild_arch = RegisteredRefSet()
+    rebuild_arch_eval = RegisteredRefSet()
+    rebuild_odoo = RegisteredRefSet()
+    rebuild_validation = RegisteredRefSet()
 
-    not_found_symbols = weakref.WeakSet() # Set of symbols that still have unresolved dependencies
+    not_found_symbols = RegisteredRefSet() # Set of symbols that still have unresolved dependencies
 
     instance = None
 
@@ -176,6 +177,12 @@ class Odoo():
             print("starting rebuilds")
         already_arch_rebuilt = set()
         while True:
+            try:
+                if self.rebuild_arch:
+                    print("yy")
+            except:
+                len(self.rebuild_arch)
+                pass
             if self.rebuild_arch:
                 sym = self.rebuild_arch.pop()
                 if not sym:
@@ -188,9 +195,7 @@ class Odoo():
                     continue
                 already_arch_rebuilt.add(tree)
                 parent = sym.parent
-                ast_node = None
-                if sym.ast_node:
-                    ast_node = sym.ast_node()
+                ast_node = sym.ast_node
                 sym.unload(sym)
                 del sym
                 #build new
@@ -361,7 +366,7 @@ class Odoo():
 
     def _search_symbols_to_revalidate(self, tree):
         flat_tree = [item for l in tree for item in l]
-        new_set_to_revalidate = weakref.WeakSet()
+        new_set_to_revalidate = RegisteredRefSet()
         for s in self.not_found_symbols:
             for p in s.not_found_paths:
                 if flat_tree[:len(p)] == p[:len(flat_tree)]: #TODO wrong

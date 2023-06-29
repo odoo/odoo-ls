@@ -109,7 +109,7 @@ def definition(params: TextDocumentPositionParams):
         final_path = final_path[0].capitalize() + final_path[1:]
     file_symbol = Odoo.get().get_file_symbol(final_path)
     if file_symbol and params.text_document.uri[-3:] == ".py":
-        symbol = PythonUtils.getSymbol(file_symbol, params.position.line + 1, params.position.character + 1)
+        symbol = PythonUtils.get_symbol(file_symbol, params.position.line + 1, params.position.character + 1)
     if symbol:
         #TODO paths?
         a = Location(uri=FileMgr.pathname2uri(symbol.paths[0]), range=Range(start=Position(line=symbol.startLine-1, character=0), end=Position(line=symbol.endLine-1, character=0)))

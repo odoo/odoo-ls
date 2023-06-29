@@ -1,4 +1,4 @@
-import weakref
+from server.references import RegisteredRefSet, RegisteredRef
 from server.core.symbol import Symbol
 from server.constants import SymType
 from server.core.evaluation import Evaluation
@@ -19,7 +19,7 @@ class EvaluationEnvGetItem(Evaluation):
         if model:
             main_sym = model.get_main_symbols(context["module"])
             if main_sym:
-                return weakref.ref(main_sym[0])
+                return RegisteredRef(main_sym[0])
         return None
 
 class EvaluationModelIter(Evaluation):
@@ -29,7 +29,7 @@ class EvaluationModelIter(Evaluation):
         class_sym = context.get("self", None)
         if not class_sym:
             return None
-        return weakref.ref(class_sym)
+        return RegisteredRef(class_sym)
 
 class PythonArchBuilderOdooHooks:
 
@@ -40,7 +40,7 @@ class PythonArchBuilderOdooHooks:
                 logger = symbol.get_symbol([], ["Logger"])
                 if get_logger and logger:
                     get_logger.eval = Evaluation(
-                        symbol=weakref.ref(logger),
+                        symbol=RegisteredRef(logger),
                         instance = True
                     )
 
@@ -63,7 +63,7 @@ class PythonArchBuilderOdooHooks:
                 env_var.endLine = slot_sym.endLine
                 if envModel:
                     env_var.eval = Evaluation(
-                        symbol=weakref.ref(envModel),
+                        symbol=RegisteredRef(envModel),
                         instance = True
                     )
                     env_var.eval.context["test_mode"] = False # used to define the Cursor type
@@ -78,11 +78,11 @@ class PythonArchBuilderOdooHooks:
                 cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["Cursor"])
                 if cursor_sym:
                     cr_var.eval = EvaluationTestCursor(
-                        symbol=weakref.ref(cursor_sym),
+                        symbol=RegisteredRef(cursor_sym),
                         instance = True
                     )
                     test_cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["TestCursor"])
-                    cr_var.eval.test_cursor = weakref.ref(test_cursor_sym)
+                    cr_var.eval.test_cursor = RegisteredRef(test_cursor_sym)
                     cursor_sym.arch_dependents.add(cr_var)
                     cr_var.doc = ""
                 envModel.add_symbol(cr_var)
@@ -114,7 +114,7 @@ class PythonArchBuilderOdooHooks:
                 env_var = symbol.get_symbol([], ["env"]) #should already exists
                 if env_var and envModel:
                     env_var.eval = Evaluation(
-                        symbol=weakref.ref(envModel),
+                        symbol=RegisteredRef(envModel),
                         instance = True
                     )
                     env_var.eval.context["test_mode"] = True # used to define the Cursor type

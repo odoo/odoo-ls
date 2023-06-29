@@ -1,7 +1,7 @@
 import gc
 import os
 import sys
-import weakref
+from server.references import RegisterableObject, RegisteredRef, RegisteredRefSet, RegisteredRefList
 from ..constants import *
 
 import base64
@@ -34,7 +34,7 @@ class ClassData():
     
     def __init__(self):
         #data related to classes symbols
-        self.bases = weakref.WeakSet() #set of weakref to base classes
+        self.bases = RegisteredRefSet()
     
     def inherits(self, symbol):
         for base in self.bases:
@@ -43,9 +43,7 @@ class ClassData():
             if base.classData.inherits(symbol):
                 return True
 
-__debug_symbol_tracker__ = weakref.WeakSet()
-
-class Symbol():
+class Symbol(RegisterableObject):
     """A symbol is an object representing an element of the code architecture.
     It can be either a python package, a file, a class, a function, or even a variable.
     All these data are static and no inference of code execution is done.
@@ -59,9 +57,10 @@ class Symbol():
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
         "localSymbols",  "arch_dependents", "eval_dependents", "odoo_dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
-        "not_found_paths", "i_ext", "doc", "__weakref__")
+        "not_found_paths", "i_ext", "doc")
 
     def __init__(self, name, type, paths):
+        super().__init__()
         self.name = name
         self.type: SymType = type
         self.eval = None
@@ -77,19 +76,19 @@ class Symbol():
         #List of symbols not available from outside as they are redefined later in the same symbol 
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
-        self.localSymbols = [] 
+        self.localSymbols = RegisteredRefList()
         self.arch_dependents = {
-            BuildSteps.ARCH: weakref.WeakSet(),
-            BuildSteps.ARCH_EVAL: weakref.WeakSet(),
-            BuildSteps.ODOO: weakref.WeakSet(),
-            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is modified at arch level
+            BuildSteps.ARCH: RegisteredRefSet(),
+            BuildSteps.ARCH_EVAL: RegisteredRefSet(),
+            BuildSteps.ODOO: RegisteredRefSet(),
+            BuildSteps.VALIDATION: RegisteredRefSet()} #set of symbol that need to be rebuilt when this symbol is modified at arch level
         self.eval_dependents = {
-            BuildSteps.ARCH_EVAL: weakref.WeakSet(),
-            BuildSteps.ODOO: weakref.WeakSet(),
-            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is re-evaluated
+            BuildSteps.ARCH_EVAL: RegisteredRefSet(),
+            BuildSteps.ODOO: RegisteredRefSet(),
+            BuildSteps.VALIDATION: RegisteredRefSet()} #set of symbol that need to be rebuilt when this symbol is re-evaluated
         self.odoo_dependents = {
-            BuildSteps.ODOO: weakref.WeakSet(),
-            BuildSteps.VALIDATION: weakref.WeakSet()} #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
+            BuildSteps.ODOO: RegisteredRefSet(),
+            BuildSteps.VALIDATION: RegisteredRefSet()} #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -124,14 +123,14 @@ class Symbol():
             yield s
 
     def follow_ref(self, context=None):
-        #follow the reference to the real symbol and returns it (not a weakref)
+        #follow the reference to the real symbol and returns it (not a RegisteredRef)
         sym = self
         instance = self.type in [SymType.VARIABLE]
-        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_wr(context):
+        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_rr(context):
             instance = sym.eval.instance
             if sym.eval.context:
                 context.update(sym.eval.context)
-            sym = sym.eval.getSymbol(context)
+            sym = sym.eval.get_symbol(context)
         return sym, instance
 
     def is_file_content(self):
@@ -142,7 +141,7 @@ class Symbol():
 
     @staticmethod
     def test_deletability(symbol):
-        to_delete = weakref.WeakSet()
+        to_delete = RegisteredRefSet()
         to_check = [symbol]
         acc = []
         while to_check:
@@ -178,7 +177,6 @@ class Symbol():
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
         if symbol.type == SymType.DIRTY:
             print("trying to unload a dirty symbol, skipping")
-            __debug_symbol_tracker__.add(symbol)
             return
         to_unload = [symbol]
         while to_unload:
@@ -194,14 +192,9 @@ class Symbol():
                 to_unload.remove(sym)
 
             #no more children at this point, start unloading the symbol
-            if DEBUG_MEMORY:
-                print("unload " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
-                for s in __debug_symbol_tracker__:
-                    print("REMAIN: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
-                __debug_symbol_tracker__.add(sym)
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
-            # ast_node = sym.ast_node and sym.ast_node()
+            # ast_node = sym.ast_node
             # if ast_node and hasattr(ast_node, "linked_symbols"):
             #     for s in ast_node.linked_symbols:
             #         if s != sym:
@@ -215,6 +208,7 @@ class Symbol():
             sym.symbols.clear()
             sym.parent = None
             sym.type = SymType.DIRTY
+            sym.mark_as_deleted()
             del sym
     
     def invalidate(self, step):
@@ -279,6 +273,8 @@ class Symbol():
                     if DEBUG_MEMORY:
                         print("symbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                     del self.symbols[symbol.name]
+                    if symbol.parent and self.parent == self:
+                        symbol.parent = None
                     last = None
                     for localSym in self.localSymbols:
                         if localSym.name == symbol.name:
@@ -293,6 +289,8 @@ class Symbol():
                     #ouch, the wanted symbol is not in Symbols. let's try to find it in localSymbols
                     try:
                         self.localSymbols.remove(symbol)
+                        if symbol.parent and self.parent == self:
+                            symbol.parent = None
                         if DEBUG_MEMORY:
                             print("localSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                     except ValueError:
@@ -302,6 +300,8 @@ class Symbol():
             if symbol.name in self.moduleSymbols:
                 if DEBUG_MEMORY:
                     print("moduleSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                if symbol.parent and self.parent == self:
+                    symbol.parent = None
                 del self.moduleSymbols[symbol.name]
 
 
