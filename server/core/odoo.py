@@ -182,7 +182,7 @@ class Odoo():
                     continue
                 tree = sym.get_tree()
                 tree = (tuple(tree[0]), tuple(tree[1])) #make it hashable
-                if tree in already_arch_rebuilt:
+                if tree in already_arch_rebuilt: #prevent cyclic imports infinite loop
                     if DEBUG_REBUILD:
                         print("arch rebuild skipped - already rebuilt")
                     continue
@@ -201,7 +201,7 @@ class Odoo():
                 continue
             elif self.rebuild_arch_eval:
                 sym = self.rebuild_arch_eval.pop()
-                if not sym:
+                if not sym or sym.type == SymType.DIRTY:
                     continue
                 evaluator = PythonArchEval(ls, sym)
                 evaluator.eval_arch()
@@ -277,10 +277,12 @@ class Odoo():
                 #build new
                 pp = PythonArchBuilder(ls, parent, path)
                 new_symbol = pp.load_arch()
+                new_symbol_tree = new_symbol.get_tree()
+                del new_symbol
                 #rebuild validations
                 self.process_rebuilds(ls)
-                if new_symbol:
-                    set_to_validate = self._search_symbols_to_revalidate(new_symbol.get_tree())
+                if new_symbol_tree:
+                    set_to_validate = self._search_symbols_to_revalidate(new_symbol_tree)
                     self.validate_related_files(ls, set_to_validate)
         #snapshot2 = tracemalloc.take_snapshot()
 
@@ -321,11 +323,13 @@ class Odoo():
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
+            print("add to arch rebuild: " + str(symbol.get_tree()))
             self.rebuild_arch.add(symbol)
     
     def add_to_arch_eval(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
+            print("add to arch eval: " + str(symbol.get_tree()))
             self.rebuild_arch_eval.add(symbol)
 
     def add_to_init_odoo(self, symbol, force=False):
@@ -339,6 +343,7 @@ class Odoo():
             if force:
                 file.odooStatus = 0
                 file.validationStatus = 0
+            print("add to init odoo: " + str(file.get_tree()))
             self.rebuild_odoo.add(file)
 
     def add_to_validations(self, symbol, force=False):
@@ -351,6 +356,7 @@ class Odoo():
                 return
             if force:
                 file.validationStatus = 0
+            print("add to validation: " + str(file.get_tree()))
             self.rebuild_validation.add(file)
 
     def _search_symbols_to_revalidate(self, tree):

@@ -83,6 +83,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
             self.symStack[-1].ast_node = weakref.ref(fileInfo["ast"])
+            #Odoo.get().rebuild_arch.remove(self.symStack[-1])
             self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
             if self.symStack[-1].is_external():
                 fileInfo["ast"] = None
@@ -146,10 +147,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.endLine = end_lineno
                         variable.eval = Evaluation().eval_import(s)
                         variable.ast_node = weakref.ref(node) #TODO ref to node prevent unload to find other linked symbols
-                        if hasattr(node, "linked_symbols"):
-                            node.linked_symbols.add(variable)
-                        else:
-                            node.linked_symbols = weakref.WeakSet([variable])
+                        #if hasattr(node, "linked_symbols"):
+                        #    node.linked_symbols.add(variable)
+                        #else:
+                        #    node.linked_symbols = weakref.WeakSet([variable])
                         eval_sym = variable.eval.getSymbol()
                         if eval_sym:
                             eval_sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).arch_dependents[BuildSteps.ARCH].add(fileSymbol) #put file as dependent, to lower memory usage, as the rebuild is done at file level

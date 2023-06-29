@@ -43,6 +43,7 @@ class ClassData():
             if base.classData.inherits(symbol):
                 return True
 
+__debug_symbol_tracker__ = weakref.WeakSet()
 
 class Symbol():
     """A symbol is an object representing an element of the code architecture.
@@ -138,10 +139,47 @@ class Symbol():
 
     def get_range(self):
         return (self.startLine, self.endLine)
-    
+
+    @staticmethod
+    def test_deletability(symbol):
+        to_delete = weakref.WeakSet()
+        to_check = [symbol]
+        acc = []
+        while to_check:
+            for s in to_check:
+                for s2 in s.all_symbols(local=True):
+                    acc.append(s2)
+            to_check = acc[:]
+            for s in acc:
+                to_delete.add(s)
+            acc = []
+        print("to delete: " + str(len(to_delete)))
+        for s in to_delete:
+            print("delete: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
+        deletion = [symbol]
+        while deletion:
+            sym = deletion.pop(0)
+            sym.parent.remove_symbol(sym)
+            sym.parent = None
+            for s in sym.all_symbols(local=True):
+                deletion.append(s)
+        deletion = []
+        to_check = []
+        acc = []
+        print("remains: " + str(len(to_delete)))
+        def namestr(obj, namespace):
+            return [name for name in namespace if namespace[name] is obj]
+        for s in to_delete:
+            print("not delete: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
+        print("end test")
+
     @staticmethod
     def unload(symbol): #can't delete because of self? :o
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
+        if symbol.type == SymType.DIRTY:
+            print("trying to unload a dirty symbol, skipping")
+            __debug_symbol_tracker__.add(symbol)
+            return
         to_unload = [symbol]
         while to_unload:
             sym = to_unload[0]
@@ -158,14 +196,17 @@ class Symbol():
             #no more children at this point, start unloading the symbol
             if DEBUG_MEMORY:
                 print("unload " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
+                for s in __debug_symbol_tracker__:
+                    print("REMAIN: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
+                __debug_symbol_tracker__.add(sym)
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
-            ast_node = sym.ast_node and sym.ast_node()
-            if ast_node and hasattr(ast_node, "linked_symbols"):
-                for s in ast_node.linked_symbols:
-                    if s != sym:
-                        to_unload.append(s)
-                ast_node.linked_symbols.clear()
+            # ast_node = sym.ast_node and sym.ast_node()
+            # if ast_node and hasattr(ast_node, "linked_symbols"):
+            #     for s in ast_node.linked_symbols:
+            #         if s != sym:
+            #             to_unload.append(s)
+            #     ast_node.linked_symbols.clear()
             sym.invalidate(BuildSteps.ARCH)
             if DEBUG_MEMORY:
                 print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))

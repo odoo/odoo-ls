@@ -376,3 +376,6 @@ def test_missing_symbol_resolve():
 #     assert "CONSTANT_3" in variables_data_file.symbols
     
 #     server.workspace.get_document.reset_mock()
+
+def test_memory_leak():
+    assert(len(Symbol.__debug_symbol_tracker__) == 0)

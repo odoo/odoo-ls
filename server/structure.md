@@ -180,6 +180,11 @@ Pour répondre à ce problème, le code est organisé comme suit, et ce principe
 Tous les symboles ne sont référencés qu'*UNE SEULE FOIS*, par leur symbole parent. TOUTE AUTRE référence à un symbole depuis un autre endroit du code, ou meme entre symbole doit se faire via des weakref.
 Ainsi la suppression d'un symbole est immédiate et effective. Par contre cela implique que toutes les autres références doivent être testées et acquises avant de pouvoir être utilisées (voir [weakref](https://docs.python.org/3/library/weakref.html)).
 
+### SymbolWeakRef
+
+Malheureusement, weakref permet d'accéder à un objet éligible à la collecte. En effet, si le garbage collector n'est pas encore passé, la weakref peut toujours récupérer une référence forte sur l'objet.
+Pour contrer cela, les weakref sont wrappées dans une classe SymbolWeakRef, qui s'assure que l'objet est bien "vivant" pour être retourné. En effet un symbol supprimé voit son type modifié en SymType.DIRTY, ce qui permet de l'identifier comme invalide.
+
 ### Accès asynchrone
 
 Ceci amène tout doucement à un autre problème: lorsque du code prend une référence sur un weakref et donc un symbole, le nombre de référence passe à 2 (ou plus), et la suppression d'un symbole n'est plus immédiate.
