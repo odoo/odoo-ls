@@ -7,6 +7,7 @@ from server.core.odoo import *
 from server.core.symbol import *
 from server.core.model import *
 from server.pythonUtils import *
+from server.references import *
 from server.core.importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
@@ -293,10 +294,10 @@ class PythonValidator(ast.NodeVisitor):
         for symbol in self.symStack[0].get_ordered_symbols():
             if symbol.type == SymType.CLASS:
                 if symbol.modelData:
-                    node = symbol.ast_node()
+                    node = symbol.ast_node
                     _inherit_decl = symbol.get_symbol([], ["_inherit"])
                     if _inherit_decl:
-                        node = _inherit_decl.ast_node()
+                        node = _inherit_decl.ast_node
                     for inherit in symbol.modelData.inherit:
                         if inherit == "base":
                             continue

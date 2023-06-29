@@ -3,7 +3,6 @@ from server.constants import *
 import os
 from .odoo import * 
 from server.core.fileMgr import *
-import weakref
 from server.core.pythonArchBuilder import *
 from server.features.validation.pythonValidator import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,

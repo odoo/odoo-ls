@@ -1,12 +1,12 @@
-import weakref
 from .symbol import Symbol
+from server.pythonUtils import *
 from .odoo import *
 
 class Model():
 
     def __init__(self, name, symbol):
         self.name = name
-        self.impl_sym = weakref.WeakSet()
+        self.impl_sym = RegisteredRefSet()
         self.add_symbol(symbol)
     
     def add_symbol(self, symbol):

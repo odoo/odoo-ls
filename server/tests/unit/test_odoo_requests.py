@@ -3,7 +3,6 @@ import io
 import json
 import threading
 import time
-import weakref
 
 import pytest
 from lsprotocol.types import (CompletionParams, TextDocumentIdentifier, Position)

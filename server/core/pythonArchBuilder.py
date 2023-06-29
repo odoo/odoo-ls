@@ -12,6 +12,7 @@ from server.core.odoo import *
 from server.core.symbol import *
 from server.core.model import *
 from server.pythonUtils import *
+from server.references import *
 from server.core.importResolver import *
 from lsprotocol.types import (Diagnostic,Position, Range)
 
@@ -82,7 +83,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
-            self.symStack[-1].ast_node = weakref.ref(fileInfo["ast"])
+            self.symStack[-1].ast_node = fileInfo["ast"]
             #Odoo.get().rebuild_arch.remove(self.symStack[-1])
             self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
             if self.symStack[-1].is_external():
@@ -146,12 +147,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.startLine = lineno
                         variable.endLine = end_lineno
                         variable.eval = Evaluation().eval_import(s)
-                        variable.ast_node = weakref.ref(node) #TODO ref to node prevent unload to find other linked symbols
-                        #if hasattr(node, "linked_symbols"):
-                        #    node.linked_symbols.add(variable)
-                        #else:
-                        #    node.linked_symbols = weakref.WeakSet([variable])
-                        eval_sym = variable.eval.getSymbol()
+                        variable.ast_node = node
+                        eval_sym = variable.eval.get_symbol()
                         if eval_sym:
                             eval_sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).arch_dependents[BuildSteps.ARCH].add(fileSymbol) #put file as dependent, to lower memory usage, as the rebuild is done at file level
                         self.symStack[-1].add_symbol(variable)
@@ -159,8 +156,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(import_name.asname if import_name.asname else import_name.name, SymType.VARIABLE, self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
-                import_name.symbol = weakref.ref(variable)
-                variable.ast_node = weakref.ref(node)
+                import_name.symbol = RegisteredRef(variable)
+                variable.ast_node = node
                 self.symStack[-1].add_symbol(variable)
     
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
@@ -170,10 +167,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                variable.ast_node = weakref.ref(node)
+                variable.ast_node = node
                 if value:
-                    variable.value = weakref.ref(value)
-                variable_name.symbol = weakref.ref(variable)
+                    variable.value = value
+                variable_name.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
 
     def visit_Assign(self, node):
@@ -183,16 +180,16 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                variable.ast_node = weakref.ref(node)
-                variable.value = weakref.ref(value)
+                variable.ast_node = node
+                variable.value = value
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__":
-                    variable.eval = Evaluation().evalAST(variable.value and variable.value(), variable.parent)
-                    if variable.eval.getSymbol():
-                        eval_file_symbol = variable.eval.getSymbol().get_in_parents([SymType.FILE, SymType.PACKAGE])
+                    variable.eval = Evaluation().evalAST(variable.value and variable.value, variable.parent)
+                    if variable.eval.get_symbol():
+                        eval_file_symbol = variable.eval.get_symbol().get_in_parents([SymType.FILE, SymType.PACKAGE])
                         file_symbol = self.symStack[1]
                         if eval_file_symbol != file_symbol:
-                            variable.eval.getSymbol().arch_dependents[BuildSteps.ARCH].add(file_symbol)
+                            variable.eval.get_symbol().arch_dependents[BuildSteps.ARCH].add(file_symbol)
                         
                     if self.symStack[-1].is_external():
                         # external packages often import symbols from compiled files 
@@ -200,15 +197,15 @@ class PythonArchBuilder(ast.NodeVisitor):
                         # we don't want to handle that, so just declare __all__ content
                         # as symbols to not raise any error.
                         evaluation = variable.eval
-                        if evaluation and evaluation.getSymbol() and evaluation.getSymbol().type == SymType.PRIMITIVE:
-                            for var_name in evaluation.getSymbol().eval.value:
+                        if evaluation and evaluation.get_symbol() and evaluation.get_symbol().type == SymType.PRIMITIVE:
+                            for var_name in evaluation.get_symbol().eval.value:
                                 var = Symbol(var_name, SymType.VARIABLE, self.filePath)
                                 var.startLine = node.lineno
                                 var.endLine = node.end_lineno
                                 var.eval = None
                                 self.__all__symbols_to_add.append(var)
                 else:
-                    variable_name.symbol = weakref.ref(variable)
+                    variable_name.symbol = RegisteredRef(variable)
 
     def visit_FunctionDef(self, node):
         #test if static:
@@ -220,7 +217,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = Symbol(node.name, SymType.FUNCTION, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        symbol.ast_node = weakref.ref(node)
+        symbol.ast_node = node
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
@@ -233,9 +230,9 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_sym = Symbol(self_name, SymType.VARIABLE, self.filePath)
                 self_sym.startLine = node.lineno
                 self_sym.endLine = node.end_lineno
-                self_sym.ast_node = weakref.ref(node)
+                self_sym.ast_node = node
                 self_sym.eval = Evaluation()
-                self_sym.eval.symbol = weakref.ref(class_sym) #no dep required here
+                self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
         #We don't need what's inside the function?
@@ -249,8 +246,8 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = Symbol(node.name, SymType.CLASS, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        node.symbol = weakref.ref(symbol)
-        symbol.ast_node = weakref.ref(node)
+        node.symbol = RegisteredRef(symbol)
+        symbol.ast_node = node
         symbol.classData = ClassData()
         doc = ast.get_docstring(node)
         if doc:
@@ -269,15 +266,15 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(node.target.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                variable.ast_node = weakref.ref(node)
+                variable.ast_node = node
                 #TODO move to arch_eval
                 if isinstance(node.iter, ast.Name):
                     eval_iter_node = Evaluation().evalAST(node.iter, self.symStack[-1])
-                    if eval_iter_node.getSymbol() and eval_iter_node.getSymbol().type == SymType.CLASS:
-                        iter = eval_iter_node.getSymbol().get_class_symbol("__iter__")
+                    if eval_iter_node.get_symbol() and eval_iter_node.get_symbol().type == SymType.CLASS:
+                        iter = eval_iter_node.get_symbol().get_class_symbol("__iter__")
                         if iter and iter.eval:
                             variable.eval = Evaluation()
-                            variable.eval.symbol = iter.eval.get_symbol_wr({"self": eval_iter_node.getSymbol()})
+                            variable.eval.symbol = iter.eval.get_symbol_rr({"self": eval_iter_node.get_symbol()})
                             #iter.dependents.add(variable)
                         else:
                             variable.eval = None
