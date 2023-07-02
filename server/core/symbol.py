@@ -55,7 +55,7 @@ class Symbol(RegisterableObject):
     """
 
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
-        "localSymbols",  "arch_dependents", "eval_dependents", "odoo_dependents", "parent", "isModule", "classData",
+        "localSymbols",  "dependencies", "dependents", "parent", "isModule", "classData",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc")
 
@@ -77,18 +77,44 @@ class Symbol(RegisterableObject):
         #(ex: two classes with same name in same file. Only last will be available for imports, 
         # but the other can be used locally)
         self.localSymbols = RegisteredRefList()
-        self.arch_dependents = {
-            BuildSteps.ARCH: RegisteredRefSet(),
-            BuildSteps.ARCH_EVAL: RegisteredRefSet(),
-            BuildSteps.ODOO: RegisteredRefSet(),
-            BuildSteps.VALIDATION: RegisteredRefSet()} #set of symbol that need to be rebuilt when this symbol is modified at arch level
-        self.eval_dependents = {
-            BuildSteps.ARCH_EVAL: RegisteredRefSet(),
-            BuildSteps.ODOO: RegisteredRefSet(),
-            BuildSteps.VALIDATION: RegisteredRefSet()} #set of symbol that need to be rebuilt when this symbol is re-evaluated
-        self.odoo_dependents = {
-            BuildSteps.ODOO: RegisteredRefSet(),
-            BuildSteps.VALIDATION: RegisteredRefSet()} #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
+        if self.type in (SymType.PACKAGE, SymType.FILE):
+            self.dependencies = {
+                BuildSteps.ARCH: {
+                    BuildSteps.ARCH: RegisteredRefSet(),
+                    BuildSteps.ARCH_EVAL: RegisteredRefSet(),
+                    BuildSteps.ODOO: RegisteredRefSet(),
+                    BuildSteps.VALIDATION: RegisteredRefSet()
+                },
+                BuildSteps.ARCH_EVAL: {
+                    # BuildSteps.ARCH_EVAL: RegisteredRefSet(),
+                    BuildSteps.ODOO: RegisteredRefSet(),
+                    BuildSteps.VALIDATION: RegisteredRefSet()
+                },
+                BuildSteps.ODOO:{
+                    BuildSteps.ODOO: RegisteredRefSet(),
+                    BuildSteps.VALIDATION: RegisteredRefSet()
+                },
+                BuildSteps.VALIDATION: {
+                    BuildSteps.VALIDATION: RegisteredRefSet()
+                }
+            }
+            self.dependents = {
+                BuildSteps.ARCH: {
+                    BuildSteps.ARCH: RegisteredRefSet(),
+                    BuildSteps.ARCH_EVAL: RegisteredRefSet(),
+                    BuildSteps.ODOO: RegisteredRefSet(),
+                    BuildSteps.VALIDATION: RegisteredRefSet() #set of symbol that need to be rebuilt when this symbol is modified at arch level
+                },
+                BuildSteps.ARCH_EVAL: { #set of symbol that need to be rebuilt when this symbol is re-evaluated
+                    #BuildSteps.ARCH_EVAL: RegisteredRefSet(), #should not occur? if yes, check that rebuild order is not sometimes broken
+                    BuildSteps.ODOO: RegisteredRefSet(),
+                    BuildSteps.VALIDATION: RegisteredRefSet()
+                },
+                BuildSteps.ODOO: { #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
+                    BuildSteps.ODOO: RegisteredRefSet(),
+                    BuildSteps.VALIDATION: RegisteredRefSet() 
+                }
+            }
         self.parent = None
         self.isModule = False
         self.classData = None
@@ -132,6 +158,16 @@ class Symbol(RegisterableObject):
                 context.update(sym.eval.context)
             sym = sym.eval.get_symbol(context)
         return sym, instance
+
+    def add_dependency(self, other_symbol, on_step, dep_level):
+        #on this symbol, add a dependency on the 'on_step' of other_symbol, for the dep_level
+        #TODO remove redundant dependencies
+        parent_sym = self.get_in_parents([SymType.FILE, SymType.PACKAGE])
+        parent_other_sym = other_symbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
+        if parent_sym == parent_other_sym or not parent_other_sym:
+            return
+        parent_sym.dependencies[on_step][dep_level].add(parent_other_sym)
+        parent_other_sym.dependents[on_step][dep_level].add(parent_sym)
 
     def is_file_content(self):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
@@ -200,7 +236,9 @@ class Symbol(RegisterableObject):
             #         if s != sym:
             #             to_unload.append(s)
             #     ast_node.linked_symbols.clear()
-            sym.invalidate(BuildSteps.ARCH)
+            file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
+            if file:
+                file.invalidate(BuildSteps.ARCH)
             if DEBUG_MEMORY:
                 print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.localSymbols.clear()
@@ -218,7 +256,7 @@ class Symbol(RegisterableObject):
         if step == BuildSteps.ARCH:
             # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
             if self.parent:
-                for to_rebuild_level, syms in self.parent.arch_dependents.items():
+                for to_rebuild_level, syms in self.parent.dependents[BuildSteps.ARCH].items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
                             if to_rebuild_level == BuildSteps.ARCH:
@@ -232,7 +270,7 @@ class Symbol(RegisterableObject):
         symbols = [self]
         while symbols:
             if step == BuildSteps.ARCH:
-                for to_rebuild_level, syms in symbols[0].arch_dependents.items():
+                for to_rebuild_level, syms in symbols[0].dependents[BuildSteps.ARCH].items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
                             if to_rebuild_level == BuildSteps.ARCH:
@@ -244,7 +282,7 @@ class Symbol(RegisterableObject):
                             elif to_rebuild_level == BuildSteps.VALIDATION:
                                 Odoo.get().add_to_validations(sym, force=True)
             if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL]:
-                for to_rebuild_level, syms in symbols[0].eval_dependents.items():
+                for to_rebuild_level, syms in symbols[0].dependents[BuildSteps.ARCH_EVAL].items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
                             if to_rebuild_level == BuildSteps.ARCH_EVAL:
@@ -254,7 +292,7 @@ class Symbol(RegisterableObject):
                             elif to_rebuild_level == BuildSteps.VALIDATION:
                                 Odoo.get().add_to_validations(sym, force=True)
             if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL, BuildSteps.ODOO]:
-                for to_rebuild_level, syms in symbols[0].odoo_dependents.items():
+                for to_rebuild_level, syms in symbols[0].dependents[BuildSteps.ODOO].items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
                             if to_rebuild_level == BuildSteps.ODOO:

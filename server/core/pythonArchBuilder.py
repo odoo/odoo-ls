@@ -22,20 +22,21 @@ class PythonArchBuilder(ast.NodeVisitor):
     Of course the evaluation won't work for odoo stuff at this stage.
     There is no validation done at this step. It will only build a tree of symbols"""
 
-    def __init__(self, ls, parentSymbol, contentOrPath):
+    def __init__(self, ls, parentSymbol, path, ast_node=None):
         """Prepare an arch builder to parse an element.
-        if contentOrPath is string, it must be a path to a file/direcotry/package.
-        If not, it must be a ref to an ast node that contains the element to parse
+        parentSymbol: the parent of the symbol to create
+        path: path to the symbol file
+        ast_node: the ast node to parse. If not provided, the file will be loaded from path
         """
-        if isinstance(contentOrPath, str):
+        if not ast_node:
             self.ast_node = None
-            self.filePath = contentOrPath
+            self.filePath = path
         else:
             parent_file = parentSymbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
-            self.filePath = parent_file.paths[0]
+            self.filePath = path
             if parent_file.type == SymType.PACKAGE:
                 self.filePath = os.path.join(self.filePath, "__init__.py" + parent_file.i_ext)
-            self.ast_node = contentOrPath
+            self.ast_node = ast_node
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.ls = ls
         self.diagnostics = []
@@ -51,34 +52,33 @@ class PythonArchBuilder(ast.NodeVisitor):
         """
         if DEBUG_ARCH_BUILDER:
             print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
-        if not self.ast_node: #we are parsing a whole file based on path
-            existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
-            if existing_symbol:
-                return existing_symbol
-            self.diagnostics = []
-            if not self.filePath.endswith(".py") and not self.filePath.endswith(".pyi"):
-                #check if this is a package:
-                if os.path.exists(os.path.join(self.filePath, "__init__.py")) or os.path.exists(os.path.join(self.filePath, "__init__.pyi")):
-                    symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
-                    if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
-                        os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
-                        symbol.isModule = True
-                    self.symStack[-1].add_symbol(symbol)
-                    self.symStack.append(symbol)
-                    if os.path.exists(os.path.join(self.filePath, "__init__.py")):
-                        self.filePath = os.path.join(self.filePath, "__init__.py")
-                    else:
-                        self.filePath = os.path.join(self.filePath, "__init__.pyi")
-                        symbol.i_ext = "i"
-                else:
-                    symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.NAMESPACE, self.filePath)
-                    self.symStack[-1].add_symbol(symbol)
-                    self.symStack.append(symbol)
-                    return self.symStack[1]
-            else:
-                symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], SymType.FILE, self.filePath)
+        existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
+        if existing_symbol:
+            return existing_symbol
+        self.diagnostics = []
+        if not self.filePath.endswith(".py") and not self.filePath.endswith(".pyi"):
+            #check if this is a package:
+            if os.path.exists(os.path.join(self.filePath, "__init__.py")) or os.path.exists(os.path.join(self.filePath, "__init__.pyi")):
+                symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
+                if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
+                    os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
+                    symbol.isModule = True
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
+                if os.path.exists(os.path.join(self.filePath, "__init__.py")):
+                    self.filePath = os.path.join(self.filePath, "__init__.py")
+                else:
+                    self.filePath = os.path.join(self.filePath, "__init__.pyi")
+                    symbol.i_ext = "i"
+            else:
+                symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.NAMESPACE, self.filePath)
+                self.symStack[-1].add_symbol(symbol)
+                self.symStack.append(symbol)
+                return self.symStack[1]
+        else:
+            symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], SymType.FILE, self.filePath)
+            self.symStack[-1].add_symbol(symbol)
+            self.symStack.append(symbol)
         #parse the Python file
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
@@ -150,7 +150,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.ast_node = node
                         eval_sym = variable.eval.get_symbol()
                         if eval_sym:
-                            eval_sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).arch_dependents[BuildSteps.ARCH].add(fileSymbol) #put file as dependent, to lower memory usage, as the rebuild is done at file level
+                            fileSymbol.add_dependency(eval_sym, BuildSteps.ARCH, BuildSteps.ARCH)
                         self.symStack[-1].add_symbol(variable)
             else:
                 variable = Symbol(import_name.asname if import_name.asname else import_name.name, SymType.VARIABLE, self.symStack[1].paths[0])
@@ -186,10 +186,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 if variable.name == "__all__":
                     variable.eval = Evaluation().evalAST(variable.value and variable.value, variable.parent)
                     if variable.eval.get_symbol():
-                        eval_file_symbol = variable.eval.get_symbol().get_in_parents([SymType.FILE, SymType.PACKAGE])
                         file_symbol = self.symStack[1]
-                        if eval_file_symbol != file_symbol:
-                            variable.eval.get_symbol().arch_dependents[BuildSteps.ARCH].add(file_symbol)
+                        file_symbol.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH, BuildSteps.ARCH)
                         
                     if self.symStack[-1].is_external():
                         # external packages often import symbols from compiled files 

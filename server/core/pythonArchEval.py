@@ -85,7 +85,7 @@ class PythonArchEval(ast.NodeVisitor):
             variable = node_alias.symbol
             if variable and symbol:
                 variable.ref.eval = Evaluation().eval_import(symbol)
-                symbol.eval_dependents[BuildSteps.ARCH_EVAL].add(variable.ref.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                variable.ref.add_dependency(symbol, BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
 
     def visit_Try(self, node):
         return
@@ -108,17 +108,16 @@ class PythonArchEval(ast.NodeVisitor):
                 if variable:
                     variable.eval = Evaluation().evalAST(variable.value and variable.value, variable.parent)
                     if variable.eval.get_symbol():
-                        variable.eval.get_symbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                        variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
 
     def visit_Assign(self, node):
         assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
         for variable_name, value in assigns.items():
             variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol.ref or None
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                if variable:
-                    variable.eval = Evaluation().evalAST(variable.value, variable.parent)
-                    if variable.eval.get_symbol():
-                        variable.eval.get_symbol().eval_dependents[BuildSteps.ARCH_EVAL].add(variable.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                variable.eval = Evaluation().evalAST(variable.value, variable.parent)
+                if variable.eval.get_symbol():
+                    variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
 
     def visit_FunctionDef(self, node):
         return
@@ -158,7 +157,7 @@ class PythonArchEval(ast.NodeVisitor):
                     continue #TODO generate error? add to unresolved
                 if iter_element.type != SymType.CLASS:
                     continue #TODO generate error?
-                iter_element.eval_dependents[BuildSteps.ARCH_EVAL].add(symbol.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                symbol.add_dependency(iter_element, BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
                 symbol.classData.bases.add(iter_element)
 
     def visit_ClassDef(self, node):
