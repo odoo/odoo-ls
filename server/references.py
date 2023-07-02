@@ -79,7 +79,9 @@ class RegisteredRefSet():
                 yield item
 
     def __len__(self):
-        return len(self.data) - len(self._pending_removals)
+        if self._pending_removals:
+            self._commit_removals()
+        return len(self.data)
 
     def __contains__(self, item):
         for data in self.data:

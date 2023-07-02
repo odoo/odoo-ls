@@ -177,12 +177,6 @@ class Odoo():
             print("starting rebuilds")
         already_arch_rebuilt = set()
         while True:
-            try:
-                if self.rebuild_arch:
-                    print("yy")
-            except:
-                len(self.rebuild_arch)
-                pass
             if self.rebuild_arch:
                 sym = self.rebuild_arch.pop()
                 if not sym:
@@ -301,14 +295,15 @@ class Odoo():
             file_symbol = self.get_file_symbol(old_path)
             if file_symbol:
                 file_symbol.unload(file_symbol)
+            del file_symbol
             #build new
             parent_path = os.sep.join(new_path.split(os.sep)[:-1])
             parent_symbol = self.get_file_symbol(parent_path)
             new_symbol = None
             if not parent_symbol:
                 print("parent symbol not found: " + parent_path)
+                ls.show_message("Unable to rename file. Internal representation is not right anymore", 1)
             else:
-                print("found: " + str(parent_symbol.get_tree()))
                 new_tree = parent_symbol.get_tree()
                 new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
                 set_to_validate = self._search_symbols_to_revalidate(new_tree)
