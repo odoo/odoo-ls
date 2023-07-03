@@ -190,11 +190,12 @@ class Odoo():
                 already_arch_rebuilt.add(tree)
                 parent = sym.parent
                 ast_node = sym.ast_node
+                path = sym.paths[0]
                 sym.unload(sym)
                 del sym
                 #build new
                 if parent and ast_node:
-                    pp = PythonArchBuilder(ls, parent, ast_node).load_arch()
+                    pp = PythonArchBuilder(ls, parent, path, ast_node).load_arch()
                 elif DEBUG_REBUILD:
                     print("Can't rebuild " + str(tree))
                 continue
@@ -313,7 +314,6 @@ class Odoo():
                     if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi"):
                         new_path = os.sep.join(new_path.split(os.sep)[:-1])
                     pp = PythonArchBuilder(ls, parent_symbol, new_path)
-                    del file_symbol
                     new_symbol = pp.load_arch()
             #rebuild validations
             self.process_rebuilds(ls)

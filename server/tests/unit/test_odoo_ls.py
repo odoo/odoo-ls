@@ -276,106 +276,106 @@ CONSTANT_3 = 3"""
 @pytest.mark.dependency(depends=["test_imports_dynamic"])
 def test_rename():
     print("RENAME TEST")
-    os.path.isfile = Mock(return_value=False) #prevent disk access to old file
-    old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
-    new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
-    file = FileRename(old_uri, new_uri)
-    params = RenameFilesParams([file])
-    did_rename_files(server, params)
-    #A check that symbols are not imported anymore from old file
-    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-    assert "CONSTANT_1" not in constants_dir.symbols
-    assert "CONSTANT_2" in constants_dir.symbols
-    assert "CONSTANT_3" not in constants_dir.symbols
-    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-    assert "CONSTANT_1" not in constants_data_dir.symbols
-    assert "CONSTANT_2" in constants_data_dir.symbols
-    assert "CONSTANT_3" not in constants_data_dir.symbols
-    assert not search_in_local(constants_data_dir, "CONSTANT_2")
-    assert "variables" not in constants_data_dir.moduleSymbols
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-    assert constants_data_file == None
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-    assert constants_data_file == None #As the file is not imported by any file, it should not be available
+    os.path.isfile = Mock(return_value=True) # ensure that new file name is detected as valid
+    old_uri_mock = pathlib.Path(__file__).parent.parent.resolve()
+    old_uri_mock = os.path.join(old_uri_mock, "data", "addons", "module_1", "constants", "data", "constants.py")
+    with open(old_uri_mock, "rb") as f:
+        data = f.read() #mock old file content
+        with patch("builtins.open", mock_open(read_data=data)) as mock_file:
+            old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
+            new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
+            file = FileRename(old_uri, new_uri)
+            params = RenameFilesParams([file])
+            did_rename_files(server, params)
+            #A check that symbols are not imported anymore from old file
+            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+            assert "CONSTANT_1" not in constants_dir.symbols
+            assert "CONSTANT_2" in constants_dir.symbols
+            assert "CONSTANT_3" not in constants_dir.symbols
+            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+            assert "CONSTANT_1" not in constants_data_dir.symbols
+            assert "CONSTANT_2" in constants_data_dir.symbols
+            assert "CONSTANT_3" not in constants_data_dir.symbols
+            assert not search_in_local(constants_data_dir, "CONSTANT_2")
+            assert "variables" not in constants_data_dir.moduleSymbols
+            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+            assert constants_data_file == None
+            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+            assert constants_data_file == None #As the file is not imported by any file, it should not be available
 
-    #B now change data/__init__.py to include the new file, and check that imports are resolved
-    file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
-    
-    server.workspace.get_document = Mock(return_value=Document(
-        uri=file_uri,
-        source="""
+            #B now change data/__init__.py to include the new file, and check that imports are resolved
+            file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
+            
+            server.workspace.get_document = Mock(return_value=Document(
+                uri=file_uri,
+                source="""
 from .variables import *
 
 CONSTANT_2 = 22"""
-    ))
-    params = DidChangeTextDocumentParams(
-        text_document = VersionedTextDocumentIdentifier(
-            version = 2,
-            uri=file_uri
-        ),
-        content_changes = []
-    )
-    os.path.isfile = Mock(return_value=True) #prevent disk access to old file
-    old_uri = pathlib.Path(__file__).parent.parent.resolve()
-    old_uri = os.path.join(old_uri, "data", "addons", "module_1", "constants", "data", "constants.py")
-    with open(old_uri, "rb") as f:
-        data = f.read() #mock old file content
-        with patch("builtins.open", mock_open(read_data=data)) as mock_file:
+            ))
+            params = DidChangeTextDocumentParams(
+                text_document = VersionedTextDocumentIdentifier(
+                    version = 2,
+                    uri=file_uri
+                ),
+                content_changes = []
+            )
             _did_change_after_delay(server, params, 0)
-    
-    var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-    assert var_data_file
-    assert "CONSTANT_1" in var_data_file.symbols
-    assert "CONSTANT_2" in var_data_file.symbols
-    assert "CONSTANT_3" in var_data_file.symbols
-    assert "__all__" in var_data_file.symbols
-    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-    assert "CONSTANT_1" in constants_dir.symbols
-    assert "CONSTANT_2" in constants_dir.symbols
-    assert "CONSTANT_3" in constants_dir.symbols
-    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-    assert "CONSTANT_1" in constants_data_dir.symbols
-    assert "CONSTANT_2" in constants_data_dir.symbols
-    assert "CONSTANT_3" in constants_data_dir.symbols
-    assert search_in_local(constants_data_dir, "CONSTANT_2")
-    assert "variables" in constants_data_dir.moduleSymbols
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-    assert constants_data_file == None
+            
+            var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+            assert var_data_file
+            assert "CONSTANT_1" in var_data_file.symbols
+            assert "CONSTANT_2" in var_data_file.symbols
+            assert "CONSTANT_3" in var_data_file.symbols
+            assert "__all__" in var_data_file.symbols
+            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+            assert "CONSTANT_1" in constants_dir.symbols
+            assert "CONSTANT_2" in constants_dir.symbols
+            assert "CONSTANT_3" not in constants_dir.symbols
+            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+            assert "CONSTANT_1" in constants_data_dir.symbols
+            assert "CONSTANT_2" in constants_data_dir.symbols
+            assert "CONSTANT_3" not in constants_data_dir.symbols
+            assert search_in_local(constants_data_dir, "CONSTANT_2")
+            assert "variables" in constants_data_dir.moduleSymbols
+            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+            assert constants_data_file == None
 
-    # C let's go back to old name, then rename again to variables, to see if everything resolve correctly
-    os.path.isfile = Mock(return_value=False) #prevent disk access to old file
-    old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
-    new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
-    file = FileRename(old_uri, new_uri)
-    params = RenameFilesParams([file])
-    did_rename_files(server, params)
-    old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
-    new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
-    file = FileRename(old_uri, new_uri)
-    params = RenameFilesParams([file])
-    did_rename_files(server, params)
+            # C let's go back to old name, then rename again to variables, to see if everything resolve correctly
+            os.path.isfile = Mock(return_value=False) #prevent disk access to old file
+            old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
+            new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
+            file = FileRename(old_uri, new_uri)
+            params = RenameFilesParams([file])
+            did_rename_files(server, params)
+            os.path.isfile = Mock(return_value=True) #prevent disk access to old file
+            old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
+            new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
+            file = FileRename(old_uri, new_uri)
+            params = RenameFilesParams([file])
+            did_rename_files(server, params)
 
-    var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-    assert var_data_file
-    assert "CONSTANT_1" in var_data_file.symbols
-    assert "CONSTANT_2" in var_data_file.symbols
-    assert "CONSTANT_3" in var_data_file.symbols
-    assert "__all__" in var_data_file.symbols
-    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-    assert "CONSTANT_1" in constants_dir.symbols
-    assert "CONSTANT_2" in constants_dir.symbols
-    assert "CONSTANT_3" in constants_dir.symbols
-    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-    assert "CONSTANT_1" in constants_data_dir.symbols
-    assert "CONSTANT_2" in constants_data_dir.symbols
-    assert "CONSTANT_3" in constants_data_dir.symbols
-    assert search_in_local(constants_data_dir, "CONSTANT_2")
-    assert "variables" in constants_data_dir.moduleSymbols
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-    assert constants_data_file == None
+            var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+            assert var_data_file
+            assert "CONSTANT_1" in var_data_file.symbols
+            assert "CONSTANT_2" in var_data_file.symbols
+            assert "CONSTANT_3" in var_data_file.symbols
+            assert "__all__" in var_data_file.symbols
+            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+            assert "CONSTANT_1" in constants_dir.symbols
+            assert "CONSTANT_2" in constants_dir.symbols
+            assert "CONSTANT_3" not in constants_dir.symbols
+            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+            assert "CONSTANT_1" in constants_data_dir.symbols
+            assert "CONSTANT_2" in constants_data_dir.symbols
+            assert "CONSTANT_3" not in constants_data_dir.symbols
+            assert search_in_local(constants_data_dir, "CONSTANT_2")
+            assert "variables" in constants_data_dir.moduleSymbols
+            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+            assert constants_data_file == None
 
 
-    server.workspace.get_document.reset_mock()
+            server.workspace.get_document.reset_mock()
 
 def test_rename_inherit():
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
