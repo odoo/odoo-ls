@@ -52,7 +52,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         """
         if DEBUG_ARCH_BUILDER:
             print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
-        existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
+        existing_symbol = self.symStack[-1].get_symbol(self.ls, [self.filePath.split(os.sep)[-1].split(".py")[0]])
         if existing_symbol:
             return existing_symbol
         self.diagnostics = []
@@ -74,12 +74,14 @@ class PythonArchBuilder(ast.NodeVisitor):
                 symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.NAMESPACE, self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
+                symbol.archStatus = 2
                 return self.symStack[1]
         else:
             symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], SymType.FILE, self.filePath)
             self.symStack[-1].add_symbol(symbol)
             self.symStack.append(symbol)
         #parse the Python file
+        symbol.archStatus = 1
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
@@ -94,8 +96,9 @@ class PythonArchBuilder(ast.NodeVisitor):
             if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
                 fileInfo["d_arch"] = self.diagnostics
         if self.filePath.endswith("__init__.py"):
-            PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
+            PythonArchBuilderOdooHooks.on_module_declaration(self.ls, self.symStack[-1])
         FileMgr.publish_diagnostics(self.ls, fileInfo)
+        self.symStack[-1].archStatus = 2
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         return self.symStack[-1]
 
@@ -258,7 +261,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()
-        PythonArchBuilderOdooHooks.on_class_declaration(symbol)
+        PythonArchBuilderOdooHooks.on_class_declaration(self.ls, symbol)
 
     def visit_For(self, node):
         if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE, SymType.FUNCTION]:

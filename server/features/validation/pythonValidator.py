@@ -211,7 +211,7 @@ class PythonValidator(ast.NodeVisitor):
                     continue
                 symbol = inference.symbol
                 if len(full_base.split(".")) > 1:
-                    symbol = symbol.get_symbol(full_base.split(".")[1:])
+                    symbol = symbol.get_symbol(self.ls, full_base.split(".")[1:])
                 if symbol:
                     if symbol.type == "class":
                         bases += [symbol]
@@ -295,7 +295,7 @@ class PythonValidator(ast.NodeVisitor):
             if symbol.type == SymType.CLASS:
                 if symbol.modelData:
                     node = symbol.ast_node
-                    _inherit_decl = symbol.get_symbol([], ["_inherit"])
+                    _inherit_decl = symbol.get_symbol(self.ls, [], ["_inherit"])
                     if _inherit_decl:
                         node = _inherit_decl.ast_node
                     for inherit in symbol.modelData.inherit:

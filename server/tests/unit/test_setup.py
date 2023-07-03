@@ -13,7 +13,7 @@ def test_setup():
 @pytest.mark.dependency(depends=["test_setup"])
 def test_start_odoo_ls():
     Odoo.get(server)
-    assert Odoo.get().symbols.get_symbol(["odoo"]), "Odoo has not been loaded"
-    assert Odoo.get().symbols.get_symbol(["odoo", "addons"]), "Odoo addons collection has failed to load"
-    assert Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1"]), "OdooLS Test Module1 has not been loaded from custom addons path"
+    assert Odoo.get().symbols.get_symbol(None, ["odoo"]), "Odoo has not been loaded"
+    assert Odoo.get().symbols.get_symbol(None, ["odoo", "addons"]), "Odoo addons collection has failed to load"
+    assert Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1"]), "OdooLS Test Module1 has not been loaded from custom addons path"
 

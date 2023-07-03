@@ -90,13 +90,13 @@ class PythonOdooBuilder(ast.NodeVisitor):
         if not symbol.classData:
             print("class has no classData, something is broken")
             return
-        baseModel = Odoo.get().get_symbol(["odoo", "models"], ["BaseModel"])
-        model = Odoo.get().get_symbol(["odoo", "models"], ["Model"])
-        transient = Odoo.get().get_symbol(["odoo", "models"], ["TransientModel"])
+        baseModel = Odoo.get().get_symbol(self.ls, ["odoo", "models"], ["BaseModel"])
+        model = Odoo.get().get_symbol(self.ls, ["odoo", "models"], ["Model"])
+        transient = Odoo.get().get_symbol(self.ls, ["odoo", "models"], ["TransientModel"])
         # _register is always set to True at each inheritance, so no need to check for parent classes
         if symbol.classData.inherits(baseModel) and symbol not in [baseModel, model, transient]:
             symbol.modelData = ModelData()
-            _register = symbol.get_symbol([], ["_register"])
+            _register = symbol.get_symbol(self.ls, [], ["_register"])
             if _register and _register.eval:
                 value = _register.eval.get_symbol().follow_ref()[0]
                 if value.type == SymType.PRIMITIVE:

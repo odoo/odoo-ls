@@ -40,21 +40,21 @@ def search_in_local(symbol, name):
     return found_in_local
 
 def test_load_modules():
-    assert Odoo.get().symbols.get_symbol(["odoo", "addons", "module_2"]), "OdooLS Test Module2 has not been loaded from custom addons path"
-    assert not Odoo.get().symbols.get_symbol(["odoo", "addons", "not_a_module"]), "NotAModule is present in symbols, but it should not have been loaded"
+    assert Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_2"]), "OdooLS Test Module2 has not been loaded from custom addons path"
+    assert not Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "not_a_module"]), "NotAModule is present in symbols, but it should not have been loaded"
 
 def test_imports():
-    assert not Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "not_loaded"])
-    assert not Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"])
-    assert not Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], ["NotLoadedClass"])
-    assert not Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], ["NotLoadedFunc"])
-    assert Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models"])
-    model_package = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models"])
+    assert not Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "not_loaded"])
+    assert not Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"])
+    assert not Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], ["NotLoadedClass"])
+    assert not Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], ["NotLoadedFunc"])
+    assert Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models"])
+    model_package = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models"])
     assert "base_test_models" in model_package.symbols
     assert "base_test_models" in model_package.moduleSymbols
-    assert model_package.moduleSymbols["base_test_models"] == model_package.get_symbol(["base_test_models"])
-    assert model_package.symbols["base_test_models"] == model_package.get_symbol([], ["base_test_models"])
-    base_test_models = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
+    assert model_package.moduleSymbols["base_test_models"] == model_package.get_symbol(None, ["base_test_models"])
+    assert model_package.symbols["base_test_models"] == model_package.get_symbol(None, [], ["base_test_models"])
+    base_test_models = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "base_test_models"])
     assert "CONSTANT_1" in base_test_models.symbols
     assert "CONSTANT_2" in base_test_models.symbols
     assert not "CONSTANT_3" in base_test_models.symbols
@@ -64,18 +64,18 @@ def test_imports():
     assert "_" in base_test_models.symbols
     assert "tools" in base_test_models.symbols
     assert "BaseTestModel" in base_test_models.symbols
-    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+    constants_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants"])
     assert "CONSTANT_1" in constants_dir.symbols
     assert "CONSTANT_2" in constants_dir.symbols
     assert not "CONSTANT_3" in constants_dir.symbols, "CONSTANT_3 should not be loaded, as __all__ variable should prevent import in constants.py"
-    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+    constants_data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
     assert search_in_local(constants_data_dir, "CONSTANT_2")
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not "CONSTANT_3" in constants_data_dir.symbols
 
 def test_load_classes():
-    base_class = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
+    base_class = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
     assert base_class, "BaseTestModel has not been loaded"
     assert base_class.name == "BaseTestModel"
     assert "test_int" in base_class.symbols
@@ -83,13 +83,13 @@ def test_load_classes():
     assert "get_constant" in base_class.symbols
 
 def test_evaluation():
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-    evaluation = constants_data_file.get_symbol([], ["CONSTANT_1"]).eval
+    constants_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "constants"])
+    evaluation = constants_data_file.get_symbol(None, [], ["CONSTANT_1"]).eval
     assert evaluation and evaluation.get_symbol()
     assert isinstance(evaluation._symbol, RegisteredRef)
     assert evaluation.get_symbol().type == SymType.PRIMITIVE
     assert evaluation.instance == True
-    evaluation = constants_data_file.get_symbol([], ["__all__"]).eval
+    evaluation = constants_data_file.get_symbol(None, [], ["__all__"]).eval
     assert evaluation and evaluation.get_symbol()
     assert isinstance(evaluation._symbol, RegisteredRef)
     assert evaluation.get_symbol().type == SymType.PRIMITIVE
@@ -97,8 +97,8 @@ def test_evaluation():
     assert evaluation.get_symbol().name == "list"
     assert evaluation.get_symbol().eval.value == ["CONSTANT_1", "CONSTANT_2"]
 
-    data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-    evaluation = data_dir.get_symbol([], ["CONSTANT_1"]).eval
+    data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
+    evaluation = data_dir.get_symbol(None, [], ["CONSTANT_1"]).eval
     assert evaluation
     assert isinstance(evaluation._symbol, RegisteredRef)
     assert evaluation.get_symbol() #Symbol of variable in constants.py
@@ -107,43 +107,43 @@ def test_evaluation():
     assert var_symbol.type == SymType.VARIABLE
     assert var_symbol.name == "CONSTANT_1"
     
-    base_test_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
-    evaluation = base_test_file.get_symbol([], ["BaseOtherName"]).eval
+    base_test_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "base_test_models"])
+    evaluation = base_test_file.get_symbol(None, [], ["BaseOtherName"]).eval
     assert evaluation._symbol
     assert evaluation.get_symbol()
     assert evaluation.get_symbol().type == SymType.CLASS
     assert evaluation.get_symbol().name == "BaseTestModel"
     assert evaluation.instance == False
 
-    evaluation = base_test_file.get_symbol([], ["baseInstance1"]).eval
+    evaluation = base_test_file.get_symbol(None, [], ["baseInstance1"]).eval
     assert evaluation._symbol
     assert evaluation.get_symbol()
     assert evaluation.get_symbol().type == SymType.CLASS
     assert evaluation.get_symbol().name == "BaseTestModel"
     assert evaluation.instance == True
 
-    evaluation = base_test_file.get_symbol([], ["baseInstance2"]).eval
+    evaluation = base_test_file.get_symbol(None, [], ["baseInstance2"]).eval
     assert evaluation._symbol
     assert evaluation.get_symbol()
     assert evaluation.get_symbol().type == SymType.CLASS
     assert evaluation.get_symbol().name == "BaseTestModel"
     assert evaluation.instance == True
 
-    evaluation = base_test_file.get_symbol([], ["ref_funcBase1"]).eval
+    evaluation = base_test_file.get_symbol(None, [], ["ref_funcBase1"]).eval
     assert evaluation._symbol
     assert evaluation.get_symbol()
     assert evaluation.get_symbol().type == SymType.FUNCTION
     assert evaluation.get_symbol().name == "get_test_int"
     assert evaluation.instance == False
 
-    evaluation = base_test_file.get_symbol([], ["ref_funcBase2"]).eval
+    evaluation = base_test_file.get_symbol(None, [], ["ref_funcBase2"]).eval
     assert evaluation._symbol
     assert evaluation.get_symbol()
     assert evaluation.get_symbol().type == SymType.FUNCTION
     assert evaluation.get_symbol().name == "get_test_int"
     assert evaluation.instance == False
     
-    evaluation = base_test_file.get_symbol([], ["return_funcBase2"]).eval
+    evaluation = base_test_file.get_symbol(None, [], ["return_funcBase2"]).eval
     #the return evaluation of a function is not really 100% accurate. Let's at least test that the function is not returned
     if evaluation._symbol and evaluation.get_symbol():
         assert evaluation.get_symbol().type != SymType.FUNCTION
@@ -151,10 +151,10 @@ def test_evaluation():
 
 
 def test_base_class():
-    test_class = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
-    model_symbol = Odoo.get().symbols.get_symbol(["odoo", "models"], ["Model"])
-    abstract_model = Odoo.get().symbols.get_symbol(["odoo", "models"], ["AbstractModel"])
-    base_model = Odoo.get().symbols.get_symbol(["odoo", "models"], ["BaseModel"])
+    test_class = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
+    model_symbol = Odoo.get().symbols.get_symbol(None, ["odoo", "models"], ["Model"])
+    abstract_model = Odoo.get().symbols.get_symbol(None, ["odoo", "models"], ["AbstractModel"])
+    base_model = Odoo.get().symbols.get_symbol(None, ["odoo", "models"], ["BaseModel"])
     assert test_class and test_class.type == SymType.CLASS and test_class.classData
     assert model_symbol and model_symbol.type == SymType.CLASS and test_class.classData
     assert abstract_model and abstract_model.type == SymType.VARIABLE
@@ -165,67 +165,67 @@ def test_base_class():
 
 
 def test_model_name_inherit():
-    model_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"])
-    model_name = model_file.get_symbol([], ["model_name"])
+    model_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "models"])
+    model_name = model_file.get_symbol(None, [], ["model_name"])
     assert model_name and model_name.modelData
     assert model_name.modelData.name == "pygls.tests.m_name"
     assert model_name.modelData.inherit == ["base"]
-    model_name_inherit = model_file.get_symbol([], ["model_name_inherit"])
+    model_name_inherit = model_file.get_symbol(None, [], ["model_name_inherit"])
     assert model_name_inherit and model_name_inherit.modelData
     assert model_name_inherit.modelData.name == "pygls.tests.m_name"
     assert model_name_inherit.modelData.inherit == ["pygls.tests.m_name", "base"]
-    model_name_inherit_no_name = model_file.get_symbol([], ["model_name_inherit_no_name"])
+    model_name_inherit_no_name = model_file.get_symbol(None, [], ["model_name_inherit_no_name"])
     assert model_name_inherit_no_name and model_name_inherit_no_name.modelData
     assert model_name_inherit_no_name.modelData.name == "pygls.tests.m_name"
     assert model_name_inherit_no_name.modelData.inherit == ["pygls.tests.m_name", "base"]
-    model_name_inherit_diff_name = model_file.get_symbol([], ["model_name_inherit_diff_name"])
+    model_name_inherit_diff_name = model_file.get_symbol(None, [], ["model_name_inherit_diff_name"])
     assert model_name_inherit_diff_name and model_name_inherit_diff_name.modelData
     assert model_name_inherit_diff_name.modelData.name == "pygls.tests.m_diff_name"
     assert model_name_inherit_diff_name.modelData.inherit == ["pygls.tests.m_name", "base"]
-    model_name_2 = model_file.get_symbol([], ["model_name_2"])
+    model_name_2 = model_file.get_symbol(None, [], ["model_name_2"])
     assert model_name_2 and model_name_2.modelData
     assert model_name_2.modelData.name == "pygls.tests.m_name_2"
     assert model_name_2.modelData.inherit == ["base"]
-    model_name_inherit_comb_name = model_file.get_symbol([], ["model_name_inherit_comb_name"])
+    model_name_inherit_comb_name = model_file.get_symbol(None, [], ["model_name_inherit_comb_name"])
     assert model_name_inherit_comb_name and model_name_inherit_comb_name.modelData
     assert model_name_inherit_comb_name.modelData.name == "pygls.tests.m_comb_name"
     assert model_name_inherit_comb_name.modelData.inherit == ["pygls.tests.m_name", "pygls.tests.m_name_2", "base"]
-    model_no_name = model_file.get_symbol([], ["model_no_name"])
+    model_no_name = model_file.get_symbol(None, [], ["model_no_name"])
     assert model_no_name and model_no_name.modelData
     assert model_no_name.modelData.name == "model_no_name"
-    model_no_register = model_file.get_symbol([], ["model_no_register"])
+    model_no_register = model_file.get_symbol(None, [], ["model_no_register"])
     assert model_no_register and model_no_register.modelData
     assert model_no_register.modelData.name == ""
     assert model_no_register.modelData.inherit == []
-    model_no_register = model_file.get_symbol([], ["model_register"])
+    model_no_register = model_file.get_symbol(None, [], ["model_register"])
     assert model_no_register and model_no_register.modelData
     assert model_no_register.modelData.name == "pygls.tests.m_no_register"
     assert model_no_register.modelData.inherit == ['base']
-    model_no_register_inherit = model_file.get_symbol([], ["model_no_register_inherit"])
+    model_no_register_inherit = model_file.get_symbol(None, [], ["model_no_register_inherit"])
     assert model_no_register_inherit and model_no_register_inherit.modelData
     assert model_no_register_inherit.modelData.name == "pygls.tests.m_no_register"
     assert model_no_register_inherit.modelData.inherit == ["pygls.tests.m_no_register", "base"]
-    model_inherits = model_file.get_symbol([], ["model_inherits"])
+    model_inherits = model_file.get_symbol(None, [], ["model_inherits"])
     assert model_inherits and model_inherits.modelData
     assert model_inherits.modelData.name == "pygls.tests.m_inherits"
     assert model_inherits.modelData.inherits == {"pygls.tests.m_name": "field_m_name_id"}
 
 def test_magic_fields():
-    model_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"])
+    model_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "models"])
     if Odoo.instance.version_major == 14:
-        model_model = model_file.get_symbol([], ["model_model"])
+        model_model = model_file.get_symbol(None, [], ["model_model"])
         assert model_model and model_model.modelData
         assert model_model and model_model.modelData.auto == True
-        model_model = model_file.get_symbol([], ["model_transient"])
+        model_model = model_file.get_symbol(None, [], ["model_transient"])
         assert model_model and model_model.modelData
         assert model_model and model_model.modelData.auto == True
-        model_model = model_file.get_symbol([], ["model_abstract"])
+        model_model = model_file.get_symbol(None, [], ["model_abstract"])
         assert model_model and model_model.modelData
         assert model_model and model_model.modelData.auto == False
-        model_model = model_file.get_symbol([], ["model_name"])
+        model_model = model_file.get_symbol(None, [], ["model_name"])
         assert model_model and model_model.modelData
         assert model_model and model_model.modelData.auto == False
-        model_model = model_file.get_symbol([], ["model_name_inh_python"])
+        model_model = model_file.get_symbol(None, [], ["model_name_inh_python"])
         assert model_model and model_model.modelData
         assert model_model and model_model.modelData.auto == False
     elif Odoo.instance.version_major == 15:
@@ -255,20 +255,20 @@ CONSTANT_3 = 3"""
         content_changes = []
     )
     _did_change_after_delay(server, params, 0) #call deferred func
-    base_test_models = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
+    base_test_models = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "base_test_models"])
     assert "CONSTANT_1" in base_test_models.symbols
     assert "CONSTANT_2" in base_test_models.symbols, "even if CONSTANT_2 is not in file anymore, the symbol should still exist"
     assert not "CONSTANT_3" in base_test_models.symbols
-    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+    constants_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants"])
     assert "CONSTANT_1" in constants_dir.symbols
     assert "CONSTANT_2" in constants_dir.symbols
     assert not "CONSTANT_3" in constants_dir.symbols
-    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+    constants_data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
     assert "CONSTANT_1" in constants_data_dir.symbols
     assert "CONSTANT_2" in constants_data_dir.symbols
     assert not search_in_local(constants_data_dir, "CONSTANT_2")
     assert not "CONSTANT_3" in constants_data_dir.symbols
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+    constants_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "constants"])
     assert "CONSTANT_1" in constants_data_file.symbols
     assert not "CONSTANT_2" in constants_data_file.symbols
     assert "CONSTANT_3" in constants_data_file.symbols
@@ -288,19 +288,19 @@ def test_rename():
             params = RenameFilesParams([file])
             did_rename_files(server, params)
             #A check that symbols are not imported anymore from old file
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+            constants_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants"])
             assert "CONSTANT_1" not in constants_dir.symbols
             assert "CONSTANT_2" in constants_dir.symbols
             assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+            constants_data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
             assert "CONSTANT_1" not in constants_data_dir.symbols
             assert "CONSTANT_2" in constants_data_dir.symbols
             assert "CONSTANT_3" not in constants_data_dir.symbols
             assert not search_in_local(constants_data_dir, "CONSTANT_2")
             assert "variables" not in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+            constants_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "constants"])
             assert constants_data_file == None
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+            constants_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "variables"])
             assert constants_data_file == None #As the file is not imported by any file, it should not be available
 
             #B now change data/__init__.py to include the new file, and check that imports are resolved
@@ -322,23 +322,23 @@ CONSTANT_2 = 22"""
             )
             _did_change_after_delay(server, params, 0)
             
-            var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+            var_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "variables"])
             assert var_data_file
             assert "CONSTANT_1" in var_data_file.symbols
             assert "CONSTANT_2" in var_data_file.symbols
             assert "CONSTANT_3" in var_data_file.symbols
             assert "__all__" in var_data_file.symbols
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+            constants_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants"])
             assert "CONSTANT_1" in constants_dir.symbols
             assert "CONSTANT_2" in constants_dir.symbols
             assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+            constants_data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
             assert "CONSTANT_1" in constants_data_dir.symbols
             assert "CONSTANT_2" in constants_data_dir.symbols
             assert "CONSTANT_3" not in constants_data_dir.symbols
             assert search_in_local(constants_data_dir, "CONSTANT_2")
             assert "variables" in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+            constants_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "constants"])
             assert constants_data_file == None
 
             # C let's go back to old name, then rename again to variables, to see if everything resolve correctly
@@ -355,30 +355,30 @@ CONSTANT_2 = 22"""
             params = RenameFilesParams([file])
             did_rename_files(server, params)
 
-            var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+            var_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "variables"])
             assert var_data_file
             assert "CONSTANT_1" in var_data_file.symbols
             assert "CONSTANT_2" in var_data_file.symbols
             assert "CONSTANT_3" in var_data_file.symbols
             assert "__all__" in var_data_file.symbols
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+            constants_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants"])
             assert "CONSTANT_1" in constants_dir.symbols
             assert "CONSTANT_2" in constants_dir.symbols
             assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+            constants_data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
             assert "CONSTANT_1" in constants_data_dir.symbols
             assert "CONSTANT_2" in constants_data_dir.symbols
             assert "CONSTANT_3" not in constants_data_dir.symbols
             assert search_in_local(constants_data_dir, "CONSTANT_2")
             assert "variables" in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+            constants_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "constants"])
             assert constants_data_file == None
 
 
             server.workspace.get_document.reset_mock()
 
 def test_rename_inherit():
-    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+    model = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
     assert model.classData
     assert model.classData.bases
@@ -401,7 +401,7 @@ def test_rename_inherit():
         content_changes = []
     )
     _did_change_after_delay(server, params, 0) #call deferred func
-    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+    model = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
     assert model.classData
     assert not model.classData.bases
@@ -418,7 +418,7 @@ def test_rename_inherit():
         ),
         content_changes = []
     )
-    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+    model = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
     assert model.classData
     assert model.classData.bases
@@ -443,16 +443,16 @@ def test_missing_symbol_resolve():
 #         content_changes = []
 #     )
 #     _did_change_after_delay(server, params, 0) #call deferred func
-#     constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+#     constants_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants"])
 #     assert "CONSTANT_1" in constants_dir.symbols
 #     assert "CONSTANT_2" in constants_dir.symbols
 #     assert not "CONSTANT_3" in constants_dir.symbols
-#     constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+#     constants_data_dir = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data"])
 #     assert "CONSTANT_1" not in constants_data_dir.symbols
 #     assert "CONSTANT_2" in constants_data_dir.symbols
 #     assert not search_in_local(constants_data_dir, "CONSTANT_2")
 #     assert not "CONSTANT_3" in constants_data_dir.symbols
-#     variables_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+#     variables_data_file = Odoo.get().symbols.get_symbol(None, ["odoo", "addons", "module_1", "constants", "data", "variables"])
 #     assert "CONSTANT_1" in variables_data_file.symbols
 #     assert not "CONSTANT_2" in variables_data_file.symbols
 #     assert "CONSTANT_3" in variables_data_file.symbols

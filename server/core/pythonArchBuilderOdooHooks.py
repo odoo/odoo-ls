@@ -33,11 +33,11 @@ class EvaluationModelIter(Evaluation):
 
 class PythonArchBuilderOdooHooks:
 
-    def on_module_declaration(symbol):
+    def on_module_declaration(ls, symbol):
         if symbol.name == "logging":
             if symbol.get_tree() == (["logging"], []):
-                get_logger = symbol.get_symbol([], ["getLogger"])
-                logger = symbol.get_symbol([], ["Logger"])
+                get_logger = symbol.get_symbol(ls, [], ["getLogger"])
+                logger = symbol.get_symbol(ls, [], ["Logger"])
                 if get_logger and logger:
                     get_logger.eval = Evaluation(
                         symbol=RegisteredRef(logger),
@@ -45,18 +45,18 @@ class PythonArchBuilderOdooHooks:
                     )
 
     @staticmethod
-    def on_class_declaration(symbol):
+    def on_class_declaration(ls, symbol):
         """ called when ArchBuilder create a new class Symbol """
         from server.core.odoo import Odoo
         return
         if symbol.name == "BaseModel": #fast, basic check
             if symbol.get_tree() == (["odoo", "models"], ["BaseModel"]): #slower but more precise verification
-                iter = symbol.get_symbol([], ["__iter__"])
+                iter = symbol.get_symbol(ls, [], ["__iter__"])
                 iter.eval = EvaluationModelIter()
                 # ---------- env ----------
-                envModel = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
+                envModel = Odoo.get().get_symbol(ls, ["odoo", "api"], ["Environment"])
                 env_var = Symbol("env", SymType.VARIABLE, symbol.paths)
-                slot_sym = symbol.get_symbol([], ["__slots__"])
+                slot_sym = symbol.get_symbol(ls, [], ["__slots__"])
                 if not slot_sym:
                     return #TODO should never happen
                 env_var.startLine = slot_sym.startLine
@@ -75,13 +75,13 @@ class PythonArchBuilderOdooHooks:
                 if envModel:
                     cr_var.startLine = envModel.startLine
                     cr_var.endLine = envModel.endLine
-                cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["Cursor"])
+                cursor_sym = Odoo.get().get_symbol(ls, ["odoo", "sql_db"], ["Cursor"])
                 if cursor_sym:
                     cr_var.eval = EvaluationTestCursor(
                         symbol=RegisteredRef(cursor_sym),
                         instance = True
                     )
-                    test_cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["TestCursor"])
+                    test_cursor_sym = Odoo.get().get_symbol(ls, ["odoo", "sql_db"], ["TestCursor"])
                     cr_var.eval.test_cursor = RegisteredRef(test_cursor_sym)
                     cursor_sym.arch_dependents.add(cr_var)
                     cr_var.doc = ""
@@ -110,8 +110,8 @@ class PythonArchBuilderOdooHooks:
         elif symbol.name == "TransactionCase": #fast, basic check
             if symbol.get_tree() == (["odoo", "tests", "common"], ["TransactionCase"]): #slower but more precise verification
                 # ---------- env ----------
-                envModel = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
-                env_var = symbol.get_symbol([], ["env"]) #should already exists
+                envModel = Odoo.get().get_symbol(ls, ["odoo", "api"], ["Environment"])
+                env_var = symbol.get_symbol(ls, [], ["env"]) #should already exists
                 if env_var and envModel:
                     env_var.eval = Evaluation(
                         symbol=RegisteredRef(envModel),
@@ -122,5 +122,5 @@ class PythonArchBuilderOdooHooks:
                     env_var.doc = ""
         elif symbol.name == "Environment":
             if symbol.get_tree() == (["odoo", "api"], ["Environment"]):
-                get_item = symbol.get_symbol([], ["__getitem__"])
+                get_item = symbol.get_symbol(ls, [], ["__getitem__"])
                 get_item.eval = EvaluationEnvGetItem()

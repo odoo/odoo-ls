@@ -38,6 +38,7 @@ class PythonArchEval(ast.NodeVisitor):
         """pass through the ast to find symbols to evaluate"""
         if DEBUG_ARCH_EVAL:
             print("Eval arch: " + self.fileSymbol.paths[0])
+        self.symbol.evalStatus = 1
         ast_node = self.symbol.ast_node
         self.eval_from_ast(ast_node)
         if not self.symbol.is_external():
@@ -51,6 +52,7 @@ class PythonArchEval(ast.NodeVisitor):
         #    PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
         FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        self.symbol.evalStatus = 2
         return self.symbol
 
     def resolve__all__symbols(self):
@@ -149,7 +151,7 @@ class PythonArchEval(ast.NodeVisitor):
                 iter_element, _ = iter_element.follow_ref()
                 found = True
                 for base_element in base_elements[1:]:
-                    iter_element = iter_element.get_symbol([], [base_element])
+                    iter_element = iter_element.get_symbol(self.ls, [], [base_element])
                     if not iter_element:
                         found = False
                         break

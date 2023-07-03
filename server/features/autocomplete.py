@@ -7,7 +7,7 @@ from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItem
 class AutoCompleteFeature:
 
     @staticmethod
-    def autocomplete(path, content, line, char):
+    def autocomplete(ls, path, content, line, char):
         from ..pythonUtils import PythonUtils
         parsoTree = Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
         element = parsoTree.get_leaf_for_position((line+1, char), include_prefixes=True)
@@ -31,7 +31,7 @@ class AutoCompleteFeature:
                 if not before or before[-1] not in ["'", '"']:
                     return []
                 before = before[1:]
-                file_symbol = Odoo.get().get_file_symbol(path)
+                file_symbol = Odoo.get().get_file_symbol(ls, path)
                 module = file_symbol.get_module()
                 if not module:
                     return []
@@ -56,7 +56,7 @@ class AutoCompleteFeature:
             #     previous = previous.get_previous_leaf()
             # print(containers)
             expr = ParsoUtils.get_previous_leafs_expr(element)
-            file_symbol = Odoo.get().get_file_symbol(path)
+            file_symbol = Odoo.get().get_file_symbol(ls, path)
             module = file_symbol.get_module()
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)

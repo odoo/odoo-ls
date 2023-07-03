@@ -97,7 +97,7 @@ class Symbol(RegisterableObject):
         self.startLine = 0
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
-        #self.enhanced = False
+        self.evalStatus = 0 #0: not evaluated, 1: building, 2: loaded
         self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
         self.not_found_paths = []
@@ -221,6 +221,7 @@ class Symbol(RegisterableObject):
                 for to_rebuild_level, syms in self.parent.arch_dependents.items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
+                            sym.archStatus = 0
                             if to_rebuild_level == BuildSteps.ARCH:
                                 Odoo.get().add_to_arch_rebuild(sym)
                             elif to_rebuild_level == BuildSteps.ARCH_EVAL:
@@ -235,6 +236,7 @@ class Symbol(RegisterableObject):
                 for to_rebuild_level, syms in symbols[0].arch_dependents.items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
+                            sym.archStatus = 0
                             if to_rebuild_level == BuildSteps.ARCH:
                                 Odoo.get().add_to_arch_rebuild(sym)
                             elif to_rebuild_level == BuildSteps.ARCH_EVAL:
@@ -247,6 +249,7 @@ class Symbol(RegisterableObject):
                 for to_rebuild_level, syms in symbols[0].eval_dependents.items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
+                            sym.evalStatus = 0
                             if to_rebuild_level == BuildSteps.ARCH_EVAL:
                                 Odoo.get().add_to_arch_eval(sym)
                             elif to_rebuild_level == BuildSteps.ODOO:
@@ -257,6 +260,7 @@ class Symbol(RegisterableObject):
                 for to_rebuild_level, syms in symbols[0].odoo_dependents.items():
                     for sym in syms:
                         if sym != self and not sym.is_symbol_in_parents(self):
+                            sym.odooStatus = 0
                             if to_rebuild_level == BuildSteps.ODOO:
                                 Odoo.get().add_to_init_odoo(sym, force=True)
                             elif to_rebuild_level == BuildSteps.VALIDATION:
@@ -318,19 +322,19 @@ class Symbol(RegisterableObject):
             curr_symbol = curr_symbol.parent
         return tree
 
-    def get_symbol(self, symbol_tree_files, symbol_tree_content = [], excl=None):
+    def get_symbol(self, ls, symbol_tree_files, symbol_tree_content = [], excl=None):
         """starting from the current symbol, give the symbol corresponding to the right tree branch.
-        Example: symbol = symbol.get_symbol(['odoo', 'models'], ['Model'])
+        Example: symbol = symbol.get_symbol(ls, ['odoo', 'models'], ['Model'])
         symbol_tree_files are parts that are mandatory "on disk": files, packages, namespaces.
         symbol_tree_content is the parts that are 1) from the content of a file, and if not found
         2) a symbol_tree_files.
         If you don't know the type of data you are searching for, just use the second parameter.
         This implementation allows to fix ambiguity in the case of a package P holds a symbol A
         in its __init__.py and a file A.py in the directory. An import from elswhere that would 
-        type 'from P.A import c' would have to call get_symbol(["P", "A"], ["c"]) because P and A
+        type 'from P.A import c' would have to call get_symbol(ls, ["P", "A"], ["c"]) because P and A
         can't be file content (because theyr're in the from clause)
         in-deep note: it does not respect the precedence of packages over modules. If you have
-        a/foo.py and a/foo/test.py, calling get_symbol([], ["a", "foo", "test"]) will return the content of
+        a/foo.py and a/foo/test.py, calling get_symbol(ls, [], ["a", "foo", "test"]) will return the content of
         the file, but a true import return the test.py file. BUT, as foo.py should be impossible to import,
         it should be not available in the tree, and so the directory is taken
         """
@@ -339,6 +343,14 @@ class Symbol(RegisterableObject):
             raise Exception("get_symbol can only be used with list")
         current_symbol = self
         while symbol_tree_files or symbol_tree_content:
+            if current_symbol.type in [SymType.PACKAGE, SymType.FILE] and current_symbol.archStatus == 0 and ls:
+                #the symbol is not yet parsed, or need a rebuild
+                parent = current_symbol.parent
+                path = current_symbol.paths[0]
+                current_symbol.unload(current_symbol)
+                from server.core.pythonArchBuilder import PythonArchBuilder
+                pp = PythonArchBuilder(ls, parent, path)
+                current_symbol = pp.load_arch()
             if symbol_tree_files:
                 next_sym = current_symbol.moduleSymbols.get(symbol_tree_files[0], None)
                 if next_sym:
@@ -409,7 +421,7 @@ class Symbol(RegisterableObject):
             return False
         from .odoo import Odoo
         for s in self.classData.bases:
-            base_sym = Odoo.get().symbols.get_symbol(s)
+            base_sym = Odoo.get().symbols.get_symbol(None, s) #TODO: check if None is ok
             if base_sym.get_tree() == class_tree or base_sym.is_inheriting_from(class_tree):
                 return True
         return False
@@ -511,6 +523,13 @@ class Symbol(RegisterableObject):
         return sorted(symbols, key=lambda x: x.startLine)
 
 class RootSymbol(Symbol):
+
+    def __init__(self, name, type, paths):
+        super().__init__(name, type, paths)
+        self.archStatus = 2
+        self.evalStatus = 2
+        self.odooStatus = 2
+        self.validationStatus = 2
 
     def add_symbol(self, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""

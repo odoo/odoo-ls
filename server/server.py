@@ -83,7 +83,7 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
     with Odoo.get().acquire_read():
-        return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
+        return AutoCompleteFeature.autocomplete(ls, path, content, params.position.line, params.position.character)
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
@@ -91,7 +91,7 @@ def hover(ls, params: TextDocumentPositionParams):
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
     with Odoo.get().acquire_read():
-        file_symbol = Odoo.get().get_file_symbol(path)
+        file_symbol = Odoo.get().get_file_symbol(ls, path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
             #Force the parsoTree to be loaded by giving file content and opened==True
             parsoTree = FileMgr.getFileInfo(file_symbol.paths[0], content, opened=True)["parsoTree"]
@@ -100,14 +100,14 @@ def hover(ls, params: TextDocumentPositionParams):
     return None
 
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
-def definition(params: TextDocumentPositionParams):
+def definition(ls, params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
     final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
     final_path = urllib.request.url2pathname(final_path)
     #TODO find better than this small hack for windows (get disk letter in capital)
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
-    file_symbol = Odoo.get().get_file_symbol(final_path)
+    file_symbol = Odoo.get().get_file_symbol(ls, final_path)
     if file_symbol and params.text_document.uri[-3:] == ".py":
         symbol = PythonUtils.get_symbol(file_symbol, params.position.line + 1, params.position.character + 1)
     if symbol:

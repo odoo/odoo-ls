@@ -125,8 +125,8 @@ class Odoo():
                 ls.show_message_log(f'Error ocurred: {e}')
         return Odoo.instance
     
-    def get_symbol(self, fileTree, nameTree = []):
-        return self.symbols.get_symbol(fileTree, nameTree)
+    def get_symbol(self, ls, fileTree, nameTree = []):
+        return self.symbols.get_symbol(ls, fileTree, nameTree)
 
     def build_database(self, ls, used_config):
         if not self.build_base(ls, used_config):
@@ -155,7 +155,7 @@ class Odoo():
             parser = PythonArchBuilder(ls, self.symbols, os.path.join(self.odooPath, "odoo"))
             parser.load_arch()
             self.process_rebuilds(ls)
-            addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
+            addonsSymbol = self.symbols.get_symbol(ls, ["odoo", 'addons'])
             if Odoo.import_odoo_addons:
                 addonsSymbol.paths += [
                     os.path.join(self.odooPath, "addons"), 
@@ -224,7 +224,7 @@ class Odoo():
 
     def build_modules(self, ls):
         from .module import Module
-        addonPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
+        addonPaths = self.symbols.get_symbol(ls, ["odoo", "addons"]).paths
         for path in addonPaths:
             dirs = os.listdir(path)
             for dir in dirs:
@@ -242,7 +242,7 @@ class Odoo():
             pass
         print(str(len(Odoo.get().modules)) + " modules found")
     
-    def get_file_symbol(self, path):
+    def get_file_symbol(self, ls, path):
         if path.startswith(self.instance.odooPath):
             tree = path.replace(".py", "")[len(self.instance.odooPath)+1:].replace("\\", "/").split("/")
             if tree:
@@ -250,10 +250,10 @@ class Odoo():
                     tree.pop()
                 if tree[0] == "addons":
                     tree = ["odoo"] + tree
-            return self.symbols.get_symbol(tree)
-        for addonPath in self.symbols.get_symbol(["odoo", "addons"]).paths:
+            return self.symbols.get_symbol(ls, tree)
+        for addonPath in self.symbols.get_symbol(ls, ["odoo", "addons"]).paths:
             if path.startswith(addonPath):
-                return self.symbols.get_symbol(["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].replace("\\", "/").split("/"))
+                return self.symbols.get_symbol(ls, ["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].replace("\\", "/").split("/"))
         return []
 
     def file_change(self, ls, path, text, version):
@@ -270,7 +270,7 @@ class Odoo():
                 #1 unload
                 if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
                     path = os.sep.join(path.split(os.sep)[:-1])
-                file_symbol = self.get_file_symbol(path)
+                file_symbol = self.get_file_symbol(ls, path)
                 parent = file_symbol.parent
                 file_symbol.unload(file_symbol)
                 del file_symbol
@@ -293,13 +293,13 @@ class Odoo():
         from server.core.pythonArchBuilder import PythonArchBuilder
         with Odoo.get(ls).acquire_write(ls):
             #unload old
-            file_symbol = self.get_file_symbol(old_path)
+            file_symbol = self.get_file_symbol(ls, old_path)
             if file_symbol:
                 file_symbol.unload(file_symbol)
             del file_symbol
             #build new
             parent_path = os.sep.join(new_path.split(os.sep)[:-1])
-            parent_symbol = self.get_file_symbol(parent_path)
+            parent_symbol = self.get_file_symbol(ls, parent_path)
             new_symbol = None
             if not parent_symbol:
                 print("parent symbol not found: " + parent_path)
@@ -323,13 +323,15 @@ class Odoo():
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            print("add to arch rebuild: " + str(symbol.get_tree()))
+            if DEBUG_REBUILD:
+                print("add to arch rebuild: " + str(symbol.get_tree()))
             self.rebuild_arch.add(symbol)
     
     def add_to_arch_eval(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            print("add to arch eval: " + str(symbol.get_tree()))
+            if DEBUG_REBUILD:
+                print("add to arch eval: " + str(symbol.get_tree()))
             self.rebuild_arch_eval.add(symbol)
 
     def add_to_init_odoo(self, symbol, force=False):
@@ -343,7 +345,8 @@ class Odoo():
             if force:
                 file.odooStatus = 0
                 file.validationStatus = 0
-            print("add to init odoo: " + str(file.get_tree()))
+            if DEBUG_REBUILD:
+                print("add to init odoo: " + str(file.get_tree()))
             self.rebuild_odoo.add(file)
 
     def add_to_validations(self, symbol, force=False):
@@ -356,7 +359,8 @@ class Odoo():
                 return
             if force:
                 file.validationStatus = 0
-            print("add to validation: " + str(file.get_tree()))
+            if DEBUG_REBUILD:
+                print("add to validation: " + str(file.get_tree()))
             self.rebuild_validation.add(file)
 
     def _search_symbols_to_revalidate(self, tree):
