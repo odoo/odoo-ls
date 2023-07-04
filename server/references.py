@@ -1,13 +1,15 @@
+from collections.abc import MutableMapping
+
 class RegisterableObject:
 
     def __init__(self):
         super().__init__()
         self.listeners = []
-    
+
     def mark_as_deleted(self):
         for listener in self.listeners:
             listener.delete()
-    
+
 
 class RegisteredRef:
 
@@ -21,7 +23,7 @@ class RegisteredRef:
         self.containers = []
         self._hash = hash(ref)
         ref.listeners.append(self)
-    
+
     @property
     def ref(self):
         return self._ref
@@ -37,13 +39,13 @@ class RegisteredRef:
         if isinstance(other, RegisteredRef):
             return self.ref == other.ref
         return self.ref == other
-    
+
     def delete(self):
         if self.callback:
             self.callback()
-        self._ref = None
         for container in self.containers:
             container._add_to_remove(self)
+        self._ref = None
 
     def __bool__(self):
         return self.ref is not None
@@ -245,7 +247,7 @@ class RegisteredRefList(list):
             ref.containers.append(self)
         else:
             raise TypeError("Only objects of type RegisteredRef are allowed.")
-    
+
     def _commit_removals(self):
         pop = self._pending_removals.pop
         remove = self.remove
@@ -274,3 +276,140 @@ class RegisteredRefList(list):
         if self._pending_removals:
             self._commit_removals()
         return super().__len__()
+
+class RegisteredRefDictKey(MutableMapping):
+    """ Mapping class that references keys with RegisteredRef.
+
+    Entries in the dictionary will be discarded when the object is marked for deletion.
+    This can be used to associate additional data with an object owned by other parts of
+    an application without adding attributes to those objects. This
+    can be especially useful with objects that override attribute
+    accesses.
+    """
+
+    def __init__(self, dict=None):
+        self.data = {}
+        self._pending_removals = []
+        self._dirty_len = False
+        if dict is not None:
+            self.update(dict)
+
+    def _commit_removals(self):
+        pop = self._pending_removals.pop
+        d = self.data
+        while True:
+            try:
+                key = pop()
+            except IndexError:
+                return
+
+            try:
+                del d[key]
+            except KeyError:
+                pass
+
+    def _add_to_remove(self, item):
+        try:
+            del self.data[item]
+        except KeyError:
+            pass
+
+    def __delitem__(self, item):
+        if isinstance(item, RegisteredRef):
+            del self.data[item]
+        elif isinstance(item, RegisterableObject):
+            del self.data[RegisteredRef(item)]
+
+    def __getitem__(self, key):
+        return self.data[RegisteredRef(key)]
+
+    def __len__(self):
+        if self._pending_removals:
+            self._commit_removals()
+        return len(self.data)
+
+    def __repr__(self):
+        return "<%s at %#x>" % (self.__class__.__name__, id(self))
+
+    def __setitem__(self, key, value):
+        if isinstance(key, RegisteredRef):
+            key.containers.append(self)
+            self.data[key] = value
+        elif isinstance(key, RegisterableObject):
+            ref = RegisteredRef(key)
+            ref.containers.append(self)
+            self.data[ref] = value
+        else:
+            raise Exception("Only objects of type RegisteredRef are allowed.")
+
+    def copy(self):
+        raise NotImplementedError
+
+    __copy__ = copy
+
+    def __deepcopy__(self, memo):
+        raise NotImplementedError
+
+    def get(self, key, default=None):
+        return self.data.get(RegisteredRef(key), default)
+
+    def __contains__(self, key):
+        try:
+            wr = RegisteredRef(key)
+        except TypeError:
+            return False
+        return wr in self.data
+
+    def items(self):
+        for wr, value in self.data.items():
+            key = wr.ref
+            if key is not None:
+                yield key, value
+
+    def keys(self):
+        for wr in self.data:
+            obj = wr.ref
+            if obj is not None:
+                yield obj
+
+    __iter__ = keys
+
+    def values(self):
+        for wr, value in self.data.items():
+            if wr.ref is not None:
+                yield value
+
+    def popitem(self):
+        self._dirty_len = True
+        while True:
+            key, value = self.data.popitem()
+            o = key.ref
+            if o is not None:
+                return o, value
+
+    def pop(self, key, *args):
+        self._dirty_len = True
+        return self.data.pop(RegisteredRef(key), *args)
+
+    def setdefault(self, key, default=None):
+        return self.data.setdefault(RegisteredRef(key),default)
+
+    def update(self, dict=None, /, **kwargs):
+        d = self.data
+        if dict is not None:
+            if not hasattr(dict, "items"):
+                dict = type({})(dict)
+            for key, value in dict.items():
+                d[RegisteredRef(key)] = value
+        if len(kwargs):
+            self.update(kwargs)
+
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
+    def __or__(self, other):
+        return NotImplemented
+
+    def __ror__(self, other):
+        return NotImplemented

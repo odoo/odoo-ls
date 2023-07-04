@@ -99,3 +99,24 @@ def test_ref():
     b.mark_as_deleted()
     assert len(list_a) == 3
     assert b not in list_a
+
+    dic = RegisteredRefDictKey()
+    dic[a] = 1
+    assert len(dic) == 1
+    assert a in dic
+    assert dic[a] == 1
+    dic[ref_a] = 2
+    assert len(dic) == 1
+    assert a in dic
+    assert dic[a] == 2
+    dic[b] = 3
+    assert len(dic) == 2
+    assert a in dic
+    assert b in dic
+    assert dic[a] == 2
+    assert dic[b] == 3
+    a.mark_as_deleted()
+    assert len(dic) == 1
+    assert a not in dic
+    assert b in dic
+    assert dic[b] == 3
