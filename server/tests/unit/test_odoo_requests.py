@@ -31,7 +31,7 @@ Odoo.get(server)
 
 def test_autocomplete():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
-    
+
     server.workspace.get_document = Mock(return_value=Document(
         uri=file_uri,
         source='''
@@ -39,7 +39,7 @@ from odoo import api, fields, models, _, tools
 
 
 class TestModel(odoo.Models):
-    
+
     _inherit = "'''
     ))
     params = CompletionParams(

@@ -36,6 +36,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
         else:
             self.filePath = self.symStack[0].paths[0]
         self.symStack[0].odooStatus = 1
+        self.symStack[0].validationStatus = 0
         if DEBUG_ODOO_BUILDER:
             print("Load odoo: " + self.filePath)
         self.symStack[0].not_found_paths = []
@@ -85,7 +86,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
         raise NotImplementedError
 
     def _is_model(self, symbol):
-        """return True if the symbol inherit from odoo.models.BaseModel. It differs on the 
+        """return True if the symbol inherit from odoo.models.BaseModel. It differs on the
         is_model on symbol as it can be used before the OdooBuilder execution"""
         if not symbol.classData:
             print("class has no classData, something is broken")

@@ -38,6 +38,9 @@ class PythonArchEval(ast.NodeVisitor):
         """pass through the ast to find symbols to evaluate"""
         if DEBUG_ARCH_EVAL:
             print("Eval arch: " + self.fileSymbol.paths[0])
+        self.symbol.evalStatus = 1
+        self.symbol.odooStatus = 0
+        self.symbol.validationStatus = 0
         ast_node = self.symbol.ast_node
         self.eval_from_ast(ast_node)
         if not self.symbol.is_external():
@@ -51,6 +54,7 @@ class PythonArchEval(ast.NodeVisitor):
         #    PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
         FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        self.symbol.evalStatus = 2
         return self.symbol
 
     def resolve__all__symbols(self):
@@ -64,11 +68,11 @@ class PythonArchEval(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        self.eval_symbols_from_import_stmt(None, 
+        self.eval_symbols_from_import_stmt(None,
                     node.names, 0, node)
 
     def visit_ImportFrom(self, node):
-        self.eval_symbols_from_import_stmt(node.module, 
+        self.eval_symbols_from_import_stmt(node.module,
                     node.names, node.level, node)
 
     def eval_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
@@ -85,7 +89,7 @@ class PythonArchEval(ast.NodeVisitor):
             variable = node_alias.symbol
             if variable and symbol:
                 variable.ref.eval = Evaluation().eval_import(symbol)
-                variable.ref.add_dependency(symbol, BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
+                variable.ref.add_dependency(symbol, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
     def visit_Try(self, node):
         return
@@ -99,7 +103,7 @@ class PythonArchEval(ast.NodeVisitor):
         self.safeImport.append(safe)
         ast.NodeVisitor.generic_visit(self, node)
         self.safeImport.pop()
-    
+
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
         assigns = PythonUtils.unpack_assign(node.target, node.value, {})
         for variable_name, value in assigns.items():
@@ -108,7 +112,7 @@ class PythonArchEval(ast.NodeVisitor):
                 if variable:
                     variable.eval = Evaluation().evalAST(variable.value and variable.value, variable.parent)
                     if variable.eval.get_symbol():
-                        variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
+                        variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
     def visit_Assign(self, node):
         assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
@@ -117,7 +121,7 @@ class PythonArchEval(ast.NodeVisitor):
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable.eval = Evaluation().evalAST(variable.value, variable.parent)
                 if variable.eval.get_symbol():
-                    variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
+                    variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
     def visit_FunctionDef(self, node):
         return
@@ -127,7 +131,7 @@ class PythonArchEval(ast.NodeVisitor):
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()
-    
+
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
             return attr.id
@@ -136,7 +140,7 @@ class PythonArchEval(ast.NodeVisitor):
         elif isinstance(attr, ast.Call):
             pass
         return ""
-    
+
     def load_base_class(self, symbol, node):
         for base in node.bases:
             full_base = PythonArchEval._extract_base_name(base)
@@ -157,7 +161,7 @@ class PythonArchEval(ast.NodeVisitor):
                     continue #TODO generate error? add to unresolved
                 if iter_element.type != SymType.CLASS:
                     continue #TODO generate error?
-                symbol.add_dependency(iter_element, BuildSteps.ARCH, BuildSteps.ARCH_EVAL)
+                symbol.add_dependency(iter_element, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
                 symbol.classData.bases.add(iter_element)
 
     def visit_ClassDef(self, node):
@@ -168,5 +172,5 @@ class PythonArchEval(ast.NodeVisitor):
             return
         self.load_base_class(symbol, node)
         ast.NodeVisitor.generic_visit(self, node)
-        
+
 

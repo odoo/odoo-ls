@@ -1,7 +1,7 @@
 import ast
 from server.constants import *
 import os
-from .odoo import * 
+from .odoo import *
 from server.core.fileMgr import *
 from server.core.pythonArchBuilder import *
 from server.features.validation.pythonValidator import *
@@ -53,7 +53,7 @@ class Module():
             ls.publish_diagnostics(FileMgr.pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
 
     def load_manifest(self, manifestPath):
-        """ Load manifest to identify the module characteristics 
+        """ Load manifest to identify the module characteristics
         Returns list of diagnostics to publish in manifest file """
         with open(manifestPath, "r", encoding="utf8") as f:
             md = f.read()
@@ -82,7 +82,7 @@ class Module():
                     source = EXTENSION_NAME
                 ))
         return diagnostics
-    
+
     def _load_data(self):
         return []
 
@@ -93,7 +93,7 @@ class Module():
             tests_parser = PythonArchBuilder(ls, module, os.path.join(path, "tests"))
             tests_parser.load_arch()
         return []
-    
+
     def is_in_deps(self, module_name):
         if self.dir_name == module_name or module_name in self.depends:
             return True

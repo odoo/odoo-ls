@@ -31,11 +31,11 @@ class ModelData():
         self.fold_name = 'fold'
 
 class ClassData():
-    
+
     def __init__(self):
         #data related to classes symbols
         self.bases = RegisteredRefSet()
-    
+
     def inherits(self, symbol):
         for base in self.bases:
             if base == symbol:
@@ -73,29 +73,27 @@ class Symbol(RegisterableObject):
         self.symbols = {}
         #moduleSymbols contains namespace, packages, files
         self.moduleSymbols = {}
-        #List of symbols not available from outside as they are redefined later in the same symbol 
-        #(ex: two classes with same name in same file. Only last will be available for imports, 
+        #List of symbols not available from outside as they are redefined later in the same symbol
+        #(ex: two classes with same name in same file. Only last will be available for imports,
         # but the other can be used locally)
         self.localSymbols = RegisteredRefList()
         if self.type in (SymType.PACKAGE, SymType.FILE):
-            self.dependencies = {
-                BuildSteps.ARCH: {
+            self.dependencies = { #symbol that are needed to build this symbol
+                BuildSteps.ARCH: { #symbols needed to build arch of this symbol
+                    BuildSteps.ARCH: RegisteredRefSet(),
+                },
+                BuildSteps.ARCH_EVAL: {
+                    BuildSteps.ARCH: RegisteredRefSet(),
+                },
+                BuildSteps.ODOO:{
+                    BuildSteps.ARCH: RegisteredRefSet(),
+                    BuildSteps.ARCH_EVAL: RegisteredRefSet(),
+                    BuildSteps.ODOO: RegisteredRefSet()
+                },
+                BuildSteps.VALIDATION: {
                     BuildSteps.ARCH: RegisteredRefSet(),
                     BuildSteps.ARCH_EVAL: RegisteredRefSet(),
                     BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet()
-                },
-                BuildSteps.ARCH_EVAL: {
-                    # BuildSteps.ARCH_EVAL: RegisteredRefSet(),
-                    BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet()
-                },
-                BuildSteps.ODOO:{
-                    BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet()
-                },
-                BuildSteps.VALIDATION: {
-                    BuildSteps.VALIDATION: RegisteredRefSet()
                 }
             }
             self.dependents = {
@@ -112,7 +110,7 @@ class Symbol(RegisterableObject):
                 },
                 BuildSteps.ODOO: { #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
                     BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet() 
+                    BuildSteps.VALIDATION: RegisteredRefSet()
                 }
             }
         self.parent = None
@@ -123,19 +121,19 @@ class Symbol(RegisterableObject):
         self.startLine = 0
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
-        #self.enhanced = False
+        self.evalStatus = 0
         self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
         self.not_found_paths = []
         self.doc = None
-    
+
     def __str__(self):
         return "(" + self.name + " - " + str(self.type) + " - " + str(self.paths) + ")"
-    
+
     def __del__(self):
         if DEBUG_MEMORY:
             print("symbol deleted " + self.name + " at " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
-    
+
     def all_symbols(self, local=False, include_inherits=False):
         if local:
             for s in self.localSymbols:
@@ -160,53 +158,20 @@ class Symbol(RegisterableObject):
         return sym, instance
 
     def add_dependency(self, other_symbol, on_step, dep_level):
-        #on this symbol, add a dependency on the 'on_step' of other_symbol, for the dep_level
-        #TODO remove redundant dependencies
+        #on this symbol, add a dependency on the steps of other_symbol, for the dep_level.
+        # the build of the step "on_step" of self require dep_level of other_symbol to be done
         parent_sym = self.get_in_parents([SymType.FILE, SymType.PACKAGE])
         parent_other_sym = other_symbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
         if parent_sym == parent_other_sym or not parent_other_sym:
             return
         parent_sym.dependencies[on_step][dep_level].add(parent_other_sym)
-        parent_other_sym.dependents[on_step][dep_level].add(parent_sym)
+        parent_other_sym.dependents[dep_level][on_step].add(parent_sym)
 
     def is_file_content(self):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
 
     def get_range(self):
         return (self.startLine, self.endLine)
-
-    @staticmethod
-    def test_deletability(symbol):
-        to_delete = RegisteredRefSet()
-        to_check = [symbol]
-        acc = []
-        while to_check:
-            for s in to_check:
-                for s2 in s.all_symbols(local=True):
-                    acc.append(s2)
-            to_check = acc[:]
-            for s in acc:
-                to_delete.add(s)
-            acc = []
-        print("to delete: " + str(len(to_delete)))
-        for s in to_delete:
-            print("delete: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
-        deletion = [symbol]
-        while deletion:
-            sym = deletion.pop(0)
-            sym.parent.remove_symbol(sym)
-            sym.parent = None
-            for s in sym.all_symbols(local=True):
-                deletion.append(s)
-        deletion = []
-        to_check = []
-        acc = []
-        print("remains: " + str(len(to_delete)))
-        def namestr(obj, namespace):
-            return [name for name in namespace if namespace[name] is obj]
-        for s in to_delete:
-            print("not delete: " + s.name + " at " + os.sep.join(s.paths[0].split(os.sep)[-3:]))
-        print("end test")
 
     @staticmethod
     def unload(symbol): #can't delete because of self? :o
@@ -222,11 +187,13 @@ class Symbol(RegisterableObject):
             for s in sym.all_symbols(local=True):
                 found_one = True
                 to_unload.insert(0, s)
-            if found_one: 
+            if found_one:
                 continue
             else:
                 to_unload.remove(sym)
 
+            if DEBUG_MEMORY:
+                print("unloading " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             #no more children at this point, start unloading the symbol
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
@@ -236,11 +203,10 @@ class Symbol(RegisterableObject):
             #         if s != sym:
             #             to_unload.append(s)
             #     ast_node.linked_symbols.clear()
-            file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
-            if file:
-                file.invalidate(BuildSteps.ARCH)
-            if DEBUG_MEMORY:
-                print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
+            if sym.type in [SymType.FILE, SymType.PACKAGE]:
+                sym.invalidate(BuildSteps.ARCH)
+            #if DEBUG_MEMORY:
+            #    print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
             sym.localSymbols.clear()
             sym.moduleSymbols.clear()
             sym.symbols.clear()
@@ -248,68 +214,55 @@ class Symbol(RegisterableObject):
             sym.type = SymType.DIRTY
             sym.mark_as_deleted()
             del sym
-    
+
     def invalidate(self, step):
         #signal that a change occur to this symbol. "step" indicates which level of change occured.
         #it can be arch, arch_eval, odoo or validation
         from .odoo import Odoo
-        if step == BuildSteps.ARCH:
-            # arch dependents must be triggered on parent too, as the symbol list changed for parent (mainly for "import *" statements)
-            if self.parent:
-                for to_rebuild_level, syms in self.parent.dependents[BuildSteps.ARCH].items():
-                    for sym in syms:
-                        if sym != self and not sym.is_symbol_in_parents(self):
-                            if to_rebuild_level == BuildSteps.ARCH:
-                                Odoo.get().add_to_arch_rebuild(sym)
-                            elif to_rebuild_level == BuildSteps.ARCH_EVAL:
-                                Odoo.get().add_to_arch_eval(sym)
-                            elif to_rebuild_level == BuildSteps.ODOO:
-                                Odoo.get().add_to_init_odoo(sym)
-                            elif to_rebuild_level == BuildSteps.VALIDATION:
-                                Odoo.get().add_to_validations(sym)
         symbols = [self]
         while symbols:
-            if step == BuildSteps.ARCH:
-                for to_rebuild_level, syms in symbols[0].dependents[BuildSteps.ARCH].items():
-                    for sym in syms:
-                        if sym != self and not sym.is_symbol_in_parents(self):
-                            if to_rebuild_level == BuildSteps.ARCH:
-                                Odoo.get().add_to_arch_rebuild(sym)
-                            elif to_rebuild_level == BuildSteps.ARCH_EVAL:
-                                Odoo.get().add_to_arch_eval(sym)
-                            elif to_rebuild_level == BuildSteps.ODOO:
-                                Odoo.get().add_to_init_odoo(sym, force=True) #As we are unloading, things are changing, we have to force the validation
-                            elif to_rebuild_level == BuildSteps.VALIDATION:
-                                Odoo.get().add_to_validations(sym, force=True)
-            if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL]:
-                for to_rebuild_level, syms in symbols[0].dependents[BuildSteps.ARCH_EVAL].items():
-                    for sym in syms:
-                        if sym != self and not sym.is_symbol_in_parents(self):
-                            if to_rebuild_level == BuildSteps.ARCH_EVAL:
-                                Odoo.get().add_to_arch_eval(sym)
-                            elif to_rebuild_level == BuildSteps.ODOO:
-                                Odoo.get().add_to_init_odoo(sym, force=True)
-                            elif to_rebuild_level == BuildSteps.VALIDATION:
-                                Odoo.get().add_to_validations(sym, force=True)
-            if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL, BuildSteps.ODOO]:
-                for to_rebuild_level, syms in symbols[0].dependents[BuildSteps.ODOO].items():
-                    for sym in syms:
-                        if sym != self and not sym.is_symbol_in_parents(self):
-                            if to_rebuild_level == BuildSteps.ODOO:
-                                Odoo.get().add_to_init_odoo(sym, force=True)
-                            elif to_rebuild_level == BuildSteps.VALIDATION:
-                                Odoo.get().add_to_validations(sym, force=True)
-            for s in symbols[0].all_symbols(local=True):
+            sym_to_invalidate = symbols.pop(0)
+            if sym_to_invalidate.type in [SymType.FILE, SymType.PACKAGE]:
+                if step == BuildSteps.ARCH:
+                    for to_rebuild_level, syms in sym_to_invalidate.dependents[BuildSteps.ARCH].items():
+                        for sym in syms:
+                            if sym != self and not sym.is_symbol_in_parents(self):
+                                if to_rebuild_level == BuildSteps.ARCH:
+                                    Odoo.get().add_to_arch_rebuild(sym)
+                                elif to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                    Odoo.get().add_to_arch_eval(sym)
+                                elif to_rebuild_level == BuildSteps.ODOO:
+                                    Odoo.get().add_to_init_odoo(sym)
+                                elif to_rebuild_level == BuildSteps.VALIDATION:
+                                    Odoo.get().add_to_validations(sym)
+                if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL]:
+                    for to_rebuild_level, syms in sym_to_invalidate.dependents[BuildSteps.ARCH_EVAL].items():
+                        for sym in syms:
+                            if sym != self and not sym.is_symbol_in_parents(self):
+                                if to_rebuild_level == BuildSteps.ARCH_EVAL:
+                                    Odoo.get().add_to_arch_eval(sym)
+                                elif to_rebuild_level == BuildSteps.ODOO:
+                                    Odoo.get().add_to_init_odoo(sym)
+                                elif to_rebuild_level == BuildSteps.VALIDATION:
+                                    Odoo.get().add_to_validations(sym)
+                if step in [BuildSteps.ARCH, BuildSteps.ARCH_EVAL, BuildSteps.ODOO]:
+                    for to_rebuild_level, syms in sym_to_invalidate.dependents[BuildSteps.ODOO].items():
+                        for sym in syms:
+                            if sym != self and not sym.is_symbol_in_parents(self):
+                                if to_rebuild_level == BuildSteps.ODOO:
+                                    Odoo.get().add_to_init_odoo(sym)
+                                elif to_rebuild_level == BuildSteps.VALIDATION:
+                                    Odoo.get().add_to_validations(sym)
+            for s in sym_to_invalidate.all_symbols(local=True):
                 symbols.append(s)
-            del symbols[0]
 
     def remove_symbol(self, symbol):
         if symbol.is_file_content():
             in_symbols = self.symbols.get(symbol.name, None)
             if in_symbols:
                 if symbol == in_symbols:
-                    if DEBUG_MEMORY:
-                        print("symbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                    #if DEBUG_MEMORY:
+                    #    print("symbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                     del self.symbols[symbol.name]
                     if symbol.parent and self.parent == self:
                         symbol.parent = None
@@ -319,8 +272,8 @@ class Symbol(RegisterableObject):
                             if not last or last.startLine < localSym.startLine:
                                 last = localSym
                     if last:
-                        if DEBUG_MEMORY:
-                            print("move sym - " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                        #if DEBUG_MEMORY:
+                        #    print("move sym - " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                         self.symbols[symbol.name] = last
                         self.localSymbols.remove(last)
                 else:
@@ -329,15 +282,15 @@ class Symbol(RegisterableObject):
                         self.localSymbols.remove(symbol)
                         if symbol.parent and self.parent == self:
                             symbol.parent = None
-                        if DEBUG_MEMORY:
-                            print("localSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                        #if DEBUG_MEMORY:
+                        #    print("localSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                     except ValueError:
                         if DEBUG_MEMORY:
                             print("Symbol to delete not found")
         else:
             if symbol.name in self.moduleSymbols:
-                if DEBUG_MEMORY:
-                    print("moduleSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                #if DEBUG_MEMORY:
+                #    print("moduleSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
                 if symbol.parent and self.parent == self:
                     symbol.parent = None
                 del self.moduleSymbols[symbol.name]
@@ -364,7 +317,7 @@ class Symbol(RegisterableObject):
         2) a symbol_tree_files.
         If you don't know the type of data you are searching for, just use the second parameter.
         This implementation allows to fix ambiguity in the case of a package P holds a symbol A
-        in its __init__.py and a file A.py in the directory. An import from elswhere that would 
+        in its __init__.py and a file A.py in the directory. An import from elswhere that would
         type 'from P.A import c' would have to call get_symbol(["P", "A"], ["c"]) because P and A
         can't be file content (because theyr're in the from clause)
         in-deep note: it does not respect the precedence of packages over modules. If you have
@@ -441,7 +394,7 @@ class Symbol(RegisterableObject):
                 if s:
                     return s
         return None
-    
+
     def is_inheriting_from(self, class_tree):
         if not self.classData:
             return False
@@ -467,10 +420,10 @@ class Symbol(RegisterableObject):
                 self.symbols[symbol.name].invalidate(BuildSteps.ARCH)
                 self.localSymbols.append(self.symbols[symbol.name])
                 self.symbols[symbol.name] = symbol
-        
+
     def add_module_symbol(self, symbol_names, symbol):
         pass
-    
+
     def get_in_parents(self, types, stop_same_file = True):
         if self.type in types:
             return self
@@ -478,7 +431,7 @@ class Symbol(RegisterableObject):
             return None
         if self.parent:
             return self.parent.get_in_parents(types, stop_same_file)
-    
+
     def is_symbol_in_parents(self, symbol):
         while self.parent != symbol and self.parent:
             self = self.parent
@@ -495,7 +448,7 @@ class Symbol(RegisterableObject):
             elif s.startLine > line:
                 break
         return symbol
-    
+
     def get_class_scope_symbol(self, line):
         """return the class symbol closest to the given line. If the line is not in a class, return None. """
         #TODO search in localSymbols too
@@ -510,7 +463,7 @@ class Symbol(RegisterableObject):
         if symbol.type != SymType.CLASS:
             symbol = None
         return symbol
-    
+
     def inferName(self, name, line):
         selected = False
         if name == "__doc__":
@@ -523,13 +476,13 @@ class Symbol(RegisterableObject):
         if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:
             return self.parent.inferName(name, line)
         return selected
-    
+
     def isClass(self):
         return bool(self.classData)
-    
+
     def isModel(self):
         return self.isClass() and bool(self.modelData)
-    
+
     def is_external(self):
         if self.external:
             return True

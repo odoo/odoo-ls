@@ -106,7 +106,7 @@ def test_evaluation():
     var_symbol = evaluation.get_symbol()
     assert var_symbol.type == SymType.VARIABLE
     assert var_symbol.name == "CONSTANT_1"
-    
+
     base_test_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
     evaluation = base_test_file.get_symbol([], ["BaseOtherName"]).eval
     assert evaluation._symbol
@@ -142,7 +142,7 @@ def test_evaluation():
     assert evaluation.get_symbol().type == SymType.FUNCTION
     assert evaluation.get_symbol().name == "get_test_int"
     assert evaluation.instance == False
-    
+
     evaluation = base_test_file.get_symbol([], ["return_funcBase2"]).eval
     #the return evaluation of a function is not really 100% accurate. Let's at least test that the function is not returned
     if evaluation._symbol and evaluation.get_symbol():
@@ -238,7 +238,7 @@ def test_magic_fields():
 @pytest.mark.dependency()
 def test_imports_dynamic():
     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', 'constants.py'])
-    
+
     server.workspace.get_document = Mock(return_value=Document(
         uri=file_uri,
         source="""
@@ -276,7 +276,6 @@ CONSTANT_3 = 3"""
 @pytest.mark.dependency(depends=["test_imports_dynamic"])
 def test_rename():
     print("RENAME TEST")
-    os.path.isfile = Mock(return_value=True) # ensure that new file name is detected as valid
     old_uri_mock = pathlib.Path(__file__).parent.parent.resolve()
     old_uri_mock = os.path.join(old_uri_mock, "data", "addons", "module_1", "constants", "data", "constants.py")
     with open(old_uri_mock, "rb") as f:
@@ -286,6 +285,24 @@ def test_rename():
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
             file = FileRename(old_uri, new_uri)
             params = RenameFilesParams([file])
+            mock = Mock()
+            normal_isfile = os.path.isfile
+            def _validated_variables_file(*args, **kwargs):
+                if "constants.py" in args[0]:
+                    return False
+                elif "variables.py" in args[0]:
+                    return True
+                else:
+                    return normal_isfile(*args, **kwargs)
+            def _validated_constants_file(*args, **kwargs):
+                if "constants.py" in args[0]:
+                    return True
+                elif "variables.py" in args[0]:
+                    return False
+                else:
+                    return normal_isfile(*args, **kwargs)
+            mock.side_effect = _validated_variables_file
+            os.path.isfile = mock # ensure that new file name is detected as valid
             did_rename_files(server, params)
             #A check that symbols are not imported anymore from old file
             constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
@@ -305,7 +322,7 @@ def test_rename():
 
             #B now change data/__init__.py to include the new file, and check that imports are resolved
             file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
-            
+
             server.workspace.get_document = Mock(return_value=Document(
                 uri=file_uri,
                 source="""
@@ -321,7 +338,7 @@ CONSTANT_2 = 22"""
                 content_changes = []
             )
             _did_change_after_delay(server, params, 0)
-            
+
             var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
             assert var_data_file
             assert "CONSTANT_1" in var_data_file.symbols
@@ -347,12 +364,14 @@ CONSTANT_2 = 22"""
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
             file = FileRename(old_uri, new_uri)
             params = RenameFilesParams([file])
+            mock.side_effect = _validated_constants_file
             did_rename_files(server, params)
             os.path.isfile = Mock(return_value=True) #prevent disk access to old file
             old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
             file = FileRename(old_uri, new_uri)
             params = RenameFilesParams([file])
+            mock.side_effect = _validated_variables_file
             did_rename_files(server, params)
 
             var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
@@ -374,7 +393,7 @@ CONSTANT_2 = 22"""
             constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
             assert constants_data_file == None
 
-
+            os.path.isfile = normal_isfile
             server.workspace.get_document.reset_mock()
 
 def test_rename_inherit():
@@ -387,8 +406,8 @@ def test_rename_inherit():
     with open(file_uri, 'r') as f:
         source = f.read()
     assert source
-    source.replace("class Model", "class Model2")
-    
+    source = source.replace("class Model", "class Model2")
+
     server.workspace.get_document = Mock(return_value=Document(
         uri=FileMgr.pathname2uri(file_uri),
         source=source
@@ -405,29 +424,31 @@ def test_rename_inherit():
     assert model
     assert model.classData
     assert not model.classData.bases
-    source.replace("class Model2", "class Model")
-    
+    source = source.replace("class Model2", "class Model")
+
     server.workspace.get_document = Mock(return_value=Document(
         uri=FileMgr.pathname2uri(file_uri),
         source=source
     ))
     params = DidChangeTextDocumentParams(
         text_document = VersionedTextDocumentIdentifier(
-            version = 2,
+            version = 3,
             uri=FileMgr.pathname2uri(file_uri)
         ),
         content_changes = []
     )
+    _did_change_after_delay(server, params, 0) #call deferred func
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
     assert model.classData
     assert model.classData.bases
+    server.workspace.get_document.reset_mock()
 
 def test_missing_symbol_resolve():
     #TODO write test
     pass
 #     file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
-    
+
 #     server.workspace.get_document = Mock(return_value=Document(
 #         uri=file_uri,
 #         source="""
@@ -456,5 +477,5 @@ def test_missing_symbol_resolve():
 #     assert "CONSTANT_1" in variables_data_file.symbols
 #     assert not "CONSTANT_2" in variables_data_file.symbols
 #     assert "CONSTANT_3" in variables_data_file.symbols
-    
+
 #     server.workspace.get_document.reset_mock()

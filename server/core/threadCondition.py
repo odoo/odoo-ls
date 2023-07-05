@@ -10,7 +10,7 @@ class ReadWriteCondition(object):
     def count(self):
         with self._lock:
             return self._count
-    
+
     def wait_empty(self):
         with self._lock:
             while self._count > 0:

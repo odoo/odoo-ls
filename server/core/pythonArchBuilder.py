@@ -32,10 +32,9 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.ast_node = None
             self.filePath = path
         else:
-            parent_file = parentSymbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
             self.filePath = path
-            if parent_file.type == SymType.PACKAGE:
-                self.filePath = os.path.join(self.filePath, "__init__.py" + parent_file.i_ext)
+            if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
+                self.filePath = os.path.dirname(path)
             self.ast_node = ast_node
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
         self.ls = ls
@@ -81,6 +80,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.symStack.append(symbol)
         #parse the Python file
         self.tree = self.symStack[-1].get_tree()
+        self.symStack[-1].archStatus = 1
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if fileInfo["ast"]:
             self.symStack[-1].ast_node = fileInfo["ast"]
@@ -97,6 +97,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
         FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+        self.symStack[-1].archStatus = 2
         return self.symStack[-1]
 
     def resolve__all__symbols(self):
@@ -113,11 +114,11 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        self.create_local_symbols_from_import_stmt(None, 
+        self.create_local_symbols_from_import_stmt(None,
                     node.names, 0, node)
 
     def visit_ImportFrom(self, node):
-        self.create_local_symbols_from_import_stmt(node.module, 
+        self.create_local_symbols_from_import_stmt(node.module,
                     node.names, node.level, node)
 
     def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
@@ -159,7 +160,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 import_name.symbol = RegisteredRef(variable)
                 variable.ast_node = node
                 self.symStack[-1].add_symbol(variable)
-    
+
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
         assigns = PythonUtils.unpack_assign(node.target, node.value, {})
         for variable_name, value in assigns.items():
@@ -188,9 +189,9 @@ class PythonArchBuilder(ast.NodeVisitor):
                     if variable.eval.get_symbol():
                         file_symbol = self.symStack[1]
                         file_symbol.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH, BuildSteps.ARCH)
-                        
+
                     if self.symStack[-1].is_external():
-                        # external packages often import symbols from compiled files 
+                        # external packages often import symbols from compiled files
                         # or with meta programmation like globals["var"] = __get_func().
                         # we don't want to handle that, so just declare __all__ content
                         # as symbols to not raise any error.

@@ -76,7 +76,7 @@ class PythonValidator(ast.NodeVisitor):
         self.safeImport.append(safe)
         ast.NodeVisitor.generic_visit(self, node)
         self.safeImport.pop()
-    
+
     def visit_Import(self, node):
         self._resolve_import(None, node.names, 0, node)
 
@@ -188,7 +188,7 @@ class PythonValidator(ast.NodeVisitor):
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
         self.symStack.pop()
-    
+
     def _extract_base_name(attr):
         return
         if isinstance(attr, ast.Name):
@@ -270,7 +270,7 @@ class PythonValidator(ast.NodeVisitor):
                     Odoo.get().models[data.modelName].impl_sym.append(symbol)
             self.add_magic_fields(symbol, node, data)
             self.symStack.pop()
-    
+
     def add_magic_fields(self, symbol, node, data):
         def create_symbol(name, type, lineno):
             variable = Symbol(name, SymType.VARIABLE, self.filePath)

@@ -60,7 +60,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                     print("wrong inherits")
             elif inherit_value.name != "frozendict" or instance:
                 print("wrong inherits")
-    
+
     def _get_attribute(self, symbol, attr):
         attr_sym = symbol.get_class_symbol(attr, prevent_comodel=True)
         if attr_sym and attr_sym.eval.get_symbol():
@@ -69,7 +69,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                 attr_value = attr_ref.eval.value
                 return attr_value
         return AttributeNotFound
-    
+
     def _load_class_attributes(self, symbol):
         #TODO this doesn't make this symbols available in the class... So attributes can't be called
         symbol.modelData.description = self._get_attribute(symbol, "_description")

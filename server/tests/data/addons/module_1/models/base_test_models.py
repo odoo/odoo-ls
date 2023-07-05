@@ -14,7 +14,7 @@ class BaseTestModel(models.Model):
 
     def get_constant(self):
         return CONSTANT_1 + CONSTANT_2
-    
+
 BaseOtherName = BaseTestModel
 baseInstance1 = BaseTestModel()
 baseInstance2 = BaseOtherName()

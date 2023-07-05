@@ -133,7 +133,10 @@ class RegisteredRefSet():
     def remove(self, item):
         if self._pending_removals:
             self._commit_removals()
-        self.data.remove(RegisteredRef(item))
+        try:
+            self.data.remove(RegisteredRef(item))
+        except KeyError:
+            raise KeyError(item) from None
 
     def discard(self, item):
         if self._pending_removals:

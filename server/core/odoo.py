@@ -35,7 +35,7 @@ class Odoo():
 
     fileMgr = FileMgr()
 
-    models = {} 
+    models = {}
     modules = {}
 
     # symbols is the list of declared symbols and their related declaration, filtered by name
@@ -46,7 +46,7 @@ class Odoo():
     rebuild_odoo = RegisteredRefSet()
     rebuild_validation = RegisteredRefSet()
 
-    not_found_symbols = RegisteredRefSet() # Set of symbols that still have unresolved dependencies
+    not_found_symbols = RegisteredRefSet() # Set of symbols that still have unresolved dependencies (arch level only)
 
     instance = None
 
@@ -124,7 +124,7 @@ class Odoo():
                 print(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}')
         return Odoo.instance
-    
+
     def get_symbol(self, fileTree, nameTree = []):
         return self.symbols.get_symbol(fileTree, nameTree)
 
@@ -158,7 +158,7 @@ class Odoo():
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             if Odoo.import_odoo_addons:
                 addonsSymbol.paths += [
-                    os.path.join(self.odooPath, "addons"), 
+                    os.path.join(self.odooPath, "addons"),
                     #"/home/odoo/Documents/odoo-servers/false_odoo/enterprise"
                     ]
             addonsSymbol.paths += used_config['addons']
@@ -167,7 +167,48 @@ class Odoo():
             print("Odoo not found at " + self.odooPath)
             return False
         return False
-    
+
+    def _pop_from_list(self, sym_set):
+            selected_sym = None
+            selected_count = 1000000
+            for sym in sym_set:
+                current_count = 0
+                for dep_level, sym_dep_set in sym.dependencies[BuildSteps.ARCH].items():
+                    if dep_level == BuildSteps.ARCH:
+                        for dep in sym_dep_set:
+                            if dep in self.rebuild_arch:
+                                current_count += 1
+                    elif dep_level == BuildSteps.ARCH_EVAL:
+                        for dep in sym_dep_set:
+                            if dep in self.rebuild_arch_eval:
+                                current_count += 1
+                    elif dep_level == BuildSteps.ODOO:
+                        for dep in sym_dep_set:
+                            if dep in self.rebuild_odoo:
+                                current_count += 1
+                    elif dep_level == BuildSteps.VALIDATION:
+                        for dep in sym_dep_set:
+                            if dep in self.rebuild_validation:
+                                current_count += 1
+                if current_count < selected_count:
+                    selected_sym = sym
+                    selected_count = current_count
+                if selected_count == 0:
+                    break
+            sym_set.remove(selected_sym)
+            return selected_sym
+
+    def _pop_next_symbol(self, level):
+        #pop the next symbol ready to be rebuilt, depending on its dependencies
+        if level == BuildSteps.ARCH:
+            return self._pop_from_list(self.rebuild_arch)
+        elif level == BuildSteps.ARCH_EVAL:
+            return self._pop_from_list(self.rebuild_arch_eval)
+        elif level == BuildSteps.ODOO:
+            return self._pop_from_list(self.rebuild_odoo)
+        elif level == BuildSteps.VALIDATION:
+            return self._pop_from_list(self.rebuild_validation)
+
     def process_rebuilds(self, ls):
         from .pythonArchBuilder import PythonArchBuilder
         from .pythonArchEval import PythonArchEval
@@ -178,7 +219,7 @@ class Odoo():
         already_arch_rebuilt = set()
         while True:
             if self.rebuild_arch:
-                sym = self.rebuild_arch.pop()
+                sym = self._pop_next_symbol(BuildSteps.ARCH)
                 if not sym:
                     continue
                 tree = sym.get_tree()
@@ -200,21 +241,21 @@ class Odoo():
                     print("Can't rebuild " + str(tree))
                 continue
             elif self.rebuild_arch_eval:
-                sym = self.rebuild_arch_eval.pop()
+                sym = self._pop_next_symbol(BuildSteps.ARCH_EVAL)
                 if not sym or sym.type == SymType.DIRTY:
                     continue
                 evaluator = PythonArchEval(ls, sym)
                 evaluator.eval_arch()
                 continue
             elif self.rebuild_odoo:
-                sym = self.rebuild_odoo.pop()
+                sym = self._pop_next_symbol(BuildSteps.ODOO)
                 if not sym:
                     continue
                 validation = PythonOdooBuilder(ls, sym)
                 validation.load_odoo_content()
                 continue
             elif self.rebuild_validation:
-                sym = self.rebuild_validation.pop()
+                sym = self._pop_next_symbol(BuildSteps.VALIDATION)
                 if not sym:
                     continue
                 validation = PythonValidator(ls, sym)
@@ -241,7 +282,7 @@ class Odoo():
             print("psutil not found")
             pass
         print(str(len(Odoo.get().modules)) + " modules found")
-    
+
     def get_file_symbol(self, path):
         if path.startswith(self.instance.odooPath):
             tree = path.replace(".py", "")[len(self.instance.odooPath)+1:].replace("\\", "/").split("/")
@@ -280,15 +321,16 @@ class Odoo():
                 new_symbol_tree = new_symbol.get_tree()
                 del new_symbol
                 #rebuild validations
-                self.process_rebuilds(ls)
                 if new_symbol_tree:
-                    set_to_validate = self._search_symbols_to_revalidate(new_symbol_tree)
-                    self.validate_related_files(ls, set_to_validate)
+                    set_to_validate = self._search_symbols_to_rebuild(new_symbol_tree)
+                    for s in set_to_validate:
+                        self.add_to_arch_rebuild(s)
+                self.process_rebuilds(ls)
         #snapshot2 = tracemalloc.take_snapshot()
 
         #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
         return
-    
+
     def file_rename(self, ls, old_path, new_path):
         from server.core.pythonArchBuilder import PythonArchBuilder
         with Odoo.get(ls).acquire_write(ls):
@@ -307,7 +349,7 @@ class Odoo():
             else:
                 new_tree = parent_symbol.get_tree()
                 new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
-                set_to_validate = self._search_symbols_to_revalidate(new_tree)
+                set_to_validate = self._search_symbols_to_rebuild(new_tree)
                 if set_to_validate:
                     #if there is something that is trying to import the new file, build it.
                     #Else, don't add it to the architecture to not add useless symbols (and overrides)
@@ -316,23 +358,31 @@ class Odoo():
                     pp = PythonArchBuilder(ls, parent_symbol, new_path)
                     new_symbol = pp.load_arch()
             #rebuild validations
-            self.process_rebuilds(ls)
             if new_symbol:
-                self.validate_related_files(ls, set_to_validate)
+                for s in set_to_validate:
+                    self.add_to_arch_rebuild(s)
+            self.process_rebuilds(ls)
 
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
             print("add to arch rebuild: " + str(symbol.get_tree()))
+            symbol.archStatus = 0
+            symbol.evalStatus = 0
+            symbol.odooStatus = 0
+            symbol.validationStatus = 0
             self.rebuild_arch.add(symbol)
-    
+
     def add_to_arch_eval(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            #print("add to arch eval: " + str(symbol.get_tree()))
+            print("add to arch eval: " + str(symbol.get_tree()))
+            symbol.evalStatus = 0
+            symbol.odooStatus = 0
+            symbol.validationStatus = 0
             self.rebuild_arch_eval.add(symbol)
 
-    def add_to_init_odoo(self, symbol, force=False):
+    def add_to_init_odoo(self, symbol):
         """ add a symbol to the list of odoo loading to do. if Force, the symbol will be added even if
         he is already validated"""
         if symbol:
@@ -340,13 +390,12 @@ class Odoo():
             if not file:
                 print("file not found, can't rebuild")
                 return
-            if force:
-                file.odooStatus = 0
-                file.validationStatus = 0
+            file.odooStatus = 0
+            file.validationStatus = 0
             print("add to init odoo: " + str(file.get_tree()))
             self.rebuild_odoo.add(file)
 
-    def add_to_validations(self, symbol, force=False):
+    def add_to_validations(self, symbol):
         """ add a symbol to the list of revalidation to do. if Force, the symbol will be added even if
         he is already validated"""
         if symbol:
@@ -354,12 +403,11 @@ class Odoo():
             if not file:
                 print("file not found, can't rebuild")
                 return
-            if force:
-                file.validationStatus = 0
+            file.validationStatus = 0
             print("add to validation: " + str(file.get_tree()))
             self.rebuild_validation.add(file)
 
-    def _search_symbols_to_revalidate(self, tree):
+    def _search_symbols_to_rebuild(self, tree):
         flat_tree = [item for l in tree for item in l]
         new_set_to_revalidate = RegisteredRefSet()
         for s in self.not_found_symbols:
@@ -368,15 +416,6 @@ class Odoo():
                     new_set_to_revalidate.add(s)
                     print("found one pending: " + str(s.get_tree()))
         return new_set_to_revalidate
-    
-    def validate_related_files(self, ls, set_to_validate):
-        from server.features.validation.pythonValidator import PythonValidator
-        from .pythonOdooBuilder import PythonOdooBuilder
-        for s in set_to_validate:
-            s.odooStatus = 0
-            s.validationStatus = 0
-            PythonOdooBuilder(ls, s).load_odoo_content()
-            PythonValidator(ls, s).validate()
 
     def get_models(self, module = None, start_name = ""):
         res = []

@@ -8,10 +8,10 @@ class Model():
         self.name = name
         self.impl_sym = RegisteredRefSet()
         self.add_symbol(symbol)
-    
+
     def add_symbol(self, symbol):
         self.impl_sym.add(symbol)
-    
+
     def get_main_symbols(self, from_module = None):
         """Return all the symbols that declare the module in the dependencies of the from_module, or all main symbols
         if from_module is None."""
@@ -31,7 +31,7 @@ class Model():
                 else:
                     return False
         return False
-    
+
     def get_documentation(self, from_module = None):
         main_symbol = self.get_main_symbols(from_module)
         if main_symbol and len(main_symbol) == 1:
@@ -43,7 +43,7 @@ class Model():
                     description_text = description.eval.value or main_symbol[0].name
             return description_text + ": " + ((main_symbol[0].doc and main_symbol[0].doc.eval.value) or "")
         return ""
-    
+
     def get_symbols(self, from_module):
         """Return a list of symbols that extends this model but are in your dependencies."""
         symbols = []
@@ -55,7 +55,7 @@ class Model():
             else:
                 symbols.append(symbol)
         return symbols
-    
+
     def get_inherit(self, from_module):
         """Return a list of model names that are inherited by this model.
         If module_scope is not None, only return inheritance coming from files that are in dependencies"""
@@ -91,7 +91,7 @@ class Model():
     def get_class_symbol(self, name, from_module):
         """ Return the first definition of the name in the model from the "from_module" perspective"""
         impl = self.get_symbols(from_module)
-        #TODO actually we are searching for the first one, and we could return an override. It would be better if we 
+        #TODO actually we are searching for the first one, and we could return an override. It would be better if we
         #could search in sorted modules (by dep)
         for sym in impl:
             res = sym.get_class_symbol(name)

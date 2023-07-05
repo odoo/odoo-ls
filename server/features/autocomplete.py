@@ -25,7 +25,7 @@ class AutoCompleteFeature:
                 if char < assign_part.start_pos[1] or char > assign_part.end_pos[1]:
                     return []
                 before = assign_part.get_code()[:char-assign_part.start_pos[1]+1].strip()
-                #valid before statements (>< is the cursor): 
+                #valid before statements (>< is the cursor):
                 # _inherit = "><something"
                 # _inherit = ["><something", "><something"]
                 if not before or before[-1] not in ["'", '"']:
@@ -71,12 +71,12 @@ class AutoCompleteFeature:
                     ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module)]
                 )
             return []
-    
+
     @staticmethod
     def _get_symbols_from_obj(obj, module):
         """ For a symbol or model, get all sub symbols"""
         if isinstance(obj, Symbol):
-            def_obj = obj.follow_ref()[0] 
+            def_obj = obj.follow_ref()[0]
             return def_obj.all_symbols(local = False)
         else:
             return obj.get_attributes(module)

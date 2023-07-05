@@ -28,7 +28,7 @@ class Evaluation():
     """
 
     def __init__(self, symbol=None, instance=False, value=None):
-        """try to return the symbol corresponding to the expression, evaluated in the context 
+        """try to return the symbol corresponding to the expression, evaluated in the context
         of 'symbol' (a function, class or file)."""
         self._symbol = symbol
         self.instance = instance
@@ -39,21 +39,21 @@ class Evaluation():
     @property
     def symbol(self):
         raise NotImplementedError
-    
+
     @symbol.setter
     def symbol(self, value):
         self._symbol = value
-    
+
     def eval_import(self, target_symbol):
         """set the evaluation used in a import symbol, for a target_symbol"""
         self._symbol = RegisteredRef(target_symbol)
         if target_symbol.type in [SymType.VARIABLE, SymType.PRIMITIVE]:
             self.instance = True
         return self
-    
+
     def get_symbol_rr(self, context = None):
         return self._get_symbol_hook(self._symbol, context)
-    
+
     def get_symbol(self, context = None):
         """ context_sym is a symbol that is used to defined the evaluation. Usually the symbol that hold the evaluation"""
         rr = self.get_symbol_rr(context)
@@ -64,12 +64,12 @@ class Evaluation():
     def _get_symbol_hook(self, rr_symbol, context):
         """To be overriden for specific contextual evaluations"""
         return rr_symbol
-    
+
     def evalAST(self, node, parentSymbol):
         if node:
             self._symbol, self.instance = self._evaluateAST(node, parentSymbol)
         return self
-    
+
     def _extract_literal_dict(self, node):
         res = {}
         for k, v in zip(node.keys, node.values):
@@ -77,7 +77,7 @@ class Evaluation():
                 return None
             res[k.value] = v.value
         return res
-    
+
     def _evaluateAST(self, node, parentSymbol):
         """evaluateAST returns for an AST node and a parent Symbol the symbol and if it is an instance or not.
         symbol is always a RegisteredRef"""

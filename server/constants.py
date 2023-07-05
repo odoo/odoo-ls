@@ -17,33 +17,45 @@ CONFIGURATION_SECTION = 'Odoo'
 #DEBUG PARAMETERS
 
 DEBUG_BUILD_ONLY_BASE = False
-DEBUG_ARCH_BUILDER = True
-DEBUG_ARCH_EVAL = True
-DEBUG_ODOO_BUILDER = True
-DEBUG_VALIDATION = True
-DEBUG_MEMORY = True
-DEBUG_REBUILD = True
+DEBUG_ARCH_BUILDER = False
+DEBUG_ARCH_EVAL = False
+DEBUG_ODOO_BUILDER = False
+DEBUG_VALIDATION = False
+DEBUG_MEMORY = False
+DEBUG_REBUILD = False
 
 class SymType(Enum):
-    DIRTY     = -1,
-    ROOT      = 0,
-    NAMESPACE = 1,
-    PACKAGE   = 2,
-    FILE      = 3,
-    COMPILED  = 4,
-    CLASS     = 5,
-    FUNCTION  = 6,
-    VARIABLE  = 7,
+    DIRTY     = -1
+    ROOT      = 0
+    NAMESPACE = 1
+    PACKAGE   = 2
+    FILE      = 3
+    COMPILED  = 4
+    CLASS     = 5
+    FUNCTION  = 6
+    VARIABLE  = 7
     PRIMITIVE = 8
 
     def __str__(self):
         return self.name
 
 class BuildSteps(Enum):
-    ARCH        = 0,
-    ARCH_EVAL   = 1,
-    ODOO        = 2,
+    ARCH        = 0
+    ARCH_EVAL   = 1
+    ODOO        = 2
     VALIDATION  = 3
+
+    def __lt__(self, other):
+        return self.value < other.value
+
+    def __gt__(self, other):
+        return self.value > other.value
+
+    def __le__(self, other):
+        return self.value <= other.value
+
+    def __ge__(self, other):
+        return self.value >= other.value
 
 BUILT_IN_LIBS = ["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",
 "datetime", "zoneinfo", "calendar", "collections", "heapq", "bisect", "array", "weakref", "types", "copy", "pprint",

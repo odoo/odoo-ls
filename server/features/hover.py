@@ -50,7 +50,7 @@ class HoverFeature:
 
         def build_block_1(symbol, type, infered_type):
             value =  "```python  \n"
-            value += "(" + type + ") " 
+            value += "(" + type + ") "
             if symbol.type == SymType.FUNCTION:
                 value += "def "
             value += symbol.name
@@ -82,7 +82,7 @@ class HoverFeature:
         value = build_block_1(symbol, type, infered_type)
         #SEPARATOR
         value += "  \n***  \n"
-        #BLOCK 2: useful links: 
+        #BLOCK 2: useful links:
         if infered_type:
             path = FileMgr.pathname2uri(type_ref[0].paths[0])
             if type_ref[0].type == SymType.PACKAGE:

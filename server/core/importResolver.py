@@ -8,9 +8,9 @@ from .symbol import Symbol
 __all__ = ["resolve_import_stmt"]
 
 
-def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_aliases, level, 
+def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_aliases, level,
                     lineno, end_lineno):
-    """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist, 
+    """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist,
     it will be created if possible or None will be returned.
     file_tree contains the the full file_tree to search for each name. Ex: from os import path => os
     from .test import A => tree to current file + test"""
@@ -27,7 +27,7 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
         if name == '*':
             res[name_index][1] = from_symbol
             continue
-        #get the full file_tree, including the first part of the name import stmt. (os in import os.path) 
+        #get the full file_tree, including the first part of the name import stmt. (os in import os.path)
         next_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
         if not next_symbol:
             continue
@@ -35,7 +35,7 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
         last_part_name = name.split(".")[-1]
         name_symbol = next_symbol.get_symbol([last_part_name], excl=parent_symbol) #find the last part of the name
         if not name_symbol:
-            name_symbol = _resolve_new_symbol(ls, source_file_symbol, next_symbol, last_part_name, None, 
+            name_symbol = _resolve_new_symbol(ls, source_file_symbol, next_symbol, last_part_name, None,
                                             lineno, end_lineno)
         if not name_symbol:
             name_symbol = next_symbol.get_symbol([], [last_part_name], excl=parent_symbol) #find the last part of the name
@@ -68,7 +68,7 @@ def _get_or_create_symbol(ls, symbol, names, file_symbol, asname, lineno, end_li
     for branch in names:
         next_symbol = symbol.get_symbol([branch], excl=file_symbol)
         if not next_symbol:
-            next_symbol = _resolve_new_symbol(ls, file_symbol, symbol, branch, asname, 
+            next_symbol = _resolve_new_symbol(ls, file_symbol, symbol, branch, asname,
                                                 lineno, end_lineno)
         symbol = next_symbol
         if not symbol:

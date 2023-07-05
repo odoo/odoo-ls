@@ -56,5 +56,5 @@ class model_no_register_inherit(models.Model):
 class model_inherits(models.Model):
     _name = "pygls.tests.m_inherits"
     _inherits = {"pygls.tests.m_name": "field_m_name_id"}
-    
+
     field_m_name_id = fields.Many2one("pygls.tests.m_name")

@@ -42,12 +42,12 @@ server.lsp._send_only_body = True
 config_result = Future()
 config_result.set_result([{
     'userDefinedConfigurations': {
-        '0': {'id': 0, 'name': 'Configuration 0', 'odooPath': 'path/to/odoo', 'addons': []}, 
-        '1': {'id': 1, 'name': 'Used configuration', 'odooPath': ODOO_COMMUNITY_PATH, 'addons': [test_addons_path]}, 
-        '2': {'id': 2, 'name': 'Configuration 2', 'odooPath': 'path/to/odoo', 'addons': []}, 
+        '0': {'id': 0, 'name': 'Configuration 0', 'odooPath': 'path/to/odoo', 'addons': []},
+        '1': {'id': 1, 'name': 'Used configuration', 'odooPath': ODOO_COMMUNITY_PATH, 'addons': [test_addons_path]},
+        '2': {'id': 2, 'name': 'Configuration 2', 'odooPath': 'path/to/odoo', 'addons': []},
         '4': {'id': 4, 'name': 'Skipped Id', 'odooPath': 'path/to/odoo', 'addons': []}
-    }, 
-    'selectedConfigurations': 1, 
+    },
+    'selectedConfigurations': 1,
     'trace': {
         'server': 'off'}
     }]
