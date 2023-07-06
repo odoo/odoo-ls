@@ -3,6 +3,12 @@ import pytest
 
 from server.references import *
 
+def isin(elem, target):
+    for part in target:
+        if elem is part:
+            return True
+    return False
+
 def test_ref():
     class A(RegisterableObject):
         pass
@@ -14,20 +20,21 @@ def test_ref():
         pass
 
     a = A()
-    a1 = A()
     b = B()
-    b1 = B()
     c = C()
     ref_a = RegisteredRef(a)
-    ref_a1 = RegisteredRef(a1)
-    ref_b = RegisteredRef(b)
-    ref_b1 = RegisteredRef(b1)
+    # ref_b = RegisteredRef(b)
+    # ref_b1 = RegisteredRef(b1)
+
+    ### RegisterableObject & RegisteredRef
+    # deny creating refs to non-RegistrableObjects
     try:
-        ref_c = RegisteredRef(c)
+        _ = RegisteredRef(c)
         assert False, "Should not be able to create a reference to a non RegisterableObject"
     except:
         assert True
-    #check that a is stored in ref_a and not editable
+
+    # check that a is stored in ref_a and not editable
     assert ref_a
     assert ref_a.ref == a
     try:
@@ -37,13 +44,59 @@ def test_ref():
         assert True
     a_copy = ref_a
     assert a_copy.ref == ref_a.ref
-    #check deletion
+
+    # check deletion
     a.mark_as_deleted()
     assert not ref_a
     assert ref_a.ref is None
+
+    # check use-after-free
+    try:
+        _ = RegisteredRef(a)
+        assert False, "Should not be able to make new ref to deleted RegisterableObject"
+    except:
+        assert True
+
+    # copy semantics
+    import copy
     a = A()
     ref_a = RegisteredRef(a)
+    copy_a = copy.copy(a)
+    # When copying a ref, either the ref should be invalid or
+    # the copy should be added to the listeners of the obj
+    assert copy_a.ref is a and isin(copy_a,a.listeners)
+    # More generally, a ref should always be in the listeners
+    # of the obj it refers to
+    assert isin(ref_a, ref_a.ref.listeners)
+    assert isin(copy_a, copy_a.ref.listeners)
+    try:
+        _ = copy.deepcopy(ref_a)
+        assert False, "No deepcopies allowed" # As per discord convo
+    except:
+        assert True
 
+    # check double-free ­
+    global df_counter
+    df_counter = 1
+    def double_free_callback():
+        global df_counter
+        assert df_counter, "Callback called after deletion"
+        df_counter = df_counter - 1
+    a = A()
+    ref_a = RegisteredRef(a, double_free_callback)
+    a.mark_as_deleted()
+    a.mark_as_deleted()
+
+
+    ### RegisteredRefSet
+    # adding, removing, mark_as_delete
+    a = A()
+    b = B()
+    a1 = A()
+    b1 = B()
+    ref_a = RegisteredRef(a)
+    ref_b = RegisteredRef(b)
+    ref_a1 = RegisteredRef(a1)
     set_a = RegisteredRefSet()
     set_a.add(a)
     set_a.add(a1)
@@ -61,23 +114,152 @@ def test_ref():
     set_a.add(a)
     assert len(set_a) == 3
     assert a in set_a
+    assert ref_a in set_a
     assert a1 in set_a
     assert b in set_a
+    set_a.add(ref_a)
+    assert len(set_a) == 3
+    assert a in set_a
+    assert ref_a in set_a
+    set_a.remove(ref_a)
+    assert len(set_a) == 2
+    assert a not in set_a
+    assert ref_a not in set_a
+    set_a.add(ref_a)
+    assert len(set_a) == 3
+    assert a in set_a
+    assert ref_a in set_a
     b.mark_as_deleted()
     assert len(set_a) == 2
     assert b not in set_a
     assert a in set_a
     assert a1 in set_a
-
-    b = B()
-
     set_a.add(b1)
     assert len(set_a) == 3
     assert b not in set_a
     assert a in set_a
     assert a1 in set_a
     assert b1 in set_a
+    a.mark_as_deleted()
+    assert len(set_a) == 2
+    assert a not in set_a
+    assert ref_a not in set_a
+    assert a1 in set_a
+    assert b1 in set_a
+    set_a.discard(a1)
+    assert len(set_a) == 1
+    assert a1 not in set_a
+    set_a.clear()
+    assert len(set_a) == 0
+    try:
+        set_a.add(c)
+        assert False, "Non-registereableobj are not allowed"
+    except:
+        assert True
 
+    # deleted ref semantics
+    b.mark_as_deleted()
+    try:
+        set_a.add(b)
+        assert False, "Cannot add objects marked as deleted"
+    except:
+        assert True
+
+    try:
+        assert ref_b.ref is None
+        set_a.add(ref_b)
+        assert False, "Cannot add deleted refs"
+    except:
+        assert True
+
+    # cleanup
+    a = A()
+    b = B()
+    a1 = A()
+    b1 = B()
+    ref_a = RegisteredRef(a)
+    ref_b = RegisteredRef(b)
+    ref_a1 = RegisteredRef(a1)
+    set_a = RegisteredRefSet()
+    set_a.add(a)
+    set_a.add(a1)
+    set_a.add(b)
+    set_a.add(a)
+
+    # copy
+    copy_set_a = set_a.copy()
+    assert len(copy_set_a) == 3
+    a.mark_as_deleted()
+    assert len(copy_set_a) == 2
+    assert len(set_a) == 2
+    try:
+        _ = copy.deepcopy(set_a)
+        assert 0, "Florian needs to decide if he allows deepcopy for sets"
+    except:
+        assert 0, "Florian needs to decide if he allows deepcopy for sets"
+
+    # pop
+    copy_set_a.add(b1)
+    assert len(copy_set_a) == 3
+    assert len(set_a) == 2
+    pop_b1 = copy_set_a.pop()
+    assert pop_b1 is b1
+    assert b1 not in copy_set_a
+    assert len(copy_set_a) == 1
+
+    # set methods
+    a = A()
+    b = B()
+    a1 = A()
+    b1 = B()
+    ref_a = RegisteredRef(a)
+    ref_b = RegisteredRef(b)
+    set_a = RegisteredRefSet()
+    set_b = RegisteredRefSet()
+    set_a.add(a)
+    set_a.add(b)
+    set_b.add(b)
+    assert set_a >= set_b
+    assert not set_a <= set_b
+    assert len(set_a) == 2
+    assert len(set_b) == 1
+    diff = set_a - set_b
+    assert len(diff) == 1
+    assert a in diff
+    assert len(set_a) == 2
+    assert len(set_b) == 1
+    set_a.difference_update(set_b)
+    assert len(set_a) == 1
+    set_a = RegisteredRefSet()
+    set_b = RegisteredRefSet()
+    set_a.add(a)
+    set_a.add(a1)
+    set_b.add(b)
+    isec = set_a & set_b
+    assert len(isec) == 0
+    set_a.update(set_b)
+    set_b.add(b1)
+    isec = set_a & set_b
+    assert len(isec) == 1
+    assert b in isec
+    leftover_set = set_b.copy()
+    leftover_set.intersection_update(set_a)
+    assert len(leftover_set) == 1
+    xor_set = set_a ^ set_b
+    assert len(xor_set) == 3
+    assert xor_set.isdisjoint(leftover_set)
+    xor_set.update(leftover_set)
+    assert (set_a | set_b) == xor_set
+
+
+    ### RegisteredRefList
+    # Only pop/append
+    a = A()
+    b = B()
+    a1 = A()
+    b1 = B()
+    ref_a = RegisteredRef(a)
+    ref_b = RegisteredRef(b)
     list_a = RegisteredRefList()
     list_a.append(ref_a)
     list_a.append(ref_a1)
@@ -88,7 +270,8 @@ def test_ref():
     assert a1 in list_a
     assert b in list_a
     assert list_a[3] == a
-    list_a.remove(a)
+    pop_a = list_a.pop()
+    assert pop_a is ref_a
     assert len(list_a) == 3
     assert a in list_a
     assert a1 in list_a
@@ -100,6 +283,24 @@ def test_ref():
     assert len(list_a) == 3
     assert b not in list_a
 
+    # deleted ref semantics
+    try:
+        list_a.add(b)
+        assert False, "Cannot add objects marked as deleted"
+    except:
+        assert True
+
+    try:
+        assert ref_b.ref is None
+        list_a.add(ref_b)
+        assert False, "Cannot add deleted refs"
+    except:
+        assert True
+
+    ### RegisteredRefDictKey
+    a = A()
+    b = B()
+    ref_a = RegisteredRef(a)
     dic = RegisteredRefDictKey()
     dic[a] = 1
     assert len(dic) == 1
@@ -120,3 +321,25 @@ def test_ref():
     assert a not in dic
     assert b in dic
     assert dic[b] == 3
+    dic = RegisteredRefDictKey()
+    dic[a] = 1
+    dic[ref_a] = 2
+    dic[b] = 3
+    assert len(dic) == 2
+    assert dic.pop(a) == 2
+    assert len(dic) == 1
+
+    # deleted ref semantics
+    b.mark_as_deleted()
+    try:
+        dic[b] = 42
+        assert False, "Cannot add objects marked as deleted"
+    except:
+        assert True
+
+    try:
+        assert ref_b.ref is None
+        dic[ref_b] = 42
+        assert False, "Cannot add deleted refs"
+    except:
+        assert True
