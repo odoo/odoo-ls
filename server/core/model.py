@@ -76,7 +76,7 @@ class Model():
         #TODO return only fields variables
         res = {}
         for sym in impl:
-            for sub_sym in sym.all_symbols():
+            for sub_sym in sym.all_symbols(include_inherits=True):
                 res[sub_sym.name] = sub_sym
         return res.values()
 

@@ -68,18 +68,62 @@ class AutoCompleteFeature:
                         label=symbol.name,
                         #documentation=symbol.doc,
                         kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module)]
+                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, -1)]
                 )
             return []
+        elif element and element.type == 'name':
+            #TODO maybe not useful as vscode provide basic dictionnay autocompletion with seen names in the file
+            expr = ParsoUtils.get_previous_leafs_expr(element)
+            if not expr:
+                file_symbol = Odoo.get().get_file_symbol(path)
+                module = file_symbol.get_module()
+                scope_symbol = file_symbol.get_scope_symbol(line)
+                return CompletionList(
+                    is_incomplete=False,
+                    items=[CompletionItem(
+                        label=symbol.name,
+                        #documentation=symbol.doc,
+                        kind = AutoCompleteFeature._getCompletionItemKind(symbol),
+                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, line, element.value)]
+                )
+        elif element and element.type == 'string':
+            s = element.value
+            if s[0] in ['"', "'"]:
+                s = s[1:]
+            if s[-1] in ['"', "'"]:
+                s = s[:-1]
+            before = s
+            file_symbol = Odoo.get().get_file_symbol(path)
+            module = file_symbol.get_module()
+            models = Odoo.get().get_models(module, before)
+            if not models:
+                return []
+            expr = ParsoUtils.get_previous_leafs_expr(element)
+            return CompletionList(
+                is_incomplete=False,
+                items=[CompletionItem(
+                    label=m.name,
+                    documentation=m.get_documentation(module),
+                    kind = CompletionItemKind.Interface if m.is_abstract(module) else CompletionItemKind.Class,
+                ) for m in models]
+            )
+        else:
+            print("here")
 
     @staticmethod
-    def _get_symbols_from_obj(obj, module):
-        """ For a symbol or model, get all sub symbols"""
+    def _get_symbols_from_obj(obj, module, line=-1, starts_with = ""):
+        """ For a symbol or model, get all sub symbols
+        if line is not -1, seearch for local symbols before the line number
+        """
         if isinstance(obj, Symbol):
             def_obj = obj.follow_ref()[0]
-            return def_obj.all_symbols(local = False)
+            for s in def_obj.all_symbols(line=line):
+                if s.name.startswith(starts_with):
+                    yield s
         else:
-            return obj.get_attributes(module)
+            for a in obj.get_attributes(module):
+                if a.name.startswith(starts_with):
+                    yield a
 
     @staticmethod
     def _getCompletionItemKind(symbol):

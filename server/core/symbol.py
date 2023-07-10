@@ -134,13 +134,15 @@ class Symbol(RegisterableObject):
         if DEBUG_MEMORY:
             print("symbol deleted " + self.name + " at " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
 
-    def all_symbols(self, local=False, include_inherits=False):
-        if local:
+    def all_symbols(self, line=-1, include_inherits=False):
+        if line != -1:
             for s in self.localSymbols:
-                yield s
+                if s.startLine <= line <= s.endLine:
+                    yield s
         if include_inherits and self.classData:
             for s in self.classData.bases:
-                yield s.all_symbols(local=local, include_inherits=include_inherits)
+                for sub_s in s.all_symbols(line=-1, include_inherits=include_inherits):
+                    yield sub_s
         for s in self.symbols.values():
             yield s
         for s in self.moduleSymbols.values():
@@ -184,7 +186,7 @@ class Symbol(RegisterableObject):
             sym = to_unload[0]
             #1: collect all symbols to revalidate
             found_one = False
-            for s in sym.all_symbols(local=True):
+            for s in sym.all_symbols(line=9999999999):
                 found_one = True
                 to_unload.insert(0, s)
             if found_one:
@@ -253,7 +255,7 @@ class Symbol(RegisterableObject):
                                     Odoo.get().add_to_init_odoo(sym)
                                 elif to_rebuild_level == BuildSteps.VALIDATION:
                                     Odoo.get().add_to_validations(sym)
-            for s in sym_to_invalidate.all_symbols(local=True):
+            for s in sym_to_invalidate.all_symbols(line=99999999999):
                 symbols.append(s)
 
     def remove_symbol(self, symbol):
@@ -470,8 +472,8 @@ class Symbol(RegisterableObject):
             return self.doc
         if name == "self":
             return self.get_in_parents([SymType.CLASS])
-        for symbol in self.all_symbols(local=True):
-            if symbol.name == name and symbol.startLine <= line and (not selected or symbol.startLine > selected.startLine):
+        for symbol in self.all_symbols(line=line):
+            if symbol.name == name and (not selected or symbol.startLine > selected.startLine):
                 selected = symbol
         if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:
             return self.parent.inferName(name, line)

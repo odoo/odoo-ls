@@ -3,36 +3,10 @@ from server.core.symbol import Symbol
 from server.constants import SymType
 from server.core.evaluation import Evaluation
 
-class EvaluationTestCursor(Evaluation):
-
-    def _get_symbol_hook(self, symbol, context):
-        """To be overriden for specific contextual evaluations"""
-        if context and context.get("test_mode", False):
-            return self.test_cursor
-        return symbol
-
-class EvaluationEnvGetItem(Evaluation):
-
-    def _get_symbol_hook(self, symbol, context):
-        from server.core.odoo import Odoo
-        model = Odoo.get().models.get(context["args"], None)
-        if model:
-            main_sym = model.get_main_symbols(context["module"])
-            if main_sym:
-                return RegisteredRef(main_sym[0])
-        return None
-
-class EvaluationModelIter(Evaluation):
-
-    def _get_symbol_hook(self, symbol, context):
-        from server.core.odoo import Odoo
-        class_sym = context.get("self", None)
-        if not class_sym:
-            return None
-        return RegisteredRef(class_sym)
 
 class PythonArchBuilderOdooHooks:
 
+    @staticmethod
     def on_module_declaration(symbol):
         if symbol.name == "logging":
             if symbol.get_tree() == (["logging"], []):
@@ -48,79 +22,42 @@ class PythonArchBuilderOdooHooks:
     def on_class_declaration(symbol):
         """ called when ArchBuilder create a new class Symbol """
         from server.core.odoo import Odoo
-        return
         if symbol.name == "BaseModel": #fast, basic check
             if symbol.get_tree() == (["odoo", "models"], ["BaseModel"]): #slower but more precise verification
-                iter = symbol.get_symbol([], ["__iter__"])
-                iter.eval = EvaluationModelIter()
                 # ---------- env ----------
-                envModel = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
                 env_var = Symbol("env", SymType.VARIABLE, symbol.paths)
                 slot_sym = symbol.get_symbol([], ["__slots__"])
                 if not slot_sym:
                     return #TODO should never happen
                 env_var.startLine = slot_sym.startLine
                 env_var.endLine = slot_sym.endLine
-                if envModel:
-                    env_var.eval = Evaluation(
-                        symbol=RegisteredRef(envModel),
-                        instance = True
-                    )
-                    env_var.eval.context["test_mode"] = False # used to define the Cursor type
-                    envModel.arch_dependents.add(env_var)
-                    env_var.doc = ""
                 symbol.add_symbol(env_var)
+        if symbol.name == "Environment": #fast, basic check
+            if symbol.get_tree() == (["odoo", "api"], ["Environment"]): #slower but more precise verification
                 # ---------- env.cr ----------
-                cr_var = Symbol("cr", SymType.VARIABLE, envModel.paths)
-                if envModel:
-                    cr_var.startLine = envModel.startLine
-                    cr_var.endLine = envModel.endLine
-                cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["Cursor"])
-                if cursor_sym:
-                    cr_var.eval = EvaluationTestCursor(
-                        symbol=RegisteredRef(cursor_sym),
-                        instance = True
-                    )
-                    test_cursor_sym = Odoo.get().get_symbol(["odoo", "sql_db"], ["TestCursor"])
-                    cr_var.eval.test_cursor = RegisteredRef(test_cursor_sym)
-                    cursor_sym.arch_dependents.add(cr_var)
-                    cr_var.doc = ""
-                envModel.add_symbol(cr_var)
+                cr_var = Symbol("cr", SymType.VARIABLE, symbol.paths)
+                if symbol:
+                    cr_var.startLine = symbol.startLine
+                    cr_var.endLine = symbol.endLine
+                symbol.add_symbol(cr_var)
                 # ---------- env.uid ----------
-                cr_var = Symbol("uid", SymType.VARIABLE, envModel.paths)
-                if envModel:
-                    cr_var.startLine = envModel.startLine
-                    cr_var.endLine = envModel.endLine
+                cr_var = Symbol("uid", SymType.VARIABLE, symbol.paths)
+                if symbol:
+                    cr_var.startLine = symbol.startLine
+                    cr_var.endLine = symbol.endLine
                 cr_var.doc = "the current user id (for access rights checks)"
-                envModel.add_symbol(cr_var)
+                symbol.add_symbol(cr_var)
                 # ---------- env.context ----------
-                context_var = Symbol("context", SymType.VARIABLE, envModel.paths)
-                if envModel:
-                    context_var.startLine = envModel.startLine
-                    context_var.endLine = envModel.endLine
+                context_var = Symbol("context", SymType.VARIABLE, symbol.paths)
+                if symbol:
+                    context_var.startLine = symbol.startLine
+                    context_var.endLine = symbol.endLine
                 context_var.doc = "the current context dictionary (arbitrary metadata)"
-                envModel.add_symbol(context_var)
+                symbol.add_symbol(context_var)
                 # ---------- env.su ----------
-                attr_var = Symbol("su", SymType.VARIABLE, envModel.paths)
-                if envModel:
-                    attr_var.startLine = envModel.startLine
-                    attr_var.endLine = envModel.endLine
+                attr_var = Symbol("su", SymType.VARIABLE, symbol.paths)
+                if symbol:
+                    attr_var.startLine = symbol.startLine
+                    attr_var.endLine = symbol.endLine
                 attr_var.doc = "whether in superuser mode"
-                envModel.add_symbol(attr_var)
-        elif symbol.name == "TransactionCase": #fast, basic check
-            if symbol.get_tree() == (["odoo", "tests", "common"], ["TransactionCase"]): #slower but more precise verification
-                # ---------- env ----------
-                envModel = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
-                env_var = symbol.get_symbol([], ["env"]) #should already exists
-                if env_var and envModel:
-                    env_var.eval = Evaluation(
-                        symbol=RegisteredRef(envModel),
-                        instance = True
-                    )
-                    env_var.eval.context["test_mode"] = True # used to define the Cursor type
-                    envModel.arch_dependents.add(env_var)
-                    env_var.doc = ""
-        elif symbol.name == "Environment":
-            if symbol.get_tree() == (["odoo", "api"], ["Environment"]):
-                get_item = symbol.get_symbol([], ["__getitem__"])
-                get_item.eval = EvaluationEnvGetItem()
+                symbol.add_symbol(attr_var)

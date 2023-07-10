@@ -159,7 +159,7 @@ class Odoo():
             if Odoo.import_odoo_addons:
                 addonsSymbol.paths += [
                     os.path.join(self.odooPath, "addons"),
-                    #"/home/odoo/Documents/odoo-servers/false_odoo/enterprise"
+                    #"/home/odoo/Documents/odoo-servers/test_odoo/enterprise",
                     ]
             addonsSymbol.paths += used_config['addons']
             return True
@@ -366,7 +366,7 @@ class Odoo():
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            print("add to arch rebuild: " + str(symbol.get_tree()))
+            #print("add to arch rebuild: " + str(symbol.get_tree()))
             symbol.archStatus = 0
             symbol.evalStatus = 0
             symbol.odooStatus = 0
@@ -376,7 +376,7 @@ class Odoo():
     def add_to_arch_eval(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
         if symbol:
-            print("add to arch eval: " + str(symbol.get_tree()))
+            #print("add to arch eval: " + str(symbol.get_tree()))
             symbol.evalStatus = 0
             symbol.odooStatus = 0
             symbol.validationStatus = 0
@@ -392,7 +392,7 @@ class Odoo():
                 return
             file.odooStatus = 0
             file.validationStatus = 0
-            print("add to init odoo: " + str(file.get_tree()))
+            #print("add to init odoo: " + str(file.get_tree()))
             self.rebuild_odoo.add(file)
 
     def add_to_validations(self, symbol):
@@ -404,7 +404,7 @@ class Odoo():
                 print("file not found, can't rebuild")
                 return
             file.validationStatus = 0
-            print("add to validation: " + str(file.get_tree()))
+            #print("add to validation: " + str(file.get_tree()))
             self.rebuild_validation.add(file)
 
     def _search_symbols_to_rebuild(self, tree):
@@ -414,7 +414,7 @@ class Odoo():
             for p in s.not_found_paths:
                 if flat_tree[:len(p)] == p[:len(flat_tree)]: #TODO wrong
                     new_set_to_revalidate.add(s)
-                    print("found one pending: " + str(s.get_tree()))
+                    #print("found one pending: " + str(s.get_tree()))
         return new_set_to_revalidate
 
     def get_models(self, module = None, start_name = ""):

@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from server.core.pythonArchBuilderOdooHooks import PythonArchBuilderOdooHooks
+from server.core.pythonArchEvalOdooHooks import PythonArchEvalOdooHooks
 from server.constants import *
 from server.core.evaluation import Evaluation
 from server.core.odoo import *
@@ -50,19 +50,13 @@ class PythonArchEval(ast.NodeVisitor):
             path = os.path.join(path, "__init__.py")
         fileInfo = FileMgr.getFileInfo(path)
         fileInfo["d_arch_eval"] = self.diagnostics
+        PythonArchEvalOdooHooks.on_file_eval(self.symbol)
         #if self.filePath.endswith("__init__.py"): #TODO update hooks
         #    PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
         FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         self.symbol.evalStatus = 2
         return self.symbol
-
-    def resolve__all__symbols(self):
-        #at the end, add all symbols from __all__ statement that couldn't be loaded (because of dynamical import)
-        #Mainly for external packages
-        for symbol in self.__all__symbols_to_add:
-            if symbol not in self.symStack[-1].symbols:
-                self.symStack[-1].add_symbol(symbol)
 
     def eval_from_ast(self, ast):
         self.visit(ast)
