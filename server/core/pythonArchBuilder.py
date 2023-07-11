@@ -137,10 +137,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                     all_sym = symbol.symbols["__all__"]
                     # follow ref if the current __all__ is imported
                     all_primitive_sym, _ = all_sym.follow_ref()
-                    if not all_primitive_sym or not all_primitive_sym.name in ["list", "tuple"] or not all_primitive_sym.eval.value:
+                    if not all_primitive_sym or not all_primitive_sym.name in ["list", "tuple"] or not all_primitive_sym.value:
                         print("debug= wrong __all__")
                     else:
-                        allowed_names = list(all_primitive_sym.eval.value)
+                        allowed_names = list(all_primitive_sym.value)
                 fileSymbol = self.symStack[1]
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
@@ -197,7 +197,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         # as symbols to not raise any error.
                         evaluation = variable.eval
                         if evaluation and evaluation.get_symbol() and evaluation.get_symbol().type == SymType.PRIMITIVE:
-                            for var_name in evaluation.get_symbol().eval.value:
+                            for var_name in evaluation.get_symbol().value:
                                 var = Symbol(var_name, SymType.VARIABLE, self.filePath)
                                 var.startLine = node.lineno
                                 var.endLine = node.end_lineno
@@ -220,8 +220,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
-            symbol.doc.eval = Evaluation()
-            symbol.doc.eval.value = doc
+            symbol.doc.value = doc
         if not is_static and node.args:
             class_sym = self.symStack[-1]
             if class_sym and class_sym.type == SymType.CLASS and node.args.args:
@@ -251,8 +250,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
-            symbol.doc.eval = Evaluation()
-            symbol.doc.eval.value = doc
+            symbol.doc.value = doc
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)

@@ -16,7 +16,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
         if _inherit and _inherit.eval and _inherit.eval.get_symbol():
             inherit_value, _ = _inherit.eval.get_symbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
-                inherit_names = inherit_value.eval.value
+                inherit_names = inherit_value.value
                 if isinstance(inherit_names, str):
                     symbol.modelData.inherit = [inherit_names]
                 elif isinstance(inherit_names, list):
@@ -31,8 +31,8 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
         if _name:
             if _name.eval and _name.eval.get_symbol():
                 name_value, _ = _name.eval.get_symbol().follow_ref()
-                if name_value.type == SymType.PRIMITIVE and name_value.eval.value:
-                    return name_value.eval.value
+                if name_value.type == SymType.PRIMITIVE and name_value.value:
+                    return name_value.value
             else:
                 return None
         inherit_names = symbol.modelData.inherit
@@ -53,7 +53,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
         if _inherits and _inherits.eval.get_symbol():
             inherit_value, instance = _inherits.eval.get_symbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
-                inherit_names = inherit_value.eval.value
+                inherit_names = inherit_value.value
                 if isinstance(inherit_names, dict):
                     symbol.modelData.inherits = inherit_names
                 else:
@@ -66,7 +66,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
         if attr_sym and attr_sym.eval.get_symbol():
             attr_ref, instance = attr_sym.eval.get_symbol().follow_ref()
             if attr_ref.type == SymType.PRIMITIVE:
-                attr_value = attr_ref.eval.value
+                attr_value = attr_ref.value
                 return attr_value
         return AttributeNotFound
 

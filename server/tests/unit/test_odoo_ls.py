@@ -95,7 +95,7 @@ def test_evaluation():
     assert evaluation.get_symbol().type == SymType.PRIMITIVE
     assert evaluation.instance == True
     assert evaluation.get_symbol().name == "list"
-    assert evaluation.get_symbol().eval.value == ["CONSTANT_1", "CONSTANT_2"]
+    assert evaluation.get_symbol().value == ["CONSTANT_1", "CONSTANT_2"]
 
     data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
     evaluation = data_dir.get_symbol([], ["CONSTANT_1"]).eval

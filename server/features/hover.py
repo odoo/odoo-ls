@@ -49,7 +49,7 @@ class HoverFeature:
             type = str(type_ref[0].type).lower()
             if type_ref[0].type == SymType.FILE:
                 type = "module"
-        #class_doc = type_ref[0].doc and type_ref[0].doc.eval.value if type_ref[1] else ""
+        #class_doc = type_ref[0].doc and type_ref[0].doc.value if type_ref[1] else ""
         #BLOCK 1: (type) **name** -> infered_type
         value = build_block_1(symbol, type, infered_type)
         #SEPARATOR
@@ -63,8 +63,8 @@ class HoverFeature:
             #SEPARATOR
             value += "  \n***  \n"
         #BLOCK 3: doc
-        if symbol.doc and symbol.doc.eval:
-            value += "  \n-  \n" + symbol.doc.eval.value
+        if symbol.doc:
+            value += "  \n-  \n" + symbol.doc.value
         #if infered_type:
         #    value += "  \n-  \n**" + infered_type[2:] + "** : " + class_doc
         content = MarkupContent(

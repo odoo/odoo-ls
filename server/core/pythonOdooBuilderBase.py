@@ -101,8 +101,8 @@ class PythonOdooBuilder(ast.NodeVisitor):
             if _register and _register.eval:
                 value = _register.eval.get_symbol().follow_ref()[0]
                 if value.type == SymType.PRIMITIVE:
-                    symbol.modelData.register = value.eval.value
-                    if value.eval.value == False:
+                    symbol.modelData.register = value.value
+                    if value.value == False:
                         return False
             return True
         return False

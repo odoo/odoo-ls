@@ -40,8 +40,8 @@ class Model():
             if description:
                 description, _ = description.follow_ref()
                 if description:
-                    description_text = description.eval.value or main_symbol[0].name
-            return description_text + ": " + ((main_symbol[0].doc and main_symbol[0].doc.eval.value) or "")
+                    description_text = description.value or main_symbol[0].name
+            return description_text + ": " + ((main_symbol[0].doc and main_symbol[0].doc.value) or "")
         return ""
 
     def get_symbols(self, from_module):

@@ -85,13 +85,11 @@ class Evaluation():
         instance = True
         if isinstance(node, ast.Constant):
             self._symbol_main = Symbol("constant", SymType.PRIMITIVE, "")
-            self._symbol_main.eval = Evaluation()
-            self._symbol_main.eval.value = node.value
+            self._symbol_main.value = node.value
             symbol = RegisteredRef(self._symbol_main)
         elif isinstance(node, ast.Dict):
             self._symbol_main = Symbol("dict", SymType.PRIMITIVE, "")
-            self._symbol_main.eval = Evaluation()
-            self._symbol_main.eval.value = self._extract_literal_dict(node)
+            self._symbol_main.value = self._extract_literal_dict(node)
             symbol = RegisteredRef(self._symbol_main)
         elif isinstance(node, ast.List) or isinstance(node, ast.Tuple):
             self._symbol_main = Symbol("list", SymType.PRIMITIVE, "")
@@ -102,8 +100,7 @@ class Evaluation():
                 if not isinstance(n, ast.Constant):
                     break
                 res.append(n.value)
-            self._symbol_main.eval = Evaluation()
-            self._symbol_main.eval.value = res
+            self._symbol_main.value = res
             symbol = RegisteredRef(self._symbol_main)
         elif isinstance(node, ast.Call):
             f = node.func
