@@ -1,8 +1,43 @@
 from server.constants import *
 from server.core.odoo import Odoo
 from server.core.model import Model
+from lsprotocol.types import (Range, Position)
 
 class ParsoUtils:
+
+    @staticmethod
+    def getSymbols(fileSymbol, parsoTree,line, character):
+        "return the Symbols at the given position in a file, the range of the selected symbol and the context"
+        range = None
+        scope_symbol = fileSymbol.get_scope_symbol(line)
+        element = parsoTree.get_leaf_for_position((line, character), include_prefixes=True)
+        range = Range(
+            start=Position(line=element.start_pos[0]-1, character=element.start_pos[1]),
+            end=Position(line=element.end_pos[0]-1, character=element.end_pos[1])
+        )
+        expr = ParsoUtils.get_previous_leafs_expr(element)
+        expr.append(element)
+        evaluation, context = ParsoUtils.evaluateType(expr, scope_symbol)
+        if isinstance(evaluation, Model):
+            module = fileSymbol.get_module()
+            if not module:
+                return "Can't evaluate the current module. Are you in a valid Odoo module?", None, None
+            evaluation = evaluation.get_main_symbols(module)
+            if len(evaluation) == 1:
+                evaluation = evaluation[0]
+            else:
+                return "Can't find the definition: 'Multiple models with the same name exists.'", None, None
+        elif isinstance(evaluation, str):
+            module = fileSymbol.get_module()
+            if module:
+                model = Odoo.get().models.get(evaluation, None)
+                if model:
+                    evaluation = model.get_main_symbols(module)
+                    if len(evaluation) == 1:
+                        return evaluation[0], range, context
+                    else:
+                        return "Can't find the definition: 'Multiple models with the same name exists.'", None, None
+        return evaluation, range, context
 
     @staticmethod
     def get_previous_leafs_expr(leaf):
@@ -48,8 +83,7 @@ class ParsoUtils:
 
     @staticmethod
     def evaluateType(node_list, scope_symbol):
-        """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned.
-        If you want to infer the symbol corresponding to an expr when evaluation, use inferTypeParso"""
+        """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned."""
         obj = None #symbol or model
         node_iter = 0
         context = {}

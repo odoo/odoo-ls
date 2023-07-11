@@ -377,25 +377,35 @@ class Symbol(RegisterableObject):
             return Odoo.get().models[self.modelData.name]
         return None
 
-    def get_class_symbol(self, name, prevent_comodel = False):
+    def get_class_symbol(self, name, prevent_comodel = False, all=False):
         """similar to get_symbol: will return the symbol that is under this one with the specified name.
         However, if the symbol is a class or a model, it will search in the base class or in comodel classes"""
         from .odoo import Odoo
+        res = []
         if name in self.symbols:
-            return self.symbols[name]
+            if not all:
+                return self.symbols[name]
+            else:
+                res.append(self.symbols[name])
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
             sym = model.get_symbols(self.get_module())
             for s in sym:
-                r = s.get_class_symbol(name, True)
+                r = s.get_class_symbol(name, True, all=all)
                 if r:
-                    return r
+                    if not all:
+                        return r
+                    else:
+                        res.append(r)
         if self.classData:
             for base in self.classData.bases:
-                s = base.get_class_symbol(name, prevent_comodel=prevent_comodel)
+                s = base.get_class_symbol(name, prevent_comodel=prevent_comodel, all=all)
                 if s:
-                    return s
-        return None
+                    if not all:
+                        return s
+                    else:
+                        res.append(s)
+        return res
 
     def is_inheriting_from(self, class_tree):
         if not self.classData:

@@ -28,6 +28,7 @@ from server.core.pythonArchBuilder import PythonArchBuilder
 from server.pythonUtils import PythonUtils
 from server.core.fileMgr import *
 from server.features.autocomplete import AutoCompleteFeature
+from server.features.definition import DefinitionFeature
 from server.features.hover import HoverFeature
 import urllib.parse
 import urllib.request
@@ -95,26 +96,21 @@ def hover(ls, params: TextDocumentPositionParams):
         if file_symbol and params.text_document.uri[-3:] == ".py":
             #Force the parsoTree to be loaded by giving file content and opened==True
             parsoTree = FileMgr.getFileInfo(file_symbol.paths[0], content, opened=True)["parsoTree"]
-            symbol, range, context = HoverFeature.getSymbol(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
-            return HoverFeature.get_Hover(symbol, range, context)
+            return HoverFeature.get_Hover(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
     return None
 
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
-def definition(params: TextDocumentPositionParams):
+def definition(ls, params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
-    final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
-    final_path = urllib.request.url2pathname(final_path)
-    #TODO find better than this small hack for windows (get disk letter in capital)
-    if os.name == "nt":
-        final_path = final_path[0].capitalize() + final_path[1:]
-    file_symbol = Odoo.get().get_file_symbol(final_path)
-    if file_symbol and params.text_document.uri[-3:] == ".py":
-        symbol = PythonUtils.get_symbol(file_symbol, params.position.line + 1, params.position.character + 1)
-    if symbol:
-        #TODO paths?
-        a = Location(uri=FileMgr.pathname2uri(symbol.paths[0]), range=Range(start=Position(line=symbol.startLine-1, character=0), end=Position(line=symbol.endLine-1, character=0)))
-        return [a]
-    return []
+    text_doc = ls.workspace.get_document(params.text_document.uri)
+    content = text_doc.source
+    path = get_path_file(params.text_document.uri)
+    with Odoo.get().acquire_read():
+        file_symbol = Odoo.get().get_file_symbol(path)
+        if file_symbol and params.text_document.uri[-3:] == ".py":
+            #Force the parsoTree to be loaded by giving file content and opened==True
+            parsoTree = FileMgr.getFileInfo(file_symbol.paths[0], content, opened=True)["parsoTree"]
+            return DefinitionFeature.get_location(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
 
 @odoo_server.thread()
 def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
