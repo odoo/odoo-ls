@@ -98,6 +98,8 @@ class ParsoUtils:
                         return node.value[1:-1], context
                     return None, context
             else:
+                if isinstance(obj, list):
+                    obj = obj[0] #take the most relevant symbol if multiple overrides exist
                 if node.type == "operator":
                     if node.value == "." and len(node_list) > node_iter+1:
                         node_iter += 1

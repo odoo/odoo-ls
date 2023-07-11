@@ -380,7 +380,8 @@ class Symbol(RegisterableObject):
     def get_class_symbol(self, name, prevent_comodel = False, all=False):
         """similar to get_symbol: will return the symbol that is under this one with the specified name.
         However, if the symbol is a class or a model, it will search in the base class or in comodel classes
-        if not all, it will return the first found, or all found symbols"""
+        if not all, it will return the first found. If all, the all found symbols are returned, but the first one
+        is the one that is overriding others"""
         from .odoo import Odoo
         res = []
         if name in self.symbols:
@@ -397,7 +398,9 @@ class Symbol(RegisterableObject):
                     if not all:
                         return r
                     else:
-                        res.append(r)
+                        for r_iter in r:
+                            if r_iter not in res:
+                                res.append(r_iter)
         if self.classData:
             for base in self.classData.bases:
                 s = base.get_class_symbol(name, prevent_comodel=prevent_comodel, all=all)
@@ -405,7 +408,9 @@ class Symbol(RegisterableObject):
                     if not all:
                         return s
                     else:
-                        res.append(s)
+                        for s_iter in s:
+                            if s_iter not in res:
+                                res.append(s_iter)
         return res
 
     def is_inheriting_from(self, class_tree):
