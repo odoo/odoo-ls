@@ -60,7 +60,7 @@ class AutoCompleteFeature:
             module = file_symbol.get_module()
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)
-            if symbol_ancestors:
+            if symbol_ancestors and not isinstance(symbol_ancestors, list): #TODO better handler for list?
                 symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
                 return CompletionList(
                     is_incomplete=False,

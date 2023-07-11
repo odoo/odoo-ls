@@ -88,13 +88,13 @@ class Model():
     def isModel(self):
         return True
 
-    def get_class_symbol(self, name, from_module):
+    def get_class_symbol(self, name, from_module, all=False):
         """ Return the first definition of the name in the model from the "from_module" perspective"""
         impl = self.get_symbols(from_module)
         #TODO actually we are searching for the first one, and we could return an override. It would be better if we
         #could search in sorted modules (by dep)
         for sym in impl:
-            res = sym.get_class_symbol(name)
+            res = sym.get_class_symbol(name, all=all)
             if res:
                 return res
         return None

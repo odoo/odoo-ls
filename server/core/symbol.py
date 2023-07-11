@@ -379,7 +379,8 @@ class Symbol(RegisterableObject):
 
     def get_class_symbol(self, name, prevent_comodel = False, all=False):
         """similar to get_symbol: will return the symbol that is under this one with the specified name.
-        However, if the symbol is a class or a model, it will search in the base class or in comodel classes"""
+        However, if the symbol is a class or a model, it will search in the base class or in comodel classes
+        if not all, it will return the first found, or all found symbols"""
         from .odoo import Odoo
         res = []
         if name in self.symbols:

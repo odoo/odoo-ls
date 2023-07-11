@@ -10,6 +10,20 @@ class HoverFeature:
     @staticmethod
     def get_Hover(fileSymbol, parsoTree, line, character):
 
+        symbol, range, context = ParsoUtils.getSymbols(fileSymbol, parsoTree, line, character)
+
+        if not symbol:
+            return Hover(None)
+        if isinstance(symbol, str):
+            return Hover(symbol)
+        if isinstance(symbol, list):
+            symbol = symbol[0]
+        return HoverFeature._build_hover(symbol, range, context)
+
+    @staticmethod
+    def _build_hover(symbol, range, context):
+
+
         def build_block_1(symbol, type, infered_type):
             value =  "```python  \n"
             value += "(" + type + ") "
@@ -26,13 +40,6 @@ class HoverFeature:
             value += "  \n```"
             return value
 
-        symbol, range, context = ParsoUtils.getSymbols(fileSymbol, parsoTree, line, character)
-
-        if not symbol:
-            return Hover(None)
-        if isinstance(symbol, str):
-            return Hover(symbol)
-        symbol = symbol[0] #TODO remove hack and and handle all symbols
         type_ref = symbol.follow_ref(context)
         infered_type = ""
         if type_ref[0] != symbol:

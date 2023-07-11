@@ -37,6 +37,8 @@ class ParsoUtils:
                         return evaluation[0], range, context
                     else:
                         return "Can't find the definition: 'Multiple models with the same name exists.'", None, None
+        elif isinstance(evaluation, list):
+            return evaluation, range, context
         return evaluation, range, context
 
     @staticmethod
@@ -105,7 +107,7 @@ class ParsoUtils:
                             obj = obj.follow_ref(context)[0]
                             if obj.type == SymType.VARIABLE:
                                 return None, context
-                        obj = obj.get_class_symbol(next_element.value, module)
+                        obj = obj.get_class_symbol(next_element.value, all=True)
                         if not obj:
                             return None, context
                     elif node.value == "[" and len(node_list) > node_iter+1:
