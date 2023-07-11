@@ -118,11 +118,11 @@ class AutoCompleteFeature:
         if isinstance(obj, Symbol):
             def_obj = obj.follow_ref()[0]
             for s in def_obj.all_symbols(line=line):
-                if s.name.startswith(starts_with):
+                if s.name.startswith(starts_with) and (not s.name.startswith("__") or starts_with.startswith("__")):
                     yield s
         else:
             for a in obj.get_attributes(module):
-                if a.name.startswith(starts_with):
+                if a.name.startswith(starts_with) and (not a.name.startswith("__") or starts_with.startswith("__")):
                     yield a
 
     @staticmethod

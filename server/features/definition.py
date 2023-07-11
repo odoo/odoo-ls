@@ -38,8 +38,8 @@ class DefinitionFeature:
         for s in symbol:
             for path in s.paths: #to be sure, but it should always have a length of 1, who would want to see the definition of odoo.addons?
                 range = Range(
-                    start=Position(line=s.startLine, character=0),
-                    end=Position(line=s.endLine, character=1)
+                    start=Position(line=s.startLine-1, character=0),
+                    end=Position(line=s.endLine-1, character=1)
                 )
                 res.append(Location(
                     uri=FileMgr.pathname2uri(path),
