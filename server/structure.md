@@ -170,20 +170,27 @@ les FUNCTION ont une Evaluation de leur valeur retour.
 
 ## C - Memory management
 
-Python c'est bien. Mais la gestion de la mémoire peut vite devenir chaotique, et la structure du code (graphe et référence vers des symboles dans les evaluations et autres caches) rend l'update (suppression, invalidation) de mémoire très difficile. En particulier:
-- La suppression d'un élément de l'arbre des symboles n'invalide pas toutes les références à cet élément dans tous les autres éléments du code (evaluation et caches). Pour palier à ça, il est possible soit:
+Python c'est bien. Mais la gestion de la mémoire peut vite devenir chaotique, et la structure du code (graphe et référence vers des symboles dans les evaluations et autres caches) rend l'update (suppression, invalidation) de mémoire très difficile. En particulier, la suppression d'un élément de l'arbre des symboles n'invalide pas toutes les références à cet élément dans tous les autres éléments du code (evaluation et caches). Pour palier à ça, il est possible soit:
   - d'utiliser la notation (voir plus haut) permettant de retrouver un élément dans l'arbre et ne jamais le référencer directement (mais cela implique beaucoup de recherches dans l'arbre, et un stockage long de chaine de charactère représentant le chemin dans l'arbre)
   - d'utiliser des pointeurs faibles. ([weakref](https://docs.python.org/3/library/weakref.html))
-- La suppression effective de la mémoire inutilisée par le garbage collector est difficile à garantir. L'arbre utilisant des références cycliques, les caches et Evaluation référencant des symboles potentiellement inutilisés amènent fréquement à des fuites de mémoire (en python, comprendre des zones de mémoires dont on a perdu l'accès mais qui n'est pas supprimée à cause de références cycliques internes)
+  - d'utiliser des références à double sens: une référence peut être supprimée par l'objet qu'elle référence
 
-Pour répondre à ce problème, le code est organisé comme suit, et ce principe doit être une règle SAINTE pour tout développement dans le projet:
-Tous les symboles ne sont référencés qu'*UNE SEULE FOIS*, par leur symbole parent. TOUTE AUTRE référence à un symbole depuis un autre endroit du code, ou meme entre symbole doit se faire via des weakref.
-Ainsi la suppression d'un symbole est immédiate et effective. Par contre cela implique que toutes les autres références doivent être testées et acquises avant de pouvoir être utilisées (voir [weakref](https://docs.python.org/3/library/weakref.html)).
+La première solution a été rejetée par sa lourdeur à l'exécution et par la difficulté de debugging de l'application, aucune référence n'étant résolue lors d'un breakpoint
 
-### SymbolWeakRef
+La deuxième solution, d'abord implémentée à titre d'essai a vite montré ses limites lors d'une utilisation régulière. En effet, un weakref ne devient invalide que lorsque le garbage collector a effectivement détruit un objet.
+Il est donc parfois possible de réssusciter un objet supprimé:
+```python
+a = 5
+ref = weakref.ref(a)
+del a
+old_a = ref() #if the garbage collector did not collect a already, old_a will be a strong ref to a
+```
 
-Malheureusement, weakref permet d'accéder à un objet éligible à la collecte. En effet, si le garbage collector n'est pas encore passé, la weakref peut toujours récupérer une référence forte sur l'objet.
-Pour contrer cela, les weakref sont wrappées dans une classe SymbolWeakRef, qui s'assure que l'objet est bien "vivant" pour être retourné. En effet un symbol supprimé voit son type modifié en SymType.DIRTY, ce qui permet de l'identifier comme invalide.
+La troisième solution a alors été choisie et implémentée dans le fichier references.py afin de remplacer weakref. Le principe est de proposer la même interface que weakref, mais de ne pas se baser sur le garbage collector. Lorsqu'un objet est supprimé, il appelle toutes les références qui le pointent et signale sa suppression immédiatement.
+
+Le code est donc organisé comme suit, et ce principe doit être une règle SAINTE pour tout développement dans le projet:
+Tous les symboles ne sont référencés de manière forte qu'*UNE SEULE FOIS*, par leur symbole parent. TOUTE AUTRE référence à un symbole depuis un autre endroit du code, ou meme entre symbole doit se faire via des references faibles (RegisteredRef).
+Ainsi la suppression d'un symbole est immédiate et effective.
 
 ### Accès asynchrone
 
@@ -236,7 +243,7 @@ C'est l'étape qui rajoute tous les infos/warnings/erreurs dans le projet.
 ~~La drogue c'est mal.~~ Une fois la base de données construite, il s'agit évidement de la garder à jour.
 Pour chaque mise à jour du code, il convient donc de refléter les changements dans les structures de symboles.
 
-Un première possibilité serait d'analyser le changement effectué et de changer localement les symboles concernés. Toutefois cette solution implique énormément de code et de complexité pour réussir à isoler ces changements et garder une consistance dans l'arbre final. 
+Un première possibilité serait d'analyser le changement effectué et de changer localement les symboles concernés. Toutefois cette solution implique énormément de code et de complexité pour réussir à isoler ces changements et garder une consistance dans l'arbre final.
 
 L'autre solution est de reconstruire l'entiereté d'un fichier lors d'une modification, quelle qu'elle soit. En réalité, lorsqu'un fichier est chargé en mémoire, l'analyser est très rapide, et le cout de reconstruire l'entiereté du fichier au lieu du symbole concerné est beaucoup trop faible pour justifier un code beaucoup plus lourd.
 
@@ -264,3 +271,16 @@ Le language serveur, avec sa base de données et ses notifications, peut fournir
 - __Autocomplétion__: fournit une liste de candidats pour compléter le code sous le curseur
 - __Refactoring (A venir)__: Aide au refactoring avec "replace all". 
 
+## G - Requêtes d'évaluation
+
+Afin de pouvoir répondre aux requêtes d'autocomplétion, aux Hover et aux goto definition, parsoUtils.evaluateType est une fonction capable d'évaluer le type d'un morceau de code donné en paramètre.
+C'est l'interface principale pour interagir avec la base de connaissance.
+
+Cette fonction utilise un context pour transférer les informations importantes d'étape en étape. Ce contexte contient deux clés: args et parent.
+
+Dans le cas de `self.env["test"].func(a)`
+- le context lors de l'évaluation de self sera `{}`
+- le context lors de l'évaluation de env sera `{args: None, parent: self}`
+- le context lors de l'évaluation de env.__getitem__ sera `{args: "test", parent: env}`
+- le context lors de l'évaluation de func sera `{args: None, parent: TestModel}`
+- le context lors de l'évaluation de func() sera `{args: a, parent: func}`
