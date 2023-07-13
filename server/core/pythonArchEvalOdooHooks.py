@@ -1,6 +1,7 @@
 from server.constants import *
 from server.core.evaluation import Evaluation
 from server.core.odoo import Odoo
+from server.core.symbol import Symbol
 from server.references import RegisteredRef
 
 
@@ -67,10 +68,26 @@ class PythonArchEvalOdooHooks:
             env.eval.context["test_mode"] = False # used to define the Cursor type
             env.add_dependency(envClass, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
             env.doc = ""
+        #ids
+        ids = symbol.get_symbol([], ["ids"])
+        if ids:
+            ids.eval = Evaluation()
+            ids.eval._main_symbol = Symbol("list", SymType.VARIABLE, "")
+            ids.eval._symbol = RegisteredRef(ids.eval._main_symbol)
+            ids.eval.instance = True
+            ids.eval.value = []
         #sudo
         sudo = symbol.get_symbol([], ["sudo"])
         if sudo:
             sudo.eval = EvaluationTakeParent()
+        #create
+        create = symbol.get_symbol([], ["create"])
+        if create:
+            create.eval = EvaluationTakeParent()
+        #search
+        search = symbol.get_symbol([], ["search"])
+        if search:
+            search.eval = EvaluationTakeParent()
 
     @staticmethod
     def on_env_eval(symbol):
