@@ -276,11 +276,10 @@ Le language serveur, avec sa base de données et ses notifications, peut fournir
 Afin de pouvoir répondre aux requêtes d'autocomplétion, aux Hover et aux goto definition, parsoUtils.evaluateType est une fonction capable d'évaluer le type d'un morceau de code donné en paramètre.
 C'est l'interface principale pour interagir avec la base de connaissance.
 
-Cette fonction utilise un context pour transférer les informations importantes d'étape en étape. Ce contexte contient deux clés: args et parent.
+Cette fonction utilise un context pour transférer les informations importantes d'étape en étape. Ce contexte contient trois clés: args, parent et module.
 
 Dans le cas de `self.env["test"].func(a)`
-- le context lors de l'évaluation de self sera `{}`
-- le context lors de l'évaluation de env sera `{args: None, parent: self}`
-- le context lors de l'évaluation de env.__getitem__ sera `{args: "test", parent: env}`
-- le context lors de l'évaluation de func sera `{args: None, parent: TestModel}`
-- le context lors de l'évaluation de func() sera `{args: a, parent: func}`
+- le context lors de l'évaluation de self sera `{module: currentModule}`
+- le context lors de l'évaluation de env sera `{args: None, parent: self, module: currentModule}`
+- le context lors de l'évaluation de env.__getitem__ sera `{args: "test", parent: env, module: currentModule}`
+- le context lors de l'évaluation de func() sera `{args: {a}, parent: TestModel, module: currentModule}`

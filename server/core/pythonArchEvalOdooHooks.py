@@ -25,11 +25,11 @@ class EvaluationEnvGetItem(Evaluation):
         return None
 
 
-class EvaluationModelIter(Evaluation):
+class EvaluationTakeParent(Evaluation):
 
     def _get_symbol_hook(self, symbol, context):
         from server.core.odoo import Odoo
-        class_sym = context.get("self", None)
+        class_sym = context.get("parent", None)
         if not class_sym:
             return None
         return RegisteredRef(class_sym)
@@ -55,7 +55,7 @@ class PythonArchEvalOdooHooks:
     staticmethod
     def on_baseModel_eval(symbol):
         iter = symbol.get_symbol([], ["__iter__"])
-        iter.eval = EvaluationModelIter()
+        iter.eval = EvaluationTakeParent()
         # env
         env = symbol.get_symbol([], ["env"])
         envClass = Odoo.get().get_symbol(["odoo", "api"], ["Environment"])
@@ -67,6 +67,10 @@ class PythonArchEvalOdooHooks:
             env.eval.context["test_mode"] = False # used to define the Cursor type
             env.add_dependency(envClass, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
             env.doc = ""
+        #sudo
+        sudo = symbol.get_symbol([], ["sudo"])
+        if sudo:
+            sudo.eval = EvaluationTakeParent()
 
     @staticmethod
     def on_env_eval(symbol):

@@ -88,7 +88,12 @@ class ParsoUtils:
         """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned."""
         obj = None #symbol or model
         node_iter = 0
-        context = {}
+        module = scope_symbol.get_module()
+        context = {
+            "args": None,
+            "parent": None,
+            "module": module,
+        }
         while node_iter != len(node_list):
             node = node_list[node_iter]
             if not obj:
@@ -104,11 +109,14 @@ class ParsoUtils:
                     if node.value == "." and len(node_list) > node_iter+1:
                         node_iter += 1
                         next_element = node_list[node_iter]
-                        module = scope_symbol.get_module()
                         if not isinstance(obj, Model):
                             obj = obj.follow_ref(context)[0]
                             if obj.type == SymType.VARIABLE:
                                 return None, context
+                        if obj.type == SymType.FUNCTION:
+                            if obj.eval:
+                                obj = obj.eval.get_symbol(context)
+                        context["parent"] = obj
                         obj = obj.get_class_symbol(next_element.value, all=True)
                         if not obj:
                             return None, context
@@ -121,7 +129,6 @@ class ParsoUtils:
                         if node_iter >= len(node_list) or node_list[node_iter].value != "]" or node_list[node_iter].parent != node.parent:
                             return None, context
                         content = ParsoUtils.evaluateType(inner_part, scope_symbol)[0]
-                        module = scope_symbol.get_module()
                         if not isinstance(obj, Model):
                             obj = obj.follow_ref(context)[0]
                             if obj.type == SymType.VARIABLE:
@@ -130,7 +137,9 @@ class ParsoUtils:
                         if not get_item_sym:
                             return None, context
                         get_item_sym = get_item_sym.follow_ref(context)[0]
-                        context.update({"args": content, "module": module})
+                        context["parent"] = obj
+                        context["args"] = content
                         obj = get_item_sym.eval.get_symbol(context)
+                        context["args"] = None
             node_iter += 1
         return obj, context

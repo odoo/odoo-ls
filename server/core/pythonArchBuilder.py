@@ -271,7 +271,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         iter = eval_iter_node.get_symbol().get_class_symbol("__iter__")
                         if iter and iter.eval:
                             variable.eval = Evaluation()
-                            variable.eval.symbol = iter.eval.get_symbol_rr({"self": eval_iter_node.get_symbol()})
+                            variable.eval.symbol = iter.eval.get_symbol_rr({"parent": eval_iter_node.get_symbol()})
                             #iter.dependents.add(variable)
                         else:
                             variable.eval = None
