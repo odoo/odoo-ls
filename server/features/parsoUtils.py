@@ -113,9 +113,6 @@ class ParsoUtils:
                             obj = obj.follow_ref(context)[0]
                             if obj.type == SymType.VARIABLE:
                                 return None, context
-                        if obj.type == SymType.FUNCTION:
-                            if obj.eval:
-                                obj = obj.eval.get_symbol(context)
                         context["parent"] = obj
                         obj = obj.get_class_symbol(next_element.value, all=True)
                         if not obj:
@@ -140,6 +137,35 @@ class ParsoUtils:
                         context["parent"] = obj
                         context["args"] = content
                         obj = get_item_sym.eval.get_symbol(context)
+                        context["args"] = None
+                    elif node.value == "(" and len(node_list) > node_iter+1:
+                        inner_part = []
+                        node_iter += 1
+                        while node_iter < len(node_list) and (node_list[node_iter].value != ")" or node_list[node_iter].parent != node.parent):
+                            inner_part.append(node_list[node_iter])
+                            node_iter += 1
+                        if node_iter >= len(node_list) or node_list[node_iter].value != ")" or node_list[node_iter].parent != node.parent:
+                            return None, context
+                        args = []
+                        if inner_part:
+                            i = 0
+                            arg = []
+                            while i < len(inner_part):
+                                if inner_part[i].value == "," and inner_part[1].parent and inner_part[1].parent.parent == node:
+                                    args += ParsoUtils.evaluateType(arg, scope_symbol)[0]
+                                    arg = []
+                                else:
+                                    arg.append(inner_part[i])
+                                i+=1
+                        if not isinstance(obj, Model):
+                            obj = obj.follow_ref(context)[0]
+                        if obj.type != SymType.FUNCTION:
+                            return None, context
+                        if not obj.eval:
+                            return None, context
+                        # context["parent"] = obj #we don't want the function to be parent of itself
+                        context["args"] = args
+                        obj = obj.eval.get_symbol(context)
                         context["args"] = None
             node_iter += 1
         return obj, context
