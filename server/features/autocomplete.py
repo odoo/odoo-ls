@@ -60,17 +60,19 @@ class AutoCompleteFeature:
             module = file_symbol.get_module()
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)
-            if symbol_ancestors and not isinstance(symbol_ancestors, list): #TODO better handler for list?
-                symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
-                return CompletionList(
-                    is_incomplete=False,
-                    items=[CompletionItem(
-                        label=symbol.name,
-                        #documentation=symbol.doc,
-                        kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, -1)]
-                )
-            return []
+            if not symbol_ancestors:
+                return []
+            if isinstance(symbol_ancestors, list):
+                symbol_ancestors = symbol_ancestors[0] #take the first override
+            symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
+            return CompletionList(
+                is_incomplete=False,
+                items=[CompletionItem(
+                    label=symbol.name,
+                    #documentation=symbol.doc,
+                    kind = AutoCompleteFeature._getCompletionItemKind(symbol),
+                ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, -1)]
+            )
         elif element and element.type == 'name':
             #TODO maybe not useful as vscode provide basic dictionnay autocompletion with seen names in the file
             expr = ParsoUtils.get_previous_leafs_expr(element)
