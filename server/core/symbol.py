@@ -126,23 +126,24 @@ class Symbol(RegisterableObject):
             for s in self.localSymbols:
                 if s.startLine <= line <= s.endLine:
                     yield s
-        for sub_s in self._all_symbols_from_class(line=line, include_inherits=include_inherits):
-            yield sub_s
+        if include_inherits:
+            for sub_s in self._all_symbols_from_class(line=line):
+                yield sub_s
         for s in self.symbols.values():
             yield s
         for s in self.moduleSymbols.values():
             yield s
 
-    def _all_symbols_from_class(self, line=-1, include_inherits=False):
+    def _all_symbols_from_class(self, line=-1):
         return []
 
-    def follow_ref(self, context={}):
+    def follow_ref(self, context=None):
         #follow the reference to the real symbol and returns it (not a RegisteredRef)
         sym = self
         instance = self.type in [SymType.VARIABLE]
         while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_rr(context):
             instance = sym.eval.instance
-            if sym.eval.context:
+            if sym.eval.context and context:
                 context.update(sym.eval.context)
             sym = sym.eval.get_symbol(context)
         return sym, instance
@@ -525,9 +526,9 @@ class ClassSymbol(Symbol):
     def get_context(self, args, keywords):
         return {}
 
-    def _all_symbols_from_class(self, line=-1, include_inherits=False):
+    def _all_symbols_from_class(self, line=-1):
         for s in self.bases:
-            for sub_s in s.all_symbols(line=-1, include_inherits=include_inherits):
+            for sub_s in s.all_symbols(line=-1, include_inherits=True):
                 yield sub_s
 
     def is_inheriting_from(self, class_tree):

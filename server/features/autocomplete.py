@@ -71,7 +71,7 @@ class AutoCompleteFeature:
                     label=symbol.name,
                     #documentation=symbol.doc,
                     kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, -1)]
+                ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, context, -1)]
             )
         elif element and element.type == 'name':
             #TODO maybe not useful as vscode provide basic dictionnay autocompletion with seen names in the file
@@ -86,7 +86,7 @@ class AutoCompleteFeature:
                         label=symbol.name,
                         #documentation=symbol.doc,
                         kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, line, element.value)]
+                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, {}, line, element.value)]
                 )
         elif element and element.type == 'string':
             s = element.value
@@ -113,15 +113,22 @@ class AutoCompleteFeature:
             print("here")
 
     @staticmethod
-    def _get_symbols_from_obj(obj, module, line=-1, starts_with = ""):
+    def _get_symbols_from_obj(obj, module, context, line=-1, starts_with = ""):
         """ For a symbol or model, get all sub symbols
         if line is not -1, seearch for local symbols before the line number
         """
         if isinstance(obj, Symbol):
-            def_obj = obj.follow_ref()[0]
+            def_obj = obj.follow_ref(context)[0]
             for s in def_obj.all_symbols(line=line):
                 if s.name.startswith(starts_with) and (not s.name.startswith("__") or starts_with.startswith("__")):
                     yield s
+            if "comodel_name" in context and def_obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
+                model = Odoo.get().models.get(context["comodel_name"], None)
+                if model:
+                    models_syms = model.get_symbols(module)
+                    for model_class in models_syms:
+                        for s in model_class.all_symbols(line=-1):
+                            yield s
         else:
             for a in obj.get_attributes(module):
                 if a.name.startswith(starts_with) and (not a.name.startswith("__") or starts_with.startswith("__")):
