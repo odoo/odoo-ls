@@ -127,7 +127,7 @@ class AutoCompleteFeature:
                 if model:
                     models_syms = model.get_symbols(module)
                     for model_class in models_syms:
-                        for s in model_class.all_symbols(line=-1):
+                        for s in model_class.all_symbols(line=-1, include_inherits=True):
                             yield s
         else:
             for a in obj.get_attributes(module):
