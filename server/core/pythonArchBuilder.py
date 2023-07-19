@@ -243,12 +243,11 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack.pop()
 
     def visit_ClassDef(self, node):
-        symbol = Symbol(node.name, SymType.CLASS, self.filePath)
+        symbol = ClassSymbol(node.name, self.filePath)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         node.symbol = RegisteredRef(symbol)
         symbol.ast_node = node
-        symbol.classData = ClassData()
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)

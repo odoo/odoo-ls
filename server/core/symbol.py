@@ -30,21 +30,6 @@ class ModelData():
         self.data_name = 'date'
         self.fold_name = 'fold'
 
-class ClassData():
-
-    def __init__(self):
-        #data related to classes symbols
-        self.bases = RegisteredRefSet()
-
-    def inherits(self, symbol):
-        for base in self.bases:
-            if base == symbol:
-                return True
-            if base.classData.inherits(symbol):
-                return True
-
-    def get_context(self, args, keywords):
-        return {}
 
 class Symbol(RegisterableObject):
     """A symbol is an object representing an element of the code architecture.
@@ -58,7 +43,7 @@ class Symbol(RegisterableObject):
     """
 
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
-        "localSymbols",  "dependencies", "dependents", "parent", "isModule", "classData",
+        "localSymbols",  "dependencies", "dependents", "parent", "isModule",
         "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc")
 
@@ -118,7 +103,6 @@ class Symbol(RegisterableObject):
             }
         self.parent = None
         self.isModule = False
-        self.classData = None
         self.modelData = None
         self.external = False
         self.startLine = 0
@@ -142,14 +126,15 @@ class Symbol(RegisterableObject):
             for s in self.localSymbols:
                 if s.startLine <= line <= s.endLine:
                     yield s
-        if include_inherits and self.classData:
-            for s in self.classData.bases:
-                for sub_s in s.all_symbols(line=-1, include_inherits=include_inherits):
-                    yield sub_s
+        for sub_s in self._all_symbols_from_class(line=line, include_inherits=include_inherits):
+            yield sub_s
         for s in self.symbols.values():
             yield s
         for s in self.moduleSymbols.values():
             yield s
+
+    def _all_symbols_from_class(self, line=-1, include_inherits=False):
+        return []
 
     def follow_ref(self, context=None):
         #follow the reference to the real symbol and returns it (not a RegisteredRef)
@@ -404,25 +389,9 @@ class Symbol(RegisterableObject):
                         for r_iter in r:
                             if r_iter not in res:
                                 res.append(r_iter)
-        if self.classData:
-            for base in self.classData.bases:
-                s = base.get_class_symbol(name, prevent_comodel=prevent_comodel, all=all)
-                if s:
-                    if not all:
-                        return s
-                    else:
-                        for s_iter in s:
-                            if s_iter not in res:
-                                res.append(s_iter)
         return res
 
     def is_inheriting_from(self, class_tree):
-        if not self.classData:
-            return False
-        from .odoo import Odoo
-        for s in self.classData.bases:
-            if s.get_tree() == class_tree or s.is_inheriting_from(class_tree):
-                return True
         return False
 
     def add_symbol(self, symbol):
@@ -497,11 +466,8 @@ class Symbol(RegisterableObject):
             return self.parent.inferName(name, line)
         return selected
 
-    def isClass(self):
-        return bool(self.classData)
-
     def isModel(self):
-        return self.isClass() and bool(self.modelData)
+        return self.type == SymType.CLASS and bool(self.modelData)
 
     def is_external(self):
         if self.external:
@@ -541,3 +507,47 @@ class FunctionSymbol(Symbol):
     def __init__(self, name, paths, is_property):
         super().__init__(name, SymType.FUNCTION, paths)
         self.is_property = is_property
+
+
+class ClassSymbol(Symbol):
+
+    def __init__(self, name, paths):
+        super().__init__(name, SymType.CLASS, paths)
+        self.bases = RegisteredRefSet()
+
+    def inherits(self, symbol):
+        for base in self.bases:
+            if base == symbol:
+                return True
+            if base.inherits(symbol):
+                return True
+
+    def get_context(self, args, keywords):
+        return {}
+
+    def _all_symbols_from_class(self, line=-1, include_inherits=False):
+        for s in self.bases:
+            for sub_s in s.all_symbols(line=-1, include_inherits=include_inherits):
+                yield sub_s
+
+    def is_inheriting_from(self, class_tree):
+        from .odoo import Odoo
+        for s in self.bases:
+            if s.get_tree() == class_tree or s.is_inheriting_from(class_tree):
+                return True
+        return False
+
+    def get_class_symbol(self, name, prevent_comodel=False, all=False):
+        res = super().get_class_symbol(name, prevent_comodel, all)
+        if not all and res:
+            return res
+        for base in self.bases:
+            s = base.get_class_symbol(name, prevent_comodel=prevent_comodel, all=all)
+            if s:
+                if not all:
+                    return s
+                else:
+                    for s_iter in s:
+                        if s_iter not in res:
+                            res.append(s_iter)
+        return res

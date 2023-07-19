@@ -16,7 +16,7 @@ from ...server import (
 )
 from .setup import *
 from server.core.odoo import Odoo
-from server.core.symbol import Symbol
+from server.core.symbol import Symbol, ClassSymbol
 from server.constants import *
 from server.references import RegisteredRef
 
@@ -155,13 +155,13 @@ def test_base_class():
     model_symbol = Odoo.get().symbols.get_symbol(["odoo", "models"], ["Model"])
     abstract_model = Odoo.get().symbols.get_symbol(["odoo", "models"], ["AbstractModel"])
     base_model = Odoo.get().symbols.get_symbol(["odoo", "models"], ["BaseModel"])
-    assert test_class and test_class.type == SymType.CLASS and test_class.classData
-    assert model_symbol and model_symbol.type == SymType.CLASS and test_class.classData
+    assert test_class and test_class.type == SymType.CLASS and isinstance(test_class, ClassSymbol)
+    assert model_symbol and model_symbol.type == SymType.CLASS and isinstance(model_symbol, ClassSymbol)
     assert abstract_model and abstract_model.type == SymType.VARIABLE
-    assert base_model and base_model.type == SymType.CLASS and test_class.classData
-    assert model_symbol in test_class.classData.bases
-    assert abstract_model not in model_symbol.classData.bases
-    assert base_model in model_symbol.classData.bases
+    assert base_model and base_model.type == SymType.CLASS and isinstance(base_model, ClassSymbol)
+    assert model_symbol in test_class.bases
+    assert abstract_model not in model_symbol.bases
+    assert base_model in model_symbol.bases
 
 
 def test_model_name_inherit():
@@ -399,8 +399,8 @@ CONSTANT_2 = 22"""
 def test_rename_inherit():
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
-    assert model.classData
-    assert model.classData.bases
+    assert isinstance(model, ClassSymbol)
+    assert model.bases
     file_uri = os.path.join(ODOO_COMMUNITY_PATH, 'odoo', 'models.py')
     source = ""
     with open(file_uri, 'r') as f:
@@ -422,8 +422,8 @@ def test_rename_inherit():
     _did_change_after_delay(server, params, 0) #call deferred func
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
-    assert model.classData
-    assert not model.classData.bases
+    assert isinstance(model, ClassSymbol)
+    assert not model.bases
     source = source.replace("class Model2", "class Model")
 
     server.workspace.get_document = Mock(return_value=Document(
@@ -440,8 +440,8 @@ def test_rename_inherit():
     _did_change_after_delay(server, params, 0) #call deferred func
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
     assert model
-    assert model.classData
-    assert model.classData.bases
+    assert isinstance(model, ClassSymbol)
+    assert model.bases
     server.workspace.get_document.reset_mock()
 
 def test_missing_symbol_resolve():

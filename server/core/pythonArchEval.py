@@ -156,7 +156,7 @@ class PythonArchEval(ast.NodeVisitor):
                 if iter_element.type != SymType.CLASS:
                     continue #TODO generate error?
                 symbol.add_dependency(iter_element, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
-                symbol.classData.bases.add(iter_element)
+                symbol.bases.add(iter_element)
 
     def visit_ClassDef(self, node):
         if not hasattr(node, "symbol") or not node.symbol:

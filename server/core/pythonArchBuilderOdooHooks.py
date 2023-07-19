@@ -78,4 +78,4 @@ class PythonArchBuilderOdooHooks:
                 symbol.add_symbol(attr_var)
         elif symbol.name == "Many2one":
             if symbol.get_tree() == (["odoo", "fields"], ["Many2one"]):
-                symbol.classData.get_context = Many2one_get_context.__get__(symbol.classData, symbol.classData.__class__)
+                symbol.get_context = Many2one_get_context.__get__(symbol, symbol.__class__)

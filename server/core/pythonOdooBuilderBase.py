@@ -4,6 +4,7 @@ import os
 from server.core.model import Model
 from ..constants import *
 from .odoo import *
+from server.core.symbol import ClassSymbol
 from server.core.fileMgr import FileMgr
 
 
@@ -88,14 +89,14 @@ class PythonOdooBuilder(ast.NodeVisitor):
     def _is_model(self, symbol):
         """return True if the symbol inherit from odoo.models.BaseModel. It differs on the
         is_model on symbol as it can be used before the OdooBuilder execution"""
-        if not symbol.classData:
-            print("class has no classData, something is broken")
+        if not isinstance(symbol, ClassSymbol):
+            print("class is not a ClassSymbol, something is broken")
             return
         baseModel = Odoo.get().get_symbol(["odoo", "models"], ["BaseModel"])
         model = Odoo.get().get_symbol(["odoo", "models"], ["Model"])
         transient = Odoo.get().get_symbol(["odoo", "models"], ["TransientModel"])
         # _register is always set to True at each inheritance, so no need to check for parent classes
-        if symbol.classData.inherits(baseModel) and symbol not in [baseModel, model, transient]:
+        if symbol.inherits(baseModel) and symbol not in [baseModel, model, transient]:
             symbol.modelData = ModelData()
             _register = symbol.get_symbol([], ["_register"])
             if _register and _register.eval:

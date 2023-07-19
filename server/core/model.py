@@ -25,7 +25,7 @@ class Model():
     def is_abstract(self, from_module = None):
         main_symbol = self.get_main_symbols(from_module)
         if main_symbol and len(main_symbol) == 1:
-            for base in main_symbol[0].classData.bases:
+            for base in main_symbol[0].bases:
                 if base.name == 'BaseModel': #TODO not perfect, what about ancestors? what about an "abstract = False" attribute?
                     return True
                 else:

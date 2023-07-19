@@ -110,7 +110,7 @@ class Evaluation():
                 return (None, False, {})
             base = base_ref.ref
             if base.type == SymType.CLASS and inst == False:
-                return base_ref, True, base.classData.get_context(node.args, node.keywords)
+                return base_ref, True, base.get_context(node.args, node.keywords)
             elif base.type == SymType.CLASS and inst == True:
                 call_func = base.symbols.get("__call__", None)
                 if not call_func or not call_func.eval:
