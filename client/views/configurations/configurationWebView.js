@@ -16,10 +16,10 @@ window.addEventListener("message", event => {
     case "update_config_folder_validity":
       const pathHelper = document.getElementById('config-path-helper');
       if (message.version) {
-        pathHelper.innerHTML = `<p id="path-helper-valid">The folder is a valid Odoo installation (${message.version}).</p>`;
+        pathHelper.innerHTML = `<p id="path-helper-valid">Valid Odoo installation detected (${message.version}).</p>`;
       }
       else {
-        pathHelper.innerHTML = '<p id="path-helper-invalid">The folder is not a valid Odoo installation.</p>';
+        pathHelper.innerHTML = '<p id="path-helper-invalid">No Odoo installation detected.</p>';
       }
   }
 });

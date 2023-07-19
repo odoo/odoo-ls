@@ -3,10 +3,10 @@
         "module": "commonjs",
         "target": "es2019",
         "lib": ["ES2019"],
-        "rootDir": "client/src",
+        "rootDir": "client/",
         "outDir": "client/out",
         "sourceMap": true
     },
-    "include": ["client/src/*.ts", "client/src/**/*.ts"],
+    "include": ["client/**/*.ts", "client/*.ts"],
     "exclude": ["node_modules"]
 }

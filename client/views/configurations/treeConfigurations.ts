@@ -99,7 +99,7 @@ export class ConfigurationsExplorer {
 
             // And set its HTML content
             //panel.webview.html = getWebviewContent();
-            ConfigurationWebView.render(context.extensionUri, configId);
+            ConfigurationWebView.render(context, configId);
         });
         
         vscode.workspace.onDidChangeConfiguration(() => {
