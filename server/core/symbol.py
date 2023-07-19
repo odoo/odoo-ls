@@ -136,7 +136,7 @@ class Symbol(RegisterableObject):
     def _all_symbols_from_class(self, line=-1, include_inherits=False):
         return []
 
-    def follow_ref(self, context=None):
+    def follow_ref(self, context={}):
         #follow the reference to the real symbol and returns it (not a RegisteredRef)
         sym = self
         instance = self.type in [SymType.VARIABLE]
