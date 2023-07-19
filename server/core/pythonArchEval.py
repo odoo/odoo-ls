@@ -167,4 +167,17 @@ class PythonArchEval(ast.NodeVisitor):
         self.load_base_class(symbol, node)
         ast.NodeVisitor.generic_visit(self, node)
 
-
+    def visit_For(self, node: For):
+        if isinstance(node.target, ast.Name) and hasattr(node.target, "symbol"):
+            symbol = node.target.symbol and node.target.symbol.ref
+            if isinstance(node.iter, ast.Name):
+                eval_iter_node = Evaluation().evalAST(node.iter, symbol.parent)
+                if eval_iter_node.get_symbol() and eval_iter_node.get_symbol().type == SymType.CLASS:
+                    iter = eval_iter_node.get_symbol().get_class_symbol("__iter__")
+                    if iter and iter.eval:
+                        symbol.eval = Evaluation()
+                        symbol.eval.symbol = iter.eval.get_symbol_rr({"parent": eval_iter_node.get_symbol()})
+                        #iter.dependents.add(variable)
+                    else:
+                        symbol.eval = None
+        ast.NodeVisitor.generic_visit(self, node)

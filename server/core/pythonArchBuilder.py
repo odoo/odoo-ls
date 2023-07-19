@@ -265,16 +265,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
                 variable.ast_node = node
-                #TODO move to arch_eval
-                if isinstance(node.iter, ast.Name):
-                    eval_iter_node = Evaluation().evalAST(node.iter, self.symStack[-1])
-                    if eval_iter_node.get_symbol() and eval_iter_node.get_symbol().type == SymType.CLASS:
-                        iter = eval_iter_node.get_symbol().get_class_symbol("__iter__")
-                        if iter and iter.eval:
-                            variable.eval = Evaluation()
-                            variable.eval.symbol = iter.eval.get_symbol_rr({"parent": eval_iter_node.get_symbol()})
-                            #iter.dependents.add(variable)
-                        else:
-                            variable.eval = None
+                node.target.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
         ast.NodeVisitor.generic_visit(self, node)
