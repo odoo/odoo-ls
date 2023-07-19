@@ -43,6 +43,9 @@ class ClassData():
             if base.classData.inherits(symbol):
                 return True
 
+    def get_context(self, args, keywords):
+        return {}
+
 class Symbol(RegisterableObject):
     """A symbol is an object representing an element of the code architecture.
     It can be either a python package, a file, a class, a function, or even a variable.
@@ -418,8 +421,7 @@ class Symbol(RegisterableObject):
             return False
         from .odoo import Odoo
         for s in self.classData.bases:
-            base_sym = Odoo.get().symbols.get_symbol(s)
-            if base_sym.get_tree() == class_tree or base_sym.is_inheriting_from(class_tree):
+            if s.get_tree() == class_tree or s.is_inheriting_from(class_tree):
                 return True
         return False
 

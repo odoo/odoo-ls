@@ -1,6 +1,7 @@
 from server.constants import *
 from server.core.odoo import Odoo
 from server.core.model import Model
+from server.core.symbol import Symbol
 from lsprotocol.types import (Range, Position)
 
 class ParsoUtils:
@@ -110,11 +111,19 @@ class ParsoUtils:
                         node_iter += 1
                         next_element = node_list[node_iter]
                         if not isinstance(obj, Model):
-                            obj = obj.follow_ref(context)[0]
+                            obj, _ = obj.follow_ref(context)
                             if obj.type == SymType.VARIABLE:
                                 return None, context
                         context["parent"] = obj
-                        obj = obj.get_class_symbol(next_element.value, all=True)
+                        objs = obj.get_class_symbol(next_element.value, all=True)
+                        if isinstance(obj, Symbol) and "comodel_name" in context and \
+                        obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
+                            model = Odoo.get().models.get(context["comodel_name"], None)
+                            if model:
+                                main_sym = model.get_main_symbols(module)
+                                if main_sym and len(main_sym) == 1:
+                                    objs += main_sym[0].get_class_symbol(next_element.value, all=True)
+                        obj = objs
                         if not obj:
                             return None, context
                     elif node.value == "[" and len(node_list) > node_iter+1:

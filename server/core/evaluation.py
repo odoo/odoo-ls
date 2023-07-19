@@ -67,7 +67,7 @@ class Evaluation():
 
     def evalAST(self, node, parentSymbol):
         if node:
-            self._symbol, self.instance = self._evaluateAST(node, parentSymbol)
+            self._symbol, self.instance, self.context = self._evaluateAST(node, parentSymbol)
         return self
 
     def _extract_literal_dict(self, node):
@@ -105,34 +105,34 @@ class Evaluation():
         elif isinstance(node, ast.Call):
             f = node.func
             #1: get object to call
-            base_ref, inst = self._evaluateAST(f, parentSymbol)
+            base_ref, inst, ctxt = self._evaluateAST(f, parentSymbol)
             if not base_ref or not base_ref.ref:
-                return (None, False)
+                return (None, False, {})
             base = base_ref.ref
             if base.type == SymType.CLASS and inst == False:
-                return base_ref, True
+                return base_ref, True, base.classData.get_context(node.args, node.keywords)
             elif base.type == SymType.CLASS and inst == True:
                 call_func = base.symbols.get("__call__", None)
                 if not call_func or not call_func.eval:
-                    return (None, False)
-                return call_func.eval.get_symbol_rr(), call_func.eval.instance
+                    return (None, False, {})
+                return call_func.eval.get_symbol_rr(), call_func.eval.instance, {}
             elif base.type == SymType.FUNCTION and base.eval:
-                return base.eval.get_symbol_rr(), base.eval.instance
+                return base.eval.get_symbol_rr(), base.eval.instance, {}
             #TODO other types are errors?
         elif isinstance(node, ast.Attribute):
-            v, instance = self._evaluateAST(node.value, parentSymbol)
+            v, instance, ctxt = self._evaluateAST(node.value, parentSymbol)
             if not v:
-                return (None, False)
+                return (None, False, {})
             v = v.ref
             base, instance = v.follow_ref()
             attribute = v.symbols.get(node.attr, None)
             if not attribute:
-                return (None, False)
-            return RegisteredRef(attribute), attribute.type == SymType.VARIABLE
+                return (None, False, {})
+            return RegisteredRef(attribute), attribute.type == SymType.VARIABLE, {}
         elif isinstance(node, ast.Name):
             infered_sym = parentSymbol.inferName(node.id, node.lineno)
             if not infered_sym:
-                return (None, False)
+                return (None, False, {})
             symbol, instance = infered_sym.follow_ref()
             symbol = RegisteredRef(symbol)
-        return (symbol, instance)
+        return (symbol, instance, {})

@@ -1,7 +1,22 @@
+import ast
 from server.references import RegisteredRefSet, RegisteredRef
 from server.core.symbol import Symbol
 from server.constants import SymType
 from server.core.evaluation import Evaluation
+
+
+def Many2one_get_context(self, args, keywords):
+    comodel_name = ""
+    if args and isinstance(args[0], ast.Constant):
+        comodel_name = args[0].value
+    else:
+        for kw in keywords:
+            if kw.arg == "comodel_name":
+                comodel_name = kw.value
+    if not comodel_name:
+        #sometimes comodel is not set because this is an override of an existing field. Skip the context in this case
+        return {}
+    return {"comodel_name": comodel_name}
 
 
 class PythonArchBuilderOdooHooks:
@@ -61,3 +76,6 @@ class PythonArchBuilderOdooHooks:
                     attr_var.endLine = symbol.endLine
                 attr_var.doc = "whether in superuser mode"
                 symbol.add_symbol(attr_var)
+        elif symbol.name == "Many2one":
+            if symbol.get_tree() == (["odoo", "fields"], ["Many2one"]):
+                symbol.classData.get_context = Many2one_get_context.__get__(symbol.classData, symbol.classData.__class__)
