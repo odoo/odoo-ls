@@ -27,7 +27,6 @@
 #addons-tree {
   width: 100%;
   color: var(--vscode-input-foreground);
-  padding: var(--input-padding-vertical) var(--input-padding-horizontal);
   font-family: var(--vscode-font-family);
 }
 
@@ -39,7 +38,7 @@
   justify-content: end;
 }
 
-#add-folder-button {
+#add-folder-button { 
   display: flex;
   box-sizing: border-box;
   padding: 0.5em;

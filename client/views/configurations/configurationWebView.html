@@ -3,11 +3,12 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script type="module" src="<%= webviewElementsUri %>"></script>
-        <script type="module" src="<%= mainUri %>"></script>
+        <script type="module" nonce="<%= nonce %> " src="<%= webviewElementsUri %>"></script>
+        <script type="module" nonce="<%= nonce %> " src="<%= mainUri %>"></script>
         <link rel="stylesheet" href="<%= styleUri %>">
         <link rel="stylesheet" href="<%= codiconStyleUri %>" id="vscode-codicon-stylesheet">
         <title>Odoo Configuration <%= config.id %></title>
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src <%= cspSource %>; img-src <%= cspSource %> https:; font-src <%= cspSource %>; script-src 'nonce-<%= nonce %>';">
     </head>
     <body>
         <h1>Odoo Configuration</h1>
@@ -20,7 +21,7 @@
             </vscode-form-group>
             <vscode-form-group variant="vertical">
                 <vscode-label for="config-path-textfield">
-                    Configuration path
+                    Odoo folder path
                 </vscode-label>
                 <vscode-textfield id="config-path-textfield" value="<%= config.odooPath %>" placeholder="Path to the configuration's Odoo folder">
                     <vscode-icon
@@ -33,7 +34,11 @@
                     >
                     </vscode-icon>
                 </vscode-textfield>
-                <vscode-form-helper id="config-path-helper"></vscode-form-helper>
+                <vscode-form-helper id="config-path-helper">
+                    <% if (odooVersion) { %>
+                        <p>Version <%= odooVersion %></p>
+                    <% } %>
+                </vscode-form-helper>
             </vscode-form-group>
             <vscode-form-group id="config-addons" variant="vertical">
                 <vscode-label for="addons-scrollable" side-aligned="end">Additional addons</vscode-label>

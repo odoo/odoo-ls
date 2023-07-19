@@ -13,7 +13,6 @@
   ],
   "activationEvents": [
     "onView:explorer",
-    "onView:odoo-explorer",
     "workspaceContains:**/__manifest__.py"
   ],
   "contributes": {
@@ -41,18 +40,7 @@
       }
     ],
     "views": {
-      "odoo-explorer": [
-        {
-          "id": "odoo-configurations",
-          "name": "configurations",
-          "contextualTitle": "Configurations"
-        },
-        {
-          "id": "odoo-databases",
-          "name": "databases",
-          "contextualTitle": "Databases"
-        }
-      ]
+
     },
     "menus": {
       "view/title": [
@@ -70,28 +58,10 @@
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "odoo-configurations",
-        "contents": "Create a configuration to start using Odoo extension.\n[New Configuration](command:odoo.addConfiguration)"
-      }
-    ],
     "configuration": {
       "type": "object",
       "title": "Odoo",
       "properties": {
-        "Odoo.userDefinedConfigurations": {
-          "scope": "resource",
-          "type": "object",
-          "default": {},
-          "description": "User-defined configuration. Please don't edit it manually"
-        },
-        "Odoo.selectedConfigurations": {
-          "scope": "resource",
-          "type": "integer",
-          "default": -1,
-          "description": "User-defined configuration. Please don't edit it manually"
-        },
         "Odoo.trace.server": {
           "scope": "window",
           "type": "string",
