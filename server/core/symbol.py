@@ -534,3 +534,10 @@ class RootSymbol(Symbol):
                     if path.startswith(sysPath):
                         symbol.external = True
                         return
+
+
+class FunctionSymbol(Symbol):
+
+    def __init__(self, name, paths, is_property):
+        super().__init__(name, SymType.FUNCTION, paths)
+        self.is_property = is_property

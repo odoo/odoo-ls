@@ -10,22 +10,6 @@ class DefinitionFeature:
     @staticmethod
     def get_location(fileSymbol, parsoTree,line, character):
 
-        def build_block_1(symbol, type, infered_type):
-            value =  "```python  \n"
-            value += "(" + type + ") "
-            if symbol.type == SymType.FUNCTION:
-                value += "def "
-            value += symbol.name
-            if symbol.type == SymType.FUNCTION and symbol.ast_node:
-                value += "(  \n" + ",  \n".join(arg.arg for arg in symbol.ast_node.args.args) + "  \n)"
-            if infered_type and type != "module":
-                if symbol.type == SymType.FUNCTION:
-                    value += " -> " + infered_type
-                else:
-                    value += " : " + infered_type
-            value += "  \n```"
-            return value
-
         symbol, range, context = ParsoUtils.getSymbols(fileSymbol, parsoTree, line, character)
 
         if not symbol:

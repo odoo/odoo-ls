@@ -27,13 +27,13 @@ class HoverFeature:
         def build_block_1(symbol, type, infered_type):
             value =  "```python  \n"
             value += "(" + type + ") "
-            if symbol.type == SymType.FUNCTION:
+            if symbol.type == SymType.FUNCTION and not symbol.is_property:
                 value += "def "
             value += symbol.name
-            if symbol.type == SymType.FUNCTION and symbol.ast_node:
+            if symbol.type == SymType.FUNCTION and not symbol.is_property and symbol.ast_node:
                 value += "(  \n" + ",  \n".join(arg.arg for arg in symbol.ast_node.args.args) + "  \n)"
             if infered_type and type != "module":
-                if symbol.type == SymType.FUNCTION:
+                if symbol.type == SymType.FUNCTION and not symbol.is_property:
                     value += " -> " + infered_type
                 else:
                     value += " : " + infered_type
@@ -41,7 +41,7 @@ class HoverFeature:
             return value
 
         type_ref = symbol.follow_ref(context)
-        infered_type = ""
+        infered_type = "Any"
         if type_ref[0] != symbol:
             infered_type = type_ref[0].name
         type = str(symbol.type).lower()
@@ -49,6 +49,11 @@ class HoverFeature:
             type = str(type_ref[0].type).lower()
             if type_ref[0].type == SymType.FILE:
                 type = "module"
+        if symbol.type == SymType.FUNCTION:
+            if symbol.is_property:
+                type = "property"
+            else:
+                type = "method"
         #class_doc = type_ref[0].doc and type_ref[0].doc.value if type_ref[1] else ""
         #BLOCK 1: (type) **name** -> infered_type
         value = build_block_1(symbol, type, infered_type)

@@ -209,11 +209,13 @@ class PythonArchBuilder(ast.NodeVisitor):
     def visit_FunctionDef(self, node):
         #test if static:
         is_static = False
+        is_property = False
         for decorator in node.decorator_list:
             if isinstance(decorator, ast.Name) and decorator.id == "staticmethod":
                 is_static = True
-                break
-        symbol = Symbol(node.name, SymType.FUNCTION, self.filePath)
+            if isinstance(decorator, ast.Name) and decorator.id == "property":
+                is_property = True
+        symbol = FunctionSymbol(node.name, self.filePath, is_property)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         symbol.ast_node = node
