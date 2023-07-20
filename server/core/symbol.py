@@ -366,23 +366,26 @@ class Symbol(RegisterableObject):
             return Odoo.get().models[self.modelData.name]
         return None
 
-    def get_class_symbol(self, name, prevent_comodel = False, all=False):
+    def get_class_symbol(self, name, prevent_local=False, prevent_comodel = False, all=False):
         """similar to get_symbol: will return the symbol that is under this one with the specified name.
         However, if the symbol is a class or a model, it will search in the base class or in comodel classes
         if not all, it will return the first found. If all, the all found symbols are returned, but the first one
         is the one that is overriding others"""
         from .odoo import Odoo
         res = []
-        if name in self.symbols:
-            if not all:
-                return self.symbols[name]
-            else:
-                res.append(self.symbols[name])
+        if not prevent_local:
+            if name in self.symbols:
+                if not all:
+                    return self.symbols[name]
+                else:
+                    res.append(self.symbols[name])
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
             sym = model.get_symbols(self.get_module())
             for s in sym:
-                r = s.get_class_symbol(name, True, all=all)
+                if s == self:
+                    continue
+                r = s.get_class_symbol(name, prevent_local=False, prevent_comodel=True, all=all)
                 if r:
                     if not all:
                         return r
@@ -460,6 +463,8 @@ class Symbol(RegisterableObject):
             return self.doc
         if name == "self":
             return self.get_in_parents([SymType.CLASS])
+        if name == "super":
+            return SuperSymbol(self)
         for symbol in self.all_symbols(line=line):
             if symbol.name == name and (not selected or symbol.startLine > selected.startLine):
                 selected = symbol
@@ -538,12 +543,12 @@ class ClassSymbol(Symbol):
                 return True
         return False
 
-    def get_class_symbol(self, name, prevent_comodel=False, all=False):
-        res = super().get_class_symbol(name, prevent_comodel, all)
+    def get_class_symbol(self, name, prevent_local=False, prevent_comodel=False, all=False):
+        res = super().get_class_symbol(name, prevent_local=prevent_local, prevent_comodel=prevent_comodel, all=all)
         if not all and res:
             return res
         for base in self.bases:
-            s = base.get_class_symbol(name, prevent_comodel=prevent_comodel, all=all)
+            s = base.get_class_symbol(name, prevent_local=prevent_local, prevent_comodel=prevent_comodel, all=all)
             if s:
                 if not all:
                     return s
@@ -552,3 +557,18 @@ class ClassSymbol(Symbol):
                         if s_iter not in res:
                             res.append(s_iter)
         return res
+
+
+class SuperSymbol(Symbol):
+
+    def __init__(self, symbol):
+        """SuperSymbol is a proxy symbol that is used to handle "super()" calls. It can take multiple
+        symbols that will represent the super classes, and will call them in order to respect the mro"""
+        super().__init__("Super", SymType.FUNCTION, symbol.paths)
+        from server.core.evaluation import Evaluation
+        self.is_property = False
+        self.eval = Evaluation()
+        self.eval._symbol = RegisteredRef(self)
+
+    def get_class_symbol(self, name, prevent_comodel=False, all=False):
+        return super().get_class_symbol(name, prevent_local=True, prevent_comodel=prevent_comodel, all=all)
