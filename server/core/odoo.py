@@ -14,6 +14,7 @@ from .threadCondition import ReadWriteCondition
 from server.references import RegisteredRefSet
 from contextlib import contextmanager
 from lsprotocol.types import (ConfigurationItem, WorkspaceConfigurationParams)
+from pygls.server import LanguageServer, MessageType
 
 from ..constants import CONFIGURATION_SECTION
 
@@ -64,14 +65,12 @@ class Odoo():
     def acquire_write(self, ls):
         with self.write_lock:
             ls.send_notification('Odoo/loadingStatusUpdate', 'start')
-            print("Odoo/loading: start")
             self.thread_access_condition.wait_empty()
             context = threading.local()
             context.lock_type = "write"
             yield
             context.lock_type = "none"
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
-            print("Odoo/loading: stop")
 
     @contextmanager
     def acquire_read(self):
@@ -94,11 +93,11 @@ class Odoo():
             self.thread_access_condition.acquire()
 
     @staticmethod
-    def get(ls = None):
+    def get(ls:LanguageServer = None):
         if not Odoo.instance:
             if not ls:
                 print(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
-            print("Creating new Odoo Base")
+            ls.show_message_log("Building new Odoo knowledge database")
 
             try:
                 config = ls.get_configuration(WorkspaceConfigurationParams(items=[
@@ -119,10 +118,10 @@ class Odoo():
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
                     Odoo.instance.build_database(ls, config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])])
-                    print("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
+                    ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
-                print(traceback.format_exc())
-                ls.show_message_log(f'Error ocurred: {e}')
+                ls.show_message_log(traceback.format_exc())
+                ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
         return Odoo.instance
 
     def get_symbol(self, fileTree, nameTree = []):
@@ -147,9 +146,9 @@ class Odoo():
                         self.version_major = int(res[0])
                         self.version_minor = int(res[1])
                         self.version_micro = int(res[2])
-                print(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
+                ls.show_message_log(f"Odoo version: {self.version_major}.{self.version_minor}.{self.version_micro}")
                 if self.version_major < 14:
-                    ls.show_message("Odoo version is too old. The tool only supports version 14 and above.")
+                    ls.show_message("Odoo version is too old. The tool only supports version 14 and above.", MessageType.Error)
             #set python path
             self.symbols.paths += [self.odooPath]
             parser = PythonArchBuilder(ls, self.symbols, os.path.join(self.odooPath, "odoo"))
@@ -164,7 +163,7 @@ class Odoo():
             addonsSymbol.paths += used_config['addons']
             return True
         else:
-            print("Odoo not found at " + self.odooPath)
+            ls.show_message_log("Odoo not found at " + self.odooPath, MessageType.Error)
             return False
         return False
 
@@ -215,7 +214,11 @@ class Odoo():
         from .pythonOdooBuilder import PythonOdooBuilder
         from server.features.validation.pythonValidator import PythonValidator
         if DEBUG_REBUILD:
-            print("starting rebuilds")
+            ls.show_message_log("starting rebuild process")
+            arch_rebuilt = []
+            eval_rebuilt = []
+            odoo_rebuilt = []
+            validation_rebuilt = []
         already_arch_rebuilt = set()
         while True:
             if self.rebuild_arch:
@@ -228,6 +231,8 @@ class Odoo():
                     if DEBUG_REBUILD:
                         print("arch rebuild skipped - already rebuilt")
                     continue
+                if DEBUG_REBUILD:
+                    arch_rebuilt.append(tree)
                 already_arch_rebuilt.add(tree)
                 parent = sym.parent
                 ast_node = sym.ast_node
@@ -238,30 +243,48 @@ class Odoo():
                 if parent and ast_node:
                     pp = PythonArchBuilder(ls, parent, path, ast_node).load_arch()
                 elif DEBUG_REBUILD:
-                    print("Can't rebuild " + str(tree))
+                    ls.show_message_log("Can't rebuild " + str(tree))
                 continue
             elif self.rebuild_arch_eval:
+                if DEBUG_REBUILD and arch_rebuilt:
+                    ls.show_message_log("Arch rebuilt done for " + "\n".join([str(t) for t in arch_rebuilt]))
+                    arch_rebuilt = []
                 sym = self._pop_next_symbol(BuildSteps.ARCH_EVAL)
                 if not sym or sym.type == SymType.DIRTY:
                     continue
+                if DEBUG_REBUILD:
+                    eval_rebuilt.append(sym.get_tree())
                 evaluator = PythonArchEval(ls, sym)
                 evaluator.eval_arch()
                 continue
             elif self.rebuild_odoo:
+                if DEBUG_REBUILD and eval_rebuilt:
+                    ls.show_message_log("Eval rebuilt done for " + "\n".join([str(t) for t in eval_rebuilt]))
+                    eval_rebuilt = []
                 sym = self._pop_next_symbol(BuildSteps.ODOO)
                 if not sym:
                     continue
+                if DEBUG_REBUILD:
+                    odoo_rebuilt.append(sym.get_tree())
                 validation = PythonOdooBuilder(ls, sym)
                 validation.load_odoo_content()
                 continue
             elif self.rebuild_validation:
+                if DEBUG_REBUILD and odoo_rebuilt:
+                    ls.show_message_log("Odoo rebuilt done for " + "\n".join([str(t) for t in odoo_rebuilt]))
+                    odoo_rebuilt = []
                 sym = self._pop_next_symbol(BuildSteps.VALIDATION)
                 if not sym:
                     continue
+                if DEBUG_REBUILD:
+                    validation_rebuilt.append(sym.get_tree())
                 validation = PythonValidator(ls, sym)
                 validation.validate()
                 continue
             break
+        if DEBUG_REBUILD and validation_rebuilt:
+            ls.show_message_log("Validation rebuilt done for " + "\n".join([str(t) for t in validation_rebuilt]))
+            validation_rebuilt = []
 
     def build_modules(self, ls):
         from .module import Module
@@ -270,18 +293,22 @@ class Odoo():
             dirs = os.listdir(path)
             for dir in dirs:
                 Module(ls, os.path.join(path, dir))
+        loaded = []
         if not DEBUG_BUILD_ONLY_BASE:
             for module in Odoo.get().modules.values():
-                module.load_arch(ls)
+                loaded += module.load_arch(ls)
             self.process_rebuilds(ls)
+
+        if loaded:
+            ls.show_message_log("Modules loaded: " + ", ".join(loaded))
 
         try:
             import psutil
-            print("ram usage : " + str(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2) + " Mo")
+            ls.show_message_log("ram usage : " + str(psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2) + " Mo")
         except Exception:
-            print("psutil not found")
+            ls.show_message_log("ram usage: unknown (please install psutil to get ram usage)")
             pass
-        print(str(len(Odoo.get().modules)) + " modules found")
+        ls.show_message_log(str(len(Odoo.get().modules)) + " modules found")
 
     def get_file_symbol(self, path):
         if path.startswith(self.instance.odooPath):
@@ -302,7 +329,7 @@ class Odoo():
 
         #snapshot1 = tracemalloc.take_snapshot()
         if path.endswith(".py"):
-            print("reload triggered on " + path + " version " + str(version))
+            ls.show_message_log("File change event: " + path + " version " + str(version))
             file_info = FileMgr.getFileInfo(path, text, version, opened=True)
             FileMgr.publish_diagnostics(ls, file_info)
             if not file_info["ast"]:
@@ -344,7 +371,7 @@ class Odoo():
             parent_symbol = self.get_file_symbol(parent_path)
             new_symbol = None
             if not parent_symbol:
-                print("parent symbol not found: " + parent_path)
+                ls.show_message_log("parent symbol not found: " + parent_path, MessageType.Error)
                 ls.show_message("Unable to rename file. Internal representation is not right anymore", 1)
             else:
                 new_tree = parent_symbol.get_tree()

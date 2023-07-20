@@ -77,9 +77,9 @@ def get_path_file(uri):
 def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
     """Returns completion items."""
     if not params:
-        print("no params")
+        ls.show_message_log("Impossible autocompletion: no params provided", MessageType.Error)
         return None
-    print("completion")
+    ls.show_message_log("Completion requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
@@ -88,6 +88,7 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
+    ls.show_message_log("Hover requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
@@ -102,6 +103,7 @@ def hover(ls, params: TextDocumentPositionParams):
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(ls, params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
+    ls.show_message_log("Definition requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = get_path_file(params.text_document.uri)
@@ -127,7 +129,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
     Odoo.get(ls).file_change(ls, final_path, source, params.text_document.version)
-    print("done")
+    ls.show_message_log("File changed: " + final_path, MessageType.Log)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):

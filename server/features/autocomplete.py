@@ -110,7 +110,7 @@ class AutoCompleteFeature:
                 ) for m in models]
             )
         else:
-            print("here")
+            print("Automplete use case unknown")
 
     @staticmethod
     def _get_symbols_from_obj(obj, module, context, line=-1, starts_with = ""):

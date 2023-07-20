@@ -42,15 +42,17 @@ class Module():
 
     def load_arch(self, ls):
         if self.loaded:
-            return
-        diagnostics = []
-        diagnostics += self.load_depends(ls)
+            return []
+        loaded = []
+        diagnostics, loaded_modules = self.load_depends(ls)
+        loaded += loaded_modules
         diagnostics += self._load_data()
         diagnostics += self._load_arch(ls, self.rootPath)
         self.loaded = True
-        print("loaded: " + self.dir_name)
+        loaded.append(self.dir_name)
         if diagnostics:
             ls.publish_diagnostics(FileMgr.pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
+        return loaded
 
     def load_manifest(self, manifestPath):
         """ Load manifest to identify the module characteristics
@@ -69,9 +71,10 @@ class Module():
         """ ensure that all modules indicates in the module dependencies are well loaded.
         Returns list of diagnostics to publish in manifest file """
         diagnostics = []
+        loaded = []
         for depend in self.depends:
             if depend in Odoo.get().modules:
-                Odoo.get().modules[depend].load_arch(ls)
+                loaded += Odoo.get().modules[depend].load_arch(ls)
             else:
                 diagnostics.append(Diagnostic(
                     range = Range(
@@ -81,7 +84,7 @@ class Module():
                     message = f"Module {self.name} depends on {depend} which is not found. Please check your addonsPaths.",
                     source = EXTENSION_NAME
                 ))
-        return diagnostics
+        return diagnostics, loaded
 
     def _load_data(self):
         return []

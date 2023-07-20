@@ -42,10 +42,7 @@ class FileMgr():
         f = FileMgr.files.get(path, None)
         if not f:
             f = FileMgr._getDefaultDict(path, version)
-            try:
-                f["ast"] = FileMgr._buildAST(path, f, content)
-            except Exception:
-                print("here")
+            f["ast"] = FileMgr._buildAST(path, f, content)
             FileMgr.files[path] = f
         elif content:
             if f["version"] < version:
@@ -61,7 +58,6 @@ class FileMgr():
     def removeParsoTree(path):
         f = FileMgr.files.get(path, None)
         if f:
-            print("remove parsoTree")
             f["parsoTree"] = None
 
     @staticmethod
@@ -71,7 +67,6 @@ class FileMgr():
     @staticmethod
     def _buildParsoTree(path, fileInfo, content):
         from server.core.odoo import Odoo
-        print("build parsoTree for " + path)
         return Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
 
     @staticmethod
