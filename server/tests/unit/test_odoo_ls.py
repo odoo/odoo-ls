@@ -150,6 +150,16 @@ def test_evaluation():
         assert evaluation.get_symbol().name != "get_test_int"
 
 
+def test_for_stmt():
+    test_class = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
+    assert test_class and test_class.type == SymType.CLASS and isinstance(test_class, ClassSymbol)
+    for_func = test_class.get_symbol([], ["for_func"])
+    assert for_func and for_func.type == SymType.FUNCTION
+    var_func = for_func.get_symbol([], ["var"])
+    assert var_func and var_func.type == SymType.VARIABLE
+    assert var_func.eval and var_func.eval.get_symbol().name == "BaseTestModel"
+
+
 def test_base_class():
     test_class = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"], ["BaseTestModel"])
     model_symbol = Odoo.get().symbols.get_symbol(["odoo", "models"], ["Model"])
