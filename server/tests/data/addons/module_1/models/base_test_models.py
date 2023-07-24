@@ -15,6 +15,10 @@ class BaseTestModel(models.Model):
     def get_constant(self):
         return CONSTANT_1 + CONSTANT_2
 
+    def for_func(self):
+        for var in self:
+            print(var)
+
 BaseOtherName = BaseTestModel
 baseInstance1 = BaseTestModel()
 baseInstance2 = BaseOtherName()

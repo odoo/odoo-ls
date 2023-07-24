@@ -118,13 +118,9 @@ class PythonArchEval(ast.NodeVisitor):
                     variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
     def visit_FunctionDef(self, node):
-        return
-        #We don't need what's inside the function?
-        if self.symStack[-1].is_external():
+        if self.symbol.is_external():
             return
-        self.symStack.append(symbol)
         ast.NodeVisitor.generic_visit(self, node)
-        self.symStack.pop()
 
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
