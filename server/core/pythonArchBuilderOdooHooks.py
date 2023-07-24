@@ -5,14 +5,17 @@ from server.constants import SymType
 from server.core.evaluation import Evaluation
 
 
-def Many2one_get_context(self, args, keywords):
+def Relational_get_context(self, args, keywords):
     comodel_name = ""
     if args and isinstance(args[0], ast.Constant):
         comodel_name = args[0].value
     else:
         for kw in keywords:
             if kw.arg == "comodel_name":
-                comodel_name = kw.value
+                if isinstance(kw.value, ast.Constant):
+                    comodel_name = kw.value.value
+                elif isinstance(kw.value, ast.Name):
+                    comodel_name = kw.value.id
     if not comodel_name:
         #sometimes comodel is not set because this is an override of an existing field. Skip the context in this case
         return {}
@@ -76,6 +79,8 @@ class PythonArchBuilderOdooHooks:
                     attr_var.endLine = symbol.endLine
                 attr_var.doc = "whether in superuser mode"
                 symbol.add_symbol(attr_var)
-        elif symbol.name == "Many2one":
-            if symbol.get_tree() == (["odoo", "fields"], ["Many2one"]):
-                symbol.get_context = Many2one_get_context.__get__(symbol, symbol.__class__)
+        elif symbol.name in ["Many2one", "Many2many", "One2many"]:
+            if symbol.get_tree() in [(["odoo", "fields"], ["Many2one"]),
+                                     (["odoo", "fields"], ["Many2many"]),
+                                     (["odoo", "fields"], ["One2many"]),]:
+                symbol.get_context = Relational_get_context.__get__(symbol, symbol.__class__)

@@ -124,13 +124,14 @@ class Symbol(RegisterableObject):
     def all_symbols(self, line=-1, include_inherits=False):
         if line != -1:
             for s in self.localSymbols:
-                if s.startLine <= line <= s.endLine:
+                if s.startLine < line:
                     yield s
         if include_inherits:
             for sub_s in self._all_symbols_from_class(line=line):
                 yield sub_s
         for s in self.symbols.values():
-            yield s
+            if line == -1 or s.startLine < line:
+                yield s
         for s in self.moduleSymbols.values():
             yield s
 
@@ -435,7 +436,7 @@ class Symbol(RegisterableObject):
         #TODO search in localSymbols too
         symbol = self
         for s in self.symbols.values():
-            if s.startLine <= line and s.endLine >= line and s.type in [SymType.CLASS, SymType.FUNCTION]:
+            if s.startLine < line and s.endLine >= line and s.type in [SymType.CLASS, SymType.FUNCTION]:
                 symbol = s.get_scope_symbol(line)
                 break
             elif s.startLine > line:
@@ -521,11 +522,16 @@ class ClassSymbol(Symbol):
         super().__init__(name, SymType.CLASS, paths)
         self.bases = RegisteredRefSet()
 
-    def inherits(self, symbol):
+    def inherits(self, symbol, checked=None):
+        if not checked:
+            checked = set()
         for base in self.bases:
             if base == symbol:
                 return True
-            if base.inherits(symbol):
+            if base in checked:
+                return False
+            checked.add(base)
+            if base.inherits(symbol, checked):
                 return True
 
     def get_context(self, args, keywords):
@@ -548,7 +554,7 @@ class ClassSymbol(Symbol):
         if not all and res:
             return res
         for base in self.bases:
-            s = base.get_class_symbol(name, prevent_local=prevent_local, prevent_comodel=prevent_comodel, all=all)
+            s = base.get_class_symbol(name, prevent_local=False, prevent_comodel=prevent_comodel, all=all)
             if s:
                 if not all:
                     return s
@@ -569,6 +575,12 @@ class SuperSymbol(Symbol):
         self.is_property = False
         self.eval = Evaluation()
         self.eval._symbol = RegisteredRef(self)
+        self._class = symbol.get_in_parents([SymType.CLASS])
 
     def get_class_symbol(self, name, prevent_comodel=False, all=False):
-        return super().get_class_symbol(name, prevent_local=True, prevent_comodel=prevent_comodel, all=all)
+        return self._class.get_class_symbol(name, prevent_local=True, prevent_comodel=prevent_comodel, all=all)
+
+    def all_symbols(self, line=-1, include_inherits=False):
+        if include_inherits:
+            for sub_s in self._class._all_symbols_from_class(line=line):
+                yield sub_s
