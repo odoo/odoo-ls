@@ -98,7 +98,7 @@ class ParsoUtils:
         while node_iter != len(node_list):
             node = node_list[node_iter]
             if not obj:
-                obj = scope_symbol.inferName(node.value, node.line)
+                obj = scope_symbol.inferName(node.value, node.line +1) #+1 to be able to take itself if needed
                 if not obj:
                     if node.type == "string":
                         return node.value[1:-1], context

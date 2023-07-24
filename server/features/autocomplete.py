@@ -69,7 +69,7 @@ class AutoCompleteFeature:
                 is_incomplete=False,
                 items=[CompletionItem(
                     label=symbol.name,
-                    #documentation=symbol.doc,
+                    documentation=str(symbol.type).lower(),
                     kind = AutoCompleteFeature._getCompletionItemKind(symbol),
                 ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, context, -1)]
             )
@@ -119,7 +119,7 @@ class AutoCompleteFeature:
         """
         if isinstance(obj, Symbol):
             def_obj = obj.follow_ref(context)[0]
-            for s in def_obj.all_symbols(line=line):
+            for s in def_obj.all_symbols(line=line, include_inherits=True):
                 if s.name.startswith(starts_with) and (not s.name.startswith("__") or starts_with.startswith("__")):
                     yield s
             if "comodel_name" in context and def_obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
