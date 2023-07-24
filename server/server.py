@@ -60,6 +60,7 @@ class OdooLanguageServer(LanguageServer):
         print("Starting Odoo Language server")
         self.id_lock = threading.Lock()
         self.id = 0
+        self.config = None
         super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
 
 
@@ -177,4 +178,13 @@ def did_open(ls, params: DidOpenTextDocumentParams):
 @odoo_server.thread()
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
-    Odoo.get(ls)
+    print(params)
+    if params:
+        config = params.config
+        ls.config = {
+            "id": config.id,
+            "name": config.name,
+            "odooPath": config.odooPath,
+            "addons": config.addons
+        }
+        Odoo.get(ls)

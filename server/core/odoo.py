@@ -100,11 +100,6 @@ class Odoo():
             ls.show_message_log("Building new Odoo knowledge database")
 
             try:
-                config = ls.get_configuration(WorkspaceConfigurationParams(items=[
-                    ConfigurationItem(
-                        scope_uri='userDefinedConfigurations',
-                        section=CONFIGURATION_SECTION)
-                ])).result()
                 Odoo.instance = Odoo()
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
@@ -116,8 +111,8 @@ class Odoo():
                     Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
                     Odoo.instance.start_build_time = time.time()
-                    Odoo.instance.odooPath = config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])]['odooPath']
-                    Odoo.instance.build_database(ls, config[0]['userDefinedConfigurations'][str(config[0]['selectedConfigurations'])])
+                    Odoo.instance.odooPath = ls.config["odooPath"]
+                    Odoo.instance.build_database(ls, ls.config)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 ls.show_message_log(traceback.format_exc())

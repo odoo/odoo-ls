@@ -291,7 +291,10 @@ export function activate(context: ExtensionContext): void {
         setStatusConfig(context, odooStatusBar);
     });
 
-    client.sendNotification("Odoo/clientReady");
+    client.sendNotification(
+        "Odoo/clientReady",
+        {"config": getCurrentConfig(context)}
+    );
     client.start();
 }
 
