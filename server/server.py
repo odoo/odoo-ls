@@ -34,16 +34,12 @@ import urllib.parse
 import urllib.request
 
 from lsprotocol.types import *
-from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
-                             CompletionParams, ConfigurationItem,
-                             ConfigurationParams, Diagnostic,
-                             DidChangeTextDocumentParams,
+from lsprotocol.types import (CompletionList, CompletionOptions,
+                             CompletionParams, DidChangeTextDocumentParams,
                              DidCloseTextDocumentParams,
-                             DidOpenTextDocumentParams, MessageType, Position,
-                             Range, Registration, RegistrationParams,
-                             SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
-                             Unregistration, UnregistrationParams,
-                             TextDocumentPositionParams, Location, Hover)
+                             DidOpenTextDocumentParams, MessageType,
+                             TextDocumentPositionParams, WorkspaceDiagnosticParams,
+                             SignatureHelpParams)
 from lsprotocol.types import (WorkDoneProgressBegin,
                                 WorkDoneProgressEnd,
                                 WorkDoneProgressReport)
@@ -188,3 +184,11 @@ def client_ready(ls, params=None):
             "addons": config.addons
         }
         Odoo.get(ls)
+
+@odoo_server.feature(WORKSPACE_DIAGNOSTIC)
+def workspace_diagnostics(ls, params:WorkspaceDiagnosticParams):
+    print("WORKSPACE DIAG")
+
+@odoo_server.feature(TEXT_DOCUMENT_SIGNATURE_HELP)
+def document_signature(ls, params: SignatureHelpParams):
+    print("Signature help")

@@ -57,7 +57,11 @@ class PythonValidator(ast.NodeVisitor):
         self.symStack[0].validationStatus = 2
         fileInfo["d_val"] = self.diagnostics
         #publish diag in all case to erase potential previous diag
-        FileMgr.publish_diagnostics(self.ls, fileInfo)
+        if self.symStack[0].in_workspace:
+            FileMgr.publish_diagnostics(self.ls, fileInfo)
+        else:
+            FileMgr.clean_cache(self.ls, self.filePath)
+            self.symStack[0].ast_node = None
 
     def validate_ast(self, ast):
         module = self.symStack[-1].get_module_sym()
