@@ -105,6 +105,7 @@ class Symbol(RegisterableObject):
         self.isModule = False
         self.modelData = None
         self.external = False
+        self.in_workspace = False
         self.startLine = 0
         self.endLine = 0
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded

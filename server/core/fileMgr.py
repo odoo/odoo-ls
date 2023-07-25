@@ -61,6 +61,20 @@ class FileMgr():
             f["parsoTree"] = None
 
     @staticmethod
+    def is_path_in_workspace(ls, path):
+        for folder, _ in ls.workspace.folders.items():
+            if path.startswith(folder):
+                return True
+        return False
+
+    @staticmethod
+    def clean_cache(ls, path):
+        f = FileMgr.files.get(path, None)
+        if f:
+            f["ast"] = None
+        FileMgr.removeParsoTree(path)
+
+    @staticmethod
     def publish_diagnostics(ls, file):
         ls.publish_diagnostics(file["uri"], file["d_synt"] + file["d_arch"] + file["d_arch_eval"] + file["d_odoo"] + file["d_val"])
 

@@ -82,20 +82,19 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.tree = self.symStack[-1].get_tree()
         self.symStack[-1].archStatus = 1
         fileInfo = FileMgr.getFileInfo(self.filePath)
+        self.symStack[-1].in_workspace = (self.symStack[-1].parent and self.symStack[-1].in_workspace) or FileMgr.is_path_in_workspace(self.ls, self.filePath)
         if fileInfo["ast"]:
             self.symStack[-1].ast_node = fileInfo["ast"]
             #Odoo.get().rebuild_arch.remove(self.symStack[-1])
             self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
             if self.symStack[-1].is_external():
-                fileInfo["ast"] = None
                 self.resolve__all__symbols()
-            else:
-                Odoo.get().add_to_arch_eval(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
-            if self.diagnostics: #TODO Wrong for subsymbols, but ok now as subsymbols can't raise diag :/
-                fileInfo["d_arch"] = self.diagnostics
+            Odoo.get().add_to_arch_eval(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
+            fileInfo["d_arch"] = self.diagnostics
         if self.filePath.endswith("__init__.py"):
             PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
-        FileMgr.publish_diagnostics(self.ls, fileInfo)
+        if self.symStack[-1].in_workspace:
+            FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         self.symStack[-1].archStatus = 2
         return self.symStack[-1]
@@ -148,7 +147,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.startLine = lineno
                         variable.endLine = end_lineno
                         variable.eval = Evaluation().eval_import(s)
-                        variable.ast_node = node
+                        #variable.ast_node = node
                         eval_sym = variable.eval.get_symbol()
                         if eval_sym:
                             fileSymbol.add_dependency(eval_sym, BuildSteps.ARCH, BuildSteps.ARCH)
@@ -158,7 +157,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = lineno
                 variable.endLine = end_lineno
                 import_name.symbol = RegisteredRef(variable)
-                variable.ast_node = node
+                #variable.ast_node = node
                 self.symStack[-1].add_symbol(variable)
 
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
@@ -168,7 +167,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                variable.ast_node = node
+                #variable.ast_node = node
                 if value:
                     variable.value = value
                 variable_name.symbol = RegisteredRef(variable)
@@ -181,7 +180,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                variable.ast_node = node
+                #variable.ast_node = node
                 variable.value = value
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__":
@@ -218,7 +217,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = FunctionSymbol(node.name, self.filePath, is_property)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        symbol.ast_node = node
+        #symbol.ast_node = node
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
@@ -230,7 +229,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_sym = Symbol(self_name, SymType.VARIABLE, self.filePath)
                 self_sym.startLine = node.lineno
                 self_sym.endLine = node.end_lineno
-                self_sym.ast_node = node
+                #self_sym.ast_node = node
                 self_sym.eval = Evaluation()
                 self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
@@ -247,7 +246,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         node.symbol = RegisteredRef(symbol)
-        symbol.ast_node = node
+        #symbol.ast_node = node
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
@@ -264,7 +263,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(node.target.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                variable.ast_node = node
+                #variable.ast_node = node
                 node.target.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
         ast.NodeVisitor.generic_visit(self, node)
