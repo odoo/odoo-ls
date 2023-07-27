@@ -37,6 +37,11 @@
         "command": "odoo.openWelcomeView",
         "title": "Open the Welcome page",
         "category": "Odoo"
+      },
+      {
+        "command": "odoo.testCrashMessage",
+        "title": "Open the crash notification",
+        "category": "Odoo"
       }
     ],
     "views": {

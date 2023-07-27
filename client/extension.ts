@@ -32,15 +32,19 @@ import {
     window,
     QuickPickItemKind,
     Diagnostic,
+    TextDocument,
 } from "vscode";
 import {
+    Executable,
     LanguageClient,
     LanguageClientOptions,
+    GenericRequestHandler,
     ServerOptions,
     integer,
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./views/welcome/welcomeWebView";
 import { ConfigurationWebView } from './views/configurations/configurationWebView';
+import {CrashReportWebView} from './views/crash_report/crashReport'
 import {
     selectedConfigurationChange,
     ConfigurationsChange
@@ -143,6 +147,26 @@ async function addNewConfiguration(context: ExtensionContext) {
 function changeSelectedConfig(context: ExtensionContext, configId: Number) {
     context.workspaceState.update("Odoo.selectedConfiguration", configId);
     selectedConfigurationChange.fire(null);
+}
+
+async function displayCrashMessage(context: ExtensionContext, crashInfo: string) {
+    // Capture the content of the file active when the crash happened
+    let activeFile: TextDocument;
+    if (window.activeTextEditor) {
+        activeFile = window.activeTextEditor.document;
+    } else {
+        activeFile = null;
+    }
+    const selection = await window.showErrorMessage(
+        "The Odoo extension encountered an error and crashed. Do you wish to send a crash report ?",
+        "Send crash report",
+        "Open logs",
+        "Cancel"
+    );
+
+    if (selection === "Send crash report") {
+        CrashReportWebView.render(context, activeFile);
+    }
 }
 
 export function activate(context: ExtensionContext): void {
@@ -328,6 +352,11 @@ export function activate(context: ExtensionContext): void {
     context.subscriptions.push(client.onRequest("Odoo/getConfiguration", (params) => {
         return getCurrentConfig(context);
     }));
+
+
+    context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => {displayCrashMessage(context, null);}));
+    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (crashInfo: string) => {displayCrashMessage(context, crashInfo)}));
+    
 
     if (getCurrentConfig(context)) {
         client.sendNotification(

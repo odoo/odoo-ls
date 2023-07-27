@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script type="module" nonce="<%= nonce %> " src="<%= webviewElementsUri %>"></script>
+        <script type="module" nonce="<%= nonce %> " src="<%= mainUri %>"></script>
+        <link rel="stylesheet" href="<%= styleUri %>"> 
+        <link rel="stylesheet" href="<%= codiconStyleUri %>" id="vscode-codicon-stylesheet">
+        <title>Crash report</title>
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src <%= cspSource %>; img-src <%= cspSource %> https:; font-src <%= cspSource %>; script-src 'nonce-<%= nonce %>';">
+    </head>
+    <body>
+        <h1>Crash report</h1>
+        <div>
+            <div>
+                <vscode-text-area id="crash-info-field" readonly resize="vertical">Crash information</vscode-text-area>
+            </div>
+            <div>
+                <vscode-text-area id="additional-info-field" resize="vertical" placeholder="Tell us more about what you were doing when the crash happened">Additional information</vscode-text-area>
+            </div>
+            <div>
+                <vscode-button>Send report</vscode-button>
+            </div>
+        </div>
+    </body>
+</html>

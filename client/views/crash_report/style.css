@@ -1,0 +1,14 @@
+@media screen and (min-width: 1024px) {
+    body {
+      padding: 0 8rem;
+      max-width: 1024px;
+      margin-right: auto;
+    }
+  }
+
+#crash-info-field, #additional-info-field {
+    width: 100%;
+    > #shadow-root > textarea {
+        height: 200px;
+    }
+}
