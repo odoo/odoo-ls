@@ -77,8 +77,7 @@ class PythonArchEval(ast.NodeVisitor):
         symbols = resolve_import_stmt(self.ls, self.fileSymbol, self.symbol, from_stmt, name_aliases, level, lineno, end_lineno)
 
         for node_alias, symbol, _ in symbols:
-            if not hasattr(node_alias, "symbol"):
-                print("Node has no symbol. An error occured") #TODO why does it occur?
+            if not hasattr(node_alias, "symbol"): #If no symbol, the import is probably not at the top level of the file. TODO: check it?
                 continue
             variable = node_alias.symbol
             if variable and symbol:
