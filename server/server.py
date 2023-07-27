@@ -170,19 +170,14 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     path = get_path_file(params.text_document.uri)
     FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
+@odoo_server.feature("Odoo/configurationChanged")
+def client_config_changed(ls, params=None):
+    print("Config changed")
+    pass
 
 @odoo_server.thread()
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
-    print(params)
-    if params:
-        config = params.config
-        ls.config = {
-            "id": config.id,
-            "name": config.name,
-            "odooPath": config.odooPath,
-            "addons": config.addons
-        }
         Odoo.get(ls)
 
 @odoo_server.feature(WORKSPACE_DIAGNOSTIC)

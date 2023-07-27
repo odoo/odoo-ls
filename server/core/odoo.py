@@ -101,6 +101,7 @@ class Odoo():
 
             try:
                 Odoo.instance = Odoo()
+                config = ls.lsp.send_request("Odoo/getConfiguration").result()
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
                     for path in sys.path:
@@ -111,8 +112,8 @@ class Odoo():
                     Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
                     Odoo.instance.start_build_time = time.time()
-                    Odoo.instance.odooPath = ls.config["odooPath"]
-                    Odoo.instance.build_database(ls, ls.config)
+                    Odoo.instance.odooPath = config.odooPath
+                    Odoo.instance.build_database(ls, config)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 ls.show_message_log(traceback.format_exc())
@@ -155,7 +156,7 @@ class Odoo():
                     os.path.join(self.odooPath, "addons"),
                     #"/home/odoo/Documents/odoo-servers/test_odoo/enterprise",
                     ]
-            addonsSymbol.paths += used_config['addons']
+            addonsSymbol.paths += used_config.addons
             return True
         else:
             ls.show_message_log("Odoo not found at " + self.odooPath, MessageType.Error)
