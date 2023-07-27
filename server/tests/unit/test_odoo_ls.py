@@ -285,7 +285,6 @@ CONSTANT_3 = 3"""
 
 @pytest.mark.dependency(depends=["test_imports_dynamic"])
 def test_rename():
-    print("RENAME TEST")
     old_uri_mock = pathlib.Path(__file__).parent.parent.resolve()
     old_uri_mock = os.path.join(old_uri_mock, "data", "addons", "module_1", "constants", "data", "constants.py")
     with open(old_uri_mock, "rb") as f:

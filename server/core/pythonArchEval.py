@@ -47,7 +47,7 @@ class PythonArchEval(ast.NodeVisitor):
             Odoo.get().add_to_init_odoo(self.symbol)
         path = self.fileSymbol.paths[0]
         if self.fileSymbol.type == SymType.PACKAGE:
-            path = os.path.join(path, "__init__.py")
+            path = os.path.join(path, "__init__.py") + self.symbol.i_ext
         fileInfo = FileMgr.getFileInfo(path)
         fileInfo["d_arch_eval"] = self.diagnostics
         PythonArchEvalOdooHooks.on_file_eval(self.symbol)
@@ -78,12 +78,14 @@ class PythonArchEval(ast.NodeVisitor):
 
         for node_alias, symbol, _ in symbols:
             if not hasattr(node_alias, "symbol"):
-                print("Node has no symbol. An error occured")
+                print("Node has no symbol. An error occured") #TODO why does it occur?
                 continue
             variable = node_alias.symbol
             if variable and symbol:
-                variable.ref.eval = Evaluation().eval_import(symbol)
-                variable.ref.add_dependency(symbol, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
+                ref = symbol.follow_ref()[0]
+                if ref != variable: #loop detected
+                    variable.ref.eval = Evaluation().eval_import(symbol)
+                    variable.ref.add_dependency(symbol, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
     def visit_Try(self, node):
         return

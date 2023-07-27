@@ -113,11 +113,13 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        self.create_local_symbols_from_import_stmt(None,
-                    node.names, 0, node)
+        if len(self.symStack) == 2: #only at top level. any import in function should be done at validation
+            self.create_local_symbols_from_import_stmt(None,
+                        node.names, 0, node)
 
     def visit_ImportFrom(self, node):
-        self.create_local_symbols_from_import_stmt(node.module,
+        if len(self.symStack) == 2: #only at top level. any import in function should be done at validation
+            self.create_local_symbols_from_import_stmt(node.module,
                     node.names, node.level, node)
 
     def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
