@@ -2,7 +2,7 @@ import os
 import pathlib
 from concurrent.futures import Future
 from mock import Mock
-from pygls.workspace import Document, Workspace
+from pygls.workspace import Document, Workspace, WorkspaceFolder
 
 from ...server import (
     OdooLanguageServer
@@ -32,18 +32,12 @@ if os.name == "nt":
 test_addons_path = pathlib.Path(__file__).parent.parent.resolve()
 test_addons_path = os.path.join(test_addons_path, 'data', 'addons')
 
-#TODO it would be better to send the real workspace path with right routes to LS
-def mock_path_in_workspace(ls, path):
-    if path.startswith(test_addons_path) or path.startswith(ODOO_COMMUNITY_PATH):
-        return True
-    return False
-FileMgr.is_path_in_workspace = mock_path_in_workspace
-
 server = OdooLanguageServer()
 server.publish_diagnostics = Mock()
 server.show_message = Mock()
 server.show_message_log = Mock()
-server.lsp.workspace = Workspace('', None)
+server.lsp.workspace = Workspace('', None,
+                                workspace_folders=[WorkspaceFolder(test_addons_path, "addons"), WorkspaceFolder(ODOO_COMMUNITY_PATH, "odoo")])
 server.lsp._send_only_body = True
 
 config_result = Future()
