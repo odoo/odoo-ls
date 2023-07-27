@@ -12,7 +12,7 @@ class AttributeNotFound():
 class PythonOdooBuilderV14(PythonOdooBuilder):
 
     def _load_class_inherit(self, symbol):
-        _inherit = symbol.get_class_symbol("_inherit", prevent_comodel=True)
+        _inherit = symbol.get_symbol([], ["_inherit"])
         if _inherit and _inherit.eval and _inherit.eval.get_symbol():
             inherit_value, _ = _inherit.eval.get_symbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
@@ -21,13 +21,11 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                     symbol.modelData.inherit = [inherit_names]
                 elif isinstance(inherit_names, list):
                     symbol.modelData.inherit = inherit_names[:]
-                else:
-                    print("wrong inherit")
             else:
                 print("wrong inherit")
 
     def _evaluate_name(self, symbol):
-        _name = symbol.get_class_symbol("_name", prevent_comodel=True)
+        _name = symbol.get_symbol([], ["_name"])
         if _name:
             if _name.eval and _name.eval.get_symbol():
                 name_value, _ = _name.eval.get_symbol().follow_ref()
@@ -49,7 +47,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
             symbol.modelData.inherit.append('base')
 
     def _load_class_inherits(self, symbol):
-        _inherits = symbol.get_class_symbol("_inherits", prevent_comodel=True)
+        _inherits = symbol.get_symbol([], ["_inherits"])
         if _inherits and _inherits.eval.get_symbol():
             inherit_value, instance = _inherits.eval.get_symbol().follow_ref()
             if inherit_value.type == SymType.PRIMITIVE:
