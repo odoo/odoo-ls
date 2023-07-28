@@ -131,6 +131,26 @@ export class ConfigurationWebView {
     }
 
     private _saveConfig(configs: any, odooPath: String, name: String, addons: Array<String>): void {
+        let changes = [];
+        let oldAddons = configs[this.configId]["addons"]
+
+        if (configs[this.configId]["odooPath"] != odooPath) {
+            changes.push("odooPath");
+        }
+        
+        if (oldAddons.length != addons.length) {
+            changes.push("addons");
+        } else {
+            oldAddons.sort();
+            addons.sort();
+            for (let i = 0; i < oldAddons.length; i++) {
+                if (oldAddons[i] != addons[i]) {
+                    changes.push("addons");
+                    break;
+                }
+            }
+        }
+
         configs[this.configId] = {
             "id": this.configId,
             "name": name,
@@ -138,7 +158,7 @@ export class ConfigurationWebView {
             "addons": addons
         };
         this._context.globalState.update("Odoo.configurations", configs);
-        ConfigurationsChange.fire(null);
+        ConfigurationsChange.fire(changes);
     }
 
     /**

@@ -246,8 +246,11 @@ export function activate(context: ExtensionContext): void {
 
     // Listen to changes to Configurations
     context.subscriptions.push(
-        ConfigurationsChange.event(() => {
+        ConfigurationsChange.event((changes: Array<String> | null) => {
             setStatusConfig(context, odooStatusBar);
+            if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
+                client.sendNotification("Odoo/configurationChanged");
+            }
         })
     );
 
@@ -255,6 +258,7 @@ export function activate(context: ExtensionContext): void {
     context.subscriptions.push(
         selectedConfigurationChange.event(() => {
             setStatusConfig(context, odooStatusBar);
+            client.sendNotification("Odoo/configurationChanged");
         })
     );
     
@@ -295,6 +299,10 @@ export function activate(context: ExtensionContext): void {
         "Odoo/clientReady",
         {"config": getCurrentConfig(context)}
     );
+
+    context.subscriptions.push(client.onRequest("Odoo/getConfiguration", (params) => {
+        return getCurrentConfig(context);
+    }));
     client.start();
 }
 
