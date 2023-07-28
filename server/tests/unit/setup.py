@@ -23,7 +23,7 @@ add -s if you want to see the logs from OdooLS
 
 # SETUP CONSTANTS
 
-ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-servers/test_odoo/odoo'
+ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-servers/server_d/odoo'
 if os.name == "nt":
     ODOO_COMMUNITY_PATH = 'E:\Mes Documents\odoo\community'
 
@@ -40,21 +40,25 @@ server.lsp.workspace = Workspace('', None,
                                 workspace_folders=[WorkspaceFolder(test_addons_path, "addons"), WorkspaceFolder(ODOO_COMMUNITY_PATH, "odoo")])
 server.lsp._send_only_body = True
 
-config_result = Future()
-config_result.set_result([{
-    'userDefinedConfigurations': {
-        '0': {'id': 0, 'name': 'Configuration 0', 'odooPath': 'path/to/odoo', 'addons': []},
-        '1': {'id': 1, 'name': 'Used configuration', 'odooPath': ODOO_COMMUNITY_PATH, 'addons': [test_addons_path]},
-        '2': {'id': 2, 'name': 'Configuration 2', 'odooPath': 'path/to/odoo', 'addons': []},
-        '4': {'id': 4, 'name': 'Skipped Id', 'odooPath': 'path/to/odoo', 'addons': []}
-    },
-    'selectedConfigurations': 1,
-    'trace': {
-        'server': 'off'}
-    }]
-)
+class MockConfig(object):
+    pass
 
-server.lsp.get_configuration = Mock(return_value=config_result)
+config = MockConfig()
+config.id = 1
+config.name = "Used configuration"
+config.odooPath = ODOO_COMMUNITY_PATH
+config.addons = [test_addons_path]
+
+config_result = Future()
+config_result.set_result(config)
+
+def  request_side_effect(*args, **kwargs):
+    if args[0] == 'Odoo/getConfiguration':
+        return config_result
+
+# There is a possibility this might mess with other send_request calls
+# Consider this a temporary fix - sode
+server.lsp.send_request = Mock(side_effect=request_side_effect)
 
 def get_uri(path):
     #return an uri from the "tests" level with a path like ["data", "module1"]
