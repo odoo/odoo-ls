@@ -91,9 +91,33 @@ export class WelcomeWebView {
                         <a href = "https://odoo.com">
                             <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" id="welcome-logo" />
                         </a>
-                        <h1>Welcome to Odoo Extension</h1>
-                        <section>                        
-                            <h3> More info about how to use extension </h3>
+                        <h1>Welcome to Odoo</h1>
+                        <div class="alert">
+                            You are running a BETA version of this extension. Not everything will work as expected.</br>
+                            WARNING: This version will send NOT ANONYMOUS usage data to Odoo to help the development of the extension.</br>
+                            Will be send on a crash: vscode logs, extension logs, opened files, opened folders paths.
+                        </div>
+                        <section>
+                            <h2>What is contained in this version ?</h2>
+                            <div>As this is a work-in-progress, here is what you can expect from the extension:</div>
+                            <ul>
+                                <li>Autocompletion of Python stuff (class, functions, etc...)</li>
+                                <li>Autocompletion of some module stuff (self.env[", _inherit = ")</li>
+                                <li>Hover requests in Python files</li>
+                                <li>Go to definition requests in Python files</li>
+                                <li>Basic diagnostics about modules dependencies</li>
+                            </ul>
+                            And what is NOT in this version, or incomplete (do not report bug about it, we know it is not ready):
+                            <ul>
+                                <li>Multi-root workspaces and workspace folder updates</li>
+                                <li>xml parsing and autocompletion of data coming from xml</li>
+                                <li>__manifest__.py updates</li>
+                            </ul>
+                        </section>
+                        <section>
+                            <h3> How to use the extension ? </h3>
+                            <div>
+                            </div>
                         </section>
                         <div class="display-welcome-checkbox">
                             <vscode-checkbox id="displayOdooWelcomeOnStart" ${defaultState ? 'checked': ''}>Show Odoo welcome page on startup</vscode-checkbox>

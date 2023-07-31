@@ -6,6 +6,14 @@
   flex-direction: column;
 }
 
+.alert {
+  padding: 20px;
+  font-size: 1.3em;
+  background-color: #f44336; /* Red */
+  color: white;
+  margin-bottom: 15px;
+}
+
 #welcome-logo {
   width: 200px;
   margin-top: 2em
