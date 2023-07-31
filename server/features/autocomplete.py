@@ -78,6 +78,8 @@ class AutoCompleteFeature:
             expr = ParsoUtils.get_previous_leafs_expr(element)
             if not expr:
                 file_symbol = Odoo.get().get_file_symbol(path)
+                if not file_symbol:
+                    return []
                 module = file_symbol.get_module()
                 scope_symbol = file_symbol.get_scope_symbol(line)
                 return CompletionList(
