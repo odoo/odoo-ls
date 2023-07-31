@@ -1,6 +1,7 @@
 import ast
 import os
 import sys
+import urllib
 from lsprotocol.types import (Diagnostic,Position, Range)
 from urllib.request import quote
 
@@ -22,6 +23,15 @@ class FileMgr():
             f += "/"
         str = f + str
         return str
+
+    @staticmethod
+    def uri2pathname(uri):
+        path = urllib.parse.urlparse(urllib.parse.unquote(uri)).path
+        path = urllib.request.url2pathname(path)
+        #TODO find better than this small hack for windows (get disk letter in capital)
+        if os.name == "nt":
+            path = path[0].capitalize() + path[1:]
+        return path
 
     @staticmethod
     def _getDefaultDict(path, version):
@@ -63,7 +73,8 @@ class FileMgr():
     @staticmethod
     def is_path_in_workspace(ls, path):
         for folder, _ in ls.workspace.folders.items():
-            if path.startswith(folder):
+            folder_path = FileMgr.uri2pathname(folder)
+            if path.startswith(folder_path):
                 return True
         return False
 

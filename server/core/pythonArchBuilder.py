@@ -149,7 +149,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                         variable.startLine = lineno
                         variable.endLine = end_lineno
                         variable.eval = Evaluation().eval_import(s)
-                        #variable.ast_node = node
                         eval_sym = variable.eval.get_symbol()
                         if eval_sym:
                             fileSymbol.add_dependency(eval_sym, BuildSteps.ARCH, BuildSteps.ARCH)
@@ -159,7 +158,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable.startLine = lineno
                 variable.endLine = end_lineno
                 import_name.symbol = RegisteredRef(variable)
-                #variable.ast_node = node
                 self.symStack[-1].add_symbol(variable)
 
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
@@ -169,7 +167,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                #variable.ast_node = node
                 if value:
                     variable.value = value
                 variable_name.symbol = RegisteredRef(variable)
@@ -182,7 +179,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                #variable.ast_node = node
                 variable.value = value
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__":
@@ -219,7 +215,6 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol = FunctionSymbol(node.name, self.filePath, is_property)
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
-        #symbol.ast_node = node
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
@@ -231,7 +226,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_sym = Symbol(self_name, SymType.VARIABLE, self.filePath)
                 self_sym.startLine = node.lineno
                 self_sym.endLine = node.end_lineno
-                #self_sym.ast_node = node
                 self_sym.eval = Evaluation()
                 self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
@@ -248,7 +242,6 @@ class PythonArchBuilder(ast.NodeVisitor):
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         node.symbol = RegisteredRef(symbol)
-        #symbol.ast_node = node
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
@@ -265,7 +258,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 variable = Symbol(node.target.id, SymType.VARIABLE, self.filePath)
                 variable.startLine = node.lineno
                 variable.endLine = node.end_lineno
-                #variable.ast_node = node
                 node.target.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
         ast.NodeVisitor.generic_visit(self, node)

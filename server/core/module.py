@@ -101,7 +101,10 @@ class Module():
         if self.dir_name == module_name or module_name in self.depends:
             return True
         for dep in self.depends:
-            is_in = Odoo.get().modules[dep].is_in_deps(module_name)
+            dep_module = Odoo.get().modules.get(dep, None)
+            if not dep_module:
+                continue
+            is_in = dep_module.is_in_deps(module_name)
             if is_in:
                 return True
         return False

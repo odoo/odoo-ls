@@ -43,11 +43,14 @@ class PythonArchEval(ast.NodeVisitor):
         self.symbol.validationStatus = 0
         ast_node = self.symbol.ast_node
         self.eval_from_ast(ast_node)
-        if not self.symbol.is_external():
-            Odoo.get().add_to_init_odoo(self.symbol)
         path = self.fileSymbol.paths[0]
         if self.fileSymbol.type == SymType.PACKAGE:
             path = os.path.join(path, "__init__.py") + self.symbol.i_ext
+        if self.symbol.is_external():
+            FileMgr.clean_cache(self.ls, path)
+            self.symbol.ast_node = None
+        else:
+            Odoo.get().add_to_init_odoo(self.symbol)
         fileInfo = FileMgr.getFileInfo(path)
         fileInfo["d_arch_eval"] = self.diagnostics
         PythonArchEvalOdooHooks.on_file_eval(self.symbol)

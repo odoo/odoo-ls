@@ -20,6 +20,7 @@ import os
 import re
 import time
 import uuid
+import sys
 import threading
 from json import JSONDecodeError
 from typing import Optional
@@ -53,7 +54,7 @@ COUNT_DOWN_SLEEP_IN_SECONDS = 1
 class OdooLanguageServer(LanguageServer):
 
     def __init__(self):
-        print("Starting Odoo Language server")
+        print("Starting Odoo Language server using Python " + str(sys.version))
         self.id_lock = threading.Lock()
         self.id = 0
         self.config = None
@@ -61,14 +62,6 @@ class OdooLanguageServer(LanguageServer):
 
 
 odoo_server = OdooLanguageServer()
-
-def get_path_file(uri):
-    path = urllib.parse.urlparse(urllib.parse.unquote(uri)).path
-    path = urllib.request.url2pathname(path)
-    #TODO find better than this small hack for windows (get disk letter in capital)
-    if os.name == "nt":
-        path = path[0].capitalize() + path[1:]
-    return path
 
 @odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',', '.', '"', "'"]))
 def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
@@ -79,7 +72,7 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
     ls.show_message_log("Completion requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
-    path = get_path_file(params.text_document.uri)
+    path = FileMgr.uri2pathname(params.text_document.uri)
     with Odoo.get().acquire_read():
         return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
 
@@ -88,7 +81,7 @@ def hover(ls, params: TextDocumentPositionParams):
     ls.show_message_log("Hover requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
-    path = get_path_file(params.text_document.uri)
+    path = FileMgr.uri2pathname(params.text_document.uri)
     with Odoo.get().acquire_read():
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
@@ -103,7 +96,7 @@ def definition(ls, params: TextDocumentPositionParams):
     ls.show_message_log("Definition requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
-    path = get_path_file(params.text_document.uri)
+    path = FileMgr.uri2pathname(params.text_document.uri)
     with Odoo.get().acquire_read():
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
@@ -159,7 +152,7 @@ def did_rename_files(ls, params):
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
     """Text document did close notification."""
-    path = get_path_file(params.text_document.uri)
+    path = FileMgr.uri2pathname(params.text_document.uri)
     FileMgr.removeParsoTree(path)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
@@ -167,7 +160,7 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
-    path = get_path_file(params.text_document.uri)
+    path = FileMgr.uri2pathname(params.text_document.uri)
     FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
 @odoo_server.feature("Odoo/configurationChanged")
