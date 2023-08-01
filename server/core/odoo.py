@@ -114,6 +114,8 @@ class Odoo():
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = config.odooPath
+                    if os.name == "nt":
+                        Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.build_database(ls, config)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:

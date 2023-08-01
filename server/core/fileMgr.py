@@ -57,7 +57,7 @@ class FileInfo:
 
     def build_parso_tree(self, path, content):
         from server.core.odoo import Odoo
-        return Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
+        self.parso_tree = Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
 
     def replace_diagnostics(self, step, diagnostics):
         old = self.diagnostics[step]
@@ -104,6 +104,8 @@ class FileMgr():
 
     @staticmethod
     def getFileInfo(path, content=False, version=1, opened=False):
+        if os.name == "nt":
+            path = path[0].capitalize() + path[1:]
         f = FileMgr.files.get(path, None)
         if not f:
             f = FileInfo(path, version)
@@ -113,9 +115,9 @@ class FileMgr():
             if f.version < version:
                 f.ast = FileMgr.build_ast(path, f, content)
                 if opened:
-                    f.parso_tree = FileMgr.build_parso_tree(path, content)
+                    f.build_parso_tree(path, content)
             elif opened and not f.parso_tree:
-                f.parso_tree = FileMgr.build_parso_tree(path, content)
+                f.build_parso_tree(path, content)
             f.version = version
         return f
 

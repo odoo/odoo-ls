@@ -60,7 +60,7 @@ class HoverFeature:
         #SEPARATOR
         value += "  \n***  \n"
         #BLOCK 2: useful links:
-        if infered_type not in ["Any"]:
+        if infered_type not in ["Any", "constant"]:
             path = FileMgr.pathname2uri(type_ref[0].paths[0])
             if type_ref[0].type == SymType.PACKAGE:
                 path = os.path.join(path, "__init__.py")
