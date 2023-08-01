@@ -43,14 +43,12 @@ class PythonOdooBuilder(ast.NodeVisitor):
         self.symStack[0].not_found_paths = []
         Odoo.get().not_found_symbols.discard(self.symStack[0])
         fileInfo = FileMgr.getFileInfo(self.filePath)
-        if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
+        if not fileInfo.ast: #doesn"t compile or we don't want to validate it
             return
         self._load()
-        fileInfo["d_odoo"] = self.diagnostics
+        fileInfo.replace_diagnostics(BuildSteps.ODOO, self.diagnostics)
         Odoo.get().add_to_validations(self.symStack[0])
         self.symStack[0].odooStatus = 2
-        #never publish diagnostics? if a odooBuilder is involved, a validation should be too, so we can publish them together
-        #FileMgr.publish_diagnostics(self.ls, fileInfo)
 
     def _load(self):
         for symbol in self.symStack[0].get_ordered_symbols():

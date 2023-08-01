@@ -86,7 +86,7 @@ def hover(ls, params: TextDocumentPositionParams):
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
             #Force the parsoTree to be loaded by giving file content and opened==True
-            parsoTree = FileMgr.getFileInfo(path, content, opened=True)["parsoTree"]
+            parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
             return HoverFeature.get_Hover(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
     return None
 
@@ -101,7 +101,7 @@ def definition(ls, params: TextDocumentPositionParams):
         file_symbol = Odoo.get().get_file_symbol(path)
         if file_symbol and params.text_document.uri[-3:] == ".py":
             #Force the parsoTree to be loaded by giving file content and opened==True
-            parsoTree = FileMgr.getFileInfo(path, content, opened=True)["parsoTree"]
+            parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
             return DefinitionFeature.get_location(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
 
 @odoo_server.thread()
@@ -165,8 +165,12 @@ def did_open(ls, params: DidOpenTextDocumentParams):
 
 @odoo_server.feature("Odoo/configurationChanged")
 def client_config_changed(ls, params=None):
-    print("Config changed")
-    pass
+    ls.show_message_log("Interrupting initialization", MessageType.Log)
+    Odoo.get(ls).interrupt_initialization()
+    ls.show_message_log("Reset existing database", MessageType.Log)
+    Odoo.get(ls).reset()
+    ls.show_message_log("Building new database", MessageType.Log)
+    Odoo.get(ls)
 
 @odoo_server.thread()
 @odoo_server.feature("Odoo/clientReady")

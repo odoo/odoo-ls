@@ -40,10 +40,11 @@ class SymType(Enum):
         return self.name
 
 class BuildSteps(Enum):
-    ARCH        = 0
-    ARCH_EVAL   = 1
-    ODOO        = 2
-    VALIDATION  = 3
+    SYNTAX      = 0
+    ARCH        = 1
+    ARCH_EVAL   = 2
+    ODOO        = 3
+    VALIDATION  = 4
 
     def __lt__(self, other):
         return self.value < other.value

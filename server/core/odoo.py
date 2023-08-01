@@ -31,6 +31,7 @@ class Odoo():
     version_major = 0
     version_minor = 0
     version_micro = 0
+    stop_init = False
 
     grammar = None
 
@@ -110,7 +111,7 @@ class Odoo():
                     # add stubs for not installed packages
                     Odoo.instance.symbols.paths.append(Odoo.stubs_dir)
                     Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
-                    Odoo.instance.grammar = parso.load_grammar(version="3.8") #TODO config or choose automatically
+                    Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = config.odooPath
                     Odoo.instance.build_database(ls, config)
@@ -119,6 +120,12 @@ class Odoo():
                 ls.show_message_log(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
         return Odoo.instance
+
+    def interrupt_initialization(self):
+        self.stop_init = True
+
+    def reset(self):
+        Odoo.instance = None
 
     def get_symbol(self, fileTree, nameTree = []):
         return self.symbols.get_symbol(fileTree, nameTree)
@@ -216,7 +223,7 @@ class Odoo():
             odoo_rebuilt = []
             validation_rebuilt = []
         already_arch_rebuilt = set()
-        while True:
+        while not self.stop_init:
             if self.rebuild_arch:
                 sym = self._pop_next_symbol(BuildSteps.ARCH)
                 if not sym:
@@ -289,10 +296,16 @@ class Odoo():
             dirs = os.listdir(path)
             for dir in dirs:
                 Module(ls, os.path.join(path, dir))
+            if self.stop_init:
+                break
+        if self.stop_init:
+            return
         loaded = []
         if not DEBUG_BUILD_ONLY_BASE:
             for module in Odoo.get().modules.values():
                 loaded += module.load_arch(ls)
+                if self.stop_init:
+                    break
             self.process_rebuilds(ls)
 
         if loaded:
@@ -327,8 +340,8 @@ class Odoo():
         if path.endswith(".py"):
             ls.show_message_log("File change event: " + path + " version " + str(version))
             file_info = FileMgr.getFileInfo(path, text, version, opened=True)
-            FileMgr.publish_diagnostics(ls, file_info)
-            if not file_info["ast"]:
+            if not file_info.ast:
+                file_info.publish_diagnostics(ls)
                 return #could emit syntax error in file_info["d_synt"]
             with Odoo.get(ls).acquire_write(ls):
                 #1 unload

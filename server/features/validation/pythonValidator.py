@@ -50,17 +50,17 @@ class PythonValidator(ast.NodeVisitor):
             print("Load validation: " + self.filePath)
         self.tree = self.symStack[-1].get_tree()
         fileInfo = FileMgr.getFileInfo(self.filePath)
-        if not fileInfo["ast"]: #doesn"t compile or we don't want to validate it
+        if not fileInfo.ast: #doesn"t compile or we don't want to validate it
             return
-        self.validate_ast(fileInfo["ast"])
+        self.validate_ast(fileInfo.ast)
         self.validate_structure()
         self.symStack[0].validationStatus = 2
-        fileInfo["d_val"] = self.diagnostics
+        fileInfo.replace_diagnostics(BuildSteps.VALIDATION, self.diagnostics)
         #publish diag in all case to erase potential previous diag
         if self.symStack[0].in_workspace:
-            FileMgr.publish_diagnostics(self.ls, fileInfo)
+            fileInfo.publish_diagnostics(self.ls)
         else:
-            FileMgr.clean_cache(self.ls, self.filePath)
+            FileMgr.delete_info(self.filePath)
             self.symStack[0].ast_node = None
 
     def validate_ast(self, ast):

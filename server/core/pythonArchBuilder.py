@@ -83,18 +83,19 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack[-1].archStatus = 1
         fileInfo = FileMgr.getFileInfo(self.filePath)
         self.symStack[-1].in_workspace = (self.symStack[-1].parent and self.symStack[-1].in_workspace) or FileMgr.is_path_in_workspace(self.ls, self.filePath)
-        if fileInfo["ast"]:
-            self.symStack[-1].ast_node = fileInfo["ast"]
+        if fileInfo.ast:
+            self.symStack[-1].ast_node = fileInfo.ast
             #Odoo.get().rebuild_arch.remove(self.symStack[-1])
-            self.load_symbols_from_ast(self.ast_node or fileInfo["ast"])
+            self.load_symbols_from_ast(self.ast_node or fileInfo.ast)
             if self.symStack[-1].is_external():
                 self.resolve__all__symbols()
-            Odoo.get().add_to_arch_eval(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
-            fileInfo["d_arch"] = self.diagnostics
+            fileInfo.replace_diagnostics(BuildSteps.ARCH, self.diagnostics)
+            if not fileInfo.diagnostics[BuildSteps.SYNTAX] and not self.diagnostics:
+                Odoo.get().add_to_arch_eval(self.symStack[-1].get_in_parents([SymType.FILE, SymType.PACKAGE]))
+            elif self.symStack[-1].in_workspace:
+                fileInfo.publish_diagnostics(self.ls)
         if self.filePath.endswith("__init__.py"):
             PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
-        if self.symStack[-1].in_workspace:
-            FileMgr.publish_diagnostics(self.ls, fileInfo)
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         self.symStack[-1].archStatus = 2
         return self.symStack[-1]

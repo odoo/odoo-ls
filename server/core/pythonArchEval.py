@@ -47,17 +47,13 @@ class PythonArchEval(ast.NodeVisitor):
         if self.fileSymbol.type == SymType.PACKAGE:
             path = os.path.join(path, "__init__.py") + self.symbol.i_ext
         if self.symbol.is_external():
-            FileMgr.clean_cache(self.ls, path)
+            FileMgr.delete_info(path)
             self.symbol.ast_node = None
         else:
             Odoo.get().add_to_init_odoo(self.symbol)
         fileInfo = FileMgr.getFileInfo(path)
-        fileInfo["d_arch_eval"] = self.diagnostics
+        fileInfo.replace_diagnostics(BuildSteps.ARCH_EVAL, self.diagnostics)
         PythonArchEvalOdooHooks.on_file_eval(self.symbol)
-        #if self.filePath.endswith("__init__.py"): #TODO update hooks
-        #    PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
-        FileMgr.publish_diagnostics(self.ls, fileInfo)
-        #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         self.symbol.evalStatus = 2
         return self.symbol
 
