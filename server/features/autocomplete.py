@@ -57,6 +57,8 @@ class AutoCompleteFeature:
             # print(containers)
             expr = ParsoUtils.get_previous_leafs_expr(element)
             file_symbol = Odoo.get().get_file_symbol(path)
+            if not file_symbol:
+                return []
             module = file_symbol.get_module()
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)
@@ -119,22 +121,32 @@ class AutoCompleteFeature:
         """ For a symbol or model, get all sub symbols
         if line is not -1, seearch for local symbols before the line number
         """
+        seen = set()
         if isinstance(obj, Symbol):
             def_obj = obj.follow_ref(context)[0]
             for s in def_obj.all_symbols(line=line, include_inherits=True):
                 if s.name.startswith(starts_with) and (not s.name.startswith("__") or starts_with.startswith("__")):
-                    yield s
+                    if s not in seen:
+                        seen.add(s)
+                        print(s.name)
+                        yield s
             if "comodel_name" in context and def_obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
                 model = Odoo.get().models.get(context["comodel_name"], None)
                 if model:
                     models_syms = model.get_symbols(module)
                     for model_class in models_syms:
                         for s in model_class.all_symbols(line=-1, include_inherits=True):
-                            yield s
+                            if s not in seen:
+                                seen.add(s)
+                                print(s.name)
+                                yield s
         else:
             for a in obj.get_attributes(module):
                 if a.name.startswith(starts_with) and (not a.name.startswith("__") or starts_with.startswith("__")):
-                    yield a
+                    if a not in seen:
+                        seen.add(a)
+                        print(a.name)
+                        yield a
 
     @staticmethod
     def _getCompletionItemKind(symbol):
