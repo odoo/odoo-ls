@@ -36,7 +36,7 @@ class HoverFeature:
                 if symbol.type == SymType.FUNCTION and not symbol.is_property:
                     value += " -> " + infered_type
                 else:
-                    value += " : " + infered_type
+                    value += ": " + infered_type
             value += "  \n```"
             return value
 
