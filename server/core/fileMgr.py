@@ -113,7 +113,7 @@ class FileMgr():
             FileMgr.files[path] = f
         elif content:
             if f.version < version:
-                f.ast = FileMgr.build_ast(path, f, content)
+                f.ast = f.build_ast(path, content)
                 if opened:
                     f.build_parso_tree(path, content)
             elif opened and not f.parso_tree:

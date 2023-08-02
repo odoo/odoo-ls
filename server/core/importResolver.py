@@ -87,7 +87,7 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
         return variable
     for path in parent_symbol.paths:
         full_path = os.path.join(path, name)
-        if path == Odoo.stubs_dir:
+        if path == Odoo.get().stubs_dir:
             #stubs file un typeshed are in a second directory in the same path
             full_path = os.path.join(full_path, name)
         if os.path.isdir(full_path):

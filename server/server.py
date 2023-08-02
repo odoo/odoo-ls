@@ -67,8 +67,9 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
-    with Odoo.get().acquire_read():
-        return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
+    with Odoo.get().acquire_read(timeout=1) as acquired:
+        if acquired:
+            return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
@@ -76,12 +77,21 @@ def hover(ls, params: TextDocumentPositionParams):
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
-    with Odoo.get().acquire_read():
-        file_symbol = Odoo.get().get_file_symbol(path)
-        if file_symbol and params.text_document.uri[-3:] == ".py":
-            #Force the parsoTree to be loaded by giving file content and opened==True
-            parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
-            return HoverFeature.get_Hover(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
+    with Odoo.get().acquire_read(timeout=2) as acquired:
+        if acquired:
+            file_symbol = Odoo.get().get_file_symbol(path)
+            if file_symbol and params.text_document.uri[-3:] == ".py":
+                #Force the parsoTree to be loaded by giving file content and opened==True
+                parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
+                return HoverFeature.get_Hover(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
+        else:
+            content = MarkupContent(
+                kind=MarkupKind.Markdown,
+                value="Odoo extension is loading, please wait..."
+            )
+            return Hover(
+                contents=content
+            )
     return None
 
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
@@ -91,14 +101,14 @@ def definition(ls, params: TextDocumentPositionParams):
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
-    with Odoo.get().acquire_read():
-        file_symbol = Odoo.get().get_file_symbol(path)
-        if file_symbol and params.text_document.uri[-3:] == ".py":
-            #Force the parsoTree to be loaded by giving file content and opened==True
-            parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
-            return DefinitionFeature.get_location(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
+    with Odoo.get().acquire_read(timeout=2) as acquired:
+        if acquired:
+            file_symbol = Odoo.get().get_file_symbol(path)
+            if file_symbol and params.text_document.uri[-3:] == ".py":
+                #Force the parsoTree to be loaded by giving file content and opened==True
+                parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
+                return DefinitionFeature.get_location(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
 
-@odoo_server.thread()
 def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
     id = 0
     with odoo_server.id_lock:
@@ -112,7 +122,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
     #TODO find better than this small hack for windows (get disk letter in capital)
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
-    Odoo.get(ls).file_change(ls, final_path, source, params.text_document.version)
+    Odoo.get().file_change(ls, final_path, source, params.text_document.version)
     ls.show_message_log("File changed: " + final_path, MessageType.Log)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
@@ -141,7 +151,7 @@ def did_rename_files(ls, params):
         if os.name == "nt":
             old_path = old_path[0].capitalize() + old_path[1:]
             new_path = new_path[0].capitalize() + new_path[1:]
-        Odoo.get(ls).file_rename(ls, old_path, new_path)
+        Odoo.get().file_rename(ls, old_path, new_path)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
@@ -157,20 +167,19 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     path = FileMgr.uri2pathname(params.text_document.uri)
     FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
-@odoo_server.thread()
 @odoo_server.feature("Odoo/configurationChanged")
 def client_config_changed(ls, params=None):
     ls.show_message_log("Interrupting initialization", MessageType.Log)
-    Odoo.get(ls).interrupt_initialization()
+    Odoo.get().interrupt_initialization()
     ls.show_message_log("Reset existing database", MessageType.Log)
-    Odoo.get(ls).reset(ls)
+    Odoo.get().reset(ls)
+    FileMgr.files = {}
     ls.show_message_log("Building new database", MessageType.Log)
-    Odoo.get(ls)
+    threading.Thread(target=Odoo.initialize, args=(ls,), daemon=True).start()
 
-@odoo_server.thread()
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
-    Odoo.get(ls)
+    threading.Thread(target=Odoo.initialize, args=(ls,), daemon=True).start()
 
 @odoo_server.feature(WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS)
 def workspace_change_folders(ls, params: DidChangeWorkspaceFoldersParams):

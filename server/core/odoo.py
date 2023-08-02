@@ -26,41 +26,37 @@ import tracemalloc
 
 class Odoo():
 
-    odooPath = ""
-
-    version_major = 0
-    version_minor = 0
-    version_micro = 0
-    stop_init = False
-
-    grammar = None
-
-    fileMgr = FileMgr()
-
-    models = {}
-    modules = {}
-
-    # symbols is the list of declared symbols and their related declaration, filtered by name
-    symbols = RootSymbol("root", SymType.ROOT, [])
-
-    rebuild_arch = RegisteredRefSet()
-    rebuild_arch_eval = RegisteredRefSet()
-    rebuild_odoo = RegisteredRefSet()
-    rebuild_validation = RegisteredRefSet()
-
-    not_found_symbols = RegisteredRefSet() # Set of symbols that still have unresolved dependencies (arch level only)
-
     instance = None
-
-    write_lock = threading.Lock()
-    thread_access_condition = ReadWriteCondition(10) #should match the number of threads
-
     import_odoo_addons = True #can be set to False for speed up tests
 
-    stubs_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs")
-
     def __init__(self):
-        pass
+        self.odooPath = ""
+
+        self.version_major = 0
+        self.version_minor = 0
+        self.version_micro = 0
+        self.stop_init = False
+
+        self.grammar = None
+
+
+        self.models = {}
+        self.modules = {}
+
+        # symbols is the list of declared symbols and their related declaration, filtered by name
+        self.symbols = RootSymbol("root", SymType.ROOT, [])
+
+        self.rebuild_arch = RegisteredRefSet()
+        self.rebuild_arch_eval = RegisteredRefSet()
+        self.rebuild_odoo = RegisteredRefSet()
+        self.rebuild_validation = RegisteredRefSet()
+
+        self.not_found_symbols = RegisteredRefSet() # Set of symbols that still have unresolved dependencies (arch level only)
+
+        self.write_lock = threading.Lock()
+        self.thread_access_condition = ReadWriteCondition(10) #should match the number of threads
+
+        self.stubs_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs")
 
     @contextmanager
     def acquire_write(self, ls):
@@ -74,12 +70,15 @@ class Odoo():
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
 
     @contextmanager
-    def acquire_read(self):
-        with self.write_lock:
+    def acquire_read(self, timeout=None):
+        if self.write_lock.acquire(timeout=timeout):
             self.thread_access_condition.acquire()
+        else:
+            yield False
+            return
         context = threading.local()
         context.lock_type = "read"
-        yield
+        yield True
         self.thread_access_condition.release()
         context.lock_type = "none"
 
@@ -94,7 +93,11 @@ class Odoo():
             self.thread_access_condition.acquire()
 
     @staticmethod
-    def get(ls:LanguageServer = None):
+    def get():
+        return Odoo.instance
+
+    @staticmethod
+    def initialize(ls:LanguageServer = None):
         if not Odoo.instance:
             if not ls:
                 print(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
@@ -110,7 +113,7 @@ class Odoo():
                         if os.path.isdir(path):
                             Odoo.instance.symbols.paths.append(path)
                     # add stubs for not installed packages
-                    Odoo.instance.symbols.paths.append(Odoo.stubs_dir)
+                    Odoo.instance.symbols.paths.append(Odoo.instance.stubs_dir)
                     Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
@@ -122,7 +125,6 @@ class Odoo():
             except Exception as e:
                 ls.show_message_log(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
-        return Odoo.instance
 
     def interrupt_initialization(self):
         self.stop_init = True
@@ -347,7 +349,7 @@ class Odoo():
             if not file_info.ast:
                 file_info.publish_diagnostics(ls)
                 return #could emit syntax error in file_info["d_synt"]
-            with Odoo.get(ls).acquire_write(ls):
+            with Odoo.get().acquire_write(ls):
                 #1 unload
                 if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
                     path = os.sep.join(path.split(os.sep)[:-1])
@@ -373,7 +375,7 @@ class Odoo():
 
     def file_rename(self, ls, old_path, new_path):
         from server.core.pythonArchBuilder import PythonArchBuilder
-        with Odoo.get(ls).acquire_write(ls):
+        with Odoo.get().acquire_write(ls):
             #unload old
             file_symbol = self.get_file_symbol(old_path)
             if file_symbol:
