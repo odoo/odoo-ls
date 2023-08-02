@@ -35,12 +35,6 @@ import urllib.parse
 import urllib.request
 
 from lsprotocol.types import *
-from lsprotocol.types import (CompletionList, CompletionOptions,
-                             CompletionParams, DidChangeTextDocumentParams,
-                             DidCloseTextDocumentParams,
-                             DidOpenTextDocumentParams, MessageType,
-                             TextDocumentPositionParams, WorkspaceDiagnosticParams,
-                             SignatureHelpParams)
 from lsprotocol.types import (WorkDoneProgressBegin,
                                 WorkDoneProgressEnd,
                                 WorkDoneProgressReport)
@@ -163,19 +157,24 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     path = FileMgr.uri2pathname(params.text_document.uri)
     FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
+@odoo_server.thread()
 @odoo_server.feature("Odoo/configurationChanged")
 def client_config_changed(ls, params=None):
     ls.show_message_log("Interrupting initialization", MessageType.Log)
     Odoo.get(ls).interrupt_initialization()
     ls.show_message_log("Reset existing database", MessageType.Log)
-    Odoo.get(ls).reset()
+    Odoo.get(ls).reset(ls)
     ls.show_message_log("Building new database", MessageType.Log)
     Odoo.get(ls)
 
 @odoo_server.thread()
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
-        Odoo.get(ls)
+    Odoo.get(ls)
+
+@odoo_server.feature(WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS)
+def workspace_change_folders(ls, params: DidChangeWorkspaceFoldersParams):
+    print("Workspace folders changed")
 
 @odoo_server.feature(WORKSPACE_DIAGNOSTIC)
 def workspace_diagnostics(ls, params:WorkspaceDiagnosticParams):

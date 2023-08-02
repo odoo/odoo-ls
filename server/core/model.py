@@ -35,7 +35,7 @@ class Model():
     def get_documentation(self, from_module = None):
         main_symbol = self.get_main_symbols(from_module)
         if main_symbol and len(main_symbol) == 1:
-            description = main_symbol[0].get_class_symbol("_description", prevent_comodel=False)
+            description = main_symbol[0].get_class_symbol("_description", from_module=from_module, prevent_comodel=False)
             description_text = main_symbol[0].name
             if description:
                 description, _ = description.follow_ref()

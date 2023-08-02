@@ -368,11 +368,12 @@ class Symbol(RegisterableObject):
             return Odoo.get().models[self.modelData.name]
         return None
 
-    def get_class_symbol(self, name, prevent_local=False, prevent_comodel = False, all=False):
+    def get_class_symbol(self, name, from_module=False, prevent_local=False, prevent_comodel = False, all=False):
         """similar to get_symbol: will return the symbol that is under this one with the specified name.
         However, if the symbol is a class or a model, it will search in the base class or in comodel classes
         if not all, it will return the first found. If all, the all found symbols are returned, but the first one
-        is the one that is overriding others"""
+        is the one that is overriding others.
+        :param: from_module: optional, can change the from_module of the given class"""
         from .odoo import Odoo
         res = []
         if not prevent_local:
@@ -383,7 +384,7 @@ class Symbol(RegisterableObject):
                     res.append(self.symbols[name])
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
-            sym = model.get_symbols(self.get_module())
+            sym = model.get_symbols(from_module or self.get_module())
             for s in sym:
                 if s == self:
                     continue
@@ -550,12 +551,12 @@ class ClassSymbol(Symbol):
                 return True
         return False
 
-    def get_class_symbol(self, name, prevent_local=False, prevent_comodel=False, all=False):
-        res = super().get_class_symbol(name, prevent_local=prevent_local, prevent_comodel=prevent_comodel, all=all)
+    def get_class_symbol(self, name, from_module=False, prevent_local=False, prevent_comodel=False, all=False):
+        res = super().get_class_symbol(name, from_module=from_module, prevent_local=prevent_local, prevent_comodel=prevent_comodel, all=all)
         if not all and res:
             return res
         for base in self.bases:
-            s = base.get_class_symbol(name, prevent_local=False, prevent_comodel=prevent_comodel, all=all)
+            s = base.get_class_symbol(name, from_module=from_module, prevent_local=False, prevent_comodel=prevent_comodel, all=all)
             if s:
                 if not all:
                     return s
@@ -578,8 +579,8 @@ class SuperSymbol(Symbol):
         self.eval._symbol = RegisteredRef(self)
         self._class = symbol.get_in_parents([SymType.CLASS])
 
-    def get_class_symbol(self, name, prevent_comodel=False, all=False):
-        return self._class.get_class_symbol(name, prevent_local=True, prevent_comodel=prevent_comodel, all=all)
+    def get_class_symbol(self, name, from_module=False, prevent_comodel=False, all=False):
+        return self._class.get_class_symbol(name, from_module=from_module, prevent_local=True, prevent_comodel=prevent_comodel, all=all)
 
     def all_symbols(self, line=-1, include_inherits=False):
         if include_inherits:

@@ -98,6 +98,7 @@ class Odoo():
         if not Odoo.instance:
             if not ls:
                 print(f"Can't initialize Odoo Base : No odoo server provided. Please contact support.")
+                return None
             ls.show_message_log("Building new Odoo knowledge database")
 
             try:
@@ -126,8 +127,9 @@ class Odoo():
     def interrupt_initialization(self):
         self.stop_init = True
 
-    def reset(self):
-        Odoo.instance = None
+    def reset(self, ls):
+        with Odoo.instance.acquire_write(ls):
+            Odoo.instance = None
 
     def get_symbol(self, fileTree, nameTree = []):
         return self.symbols.get_symbol(fileTree, nameTree)
