@@ -31,6 +31,7 @@ import {
     workspace,
     window,
     QuickPickItemKind,
+    Diagnostic,
 } from "vscode";
 import {
     LanguageClient,
@@ -145,7 +146,7 @@ function changeSelectedConfig(context: ExtensionContext, configId: Number) {
 }
 
 export function activate(context: ExtensionContext): void {
-    if (context.extensionMode === ExtensionMode.Development) {
+    if (context.extensionMode !== ExtensionMode.Development) {
         // Development - Run the server manually
         client = startLangServerTCP(2087);
     } else {
@@ -159,7 +160,6 @@ export function activate(context: ExtensionContext): void {
 
         client = startLangServer(pythonPath, ["-m", "server"], cwd);
     }
-
 
     if (getCurrentConfig(context)) {
         client.start();
@@ -263,8 +263,8 @@ export function activate(context: ExtensionContext): void {
         ConfigurationsChange.event((changes: Array<String> | null) => {
             setStatusConfig(context, odooStatusBar);
             if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
-                client.sendNotification("Odoo/configurationChanged");
-            }
+                client.diagnostics.clear();
+                client.sendNotification("Odoo/configurationChanged");            }
         })
     );
 
@@ -279,6 +279,7 @@ export function activate(context: ExtensionContext): void {
                         );
                     });
                 } else {
+                    client.diagnostics.clear();
                     client.sendNotification("Odoo/configurationChanged");
                 }
             } else if (client.isRunning()) {
