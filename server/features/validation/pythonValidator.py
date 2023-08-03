@@ -111,7 +111,7 @@ class PythonValidator(ast.NodeVisitor):
                 break
             else:
                 module = symbol.get_module_sym()
-                if module and not self.currentModule.is_in_deps(module.name):
+                if module and not self.currentModule.is_in_deps(module.name) and not self.safeImport[-1]:
                     self.diagnostics.append(Diagnostic(
                         range = Range(
                             start=Position(line=node.lineno-1, character=node.col_offset),
