@@ -125,7 +125,7 @@ export class ConfigurationWebView {
             config: config,
             cspSource: webview.cspSource,
             nonce: nonce,
-            odooVersion: configsVersion ? configsVersion[`${this.configId}`] : 'No Odoo version found.'
+            odooVersion: configsVersion[`${this.configId}`] ? configsVersion[`${this.configId}`] : null
         };
         return ejs.render(htmlFile, data);
     }
@@ -194,7 +194,7 @@ export class ConfigurationWebView {
                         canSelectFiles: false,
                         canSelectFolders: true
                     };
-                    window.showOpenDialog(odooFolderOptions).then(fileUri => {
+                    window.showOpenDialog(odooFolderOptions).then(async fileUri => {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooFolderPath = fileUri[0].fsPath;
@@ -203,7 +203,7 @@ export class ConfigurationWebView {
                                 command: "update_path",
                                 path: odooFolderPath
                             });
-                            this._getOdooVersion(odooFolderPath, webview);
+                            await this._getOdooVersion(odooFolderPath, webview);
                         }
                     });
                     break;
@@ -234,7 +234,7 @@ export class ConfigurationWebView {
         );
     }
 
-    private _getOdooVersion(odooPath: URI, webview: Webview) {
+    private async _getOdooVersion(odooPath: URI, webview: Webview) {
         let versionString = null;
         const releasePath = odooPath + '/odoo/release.py';
         if (fs.existsSync(releasePath)) {
@@ -249,12 +249,12 @@ export class ConfigurationWebView {
                     rl.close();
                 }
             });
-            rl.on('close', () => {
+            rl.on('close', async () => {
                 // Folder is invalid if we don't find any version info
                 if (!versionString) {
                     let versions = this._context.globalState.get('Odoo.configsVersion', {});
                     versions[`${this.configId}`] = null;
-                    this._context.globalState.update('Odoo.configsVersion', versions);
+                    await this._context.globalState.update('Odoo.configsVersion', versions);
                     webview.postMessage({
                         command: "update_config_folder_validity",
                         version: null
@@ -266,7 +266,7 @@ export class ConfigurationWebView {
                     const version = `${versionArray[0]}.${versionArray[1]}.${versionArray[2]}` + (versionArray[3] == 'FINAL' ? '' : ` ${versionArray[3]}${versionArray[4]}`);
                     let versions = this._context.globalState.get('Odoo.configsVersion', {});
                     versions[`${this.configId}`] = version;
-                    this._context.globalState.update('Odoo.configsVersion', versions);
+                    await this._context.globalState.update('Odoo.configsVersion', versions);
                     webview.postMessage({
                         command: "update_config_folder_validity",
                         version: version
@@ -277,7 +277,7 @@ export class ConfigurationWebView {
             // Folder is invalid if odoo/release.py was never found
             let versions = this._context.globalState.get('Odoo.configsVersion', {});
             versions[`${this.configId}`] = null;
-            this._context.globalState.update('Odoo.configsVersion', versions);
+            await this._context.globalState.update('Odoo.configsVersion', versions);
             webview.postMessage({
                 command: "update_config_folder_validity",
                 version: null
