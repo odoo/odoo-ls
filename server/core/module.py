@@ -37,8 +37,9 @@ class Module():
             #TODO merge ! or erase? or raise error? :(
             print("already in: " + self.dir_name)
         Odoo.get().modules[self.dir_name] = self
-        if diagnostics:
-            ls.publish_diagnostics(FileMgr.pathname2uri(manifestPath), diagnostics)
+        f = FileMgr.getFileInfo(manifestPath)
+        f.replace_diagnostics(BuildSteps.ARCH, diagnostics)
+        f.publish_diagnostics(ls)
 
     def load_arch(self, ls):
         if self.loaded:
@@ -50,8 +51,9 @@ class Module():
         diagnostics += self._load_arch(ls, self.rootPath)
         self.loaded = True
         loaded.append(self.dir_name)
-        if diagnostics:
-            ls.publish_diagnostics(FileMgr.pathname2uri(os.path.join(self.rootPath, "__manifest__.py")), diagnostics)
+        f = FileMgr.getFileInfo(os.path.join(self.rootPath, "__manifest__.py"))
+        f.replace_diagnostics(BuildSteps.ARCH, diagnostics)
+        f.publish_diagnostics(ls)
         return loaded
 
     def load_manifest(self, manifestPath):

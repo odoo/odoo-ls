@@ -151,6 +151,14 @@ def did_rename_files(ls, params):
             new_path = new_path[0].capitalize() + new_path[1:]
         Odoo.get().post_lock_jobs.append((Odoo.get().file_rename, (ls, old_path, new_path)))
 
+@odoo_server.feature(WORKSPACE_DID_DELETE_FILES)
+def did_delete_files(ls, params):
+    print("deleted file")
+
+@odoo_server.feature(WORKSPACE_DID_CREATE_FILES)
+def did_create_files(ls, params):
+    print("created file")
+
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
     """Text document did close notification."""
@@ -166,7 +174,7 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
 @odoo_server.feature("Odoo/configurationChanged")
-def client_config_changed(ls, params=None):
+def client_config_changed(ls: OdooLanguageServer, params=None):
     ls.show_message_log("Interrupting initialization", MessageType.Log)
     Odoo.get().interrupt_initialization()
     ls.show_message_log("Reset existing database", MessageType.Log)

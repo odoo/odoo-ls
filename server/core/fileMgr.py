@@ -139,3 +139,11 @@ class FileMgr():
         if fileInfo:
             fileInfo.ast = None
             fileInfo.parso_tree = None
+
+    @staticmethod
+    def reset_diagnostics(ls):
+        for file in FileMgr.files.values():
+            for d in file.diagnostics.values():
+                if d:
+                    ls.publish_diagnostics(file.uri, [])
+                    break
