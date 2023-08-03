@@ -122,8 +122,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
     #TODO find better than this small hack for windows (get disk letter in capital)
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
-    Odoo.get().file_change(ls, final_path, source, params.text_document.version)
-    ls.show_message_log("File changed: " + final_path, MessageType.Log)
+    Odoo.get().post_lock_jobs.append((Odoo.get().file_change, (ls, final_path, source, params.text_document.version)))
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):
@@ -141,7 +140,6 @@ def did_change(ls, params: DidChangeTextDocumentParams):
 ]))
 def did_rename_files(ls, params):
     """Workspace did rename files notification."""
-    #TODO A change should probably not be discarded even if Odoo is loading, as we maybe want to rebuild these changes
     for f in params.files:
         old_path = urllib.parse.urlparse(urllib.parse.unquote(f.old_uri)).path
         old_path = urllib.request.url2pathname(old_path)
@@ -151,7 +149,7 @@ def did_rename_files(ls, params):
         if os.name == "nt":
             old_path = old_path[0].capitalize() + old_path[1:]
             new_path = new_path[0].capitalize() + new_path[1:]
-        Odoo.get().file_rename(ls, old_path, new_path)
+        Odoo.get().post_lock_jobs.append((Odoo.get().file_rename, (ls, old_path, new_path)))
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):

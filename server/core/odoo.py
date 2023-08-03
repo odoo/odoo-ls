@@ -56,6 +56,8 @@ class Odoo():
         self.write_lock = threading.Lock()
         self.thread_access_condition = ReadWriteCondition(10) #should match the number of threads
 
+        self.post_lock_jobs = []
+
         self.stubs_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs")
 
     @contextmanager
@@ -68,11 +70,17 @@ class Odoo():
             yield
             context.lock_type = "none"
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
+        while self.post_lock_jobs:
+            job, args = self.post_lock_jobs.pop(0)
+            job(*args)
 
     @contextmanager
     def acquire_read(self, timeout=None):
         if self.write_lock.acquire(timeout=timeout):
-            self.thread_access_condition.acquire()
+            try:
+                self.thread_access_condition.acquire()
+            finally:
+                self.write_lock.release()
         else:
             yield False
             return
@@ -121,6 +129,7 @@ class Odoo():
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.build_database(ls, config)
+                    Odoo.instance.initialized = True
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 ls.show_message_log(traceback.format_exc())
@@ -380,6 +389,8 @@ class Odoo():
             file_symbol = self.get_file_symbol(old_path)
             if file_symbol:
                 file_symbol.unload(file_symbol)
+            else:
+                return
             del file_symbol
             #build new
             parent_path = os.sep.join(new_path.split(os.sep)[:-1])
