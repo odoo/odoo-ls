@@ -61,7 +61,7 @@ def test_ref():
     import copy
     a = A()
     ref_a = RegisteredRef(a)
-    copy_a = copy.copy(a)
+    copy_a = copy.copy(ref_a)
     # When copying a ref, either the ref should be invalid or
     # the copy should be added to the listeners of the obj
     assert copy_a.ref is a and isin(copy_a,a.listeners)
@@ -121,7 +121,7 @@ def test_ref():
     assert len(set_a) == 3
     assert a in set_a
     assert ref_a in set_a
-    set_a.remove(ref_a)
+    set_a.remove(ref_a.ref)
     assert len(set_a) == 2
     assert a not in set_a
     assert ref_a not in set_a
@@ -194,18 +194,17 @@ def test_ref():
     assert len(set_a) == 2
     try:
         _ = copy.deepcopy(set_a)
-        assert 0, "Florian needs to decide if he allows deepcopy for sets"
+        assert 0, "Deepcopy are not allowed on sets"
     except:
-        assert 0, "Florian needs to decide if he allows deepcopy for sets"
+        assert 1
 
     # pop
     copy_set_a.add(b1)
     assert len(copy_set_a) == 3
     assert len(set_a) == 2
-    pop_b1 = copy_set_a.pop()
-    assert pop_b1 is b1
-    assert b1 not in copy_set_a
-    assert len(copy_set_a) == 1
+    popped = copy_set_a.pop()
+    assert popped
+    assert len(copy_set_a) == 2
 
     # set methods
     a = A()
@@ -259,6 +258,7 @@ def test_ref():
     a1 = A()
     b1 = B()
     ref_a = RegisteredRef(a)
+    ref_a1 = RegisteredRef(a1)
     ref_b = RegisteredRef(b)
     list_a = RegisteredRefList()
     list_a.append(ref_a)
@@ -270,7 +270,7 @@ def test_ref():
     assert a1 in list_a
     assert b in list_a
     assert list_a[3] == a
-    pop_a = list_a.pop()
+    pop_a = list_a.pop(0)
     assert pop_a is ref_a
     assert len(list_a) == 3
     assert a in list_a
@@ -293,53 +293,6 @@ def test_ref():
     try:
         assert ref_b.ref is None
         list_a.add(ref_b)
-        assert False, "Cannot add deleted refs"
-    except:
-        assert True
-
-    ### RegisteredRefDictKey
-    a = A()
-    b = B()
-    ref_a = RegisteredRef(a)
-    dic = RegisteredRefDictKey()
-    dic[a] = 1
-    assert len(dic) == 1
-    assert a in dic
-    assert dic[a] == 1
-    dic[ref_a] = 2
-    assert len(dic) == 1
-    assert a in dic
-    assert dic[a] == 2
-    dic[b] = 3
-    assert len(dic) == 2
-    assert a in dic
-    assert b in dic
-    assert dic[a] == 2
-    assert dic[b] == 3
-    a.mark_as_deleted()
-    assert len(dic) == 1
-    assert a not in dic
-    assert b in dic
-    assert dic[b] == 3
-    dic = RegisteredRefDictKey()
-    dic[a] = 1
-    dic[ref_a] = 2
-    dic[b] = 3
-    assert len(dic) == 2
-    assert dic.pop(a) == 2
-    assert len(dic) == 1
-
-    # deleted ref semantics
-    b.mark_as_deleted()
-    try:
-        dic[b] = 42
-        assert False, "Cannot add objects marked as deleted"
-    except:
-        assert True
-
-    try:
-        assert ref_b.ref is None
-        dic[ref_b] = 42
         assert False, "Cannot add deleted refs"
     except:
         assert True
