@@ -80,7 +80,7 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
     from .pythonArchBuilder import PythonArchBuilder
     if parent_symbol and parent_symbol.type == SymType.COMPILED:
         #in case of compiled file, import symbols to resolve imports
-        variable = Symbol(asname if asname else name, SymType.VARIABLE, file_symbol.paths[0])
+        variable = Symbol(asname if asname else name, SymType.COMPILED, file_symbol.paths[0])
         variable.startLine = lineno
         variable.endLine = end_lineno
         variable.eval = None
