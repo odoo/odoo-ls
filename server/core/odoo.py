@@ -129,7 +129,6 @@ class Odoo():
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.build_database(ls, config)
-                    Odoo.instance.initialized = True
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 ls.show_message_log(traceback.format_exc())
