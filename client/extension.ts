@@ -30,6 +30,7 @@ import {
     ThemeIcon,
     workspace,
     window,
+    QuickPickItemKind,
 } from "vscode";
 import {
     LanguageClient,
@@ -138,6 +139,11 @@ async function addNewConfiguration(context: ExtensionContext) {
     ConfigurationWebView.render(context, configId);
 }
 
+function changeSelectedConfig(context: ExtensionContext, configId: Number) {
+    context.workspaceState.update("Odoo.selectedConfiguration", configId);
+    selectedConfigurationChange.fire(null);
+}
+
 export function activate(context: ExtensionContext): void {
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
@@ -145,15 +151,18 @@ export function activate(context: ExtensionContext): void {
     } else {
         // Production - Client is going to run the server (for use within `.vsix` package)
         const cwd = path.join(__dirname, "..", "..");
-        const pythonPath = workspace
-            .getConfiguration("python")
-            .get<string>("interpreterPath");
+        const pythonPath = workspace.getConfiguration("python").get<string>("interpreterPath", "python3");
 
         if (!pythonPath) {
             throw new Error("`python.interpreterPath` is not set");
         }
 
         client = startLangServer(pythonPath, ["-m", "server"], cwd);
+    }
+
+
+    if (getCurrentConfig(context)) {
+        client.start();
     }
 
 	// new ConfigurationsExplorer(context);
@@ -183,10 +192,13 @@ export function activate(context: ExtensionContext): void {
             const currentConfig = getCurrentConfig(context);
             let currentConfigItem: QuickPickItem;
             const configMap = new Map();
-            const separator = {kind: -1};
-            const addConfigItem  = {
+            const separator = {kind: QuickPickItemKind.Separator};
+            const addConfigItem = {
                 label: "$(add) Add new configuration"
             };
+            const noneItem = {
+                label: "None"
+            }
             const gearIcon = new ThemeIcon("gear");
         
             for (const configId in configs) {
@@ -195,19 +207,19 @@ export function activate(context: ExtensionContext): void {
                 configMap.set({"label": configs[configId]["name"], "buttons": [{iconPath: gearIcon}]}, configId)
             }
             
-            let picks = Array.from(configMap.keys());
+            let picks = [noneItem, ...Array.from(configMap.keys())];
             if (picks.length)
                 picks.push(separator);
 
             if (currentConfig) {
                 currentConfigItem = {"label": currentConfig["name"], "description": "(current)", "buttons": [{iconPath: gearIcon}]};
-                picks.splice(currentConfig["id"], 0, currentConfigItem);
+                picks.splice(currentConfig["id"] + 1, 0, currentConfigItem);
             }
             
             picks.push(addConfigItem);
             qpick.title = "Select a configuration";
             qpick.items = picks;
-            qpick.activeItems = currentConfig ? [picks[currentConfig["id"]]] : [];
+            qpick.activeItems = currentConfig ? [picks[currentConfig["id"] + 1]] : [picks[0]];
 
             qpick.onDidChangeSelection(selection => {
                 selectedConfiguration = selection[0];
@@ -224,9 +236,11 @@ export function activate(context: ExtensionContext): void {
                 if (selectedConfiguration == addConfigItem) {
                     await addNewConfiguration(context);
                 }
+                else if (selectedConfiguration == noneItem) {
+                    changeSelectedConfig(context, -1);
+                }
                 else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
-                    context.workspaceState.update("Odoo.selectedConfiguration", configMap.get(selectedConfiguration));
-                    selectedConfigurationChange.fire(null);
+                    changeSelectedConfig(context, configMap.get(selectedConfiguration));
                 }
                 qpick.hide();
             });
@@ -257,8 +271,21 @@ export function activate(context: ExtensionContext): void {
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
         selectedConfigurationChange.event(() => {
+            if (getCurrentConfig(context)) {
+                if (!client.isRunning()) {
+                    client.start().then(() => {
+                        client.sendNotification(
+                            "Odoo/clientReady",
+                        );
+                    });
+                } else {
+                    client.sendNotification("Odoo/configurationChanged");
+                }
+            } else if (client.isRunning()) {
+                client.stop();
+                isLoading = false;
+            }
             setStatusConfig(context, odooStatusBar);
-            client.sendNotification("Odoo/configurationChanged");
         })
     );
     
@@ -283,27 +310,29 @@ export function activate(context: ExtensionContext): void {
         odooStatusBar.text = `Odoo (${config["name"]})`;
     }
 
-    client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
-        switch (state) {
-            case "start":
-                isLoading = true;
-                break;
-            case "stop":
-                isLoading = false;
-                break;
-        }
-        setStatusConfig(context, odooStatusBar);
-    });
-
-    client.sendNotification(
-        "Odoo/clientReady",
-        {"config": getCurrentConfig(context)}
+    context.subscriptions.push(
+        client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
+            switch (state) {
+                case "start":
+                    isLoading = true;
+                    break;
+                case "stop":
+                    isLoading = false;
+                    break;
+            }
+            setStatusConfig(context, odooStatusBar);
+        })
     );
 
     context.subscriptions.push(client.onRequest("Odoo/getConfiguration", (params) => {
         return getCurrentConfig(context);
     }));
-    client.start();
+
+    if (getCurrentConfig(context)) {
+        client.sendNotification(
+            "Odoo/clientReady",
+        );
+    }
 }
 
 export function deactivate(): Thenable<void> | undefined {
