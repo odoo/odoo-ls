@@ -14,7 +14,7 @@ from server.core.model import *
 from server.pythonUtils import *
 from server.references import *
 from server.core.importResolver import *
-from lsprotocol.types import (Diagnostic,Position, Range)
+from lsprotocol.types import (Diagnostic,DiagnosticSeverity,Position, Range)
 
 
 class PythonArchEval(ast.NodeVisitor):
@@ -131,6 +131,20 @@ class PythonArchEval(ast.NodeVisitor):
             pass
         return ""
 
+    def _create_diagnostic_base_not_found(self, node, full_name):
+        self.diagnostics.append(
+            Diagnostic(
+                range = Range(
+                    start=Position(line=node.lineno-1, character=node.col_offset),
+                    end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                        Position(line=node.lineno-1, character=node.end_col_offset)
+                ),
+                message = "Base class " + full_name + " not found",
+                source = EXTENSION_NAME,
+                severity= 1,
+            )
+        )
+
     def load_base_class(self, symbol, node):
         for base in node.bases:
             full_base = PythonArchEval._extract_base_name(base)
@@ -147,10 +161,28 @@ class PythonArchEval(ast.NodeVisitor):
                         found = False
                         break
                     iter_element, _ = iter_element.follow_ref()
-                if not found:
-                    continue #TODO generate error? add to unresolved
+                if not iter_element:
+                    found = False
+                if not found or \
+                    (iter_element.type != SymType.COMPILED and \
+                     not iter_element.is_external() and \
+                    (iter_element.type != SymType.CLASS and not iter_element.eval)):
+                    self._create_diagnostic_base_not_found(node, full_base)
+                    continue
                 if iter_element.type != SymType.CLASS:
-                    continue #TODO generate error?
+                    self.diagnostics.append(
+                        Diagnostic(
+                            range = Range(
+                                start=Position(line=node.lineno-1, character=node.col_offset),
+                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                    Position(line=node.lineno-1, character=node.end_col_offset)
+                            ),
+                            message = "Base class " + full_base + " is not a class",
+                            source = EXTENSION_NAME,
+                            severity= 1,
+                        )
+                    )
+                    continue
                 symbol.add_dependency(iter_element, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
                 symbol.bases.add(iter_element)
 
