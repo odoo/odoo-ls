@@ -195,34 +195,34 @@ class Odoo():
         return False
 
     def _pop_from_list(self, sym_set):
-            selected_sym = None
-            selected_count = 1000000
-            for sym in sym_set:
-                current_count = 0
-                for dep_level, sym_dep_set in sym.dependencies[BuildSteps.ARCH].items():
-                    if dep_level == BuildSteps.ARCH:
-                        for dep in sym_dep_set:
-                            if dep in self.rebuild_arch:
-                                current_count += 1
-                    elif dep_level == BuildSteps.ARCH_EVAL:
-                        for dep in sym_dep_set:
-                            if dep in self.rebuild_arch_eval:
-                                current_count += 1
-                    elif dep_level == BuildSteps.ODOO:
-                        for dep in sym_dep_set:
-                            if dep in self.rebuild_odoo:
-                                current_count += 1
-                    elif dep_level == BuildSteps.VALIDATION:
-                        for dep in sym_dep_set:
-                            if dep in self.rebuild_validation:
-                                current_count += 1
-                if current_count < selected_count:
-                    selected_sym = sym
-                    selected_count = current_count
-                if selected_count == 0:
-                    break
-            sym_set.remove(selected_sym)
-            return selected_sym
+        selected_sym = None
+        selected_count = 1000000
+        for sym in sym_set:
+            current_count = 0
+            for dep_level, sym_dep_set in sym.dependencies[BuildSteps.ARCH].items():
+                if dep_level == BuildSteps.ARCH:
+                    for dep in sym_dep_set:
+                        if dep in self.rebuild_arch:
+                            current_count += 1
+                elif dep_level == BuildSteps.ARCH_EVAL:
+                    for dep in sym_dep_set:
+                        if dep in self.rebuild_arch_eval:
+                            current_count += 1
+                elif dep_level == BuildSteps.ODOO:
+                    for dep in sym_dep_set:
+                        if dep in self.rebuild_odoo:
+                            current_count += 1
+                elif dep_level == BuildSteps.VALIDATION:
+                    for dep in sym_dep_set:
+                        if dep in self.rebuild_validation:
+                            current_count += 1
+            if current_count < selected_count:
+                selected_sym = sym
+                selected_count = current_count
+            if selected_count == 0:
+                break
+        sym_set.remove(selected_sym)
+        return selected_sym
 
     def _pop_next_symbol(self, level):
         #pop the next symbol ready to be rebuilt, depending on its dependencies
