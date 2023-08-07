@@ -152,7 +152,7 @@ class PythonArchEval(ast.NodeVisitor):
                 base_elements = full_base.split(".")
                 iter_element = symbol.parent.inferName(base_elements[0], node.lineno)
                 if not iter_element:
-                    self._create_diagnostic_base_not_found(node, full_base)
+                    self._create_diagnostic_base_not_found(base, full_base)
                     continue
                 iter_element, _ = iter_element.follow_ref()
                 found = True
@@ -174,9 +174,9 @@ class PythonArchEval(ast.NodeVisitor):
                     self.diagnostics.append(
                         Diagnostic(
                             range = Range(
-                                start=Position(line=node.lineno-1, character=node.col_offset),
-                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                    Position(line=node.lineno-1, character=node.end_col_offset)
+                                start=Position(line=base.lineno-1, character=base.col_offset),
+                                end=Position(line=base.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                    Position(line=base.lineno-1, character=base.end_col_offset)
                             ),
                             message = "Base class " + full_base + " is not a class",
                             source = EXTENSION_NAME,
