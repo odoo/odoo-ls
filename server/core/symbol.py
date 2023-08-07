@@ -302,7 +302,7 @@ class Symbol(RegisterableObject):
             curr_symbol = curr_symbol.parent
         return tree
 
-    def get_symbol(self, symbol_tree_files, symbol_tree_content = [], excl=None):
+    def get_symbol(self, symbol_tree_files, symbol_tree_content = []):
         """starting from the current symbol, give the symbol corresponding to the right tree branch.
         Example: symbol = symbol.get_symbol(['odoo', 'models'], ['Model'])
         symbol_tree_files are parts that are mandatory "on disk": files, packages, namespaces.
@@ -331,7 +331,7 @@ class Symbol(RegisterableObject):
                     continue
                 return None
             next_sym = current_symbol.symbols.get(symbol_tree_content[0], None)
-            if next_sym and current_symbol != excl:
+            if next_sym:
                 current_symbol = next_sym
                 symbol_tree_content = symbol_tree_content[1:]
             elif current_symbol.type == SymType.COMPILED:
