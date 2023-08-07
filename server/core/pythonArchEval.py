@@ -152,6 +152,7 @@ class PythonArchEval(ast.NodeVisitor):
                 base_elements = full_base.split(".")
                 iter_element = symbol.parent.inferName(base_elements[0], node.lineno)
                 if not iter_element:
+                    self._create_diagnostic_base_not_found(node, full_base)
                     continue
                 iter_element, _ = iter_element.follow_ref()
                 found = True

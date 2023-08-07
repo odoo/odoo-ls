@@ -45,6 +45,7 @@ class Odoo():
 
         # symbols is the list of declared symbols and their related declaration, filtered by name
         self.symbols = RootSymbol("root", SymType.ROOT, [])
+        self.builtins = RootSymbol("builtins", SymType.ROOT, [])
 
         self.rebuild_arch = RegisteredRefSet()
         self.rebuild_arch_eval = RegisteredRefSet()
@@ -128,6 +129,7 @@ class Odoo():
                     Odoo.instance.odooPath = config.odooPath
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
+                    Odoo.instance.load_builtins(ls)
                     Odoo.instance.build_database(ls, config)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
@@ -143,6 +145,14 @@ class Odoo():
 
     def get_symbol(self, fileTree, nameTree = []):
         return self.symbols.get_symbol(fileTree, nameTree)
+
+    def load_builtins(self, ls):
+        from .pythonArchBuilder import PythonArchBuilder
+        builtins_path = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib", "builtins.pyi")
+        parser = PythonArchBuilder(ls, self.builtins, builtins_path)
+        mainSym = parser.load_arch()
+        mainSym.external = True
+        self.process_rebuilds(ls)
 
     def build_database(self, ls, used_config):
         if not self.build_base(ls, used_config):
@@ -228,7 +238,6 @@ class Odoo():
     def process_rebuilds(self, ls):
         from .pythonArchBuilder import PythonArchBuilder
         from .pythonArchEval import PythonArchEval
-        from .pythonOdooBuilder import PythonOdooBuilder
         from server.features.validation.pythonValidator import PythonValidator
         if DEBUG_REBUILD:
             ls.show_message_log("starting rebuild process")
@@ -275,6 +284,7 @@ class Odoo():
                 evaluator.eval_arch()
                 continue
             elif self.rebuild_odoo:
+                from .pythonOdooBuilder import PythonOdooBuilder
                 if DEBUG_REBUILD and eval_rebuilt:
                     ls.show_message_log("Eval rebuilt done for " + "\n".join([str(t) for t in eval_rebuilt]))
                     eval_rebuilt = []

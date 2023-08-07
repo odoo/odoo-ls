@@ -77,7 +77,7 @@ def hover(ls, params: TextDocumentPositionParams):
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
-    with Odoo.get().acquire_read(timeout=2) as acquired:
+    with Odoo.get().acquire_read(timeout=1) as acquired:
         if acquired:
             file_symbol = Odoo.get().get_file_symbol(path)
             if file_symbol and params.text_document.uri[-3:] == ".py":
