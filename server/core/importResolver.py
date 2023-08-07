@@ -27,22 +27,36 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
         if name == '*':
             res[name_index][1] = from_symbol
             continue
+        found_symbol = False
+        if not alias.asname:
+            #if asname is not defined, we only search for the first part of the name.
+            #In all "from X import A case", it simply means search for A
+            #But in "import A.B.C", it means search for A only.
+            #If user typed import A.B.C as D, we will search for A.B.C to link it to symbol D,
+            #but if user typed import A.B.C, we will only search for A and create A, as any use by after will require to type A.B.C
+            name_symbol = _get_or_create_symbol(ls, from_symbol, [name.split(".")[0]], source_file_symbol, None, lineno, end_lineno)
+            if not name_symbol: #If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
+                if "." not in name: #if the first element is also the last one, check in local symbols
+                    name_symbol = from_symbol.get_symbol([], [name.split(".")[0]]) #find the last part of the name
+                if not name_symbol:
+                    continue
+            res[name_index][1] = name_symbol
+            found_symbol = True
+            #do not stop here, we still want to import the full name, even if we only store the first now
         #get the full file_tree, including the first part of the name import stmt. (os in import os.path)
         next_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
         if not next_symbol:
             continue
         #now we can search for the last symbol, or create it if it doesn't exist
         last_part_name = name.split(".")[-1]
-        name_symbol = next_symbol.get_symbol([last_part_name]) #find the last part of the name
-        if not name_symbol:
-            name_symbol = _resolve_new_symbol(ls, source_file_symbol, next_symbol, last_part_name, None,
-                                            lineno, end_lineno)
-        if not name_symbol:
+        name_symbol = _get_or_create_symbol(ls, next_symbol, [last_part_name], source_file_symbol, None, lineno, end_lineno)
+        if not name_symbol: #If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
             name_symbol = next_symbol.get_symbol([], [last_part_name]) #find the last part of the name
             if not name_symbol:
                 continue
-        #we found it ! store the result
-        res[name_index][1] = name_symbol
+        #we found it ! store the result if not already done
+        if not found_symbol:
+            res[name_index][1] = name_symbol
     return res
 
 def _resolve_packages(file_symbol, level, from_stmt):
