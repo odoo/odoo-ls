@@ -464,15 +464,15 @@ class Symbol(RegisterableObject):
         selected = False
         if name == "__doc__":
             return self.doc
-        if name == "self":
-            return self.get_in_parents([SymType.CLASS])
-        if name == "super":
-            return SuperSymbol(self)
         for symbol in self.all_symbols(line=line):
             if symbol.name == name and (not selected or symbol.startLine > selected.startLine):
                 selected = symbol
         if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:
             return self.parent.inferName(name, line)
+        if not selected and (self.name != "builtins" or self.type != SymType.FILE):
+            #search in builtins
+            from .odoo import Odoo
+            return Odoo.get().builtins.get_symbol(["builtins"]).inferName(name, -1)
         return selected
 
     def isModel(self):
