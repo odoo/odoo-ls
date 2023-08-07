@@ -168,7 +168,7 @@ class PythonArchEval(ast.NodeVisitor):
                     (iter_element.type != SymType.COMPILED and \
                      not iter_element.is_external() and \
                     (iter_element.type != SymType.CLASS and not iter_element.eval)):
-                    self._create_diagnostic_base_not_found(node, full_base)
+                    self._create_diagnostic_base_not_found(base, full_base)
                     continue
                 if iter_element.type != SymType.CLASS:
                     self.diagnostics.append(
