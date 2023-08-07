@@ -155,7 +155,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                             fileSymbol.add_dependency(eval_sym, BuildSteps.ARCH, BuildSteps.ARCH)
                         self.symStack[-1].add_symbol(variable)
             else:
-                variable = Symbol(import_name.asname if import_name.asname else import_name.name, SymType.VARIABLE, self.symStack[1].paths[0])
+                variable = Symbol(import_name.asname if import_name.asname else import_name.name.split(".")[0], SymType.VARIABLE, self.symStack[1].paths[0])
                 variable.startLine = lineno
                 variable.endLine = end_lineno
                 import_name.symbol = RegisteredRef(variable)
