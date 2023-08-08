@@ -104,7 +104,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         #at the end, add all symbols from __all__ statement that couldn't be loaded (because of dynamical import)
         #Mainly for external packages
         for symbol in self.__all__symbols_to_add:
-            if symbol not in self.symStack[-1].symbols:
+            if symbol.name not in self.symStack[-1].symbols.keys():
                 self.symStack[-1].add_symbol(symbol)
 
     def load_symbols_from_ast(self, ast):
