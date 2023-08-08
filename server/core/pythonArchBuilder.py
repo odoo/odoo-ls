@@ -114,14 +114,12 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.visit(ast)
 
     def visit_Import(self, node):
-        if len(self.symStack) == 2: #only at top level. any import in function should be done at validation
-            self.create_local_symbols_from_import_stmt(None,
-                        node.names, 0, node)
+        self.create_local_symbols_from_import_stmt(None,
+                    node.names, 0, node)
 
     def visit_ImportFrom(self, node):
-        if len(self.symStack) == 2: #only at top level. any import in function should be done at validation
-            self.create_local_symbols_from_import_stmt(node.module,
-                    node.names, node.level, node)
+        self.create_local_symbols_from_import_stmt(node.module,
+                node.names, node.level, node)
 
     def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
         lineno = node.lineno
@@ -129,6 +127,8 @@ class PythonArchBuilder(ast.NodeVisitor):
 
         for import_name in name_aliases:
             if import_name.name == '*':
+                if len(self.symStack) != 2: # only at top level. we can't follow the import at arch level
+                    continue
                 symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
                 _, symbol, _ = symbols[0] #unpack
                 if not symbol:
