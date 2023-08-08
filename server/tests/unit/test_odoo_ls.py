@@ -19,6 +19,7 @@ from server.core.odoo import Odoo
 from server.core.symbol import Symbol, ClassSymbol
 from server.constants import *
 from server.references import RegisteredRef
+from server.pythonUtils import PythonUtils
 
 """
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -29,7 +30,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 """
 
 Odoo.import_odoo_addons = False
-Odoo.get(server)
+Odoo.initialize(server)
 
 def search_in_local(symbol, name):
     found_in_local = False
@@ -295,7 +296,7 @@ def test_rename():
             file = FileRename(old_uri, new_uri)
             params = RenameFilesParams([file])
             mock = Mock()
-            normal_isfile = os.path.isfile
+            normal_isfile = PythonUtils.is_file_cs
             def _validated_variables_file(*args, **kwargs):
                 if "constants.py" in args[0]:
                     return False
@@ -311,7 +312,7 @@ def test_rename():
                 else:
                     return normal_isfile(*args, **kwargs)
             mock.side_effect = _validated_variables_file
-            os.path.isfile = mock # ensure that new file name is detected as valid
+            PythonUtils.is_file_cs = mock # ensure that new file name is detected as valid
             did_rename_files(server, params)
             #A check that symbols are not imported anymore from old file
             constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
@@ -368,14 +369,14 @@ CONSTANT_2 = 22"""
             assert constants_data_file == None
 
             # C let's go back to old name, then rename again to variables, to see if everything resolve correctly
-            os.path.isfile = Mock(return_value=False) #prevent disk access to old file
+            PythonUtils.is_file_cs = Mock(return_value=False) #prevent disk access to old file
             old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
             file = FileRename(old_uri, new_uri)
             params = RenameFilesParams([file])
             mock.side_effect = _validated_constants_file
             did_rename_files(server, params)
-            os.path.isfile = Mock(return_value=True) #prevent disk access to old file
+            PythonUtils.is_file_cs = Mock(return_value=True) #prevent disk access to old file
             old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
             file = FileRename(old_uri, new_uri)
@@ -402,7 +403,7 @@ CONSTANT_2 = 22"""
             constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
             assert constants_data_file == None
 
-            os.path.isfile = normal_isfile
+            PythonUtils.is_file_cs = normal_isfile
             server.workspace.get_document.reset_mock()
 
 def test_rename_inherit():
