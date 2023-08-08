@@ -81,6 +81,15 @@ class PythonArchEval(ast.NodeVisitor):
             variable = node_alias.symbol
             if variable and symbol:
                 ref = symbol.follow_ref()[0]
+                old_ref = None
+                while ref.eval == None and ref != old_ref:
+                    old_ref = ref
+                    file = ref.get_in_parents([SymType.FILE, SymType.PACKAGE])
+                    if file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval:
+                        evaluator = PythonArchEval(self.ls, file)
+                        evaluator.eval_arch()
+                        Odoo.get().rebuild_arch_eval.remove(file)
+                    ref = ref.follow_ref()[0]
                 if ref != variable: #loop detected
                     variable.ref.eval = Evaluation().eval_import(symbol)
                     variable.ref.add_dependency(symbol, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
