@@ -1,6 +1,7 @@
 import glob
 import os
 from pathlib import Path
+from server.pythonUtils import PythonUtils
 from ..constants import *
 from .odoo import Odoo
 from .symbol import Symbol
@@ -104,7 +105,7 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
         if path == Odoo.get().stubs_dir:
             #stubs file un typeshed are in a second directory in the same path
             full_path = os.path.join(full_path, name)
-        if os.path.isdir(full_path):
+        if PythonUtils.is_dir_cs(full_path):
             if parent_symbol.get_tree()[0] == ["odoo", "addons"]:
                 module = parent_symbol.get_module_sym()
                 if not module:
@@ -113,10 +114,10 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, en
                     return
             parser = PythonArchBuilder(ls, parent_symbol, full_path)
             return parser.load_arch()
-        elif os.path.isfile(full_path + ".py"):
+        elif PythonUtils.is_file_cs(full_path + ".py"):
             parser = PythonArchBuilder(ls, parent_symbol, full_path + ".py")
             return parser.load_arch()
-        elif os.path.isfile(full_path + ".pyi"):
+        elif PythonUtils.is_file_cs(full_path + ".pyi"):
             parser = PythonArchBuilder(ls, parent_symbol, full_path + ".pyi")
             return parser.load_arch()
         elif parent_symbol.get_tree()[0] != []: #don't try to glob on root and direct subpackages

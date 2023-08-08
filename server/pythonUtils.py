@@ -2,9 +2,45 @@ from .constants import *
 from .core.odoo import Odoo
 from .core.symbol import *
 from .core.model import *
+from pathlib import Path
 import ast
 
 class PythonUtils():
+
+    @staticmethod
+    def exists_cs(p: Path) -> bool:
+        """Check if path exists, enforce case sensitivity.
+
+        Arguments:
+        p: Path to check
+        Returns:
+        Boolean indicating if the path exists or not
+        """
+        if not p.exists():
+            return False
+
+        while True:
+            # At root, p == p.parent --> break loop and return True
+            if p == p.parent:
+                return True
+            # If string representation of path is not in parent directory, return False
+            if str(p) not in map(str, p.parent.iterdir()):
+                return False
+            p = p.parent
+
+    @staticmethod
+    def is_file_cs(path:str):
+        p = Path(path)
+        if not p.is_file():
+            return False
+        return PythonUtils.exists_cs(p)
+
+    @staticmethod
+    def is_dir_cs(path:str):
+        p = Path(path)
+        if not p.is_dir():
+            return False
+        return PythonUtils.exists_cs(p)
 
     # @staticmethod
     # def inferTypeParso(expr):
