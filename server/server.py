@@ -122,7 +122,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
     #TODO find better than this small hack for windows (get disk letter in capital)
     if os.name == "nt":
         final_path = final_path[0].capitalize() + final_path[1:]
-    Odoo.get().post_lock_jobs.append((Odoo.get().file_change, (ls, final_path, source, params.text_document.version)))
+    threading.Thread(target=Odoo.get().file_change, args=(ls, final_path, source, params.text_document.version)).start()
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):
@@ -149,7 +149,7 @@ def did_rename_files(ls, params):
         if os.name == "nt":
             old_path = old_path[0].capitalize() + old_path[1:]
             new_path = new_path[0].capitalize() + new_path[1:]
-        Odoo.get().post_lock_jobs.append((Odoo.get().file_rename, (ls, old_path, new_path)))
+        threading.Thread(target=Odoo.get().file_rename, args=(ls, old_path, new_path)).start()
 
 @odoo_server.feature(WORKSPACE_DID_DELETE_FILES)
 def did_delete_files(ls, params):
@@ -181,11 +181,11 @@ def client_config_changed(ls: OdooLanguageServer, params=None):
     Odoo.get().reset(ls)
     FileMgr.files = {}
     ls.show_message_log("Building new database", MessageType.Log)
-    threading.Thread(target=Odoo.initialize, args=(ls,), daemon=True).start()
+    threading.Thread(target=Odoo.initialize, args=(ls,)).start()
 
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
-    threading.Thread(target=Odoo.initialize, args=(ls,), daemon=True).start()
+    threading.Thread(target=Odoo.initialize, args=(ls,)).start()
 
 @odoo_server.feature(WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS)
 def workspace_change_folders(ls, params: DidChangeWorkspaceFoldersParams):

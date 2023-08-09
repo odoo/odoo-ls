@@ -266,23 +266,25 @@ CONSTANT_3 = 3"""
         content_changes = []
     )
     _did_change_after_delay(server, params, 0) #call deferred func
-    base_test_models = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
-    assert "CONSTANT_1" in base_test_models.symbols
-    assert "CONSTANT_2" in base_test_models.symbols, "even if CONSTANT_2 is not in file anymore, the symbol should still exist"
-    assert not "CONSTANT_3" in base_test_models.symbols
-    constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-    assert "CONSTANT_1" in constants_dir.symbols
-    assert "CONSTANT_2" in constants_dir.symbols
-    assert not "CONSTANT_3" in constants_dir.symbols
-    constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-    assert "CONSTANT_1" in constants_data_dir.symbols
-    assert "CONSTANT_2" in constants_data_dir.symbols
-    assert not search_in_local(constants_data_dir, "CONSTANT_2")
-    assert not "CONSTANT_3" in constants_data_dir.symbols
-    constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-    assert "CONSTANT_1" in constants_data_file.symbols
-    assert not "CONSTANT_2" in constants_data_file.symbols
-    assert "CONSTANT_3" in constants_data_file.symbols
+    time.sleep(2) #TODO find a better than using time.sleep to wait for job to start
+    with Odoo.get().acquire_read(): # wait for job to finish
+        base_test_models = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])
+        assert "CONSTANT_1" in base_test_models.symbols
+        assert "CONSTANT_2" in base_test_models.symbols, "even if CONSTANT_2 is not in file anymore, the symbol should still exist"
+        assert not "CONSTANT_3" in base_test_models.symbols
+        constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+        assert "CONSTANT_1" in constants_dir.symbols
+        assert "CONSTANT_2" in constants_dir.symbols
+        assert not "CONSTANT_3" in constants_dir.symbols
+        constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+        assert "CONSTANT_1" in constants_data_dir.symbols
+        assert "CONSTANT_2" in constants_data_dir.symbols
+        assert not search_in_local(constants_data_dir, "CONSTANT_2")
+        assert not "CONSTANT_3" in constants_data_dir.symbols
+        constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+        assert "CONSTANT_1" in constants_data_file.symbols
+        assert not "CONSTANT_2" in constants_data_file.symbols
+        assert "CONSTANT_3" in constants_data_file.symbols
 
 @pytest.mark.dependency(depends=["test_imports_dynamic"])
 def test_rename():
@@ -314,21 +316,23 @@ def test_rename():
             mock.side_effect = _validated_variables_file
             PythonUtils.is_file_cs = mock # ensure that new file name is detected as valid
             did_rename_files(server, params)
-            #A check that symbols are not imported anymore from old file
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-            assert "CONSTANT_1" not in constants_dir.symbols
-            assert "CONSTANT_2" in constants_dir.symbols
-            assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-            assert "CONSTANT_1" not in constants_data_dir.symbols
-            assert "CONSTANT_2" in constants_data_dir.symbols
-            assert "CONSTANT_3" not in constants_data_dir.symbols
-            assert not search_in_local(constants_data_dir, "CONSTANT_2")
-            assert "variables" not in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-            assert constants_data_file == None
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-            assert constants_data_file == None #As the file is not imported by any file, it should not be available
+            time.sleep(2) #TODO find a better than using time.sleep to wait for job to start
+            with Odoo.get().acquire_read(): # wait for job to finish
+                #A check that symbols are not imported anymore from old file
+                constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+                assert "CONSTANT_1" not in constants_dir.symbols
+                assert "CONSTANT_2" in constants_dir.symbols
+                assert "CONSTANT_3" not in constants_dir.symbols
+                constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+                assert "CONSTANT_1" not in constants_data_dir.symbols
+                assert "CONSTANT_2" in constants_data_dir.symbols
+                assert "CONSTANT_3" not in constants_data_dir.symbols
+                assert not search_in_local(constants_data_dir, "CONSTANT_2")
+                assert "variables" not in constants_data_dir.moduleSymbols
+                constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+                assert constants_data_file == None
+                constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+                assert constants_data_file == None #As the file is not imported by any file, it should not be available
 
             #B now change data/__init__.py to include the new file, and check that imports are resolved
             file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
@@ -348,25 +352,26 @@ CONSTANT_2 = 22"""
                 content_changes = []
             )
             _did_change_after_delay(server, params, 0)
-
-            var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-            assert var_data_file
-            assert "CONSTANT_1" in var_data_file.symbols
-            assert "CONSTANT_2" in var_data_file.symbols
-            assert "CONSTANT_3" in var_data_file.symbols
-            assert "__all__" in var_data_file.symbols
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-            assert "CONSTANT_1" in constants_dir.symbols
-            assert "CONSTANT_2" in constants_dir.symbols
-            assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-            assert "CONSTANT_1" in constants_data_dir.symbols
-            assert "CONSTANT_2" in constants_data_dir.symbols
-            assert "CONSTANT_3" not in constants_data_dir.symbols
-            assert search_in_local(constants_data_dir, "CONSTANT_2")
-            assert "variables" in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-            assert constants_data_file == None
+            time.sleep(2) #TODO find a better than using time.sleep to wait for job to start
+            with Odoo.get().acquire_read(): # wait for job to finish
+                var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+                assert var_data_file
+                assert "CONSTANT_1" in var_data_file.symbols
+                assert "CONSTANT_2" in var_data_file.symbols
+                assert "CONSTANT_3" in var_data_file.symbols
+                assert "__all__" in var_data_file.symbols
+                constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+                assert "CONSTANT_1" in constants_dir.symbols
+                assert "CONSTANT_2" in constants_dir.symbols
+                assert "CONSTANT_3" not in constants_dir.symbols
+                constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+                assert "CONSTANT_1" in constants_data_dir.symbols
+                assert "CONSTANT_2" in constants_data_dir.symbols
+                assert "CONSTANT_3" not in constants_data_dir.symbols
+                assert search_in_local(constants_data_dir, "CONSTANT_2")
+                assert "variables" in constants_data_dir.moduleSymbols
+                constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+                assert constants_data_file == None
 
             # C let's go back to old name, then rename again to variables, to see if everything resolve correctly
             PythonUtils.is_file_cs = Mock(return_value=False) #prevent disk access to old file
@@ -384,27 +389,29 @@ CONSTANT_2 = 22"""
             mock.side_effect = _validated_variables_file
             did_rename_files(server, params)
 
-            var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-            assert var_data_file
-            assert "CONSTANT_1" in var_data_file.symbols
-            assert "CONSTANT_2" in var_data_file.symbols
-            assert "CONSTANT_3" in var_data_file.symbols
-            assert "__all__" in var_data_file.symbols
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-            assert "CONSTANT_1" in constants_dir.symbols
-            assert "CONSTANT_2" in constants_dir.symbols
-            assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-            assert "CONSTANT_1" in constants_data_dir.symbols
-            assert "CONSTANT_2" in constants_data_dir.symbols
-            assert "CONSTANT_3" not in constants_data_dir.symbols
-            assert search_in_local(constants_data_dir, "CONSTANT_2")
-            assert "variables" in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-            assert constants_data_file == None
+            time.sleep(2) #TODO find a better than using time.sleep to wait for job to start
+            with Odoo.get().acquire_read(): # wait for job to finish
+                var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+                assert var_data_file
+                assert "CONSTANT_1" in var_data_file.symbols
+                assert "CONSTANT_2" in var_data_file.symbols
+                assert "CONSTANT_3" in var_data_file.symbols
+                assert "__all__" in var_data_file.symbols
+                constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+                assert "CONSTANT_1" in constants_dir.symbols
+                assert "CONSTANT_2" in constants_dir.symbols
+                assert "CONSTANT_3" not in constants_dir.symbols
+                constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+                assert "CONSTANT_1" in constants_data_dir.symbols
+                assert "CONSTANT_2" in constants_data_dir.symbols
+                assert "CONSTANT_3" not in constants_data_dir.symbols
+                assert search_in_local(constants_data_dir, "CONSTANT_2")
+                assert "variables" in constants_data_dir.moduleSymbols
+                constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+                assert constants_data_file == None
 
-            PythonUtils.is_file_cs = normal_isfile
-            server.workspace.get_document.reset_mock()
+                PythonUtils.is_file_cs = normal_isfile
+                server.workspace.get_document.reset_mock()
 
 def test_rename_inherit():
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
@@ -430,10 +437,12 @@ def test_rename_inherit():
         content_changes = []
     )
     _did_change_after_delay(server, params, 0) #call deferred func
-    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
-    assert model
-    assert isinstance(model, ClassSymbol)
-    assert not model.bases
+    time.sleep(5) #TODO find a better than using time.sleep to wait for job to start
+    with Odoo.get().acquire_read(): # wait for job to finish
+        model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+        assert model
+        assert isinstance(model, ClassSymbol)
+        assert not model.bases
     source = source.replace("class Model2", "class Model")
 
     server.workspace.get_document = Mock(return_value=Document(
@@ -448,10 +457,12 @@ def test_rename_inherit():
         content_changes = []
     )
     _did_change_after_delay(server, params, 0) #call deferred func
-    model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
-    assert model
-    assert isinstance(model, ClassSymbol)
-    assert model.bases
+    time.sleep(10) #TODO find a better than using time.sleep to wait for job to start
+    with Odoo.get().acquire_read(): # wait for job to finish
+        model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
+        assert model
+        assert isinstance(model, ClassSymbol)
+        assert model.bases
     server.workspace.get_document.reset_mock()
 
 def test_missing_symbol_resolve():
