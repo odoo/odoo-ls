@@ -6,4 +6,5 @@ client/server
 env
 *.pyc
 *.log
+*.vsix
 package-lock.json
