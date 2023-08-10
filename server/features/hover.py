@@ -64,7 +64,7 @@ class HoverFeature:
             path = FileMgr.pathname2uri(type_ref[0].paths[0])
             if type_ref[0].type == SymType.PACKAGE:
                 path = os.path.join(path, "__init__.py")
-            value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].startLine) + ")" + "  \n"
+            value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].start_pos[0]) + ")" + "  \n"
             #SEPARATOR
             value += "  \n***  \n"
         #BLOCK 3: doc
