@@ -93,6 +93,9 @@ class Odoo():
 
     @contextmanager
     def upgrade_to_write(self):
+        if threading.local().lock_type == "write":
+            yield
+            return
         if threading.local().lock_type != "read":
             raise Exception("Can't upgrade to write from a non read lock")
         self.thread_access_condition.release()
@@ -100,6 +103,7 @@ class Odoo():
             yield
         with self.write_lock:
             self.thread_access_condition.acquire()
+            threading.local().lock_type = "read"
 
     @staticmethod
     def get():

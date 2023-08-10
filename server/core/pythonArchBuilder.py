@@ -143,7 +143,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 fileSymbol = self.symStack[1]
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
-                        variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
+                        variable = ImportSymbol(s.name, self.symStack[-1].paths[0])
                         variable.start_pos = (node.lineno, node.col_offset)
                         variable.end_pos = (node.end_lineno, node.end_col_offset)
                         variable.eval = Evaluation().eval_import(s)
@@ -152,7 +152,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                             fileSymbol.add_dependency(eval_sym, BuildSteps.ARCH, BuildSteps.ARCH)
                         self.symStack[-1].add_symbol(variable)
             else:
-                variable = Symbol(import_name.asname if import_name.asname else import_name.name.split(".")[0], SymType.VARIABLE, self.symStack[1].paths[0])
+                variable = ImportSymbol(import_name.asname if import_name.asname else import_name.name.split(".")[0], self.symStack[1].paths[0])
                 variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 import_name.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)

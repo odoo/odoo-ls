@@ -511,6 +511,12 @@ class RootSymbol(Symbol):
                         return
 
 
+class ImportSymbol(Symbol):
+
+    def __init__(self, name, paths):
+        super().__init__(name, SymType.VARIABLE, paths)
+
+
 class FunctionSymbol(Symbol):
 
     def __init__(self, name, paths, is_property):

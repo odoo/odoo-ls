@@ -61,7 +61,7 @@ odoo_server = OdooLanguageServer()
 def notification_on_exception(func):
     def wrapper(*args, **kwargs):
         try:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
         except Exception as e:
             odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
             odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
