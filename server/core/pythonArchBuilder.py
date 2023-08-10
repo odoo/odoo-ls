@@ -122,14 +122,11 @@ class PythonArchBuilder(ast.NodeVisitor):
                 node.names, node.level, node)
 
     def create_local_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
-        lineno = node.lineno
-        end_lineno = node.end_lineno
-
         for import_name in name_aliases:
             if import_name.name == '*':
                 if len(self.symStack) != 2: # only at top level. we can't follow the import at arch level
                     continue
-                symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, lineno, end_lineno)
+                symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
                 _, symbol, _ = symbols[0] #unpack
                 if not symbol:
                     continue
@@ -147,8 +144,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
                         variable = Symbol(s.name, SymType.VARIABLE, self.symStack[-1].paths[0])
-                        variable.startLine = lineno
-                        variable.endLine = end_lineno
+                        variable.start_pos = (node.lineno, node.col_offset)
+                        variable.end_pos = (node.end_lineno, node.end_col_offset)
                         variable.eval = Evaluation().eval_import(s)
                         eval_sym = variable.eval.get_symbol()
                         if eval_sym:
@@ -156,8 +153,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         self.symStack[-1].add_symbol(variable)
             else:
                 variable = Symbol(import_name.asname if import_name.asname else import_name.name.split(".")[0], SymType.VARIABLE, self.symStack[1].paths[0])
-                variable.startLine = lineno
-                variable.endLine = end_lineno
+                variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 import_name.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
 
@@ -166,8 +162,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
-                variable.startLine = node.lineno
-                variable.endLine = node.end_lineno
+                variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 if value:
                     variable.value = value
                 variable_name.symbol = RegisteredRef(variable)
@@ -178,8 +173,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
-                variable.startLine = node.lineno
-                variable.endLine = node.end_lineno
+                variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 variable.value = value
                 self.symStack[-1].add_symbol(variable)
                 if variable.name == "__all__":
@@ -197,8 +191,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         if evaluation and evaluation.get_symbol() and evaluation.get_symbol().type == SymType.PRIMITIVE:
                             for var_name in evaluation.get_symbol().value:
                                 var = Symbol(var_name, SymType.VARIABLE, self.filePath)
-                                var.startLine = node.lineno
-                                var.endLine = node.end_lineno
+                                var.start_pos, var.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                                 var.eval = None
                                 self.__all__symbols_to_add.append(var)
                 else:
@@ -214,8 +207,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             if isinstance(decorator, ast.Name) and decorator.id == "property":
                 is_property = True
         symbol = FunctionSymbol(node.name, self.filePath, is_property)
-        symbol.startLine = node.lineno
-        symbol.endLine = node.end_lineno
+        symbol.start_pos, symbol.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
         doc = ast.get_docstring(node)
         if doc:
             symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
@@ -225,8 +217,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             if class_sym and class_sym.type == SymType.CLASS and node.args.args:
                 self_name = node.args.args[0].arg
                 self_sym = Symbol(self_name, SymType.VARIABLE, self.filePath)
-                self_sym.startLine = node.lineno
-                self_sym.endLine = node.end_lineno
+                self_sym.start_pos, self_sym.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 self_sym.eval = Evaluation()
                 self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
@@ -240,8 +231,7 @@ class PythonArchBuilder(ast.NodeVisitor):
 
     def visit_ClassDef(self, node):
         symbol = ClassSymbol(node.name, self.filePath)
-        symbol.startLine = node.lineno
-        symbol.endLine = node.end_lineno
+        symbol.start_pos, symbol.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
         node.symbol = RegisteredRef(symbol)
         doc = ast.get_docstring(node)
         if doc:
@@ -257,8 +247,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE, SymType.FUNCTION]:
             if isinstance(node.target, ast.Name): #do not handle tuples for now
                 variable = Symbol(node.target.id, SymType.VARIABLE, self.filePath)
-                variable.startLine = node.lineno
-                variable.endLine = node.end_lineno
+                variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 node.target.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
         ast.NodeVisitor.generic_visit(self, node)

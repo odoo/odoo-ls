@@ -44,7 +44,7 @@ class Symbol(RegisterableObject):
 
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
         "localSymbols",  "dependencies", "dependents", "parent", "isModule",
-        "modelData", "external", "startLine", "endLine", "archStatus", "odooStatus", "validationStatus",
+        "modelData", "external", "start_pos", "end_pos", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc")
 
     def __init__(self, name, type, paths):
@@ -106,8 +106,8 @@ class Symbol(RegisterableObject):
         self.modelData = None
         self.external = False
         self.in_workspace = False
-        self.startLine = 0
-        self.endLine = 0
+        self.start_pos = (0, 0) # (line, column)
+        self.end_pos = (0, 0) # (line, column)
         self.archStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.evalStatus = 0
         self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
@@ -125,13 +125,13 @@ class Symbol(RegisterableObject):
     def all_symbols(self, line=-1, include_inherits=False):
         if line != -1:
             for s in self.localSymbols:
-                if s.startLine < line:
+                if s.start_pos[0] < line:
                     yield s
         if include_inherits:
             for sub_s in self._all_symbols_from_class(line=line):
                 yield sub_s
         for s in self.symbols.values():
-            if line == -1 or s.startLine < line:
+            if line == -1 or s.start_pos[0] < line:
                 yield s
         for s in self.moduleSymbols.values():
             yield s
@@ -164,7 +164,7 @@ class Symbol(RegisterableObject):
         return self.type not in [SymType.NAMESPACE, SymType.PACKAGE, SymType.FILE, SymType.COMPILED]
 
     def get_range(self):
-        return (self.startLine, self.endLine)
+        return (self.start_pos, self.end_pos)
 
     @staticmethod
     def unload(symbol): #can't delete because of self? :o
@@ -262,7 +262,7 @@ class Symbol(RegisterableObject):
                     last = None
                     for localSym in self.localSymbols:
                         if localSym.name == symbol.name:
-                            if not last or last.startLine < localSym.startLine:
+                            if not last or last.start_pos[0] < localSym.start_pos:
                                 last = localSym
                     if last:
                         #if DEBUG_MEMORY:
@@ -410,7 +410,7 @@ class Symbol(RegisterableObject):
         if symbol.name not in sym_dict:
             sym_dict[symbol.name] = symbol
         elif symbol.is_file_content():
-            if symbol.startLine < self.symbols[symbol.name].startLine:
+            if symbol.start_pos[0] < self.symbols[symbol.name].start_pos[0]:
                 self.localSymbols.append(symbol)
             else:
                 self.symbols[symbol.name].invalidate(BuildSteps.ARCH)
@@ -438,10 +438,10 @@ class Symbol(RegisterableObject):
         #TODO search in localSymbols too
         symbol = self
         for s in self.symbols.values():
-            if s.startLine < line and s.endLine >= line and s.type in [SymType.CLASS, SymType.FUNCTION]:
+            if s.start_pos[0] < line and s.end_pos[0] >= line and s.type in [SymType.CLASS, SymType.FUNCTION]:
                 symbol = s.get_scope_symbol(line)
                 break
-            elif s.startLine > line:
+            elif s.start_pos[0] > line:
                 break
         return symbol
 
@@ -453,7 +453,7 @@ class Symbol(RegisterableObject):
         if self.type == SymType.CLASS:
             return self
         for s in self.symbols.values():
-            if s.startLine <= line and s.endLine >= line:
+            if s.start_pos[0] <= line and s.end_pos[0] >= line:
                 symbol = s.get_class_scope_symbol(line)
                 break
         if symbol.type != SymType.CLASS:
@@ -465,7 +465,7 @@ class Symbol(RegisterableObject):
         if name == "__doc__":
             return self.doc
         for symbol in self.all_symbols(line=line):
-            if symbol.name == name and (not selected or symbol.startLine > selected.startLine):
+            if symbol.name == name and (not selected or symbol.start_pos[0] > selected.start_pos[0]):
                 selected = symbol
         if not selected and self.type not in [SymType.FILE, SymType.PACKAGE]:
             return self.parent.inferName(name, line)
@@ -494,7 +494,7 @@ class Symbol(RegisterableObject):
             symbols.append(s)
         for s in self.symbols.values():
             symbols.append(s)
-        return sorted(symbols, key=lambda x: x.startLine)
+        return sorted(symbols, key=lambda x: x.start_pos[0])
 
 class RootSymbol(Symbol):
 

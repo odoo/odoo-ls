@@ -10,14 +10,14 @@ __all__ = ["resolve_import_stmt"]
 
 
 def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_aliases, level,
-                    lineno, end_lineno):
+                    start_pos, end_pos):
     """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist,
     it will be created if possible or None will be returned.
     file_tree contains the the full file_tree to search for each name. Ex: from os import path => os
     from .test import A => tree to current file + test"""
     file_tree = _resolve_packages(source_file_symbol, level, from_stmt)
     res = [[alias, None, file_tree] for alias in name_aliases]
-    from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, source_file_symbol, None, lineno, end_lineno)
+    from_symbol = _get_or_create_symbol(ls, Odoo.get().symbols, file_tree, source_file_symbol, None, start_pos, end_pos)
     if not from_symbol:
         return res
 
@@ -35,7 +35,7 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
             #But in "import A.B.C", it means search for A only.
             #If user typed import A.B.C as D, we will search for A.B.C to link it to symbol D,
             #but if user typed import A.B.C, we will only search for A and create A, as any use by after will require to type A.B.C
-            name_symbol = _get_or_create_symbol(ls, from_symbol, [name.split(".")[0]], source_file_symbol, None, lineno, end_lineno)
+            name_symbol = _get_or_create_symbol(ls, from_symbol, [name.split(".")[0]], source_file_symbol, None, start_pos, end_pos)
             if not name_symbol: #If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
                 if "." not in name: #if the first element is also the last one, check in local symbols
                     name_symbol = from_symbol.get_symbol([], [name.split(".")[0]]) #find the last part of the name
@@ -45,12 +45,12 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
             found_symbol = True
             #do not stop here, we still want to import the full name, even if we only store the first now
         #get the full file_tree, including the first part of the name import stmt. (os in import os.path)
-        next_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, lineno, end_lineno)
+        next_symbol = _get_or_create_symbol(ls, from_symbol, name.split(".")[:-1], source_file_symbol, None, start_pos, end_pos)
         if not next_symbol:
             continue
         #now we can search for the last symbol, or create it if it doesn't exist
         last_part_name = name.split(".")[-1]
-        name_symbol = _get_or_create_symbol(ls, next_symbol, [last_part_name], source_file_symbol, None, lineno, end_lineno)
+        name_symbol = _get_or_create_symbol(ls, next_symbol, [last_part_name], source_file_symbol, None, start_pos, end_pos)
         if not name_symbol: #If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
             name_symbol = next_symbol.get_symbol([], [last_part_name]) #find the last part of the name
             if not name_symbol:
@@ -78,26 +78,26 @@ def _resolve_packages(file_symbol, level, from_stmt):
     file_tree += from_stmt.split(".") if from_stmt != None else []
     return file_tree
 
-def _get_or_create_symbol(ls, symbol, names, file_symbol, asname, lineno, end_lineno):
+def _get_or_create_symbol(ls, symbol, names, file_symbol, asname, start_pos, end_pos):
     """try to return sub symbol that is a file or package, or create the symbol"""
     for branch in names:
         next_symbol = symbol.get_symbol([branch])
         if not next_symbol:
             next_symbol = _resolve_new_symbol(ls, file_symbol, symbol, branch, asname,
-                                                lineno, end_lineno)
+                                                start_pos, end_pos)
         symbol = next_symbol
         if not symbol:
             break
     return symbol
 
-def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, lineno, end_lineno):
+def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, start_pos, end_pos):
     """ Return a new symbol for the name and given parent_Symbol, that is matching what is on disk"""
     from .pythonArchBuilder import PythonArchBuilder
     if parent_symbol and parent_symbol.type == SymType.COMPILED:
         #in case of compiled file, import symbols to resolve imports
         variable = Symbol(asname if asname else name, SymType.COMPILED, file_symbol.paths[0])
-        variable.startLine = lineno
-        variable.endLine = end_lineno
+        variable.start_pos = start_pos
+        variable.end_pos = end_pos
         variable.eval = None
         return variable
     for path in parent_symbol.paths:

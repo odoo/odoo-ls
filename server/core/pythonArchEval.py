@@ -69,11 +69,9 @@ class PythonArchEval(ast.NodeVisitor):
                     node.names, node.level, node)
 
     def eval_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
-        lineno = node.lineno
-        end_lineno = node.end_lineno
         if len(name_aliases) == 1 and name_aliases[0].name == "*":
             return
-        symbols = resolve_import_stmt(self.ls, self.fileSymbol, self.symbol, from_stmt, name_aliases, level, lineno, end_lineno)
+        symbols = resolve_import_stmt(self.ls, self.fileSymbol, self.symbol, from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
 
         for node_alias, symbol, _ in symbols:
             if not hasattr(node_alias, "symbol"): #If no symbol, the import is probably not at the top level of the file. TODO: check it?

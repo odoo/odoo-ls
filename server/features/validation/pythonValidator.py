@@ -88,7 +88,7 @@ class PythonValidator(ast.NodeVisitor):
         self._resolve_import(node.module, node.names, node.level, node)
 
     def _resolve_import(self, from_stmt, name_aliases, level, node):
-        symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, name_aliases, level, node.lineno, node.end_lineno)
+        symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
 
         for node_alias, symbol, file_tree in symbols:
             name = node_alias.name
@@ -278,8 +278,8 @@ class PythonValidator(ast.NodeVisitor):
     def add_magic_fields(self, symbol, node, data):
         def create_symbol(name, type, lineno):
             variable = Symbol(name, SymType.VARIABLE, self.filePath)
-            variable.startLine = lineno
-            variable.endLine = lineno
+            variable.start_pos = (lineno, 0)
+            variable.end_pos =(lineno, 1)
             #TODO adapt
             #variable.eval = Symbol(type, SymType.PRIMITIVE, "")
             symbol.add_symbol(variable)
@@ -298,10 +298,10 @@ class PythonValidator(ast.NodeVisitor):
         for symbol in self.symStack[0].get_ordered_symbols():
             if symbol.type == SymType.CLASS:
                 if symbol.modelData:
-                    node = symbol.ast_node
+                    position = (symbol.start_pos, symbol.end_pos)
                     _inherit_decl = symbol.get_symbol([], ["_inherit"])
                     if _inherit_decl:
-                        node = _inherit_decl.ast_node
+                        position = (_inherit_decl.start_pos, _inherit_decl.end_pos)
                     for inherit in symbol.modelData.inherit:
                         if inherit == "base":
                             continue
@@ -309,9 +309,9 @@ class PythonValidator(ast.NodeVisitor):
                         if not model:
                             self.diagnostics.append(Diagnostic(
                                 range = Range(
-                                    start=Position(line=node.lineno-1, character=node.col_offset),
-                                    end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                        Position(line=node.lineno-1, character=node.end_col_offset)
+                                    start=Position(line=position[0][0]-1, character=position[0][1]),
+                                    end=Position(line=position[0][0]-1, character=1) if sys.version_info < (3, 8) else \
+                                        Position(line=position[0][0]-1, character=position[1][0])
                                 ),
                                 message = inherit + " does not exist",
                                 source = EXTENSION_NAME,
@@ -322,9 +322,9 @@ class PythonValidator(ast.NodeVisitor):
                             if len(inherited_models) > 1:
                                 self.diagnostics.append(Diagnostic(
                                 range = Range(
-                                    start=Position(line=node.lineno-1, character=node.col_offset),
-                                    end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                        Position(line=node.lineno-1, character=node.end_col_offset)
+                                    start=Position(line=position[0][0]-1, character=position[0][1]),
+                                    end=Position(line=position[0][0]-1, character=1) if sys.version_info < (3, 8) else \
+                                        Position(line=position[0][0]-1, character=position[1][0])
                                 ),
                                 message = "This model is ambiguous. Please fix your dependencies or avoid using same model name in different modules",
                                 source = EXTENSION_NAME,
@@ -333,9 +333,9 @@ class PythonValidator(ast.NodeVisitor):
                             elif not inherited_models:
                                 self.diagnostics.append(Diagnostic(
                                     range = Range(
-                                        start=Position(line=node.lineno-1, character=node.col_offset),
-                                        end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                            Position(line=node.lineno-1, character=node.end_col_offset)
+                                        start=Position(line=position[0][0]-1, character=position[0][1]),
+                                        end=Position(line=position[0][0]-1, character=1) if sys.version_info < (3, 8) else \
+                                            Position(line=position[0][0]-1, character=position[1][0])
                                     ),
                                     message = inherit + " does not exist",
                                     source = EXTENSION_NAME,

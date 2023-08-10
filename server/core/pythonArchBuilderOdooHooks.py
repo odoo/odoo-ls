@@ -47,36 +47,36 @@ class PythonArchBuilderOdooHooks:
                 slot_sym = symbol.get_symbol([], ["__slots__"])
                 if not slot_sym:
                     return #TODO should never happen
-                env_var.startLine = slot_sym.startLine
-                env_var.endLine = slot_sym.endLine
+                env_var.start_pos = slot_sym.start_pos
+                env_var.end_pos = slot_sym.end_pos
                 symbol.add_symbol(env_var)
         if symbol.name == "Environment": #fast, basic check
             if symbol.get_tree() == (["odoo", "api"], ["Environment"]): #slower but more precise verification
                 # ---------- env.cr ----------
                 cr_var = Symbol("cr", SymType.VARIABLE, symbol.paths)
                 if symbol:
-                    cr_var.startLine = symbol.startLine
-                    cr_var.endLine = symbol.endLine
+                    cr_var.start_pos = symbol.start_pos
+                    cr_var.end_pos = symbol.end_pos
                 symbol.add_symbol(cr_var)
                 # ---------- env.uid ----------
                 cr_var = Symbol("uid", SymType.VARIABLE, symbol.paths)
                 if symbol:
-                    cr_var.startLine = symbol.startLine
-                    cr_var.endLine = symbol.endLine
+                    cr_var.start_pos = symbol.start_pos
+                    cr_var.end_pos = symbol.end_pos
                 cr_var.doc = "the current user id (for access rights checks)"
                 symbol.add_symbol(cr_var)
                 # ---------- env.context ----------
                 context_var = Symbol("context", SymType.VARIABLE, symbol.paths)
                 if symbol:
-                    context_var.startLine = symbol.startLine
-                    context_var.endLine = symbol.endLine
+                    context_var.start_pos = symbol.start_pos
+                    context_var.end_pos = symbol.end_pos
                 context_var.doc = "the current context dictionary (arbitrary metadata)"
                 symbol.add_symbol(context_var)
                 # ---------- env.su ----------
                 attr_var = Symbol("su", SymType.VARIABLE, symbol.paths)
                 if symbol:
-                    attr_var.startLine = symbol.startLine
-                    attr_var.endLine = symbol.endLine
+                    attr_var.start_pos = symbol.start_pos
+                    attr_var.end_pos = symbol.end_pos
                 attr_var.doc = "whether in superuser mode"
                 symbol.add_symbol(attr_var)
         elif symbol.name in ["Many2one", "Many2many", "One2many"]:
