@@ -362,38 +362,42 @@ class Odoo():
         return []
 
     def file_change(self, ls, path, text, version):
-        from .pythonArchBuilder import PythonArchBuilder
+        try:
+            from .pythonArchBuilder import PythonArchBuilder
 
-        #snapshot1 = tracemalloc.take_snapshot()
-        if path.endswith(".py"):
-            ls.show_message_log("File change event: " + path + " version " + str(version))
-            with Odoo.get().acquire_write(ls):
-                file_info = FileMgr.getFileInfo(path, text, version, opened=True)
-                if not file_info.ast:
-                    file_info.publish_diagnostics(ls)
-                    return #could emit syntax error in file_info["d_synt"]
-                #1 unload
-                if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
-                    path = os.sep.join(path.split(os.sep)[:-1])
-                file_symbol = self.get_file_symbol(path)
-                parent = file_symbol.parent
-                file_symbol.unload(file_symbol)
-                del file_symbol
-                #build new
-                pp = PythonArchBuilder(ls, parent, path)
-                new_symbol = pp.load_arch()
-                new_symbol_tree = new_symbol.get_tree()
-                del new_symbol
-                #rebuild validations
-                if new_symbol_tree:
-                    set_to_validate = self._search_symbols_to_rebuild(new_symbol_tree)
-                    for s in set_to_validate:
-                        self.add_to_arch_rebuild(s)
-                self.process_rebuilds(ls)
-        #snapshot2 = tracemalloc.take_snapshot()
+            #snapshot1 = tracemalloc.take_snapshot()
+            if path.endswith(".py"):
+                ls.show_message_log("File change event: " + path + " version " + str(version))
+                with Odoo.get().acquire_write(ls):
+                    file_info = FileMgr.getFileInfo(path, text, version, opened=True)
+                    if not file_info.ast:
+                        file_info.publish_diagnostics(ls)
+                        return #could emit syntax error in file_info["d_synt"]
+                    #1 unload
+                    if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
+                        path = os.sep.join(path.split(os.sep)[:-1])
+                    file_symbol = self.get_file_symbol(path)
+                    parent = file_symbol.parent
+                    file_symbol.unload(file_symbol)
+                    del file_symbol
+                    #build new
+                    pp = PythonArchBuilder(ls, parent, path)
+                    new_symbol = pp.load_arch()
+                    new_symbol_tree = new_symbol.get_tree()
+                    del new_symbol
+                    #rebuild validations
+                    if new_symbol_tree:
+                        set_to_validate = self._search_symbols_to_rebuild(new_symbol_tree)
+                        for s in set_to_validate:
+                            self.add_to_arch_rebuild(s)
+                    self.process_rebuilds(ls)
+            #snapshot2 = tracemalloc.take_snapshot()
 
-        #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
-        return
+            #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
+            return
+        except Exception:
+            ls.show_message_log(traceback.format_exc(), MessageType.Error)
+            ls.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
     def file_rename(self, ls, old_path, new_path):
         from server.core.pythonArchBuilder import PythonArchBuilder

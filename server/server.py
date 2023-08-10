@@ -55,19 +55,12 @@ class OdooLanguageServer(LanguageServer):
         self.config = None
         super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
 
+    def report_server_error(self, error: Exception, source):
+        odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
+        odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
 odoo_server = OdooLanguageServer()
 
-def notification_on_exception(func):
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
-            odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
-    return wrapper
-
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',', '.', '"', "'"]))
 def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
     """Returns completion items."""
@@ -82,7 +75,6 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
         if acquired:
             return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
 
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
     ls.show_message_log("Hover requested on " + params.text_document.uri + " at " + str(params.position.line) + ":" + str(params.position.character), MessageType.Log)
@@ -106,7 +98,6 @@ def hover(ls, params: TextDocumentPositionParams):
             )
     return None
 
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_DEFINITION)
 def definition(ls, params: TextDocumentPositionParams):
     """Returns the location of a symbol definition"""
@@ -122,23 +113,25 @@ def definition(ls, params: TextDocumentPositionParams):
                 parsoTree = FileMgr.getFileInfo(path, content, opened=True).parso_tree
                 return DefinitionFeature.get_location(file_symbol, parsoTree, params.position.line + 1, params.position.character + 1)
 
-@notification_on_exception
 def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
-    id = 0
-    with odoo_server.id_lock:
-        id = odoo_server.id
-        if id != reg_id:
-            return
-    text_doc = ls.workspace.get_document(params.text_document.uri)
-    source = text_doc.source
-    final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
-    final_path = urllib.request.url2pathname(final_path)
-    #TODO find better than this small hack for windows (get disk letter in capital)
-    if os.name == "nt":
-        final_path = final_path[0].capitalize() + final_path[1:]
-    threading.Thread(target=Odoo.get().file_change, args=(ls, final_path, source, params.text_document.version)).start()
+    try:
+        id = 0
+        with odoo_server.id_lock:
+            id = odoo_server.id
+            if id != reg_id:
+                return
+        text_doc = ls.workspace.get_document(params.text_document.uri)
+        source = text_doc.source
+        final_path = urllib.parse.urlparse(urllib.parse.unquote(params.text_document.uri)).path
+        final_path = urllib.request.url2pathname(final_path)
+        #TODO find better than this small hack for windows (get disk letter in capital)
+        if os.name == "nt":
+            final_path = final_path[0].capitalize() + final_path[1:]
+        threading.Thread(target=Odoo.get().file_change, args=(ls, final_path, source, params.text_document.version)).start()
+    except Exception:
+        odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
+        odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):
     """Text document did change notification."""
@@ -150,7 +143,6 @@ def did_change(ls, params: DidChangeTextDocumentParams):
     #The id ensure we do the rebuild only if this is the last change.
     threading.Timer(1.0, _did_change_after_delay, [ls, params, id]).start()
 
-@notification_on_exception
 @odoo_server.feature(WORKSPACE_DID_RENAME_FILES, FileOperationRegistrationOptions(filters = [
     FileOperationFilter(pattern = FileOperationPattern(glob = "**"))
 ]))
@@ -167,24 +159,20 @@ def did_rename_files(ls, params):
             new_path = new_path[0].capitalize() + new_path[1:]
         threading.Thread(target=Odoo.get().file_rename, args=(ls, old_path, new_path)).start()
 
-@notification_on_exception
 @odoo_server.feature(WORKSPACE_DID_DELETE_FILES)
 def did_delete_files(ls, params):
     print("deleted file")
 
-@notification_on_exception
 @odoo_server.feature(WORKSPACE_DID_CREATE_FILES)
 def did_create_files(ls, params):
     print("created file")
 
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
     """Text document did close notification."""
     path = FileMgr.uri2pathname(params.text_document.uri)
     FileMgr.removeParsoTree(path)
 
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 def did_open(ls, params: DidOpenTextDocumentParams):
     """Text document did open notification."""
@@ -193,7 +181,6 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     path = FileMgr.uri2pathname(params.text_document.uri)
     FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
 
-@notification_on_exception
 @odoo_server.feature("Odoo/configurationChanged")
 def client_config_changed(ls: OdooLanguageServer, params=None):
     ls.show_message_log("Interrupting initialization", MessageType.Log)
@@ -204,22 +191,18 @@ def client_config_changed(ls: OdooLanguageServer, params=None):
     ls.show_message_log("Building new database", MessageType.Log)
     threading.Thread(target=Odoo.initialize, args=(ls,)).start()
 
-@notification_on_exception
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
     threading.Thread(target=Odoo.initialize, args=(ls,)).start()
 
-@notification_on_exception
 @odoo_server.feature(WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS)
 def workspace_change_folders(ls, params: DidChangeWorkspaceFoldersParams):
     print("Workspace folders changed")
 
-@notification_on_exception
 @odoo_server.feature(WORKSPACE_DIAGNOSTIC)
 def workspace_diagnostics(ls, params:WorkspaceDiagnosticParams):
     print("WORKSPACE DIAG")
 
-@notification_on_exception
 @odoo_server.feature(TEXT_DOCUMENT_SIGNATURE_HELP)
 def document_signature(ls, params: SignatureHelpParams):
     print("Signature help")
