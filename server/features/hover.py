@@ -13,7 +13,7 @@ class HoverFeature:
         symbol, range, context = ParsoUtils.getSymbols(fileSymbol, parsoTree, line, character)
 
         if not symbol:
-            return Hover(None)
+            return None
         if isinstance(symbol, str):
             return Hover(symbol)
         if isinstance(symbol, list):
