@@ -15,7 +15,7 @@ export class WelcomeWebView {
         this._context = context;
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
-        this._panel.onDidDispose(this.dispose, null, this._disposables);
+        this._panel.onDidDispose(this.dispose, this, this._disposables);
 
         // Set the HTML content for the webview panel
         this._panel.webview.html = this._getWebviewContent(this._panel.webview, this._context.extensionUri);
@@ -32,7 +32,7 @@ export class WelcomeWebView {
             WelcomeWebView.currentPanel._panel.reveal(ViewColumn.One);
             WelcomeWebView.currentPanel._panel.webview.html = WelcomeWebView.currentPanel._getWebviewContent(WelcomeWebView.currentPanel._panel.webview, context.extensionUri);
         } else {
-            const panel = window.createWebviewPanel(
+            let panel = window.createWebviewPanel(
                 "showWelcomePanel",
                 "Welcome to Odoo",
                 ViewColumn.One,
@@ -139,7 +139,7 @@ export class WelcomeWebView {
                 return;
             }
         },
-        undefined,
+        this,
         this._disposables
         );
     }

@@ -37,11 +37,14 @@
         "command": "odoo.openWelcomeView",
         "title": "Open the Welcome page",
         "category": "Odoo"
+      },
+      {
+        "command": "odoo.testCrashMessage",
+        "title": "Open the crash notification",
+        "category": "Odoo"
       }
     ],
-    "views": {
-
-    },
+    "views": {},
     "menus": {
       "view/title": [
         {
@@ -97,6 +100,7 @@
     "@vscode/codicons": "^0.0.33",
     "@vscode/vsce": "^2.18.0",
     "@vscode/webview-ui-toolkit": "^1.2.2",
+    "axios": "^1.4.0",
     "ejs": "^3.1.9",
     "vsce": "^2.15.0",
     "vscode-languageclient": "^8.1.0"

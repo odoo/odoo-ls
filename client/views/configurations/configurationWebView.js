@@ -44,7 +44,6 @@ function main() {
 }
 
 function saveConfig() {
-  console.log('Trigger saveConfig');
   vscode.postMessage({
       command: "save_config",
       name: document.getElementById("config-name-textfield").value,
