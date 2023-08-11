@@ -1,18 +1,20 @@
 import { Disposable, Webview, WebviewPanel, window, Uri } from "vscode";
 import { getUri, getNonce } from "../../utils/utils";
+import axios from 'axios';
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 
 export class CrashReportWebView {
-    public static panels: Map<number, CrashReportWebView> | undefined;
+    public static panels: Map<String, CrashReportWebView> | undefined;
     public static readonly viewType = 'odooCrashReport';
-    public static currentUID = 0;
-    public readonly UID: number | undefined;
+    public readonly UID: String | undefined;
     private readonly _panel: WebviewPanel;
     private _disposables: Disposable[] = [];
-    private readonly _context: vscode.ExtensionContext
-    private readonly _document: vscode.TextDocument
+    private readonly _context: vscode.ExtensionContext;
+    private readonly _document: vscode.TextDocument;
+    private readonly _error: String;
 
     /**
      * The ConfigurationWebView class private constructor (called only from the render method).
@@ -20,10 +22,12 @@ export class CrashReportWebView {
      * @param panel A reference to the webview panel
      * @param extensionUri The URI of the directory containing the extension
      */
-    private constructor(panel: WebviewPanel, context: vscode.ExtensionContext, document: vscode.TextDocument) {
+    private constructor(panel: WebviewPanel, uid: String ,context: vscode.ExtensionContext, document: vscode.TextDocument, error: String) {
         this._panel = panel;
         this._context = context;
         this._document = document;
+        this._error = error;
+        this.UID = uid;
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
@@ -42,7 +46,7 @@ export class CrashReportWebView {
      *
      * @param extensionUri The URI of the directory containing the extension.
      */
-    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument) {
+    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String) {
         if (!CrashReportWebView.panels) {
             CrashReportWebView.panels = new Map();
         }
@@ -60,8 +64,8 @@ export class CrashReportWebView {
                 enableScripts: true,
             }
         );
-        CrashReportWebView.panels.set(this.currentUID, new CrashReportWebView(panel, context, document));
-        this.currentUID++;
+        const UID = crypto.randomBytes(8).toString('hex');
+        CrashReportWebView.panels.set(UID, new CrashReportWebView(panel, UID, context, document, error));
     }
 
     /**
@@ -91,7 +95,7 @@ export class CrashReportWebView {
      * rendered within the webview panel
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
-        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@vscode", "webview-ui-toolkit", "dist", "toolkit.js"]);
+        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@bendera", "vscode-webview-elements", "dist", "bundled.js"]);
         const htmlPath = getUri(webview, extensionUri, ["client", "views", "crash_report", "body.html"]);
         const styleUri = getUri(webview, extensionUri, ["client", "views", "crash_report", "style.css"]);
         const codiconStyleUri = getUri(webview, extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"]);
@@ -105,6 +109,8 @@ export class CrashReportWebView {
             codiconStyleUri: codiconStyleUri,
             mainUri: mainUri,
             cspSource: webview.cspSource,
+            crashUID: this.UID,
+            crash_log: this._error,
             nonce: nonce,
         };
         return ejs.render(htmlFile, data);
@@ -122,7 +128,17 @@ export class CrashReportWebView {
             const command = message.command;
 
             switch (command) {
-                
+                case "send_report":
+                    axios.post('https://iap-services.odoo.com/api/vscode/1/crash_report', {
+                        data: {
+                            uid: this.UID,
+                            document: this._document ? this._document.getText() : null,
+                            error: this._error,
+                            additional_info: message.additional_info
+                        }
+                    });
+                    this.dispose();
+                    break;
             }
         },
             undefined,

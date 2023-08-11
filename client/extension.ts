@@ -31,14 +31,12 @@ import {
     workspace,
     window,
     QuickPickItemKind,
-    Diagnostic,
     TextDocument,
+    OutputChannel,
 } from "vscode";
 import {
-    Executable,
     LanguageClient,
     LanguageClientOptions,
-    GenericRequestHandler,
     ServerOptions,
     integer,
 } from "vscode-languageclient/node";
@@ -61,7 +59,6 @@ function getClientOptions(): LanguageClientOptions {
             { scheme: "file", language: "python" },
             { scheme: "untitled", language: "python" },
         ],
-        outputChannelName: "Odoo",
         synchronize: {
             // Notify the server about file changes to '.clientrc files contain in the workspace
             fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
@@ -69,7 +66,7 @@ function getClientOptions(): LanguageClientOptions {
     };
 }
 
-function startLangServerTCP(addr: number): LanguageClient {
+function startLangServerTCP(addr: number, outputChannel: OutputChannel): LanguageClient {
     const serverOptions: ServerOptions = () => {
         return new Promise((resolve /*, reject */) => {
             const clientSocket = new net.Socket();
@@ -82,25 +79,32 @@ function startLangServerTCP(addr: number): LanguageClient {
         });
     };
 
+    const clientOptions: LanguageClientOptions = getClientOptions();
+
+    clientOptions.outputChannel = outputChannel;
+
     return new LanguageClient(
         `tcp lang server (port ${addr})`,
         serverOptions,
-        getClientOptions()
+        clientOptions
     );
 }
 
 function startLangServer(
     command: string,
     args: string[],
-    cwd: string
+    cwd: string,
+    outputChannel: OutputChannel
 ): LanguageClient {
     const serverOptions: ServerOptions = {
         args,
         command,
         options: { cwd },
     };
+    const clientOptions: LanguageClientOptions = getClientOptions();
+    clientOptions.outputChannel = outputChannel;
 
-    return new LanguageClient(command, serverOptions, getClientOptions());
+    return new LanguageClient(command, serverOptions, clientOptions);
 }
 
 function getCurrentConfig(context: ExtensionContext) {
@@ -111,7 +115,7 @@ function getCurrentConfig(context: ExtensionContext) {
 
 function setStatusConfig(context: ExtensionContext, statusItem: StatusBarItem) {
     const config = getCurrentConfig(context);
-    let text = (config ? `Odoo (${config["name"]})`:`Odoo`);
+    let text = (config ? `Odoo (${config["name"]})`:`Odoo (Disabled)`);
     statusItem.text = (isLoading) ? "$(loading~spin) " + text : text;
 }
 
@@ -149,7 +153,7 @@ function changeSelectedConfig(context: ExtensionContext, configId: Number) {
     selectedConfigurationChange.fire(null);
 }
 
-async function displayCrashMessage(context: ExtensionContext, crashInfo: string) {
+async function displayCrashMessage(context: ExtensionContext, crashInfo: string, outputChannel: OutputChannel) {
     // Capture the content of the file active when the crash happened
     let activeFile: TextDocument;
     if (window.activeTextEditor) {
@@ -164,15 +168,22 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string)
         "Cancel"
     );
 
-    if (selection === "Send crash report") {
-        CrashReportWebView.render(context, activeFile);
+    switch (selection) {
+        case ("Send crash report"):
+            CrashReportWebView.render(context, activeFile, crashInfo);
+            break
+        case ("Open logs"):
+            outputChannel.show();
+            break
     }
 }
 
 export function activate(context: ExtensionContext): void {
+    const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
-        client = startLangServerTCP(2087);
+        client = startLangServerTCP(2087, odooOutputChannel);
+        context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => {displayCrashMessage(context, "Test crash message", odooOutputChannel);}));
     } else {
         // Production - Client is going to run the server (for use within `.vsix` package)
         const cwd = path.join(__dirname, "..", "..");
@@ -182,7 +193,7 @@ export function activate(context: ExtensionContext): void {
             throw new Error("`python.interpreterPath` is not set");
         }
 
-        client = startLangServer(pythonPath, ["-m", "server"], cwd);
+        client = startLangServer(pythonPath, ["-m", "server"], cwd, odooOutputChannel);
     }
 
     if (getCurrentConfig(context)) {
@@ -220,8 +231,8 @@ export function activate(context: ExtensionContext): void {
             const addConfigItem = {
                 label: "$(add) Add new configuration"
             };
-            const noneItem = {
-                label: "None"
+            const disabledItem = {
+                label: "Disabled"
             }
             const gearIcon = new ThemeIcon("gear");
         
@@ -231,7 +242,7 @@ export function activate(context: ExtensionContext): void {
                 configMap.set({"label": configs[configId]["name"], "buttons": [{iconPath: gearIcon}]}, configId)
             }
             
-            let picks = [noneItem, ...Array.from(configMap.keys())];
+            let picks = [disabledItem, ...Array.from(configMap.keys())];
             if (picks.length)
                 picks.push(separator);
 
@@ -260,7 +271,7 @@ export function activate(context: ExtensionContext): void {
                 if (selectedConfiguration == addConfigItem) {
                     await addNewConfiguration(context);
                 }
-                else if (selectedConfiguration == noneItem) {
+                else if (selectedConfiguration == disabledItem) {
                     changeSelectedConfig(context, -1);
                 }
                 else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
@@ -353,10 +364,7 @@ export function activate(context: ExtensionContext): void {
         return getCurrentConfig(context);
     }));
 
-
-    context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => {displayCrashMessage(context, null);}));
-    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (crashInfo: string) => {displayCrashMessage(context, crashInfo)}));
-    
+    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (crashInfo: string) => {displayCrashMessage(context, crashInfo, odooOutputChannel)}));
 
     if (getCurrentConfig(context)) {
         client.sendNotification(
