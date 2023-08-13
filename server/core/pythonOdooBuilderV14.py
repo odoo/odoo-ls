@@ -60,7 +60,7 @@ class PythonOdooBuilderV14(PythonOdooBuilder):
                 print("wrong inherits")
 
     def _get_attribute(self, symbol, attr):
-        attr_sym = symbol.get_class_symbol(attr, prevent_comodel=True)
+        attr_sym = symbol.get_member_symbol(attr, prevent_comodel=True)
         if attr_sym and attr_sym.eval.get_symbol():
             attr_ref, instance = attr_sym.eval.get_symbol().follow_ref()
             if attr_ref.type == SymType.PRIMITIVE:

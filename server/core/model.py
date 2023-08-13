@@ -35,7 +35,7 @@ class Model():
     def get_documentation(self, from_module = None):
         main_symbol = self.get_main_symbols(from_module)
         if main_symbol and len(main_symbol) == 1:
-            description = main_symbol[0].get_class_symbol("_description", from_module=from_module, prevent_comodel=False)
+            description = main_symbol[0].get_member_symbol("_description", from_module=from_module, prevent_comodel=False)
             description_text = main_symbol[0].name
             if description:
                 description, _ = description.follow_ref()
@@ -88,13 +88,13 @@ class Model():
     def isModel(self):
         return True
 
-    def get_class_symbol(self, name, from_module, all=False):
+    def get_member_symbol(self, name, from_module, all=False):
         """ Return the first definition of the name in the model from the "from_module" perspective"""
         impl = self.get_symbols(from_module)
         #TODO actually we are searching for the first one, and we could return an override. It would be better if we
         #could search in sorted modules (by dep)
         for sym in impl:
-            res = sym.get_class_symbol(name, all=all)
+            res = sym.get_member_symbol(name, all=all)
             if res:
                 return res
         return None

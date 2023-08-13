@@ -115,14 +115,14 @@ class ParsoUtils:
                             if obj.type == SymType.VARIABLE:
                                 return None, context
                         context["parent"] = obj
-                        objs = obj.get_class_symbol(next_element.value, all=True)
+                        objs = obj.get_member_symbol(next_element.value, all=True)
                         if isinstance(obj, Symbol) and "comodel_name" in context and \
                         obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
                             model = Odoo.get().models.get(context["comodel_name"], None)
                             if model:
                                 main_sym = model.get_main_symbols(module)
                                 if main_sym and len(main_sym) == 1:
-                                    objs += main_sym[0].get_class_symbol(next_element.value, all=True)
+                                    objs += main_sym[0].get_member_symbol(next_element.value, all=True)
                         obj = objs
                         if not obj:
                             return None, context
@@ -139,7 +139,7 @@ class ParsoUtils:
                             obj = obj.follow_ref(context)[0]
                             if obj.type == SymType.VARIABLE:
                                 return None, context
-                        get_item_sym = obj.get_class_symbol("__getitem__", module)
+                        get_item_sym = obj.get_member_symbol("__getitem__", module)
                         if not get_item_sym:
                             return None, context
                         get_item_sym = get_item_sym.follow_ref(context)[0]

@@ -164,7 +164,7 @@ class PythonArchEval(ast.NodeVisitor):
                 iter_element, _ = iter_element.follow_ref()
                 found = True
                 for base_element in base_elements[1:]:
-                    iter_element = iter_element.get_symbol([], [base_element])
+                    iter_element = iter_element.get_member_symbol(base_element, prevent_comodel=True)
                     if not iter_element:
                         found = False
                         break
@@ -209,7 +209,7 @@ class PythonArchEval(ast.NodeVisitor):
             if isinstance(node.iter, ast.Name):
                 eval_iter_node = Evaluation().evalAST(node.iter, symbol.parent)
                 if eval_iter_node.get_symbol() and eval_iter_node.get_symbol().type == SymType.CLASS:
-                    iter = eval_iter_node.get_symbol().get_class_symbol("__iter__")
+                    iter = eval_iter_node.get_symbol().get_member_symbol("__iter__")
                     if iter and iter.eval:
                         symbol.eval = Evaluation()
                         symbol.eval.symbol = iter.eval.get_symbol_rr({"parent": eval_iter_node.get_symbol()})
