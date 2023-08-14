@@ -39,27 +39,12 @@ from lsprotocol.types import *
 from lsprotocol.types import (WorkDoneProgressBegin,
                                 WorkDoneProgressEnd,
                                 WorkDoneProgressReport)
-from pygls.server import LanguageServer
 from .constants import *
 
 COUNT_DOWN_START_IN_SECONDS = 10
 COUNT_DOWN_SLEEP_IN_SECONDS = 1
 
-
-class OdooLanguageServer(LanguageServer):
-
-    def __init__(self):
-        print("Starting Odoo Language server using Python " + str(sys.version))
-        self.id_lock = threading.Lock()
-        self.id = 0
-        self.config = None
-        super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
-
-    def report_server_error(self, error: Exception, source):
-        odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
-        odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
-
-odoo_server = OdooLanguageServer()
+from server.OdooLanguageServer import OdooLanguageServer, odoo_server
 
 @odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',', '.', '"', "'"]))
 def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
@@ -127,7 +112,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
         #TODO find better than this small hack for windows (get disk letter in capital)
         if os.name == "nt":
             final_path = final_path[0].capitalize() + final_path[1:]
-        threading.Thread(target=Odoo.get().file_change, args=(ls, final_path, source, params.text_document.version)).start()
+        odoo_server.launch_thread(target=Odoo.get().file_change, args=(ls, final_path, source, params.text_document.version))
     except Exception:
         odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
         odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
@@ -157,7 +142,7 @@ def did_rename_files(ls, params):
         if os.name == "nt":
             old_path = old_path[0].capitalize() + old_path[1:]
             new_path = new_path[0].capitalize() + new_path[1:]
-        threading.Thread(target=Odoo.get().file_rename, args=(ls, old_path, new_path)).start()
+        odoo_server.launch_thread(target=Odoo.get().file_rename, args=(ls, old_path, new_path))
 
 @odoo_server.feature(WORKSPACE_DID_DELETE_FILES)
 def did_delete_files(ls, params):
@@ -189,11 +174,11 @@ def client_config_changed(ls: OdooLanguageServer, params=None):
     Odoo.get().reset(ls)
     FileMgr.files = {}
     ls.show_message_log("Building new database", MessageType.Log)
-    threading.Thread(target=Odoo.initialize, args=(ls,)).start()
+    odoo_server.launch_thread(target=Odoo.initialize, args=(ls,))
 
 @odoo_server.feature("Odoo/clientReady")
 def client_ready(ls, params=None):
-    threading.Thread(target=Odoo.initialize, args=(ls,)).start()
+    odoo_server.launch_thread(target=Odoo.initialize, args=(ls,))
 
 @odoo_server.feature(WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS)
 def workspace_change_folders(ls, params: DidChangeWorkspaceFoldersParams):

@@ -24,10 +24,6 @@ class PythonArchEval(ast.NodeVisitor):
         """Prepare an arch eval to parse an element.
         To work, the symbol must have a wearef to his ast_node.
         """
-        if not hasattr(symbol, "ast_node"):
-            raise Exception("Symbol must have an ast_node")
-        if not symbol.ast_node:
-            raise Exception("Symbol must have a valid ast_node")
         self.symbol = symbol
         self.fileSymbol = self.symbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
         self.ls = ls
@@ -36,8 +32,14 @@ class PythonArchEval(ast.NodeVisitor):
 
     def eval_arch(self):
         """pass through the ast to find symbols to evaluate"""
+        if self.symbol.evalStatus != 0:
+            return self.symbol
         if DEBUG_ARCH_EVAL:
             print("Eval arch: " + self.fileSymbol.paths[0])
+        if not hasattr(self.symbol, "ast_node"):
+            raise Exception("Symbol must have an ast_node")
+        if not self.symbol.ast_node:
+            raise Exception("Symbol must have a valid ast_node")
         self.symbol.evalStatus = 1
         self.symbol.odooStatus = 0
         self.symbol.validationStatus = 0

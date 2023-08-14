@@ -60,6 +60,7 @@ class Odoo():
         self.post_lock_jobs = []
 
         self.stubs_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs")
+        self.stdlib_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib")
 
     @contextmanager
     def acquire_write(self, ls):
@@ -93,7 +94,7 @@ class Odoo():
 
     @contextmanager
     def upgrade_to_write(self):
-        if threading.local().lock_type == "write":
+        if threading.local().lock_type == "write": #TODO it doesn't work like that...
             yield
             return
         if threading.local().lock_type != "read":
@@ -122,12 +123,12 @@ class Odoo():
                 config = ls.lsp.send_request("Odoo/getConfiguration").result()
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
+                    Odoo.instance.symbols.paths.append(Odoo.instance.stubs_dir)
+                    Odoo.instance.symbols.paths.append(Odoo.instance.stdlib_dir)
                     for path in sys.path:
                         if os.path.isdir(path):
                             Odoo.instance.symbols.paths.append(path)
                     # add stubs for not installed packages
-                    Odoo.instance.symbols.paths.append(Odoo.instance.stubs_dir)
-                    Odoo.instance.symbols.paths.append(os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib"))
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = config.odooPath
