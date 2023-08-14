@@ -134,7 +134,8 @@ export class CrashReportWebView {
                             uid: this.UID,
                             document: this._document ? this._document.getText() : null,
                             error: this._error,
-                            additional_info: message.additional_info
+                            additional_info: message.additional_info,
+                            version: this._context.extension.packageJSON.version
                         }
                     });
                     this.dispose();
