@@ -2,6 +2,7 @@ import gc
 import os
 import sys
 from server.references import RegisterableObject, RegisteredRef, RegisteredRefSet, RegisteredRefList
+from server.OdooLanguageServer import OdooLanguageServer
 from ..constants import *
 
 import base64
@@ -140,14 +141,22 @@ class Symbol(RegisterableObject):
         return []
 
     def follow_ref(self, context=None):
+        from server.core.pythonArchEval import PythonArchEval
+        from server.core.odoo import Odoo
         #follow the reference to the real symbol and returns it (not a RegisteredRef)
         sym = self
         instance = self.type in [SymType.VARIABLE]
+        if sym.eval == None and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]) and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).evalStatus == 0:
+            ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+            ev.eval_arch()
         while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_rr(context):
             instance = sym.eval.instance
             if sym.eval.context and context:
                 context.update(sym.eval.context)
             sym = sym.eval.get_symbol(context)
+            if sym.eval == None and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]) and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).evalStatus == 0:
+                ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
+                ev.eval_arch()
         return sym, instance
 
     def add_dependency(self, other_symbol, on_step, dep_level):

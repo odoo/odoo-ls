@@ -50,7 +50,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         On an existing symbol, the symbol will be simply returned
         """
         if DEBUG_ARCH_BUILDER:
-            print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
+            print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else ""))
         existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
         if existing_symbol:
             return existing_symbol
