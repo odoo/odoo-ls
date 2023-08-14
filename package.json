@@ -75,6 +75,12 @@
           ],
           "default": "off",
           "description": "Traces the communication between VS Code and the language server."
+        },
+        "Odoo.pythonPath": {
+          "scope": "window",
+          "type": "string",
+          "default": null,
+          "description": "Path to the Python binary the Language Server will run on."
         }
       }
     }

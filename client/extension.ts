@@ -42,11 +42,12 @@ import {
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./views/welcome/welcomeWebView";
 import { ConfigurationWebView } from './views/configurations/configurationWebView';
-import {CrashReportWebView} from './views/crash_report/crashReport'
+import { CrashReportWebView } from './views/crash_report/crashReport'
 import {
     selectedConfigurationChange,
     ConfigurationsChange
 } from './utils/events'
+import { execSync } from "child_process";
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
@@ -64,6 +65,34 @@ function getClientOptions(): LanguageClientOptions {
             fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
         },
     };
+}
+
+function isPythonModuleInstalled(pythonPath: string, moduleName: string): boolean {
+    try {
+        execSync(pythonPath + ' -c "import ' + moduleName + '"');
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+function checkPythonDependencies(pythonPath: string, notification: boolean = true) {
+    let missingDep: Array<string> = [];
+    if (!pythonPath) return false;
+
+    if (!isPythonModuleInstalled(pythonPath, 'pygls')) {
+        missingDep.push('pygls');
+    }
+    if (!isPythonModuleInstalled(pythonPath, 'parso')) {
+        missingDep.push('parso');
+    }
+
+    if (missingDep.length) {
+        if (notification)
+            window.showErrorMessage(`Odoo: Couldn't start the Language Server. Missing Python ${missingDep.length == 1 ? 'dependency': 'dependencies'}: ${missingDep.join(", ")}`);
+        return false
+    }
+    return true;
 }
 
 function startLangServerTCP(addr: number, outputChannel: OutputChannel): LanguageClient {
@@ -115,7 +144,7 @@ function getCurrentConfig(context: ExtensionContext) {
 
 function setStatusConfig(context: ExtensionContext, statusItem: StatusBarItem) {
     const config = getCurrentConfig(context);
-    let text = (config ? `Odoo (${config["name"]})`:`Odoo (Disabled)`);
+    let text = (config ? `Odoo (${config["name"]})` : `Odoo (Disabled)`);
     statusItem.text = (isLoading) ? "$(loading~spin) " + text : text;
 }
 
@@ -132,7 +161,7 @@ async function addNewConfiguration(context: ExtensionContext) {
     const configId = getLastConfigId(context);
     let configs: Map<number, object> = context.globalState.get("Odoo.configurations");
     await context.globalState.update(
-        "Odoo.configurations", 
+        "Odoo.configurations",
         {
             ...configs,
             [configId]: {
@@ -178,29 +207,42 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
     }
 }
 
-export function activate(context: ExtensionContext): void {
-    const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
+function startLanguageServerClient(context: ExtensionContext, pythonPath:string, outputChannel: OutputChannel) {
+    let client: LanguageClient
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
-        client = startLangServerTCP(2087, odooOutputChannel);
-        context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => {displayCrashMessage(context, "Test crash message", odooOutputChannel);}));
+        client = startLangServerTCP(2087, outputChannel);
+        context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", outputChannel); }));
     } else {
         // Production - Client is going to run the server (for use within `.vsix` package)
         const cwd = path.join(__dirname, "..", "..");
-        const pythonPath = workspace.getConfiguration("python").get<string>("interpreterPath", "python3");
 
         if (!pythonPath) {
-            throw new Error("`python.interpreterPath` is not set");
+            outputChannel.appendLine("[INFO] Odoo.pythonPath is not set, defaulting to python3.");
         }
-
-        client = startLangServer(pythonPath, ["-m", "server"], cwd, odooOutputChannel);
+        client = startLangServer(pythonPath ? pythonPath: "python3", ["-m", "server"], cwd, outputChannel);
     }
+
+    return client;
+}
+
+export function activate(context: ExtensionContext): void {
+    const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
+    let pythonPath = workspace.getConfiguration("Odoo").get<string>("pythonPath", "python3");
+    pythonPath = pythonPath == '' ? "python3" : pythonPath;
+    let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
 
     if (getCurrentConfig(context)) {
-        client.start();
+        if (context.extensionMode === ExtensionMode.Production) {
+            if (checkPythonDependencies(pythonPath)) {
+                client.start();
+            }
+        } else {
+            client.start();
+        }
     }
 
-	// new ConfigurationsExplorer(context);
+    // new ConfigurationsExplorer(context);
 
     odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     setStatusConfig(context, odooStatusBar);
@@ -218,7 +260,7 @@ export function activate(context: ExtensionContext): void {
     if (context.workspaceState.get("Odoo.selectedConfiguration", null) == null) {
         context.workspaceState.update("Odoo.selectedConfiguration", -1);
     }
-    
+
     context.subscriptions.push(
         commands.registerCommand('odoo.clickStatusBar', async () => {
             const qpick = window.createQuickPick();
@@ -227,7 +269,7 @@ export function activate(context: ExtensionContext): void {
             const currentConfig = getCurrentConfig(context);
             let currentConfigItem: QuickPickItem;
             const configMap = new Map();
-            const separator = {kind: QuickPickItemKind.Separator};
+            const separator = { kind: QuickPickItemKind.Separator };
             const addConfigItem = {
                 label: "$(add) Add new configuration"
             };
@@ -235,22 +277,22 @@ export function activate(context: ExtensionContext): void {
                 label: "Disabled"
             }
             const gearIcon = new ThemeIcon("gear");
-        
+
             for (const configId in configs) {
                 if (currentConfig && configId == currentConfig["id"])
-                    continue; 
-                configMap.set({"label": configs[configId]["name"], "buttons": [{iconPath: gearIcon}]}, configId)
+                    continue;
+                configMap.set({ "label": configs[configId]["name"], "buttons": [{ iconPath: gearIcon }] }, configId)
             }
-            
+
             let picks = [disabledItem, ...Array.from(configMap.keys())];
             if (picks.length)
                 picks.push(separator);
 
             if (currentConfig) {
-                currentConfigItem = {"label": currentConfig["name"], "description": "(current)", "buttons": [{iconPath: gearIcon}]};
+                currentConfigItem = { "label": currentConfig["name"], "description": "(current)", "buttons": [{ iconPath: gearIcon }] };
                 picks.splice(currentConfig["id"] + 1, 0, currentConfigItem);
             }
-            
+
             picks.push(addConfigItem);
             qpick.title = "Select a configuration";
             qpick.items = picks;
@@ -259,14 +301,14 @@ export function activate(context: ExtensionContext): void {
             qpick.onDidChangeSelection(selection => {
                 selectedConfiguration = selection[0];
             });
-        
+
             qpick.onDidTriggerItemButton(buttonEvent => {
                 if (buttonEvent.button.iconPath == gearIcon) {
                     let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
                     ConfigurationWebView.render(context, Number(buttonConfigId));
                 }
             });
-        
+
             qpick.onDidAccept(async () => {
                 if (selectedConfiguration == addConfigItem) {
                     await addNewConfiguration(context);
@@ -283,15 +325,6 @@ export function activate(context: ExtensionContext): void {
             qpick.show();
         })
     );
-    
-    /*
-    window.registerTreeDataProvider(
-		'odoo-databases',
-		new TreeDatabasesDataProvider()
-	);
-	window.createTreeView('odoo-databases', {
-		treeDataProvider: new TreeDatabasesDataProvider()
-	});*/
 
     // Listen to changes to Configurations
     context.subscriptions.push(
@@ -299,13 +332,16 @@ export function activate(context: ExtensionContext): void {
             setStatusConfig(context, odooStatusBar);
             if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
                 client.diagnostics.clear();
-                client.sendNotification("Odoo/configurationChanged");            }
+                client.sendNotification("Odoo/configurationChanged");
+            }
         })
     );
 
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
         selectedConfigurationChange.event(() => {
+            setStatusConfig(context, odooStatusBar);
+            if (!checkPythonDependencies(pythonPath)) return;
             if (getCurrentConfig(context)) {
                 if (!client.isRunning()) {
                     client.start().then(() => {
@@ -321,10 +357,30 @@ export function activate(context: ExtensionContext): void {
                 client.stop();
                 isLoading = false;
             }
-            setStatusConfig(context, odooStatusBar);
         })
     );
-    
+
+    // Temporary. Ideally I'd dispose the current client and regenerate a new one
+    // but it would require far too much effort for what it achieves.
+    context.subscriptions.push(
+        workspace.onDidChangeConfiguration(async event => {
+            let affected = event.affectsConfiguration("Odoo.pythonPath");
+            if (affected) {
+                window.showInformationMessage(
+                    "Odoo: Modifying Odoo.pythonPath requires a reload for the change to take effect.",
+                    "Reload VSCode",
+                    "Later"
+                ).then(selection => {
+                    switch (selection) {
+                        case ("Reload VSCode"):
+                            commands.executeCommand("workbench.action.reloadWindow");
+                            break;
+                    }
+                });
+            }
+        })
+    );
+
     context.subscriptions.push(
         commands.registerCommand("odoo.openWelcomeView", () => {
             WelcomeWebView.render(context);
@@ -340,7 +396,7 @@ export function activate(context: ExtensionContext): void {
             WelcomeWebView.render(context);
             break;
     }
-    
+
     const config = getCurrentConfig(context);
     if (config) {
         odooStatusBar.text = `Odoo (${config["name"]})`;
@@ -364,18 +420,26 @@ export function activate(context: ExtensionContext): void {
         return getCurrentConfig(context);
     }));
 
-    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (crashInfo: string) => {displayCrashMessage(context, crashInfo, odooOutputChannel)}));
+    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (crashInfo: string) => { displayCrashMessage(context, crashInfo, odooOutputChannel) }));
 
     if (getCurrentConfig(context)) {
-        client.sendNotification(
-            "Odoo/clientReady",
-        );
+        if (context.extensionMode === ExtensionMode.Production) {
+            if (checkPythonDependencies(pythonPath, false)) {
+                client.sendNotification(
+                    "Odoo/clientReady",
+                );
+            }
+        } else {
+            client.sendNotification(
+                "Odoo/clientReady",
+            );
+        }
     }
 }
 
 export function deactivate(): Thenable<void> | undefined {
-	if (!client) {
-		return undefined;
-	}
-	return client.stop();
+    if (!client) {
+        return undefined;
+    }
+    return client.stop();
 }
