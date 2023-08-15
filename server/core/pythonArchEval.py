@@ -165,7 +165,10 @@ class PythonArchEval(ast.NodeVisitor):
                     continue
                 iter_element, _ = iter_element.follow_ref()
                 found = True
+                compiled = False
                 for base_element in base_elements[1:]:
+                    if iter_element.type == SymType.COMPILED:
+                        compiled = True
                     iter_element = iter_element.get_member_symbol(base_element, prevent_comodel=True)
                     if not iter_element:
                         found = False
@@ -173,9 +176,11 @@ class PythonArchEval(ast.NodeVisitor):
                     iter_element, _ = iter_element.follow_ref()
                 if not iter_element:
                     found = False
+                if compiled:
+                    continue
                 if not found or \
-                    (iter_element.type != SymType.COMPILED and \
-                     not iter_element.is_external() and \
+                    (not found and iter_element.type != SymType.COMPILED and \
+                    not iter_element.is_external() and \
                     (iter_element.type != SymType.CLASS and not iter_element.eval)):
                     self._create_diagnostic_base_not_found(base, full_base)
                     continue
