@@ -150,7 +150,7 @@ class PythonArchEval(ast.NodeVisitor):
                 ),
                 message = "Base class " + full_name + " not found",
                 source = EXTENSION_NAME,
-                severity= 1,
+                severity= 2,
             )
         )
 
@@ -194,7 +194,7 @@ class PythonArchEval(ast.NodeVisitor):
                             ),
                             message = "Base class " + full_base + " is not a class",
                             source = EXTENSION_NAME,
-                            severity= 1,
+                            severity= 2,
                         )
                     )
                     continue
