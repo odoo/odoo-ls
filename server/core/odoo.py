@@ -65,9 +65,9 @@ class Odoo():
         with self.write_lock:
             ls.send_notification('Odoo/loadingStatusUpdate', 'start')
             self.thread_access_condition.wait_empty()
-            OdooLanguageServer.instance.access_mode.set("write")
+            OdooLanguageServer.access_mode.set("write")
             yield
-            OdooLanguageServer.instance.access_mode.set("none")
+            OdooLanguageServer.access_mode.set("none")
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
 
     @contextmanager
@@ -80,24 +80,24 @@ class Odoo():
         else:
             yield False
             return
-        OdooLanguageServer.instance.access_mode.set("read")
+        OdooLanguageServer.access_mode.set("read")
         yield True
         self.thread_access_condition.release()
-        OdooLanguageServer.instance.access_mode.set("none")
+        OdooLanguageServer.access_mode.set("none")
 
     @contextmanager
     def upgrade_to_write(self):
-        if OdooLanguageServer.instance.access_mode.get() == "write": #TODO it doesn't work like that...
+        if OdooLanguageServer.access_mode.get() == "write": #TODO it doesn't work like that...
             yield
             return
-        if OdooLanguageServer.instance.access_mode.get() != "read":
+        if OdooLanguageServer.access_mode.get() != "read":
             raise Exception("Can't upgrade to write from a non read lock")
         self.thread_access_condition.release()
         with self.acquire_write():
             yield
         with self.write_lock:
             self.thread_access_condition.acquire()
-            OdooLanguageServer.instance.access_mode.set("read")
+            OdooLanguageServer.access_mode.set("read")
 
     @staticmethod
     def get():
