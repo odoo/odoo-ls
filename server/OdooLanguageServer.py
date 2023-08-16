@@ -25,7 +25,7 @@ class OdooLanguageServer(LanguageServer):
     def launch_thread(self, target, args):
         def prepare_ctxt_thread(odoo_server, target, args):
             OdooLanguageServer.instance.set(odoo_server)
-            OdooLanguageServer.instance.access_mode.set("none")
+            OdooLanguageServer.access_mode.set("none")
             target(*args)
         threading.Thread(target=prepare_ctxt_thread, args=(self, target, args)).start()
 
