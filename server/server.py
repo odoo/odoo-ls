@@ -115,7 +115,7 @@ def _did_change_after_delay(ls, params: DidChangeTextDocumentParams, reg_id):
         odoo_server.launch_thread(target=Odoo.get().file_change, args=(ls, final_path, source, params.text_document.version))
     except Exception:
         odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
-        odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+        odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CHANGE)
 def did_change(ls, params: DidChangeTextDocumentParams):

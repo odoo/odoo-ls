@@ -20,7 +20,7 @@ class OdooLanguageServer(LanguageServer):
 
     def report_server_error(self, error: Exception, source):
         odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
-        odoo_server.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+        odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
     def launch_thread(self, target, args):
         def prepare_ctxt_thread(odoo_server, target, args):
