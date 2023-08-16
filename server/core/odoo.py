@@ -57,8 +57,6 @@ class Odoo():
         self.write_lock = threading.Lock()
         self.thread_access_condition = ReadWriteCondition(10) #should match the number of threads
 
-        self.post_lock_jobs = []
-
         self.stubs_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stubs")
         self.stdlib_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib")
 
@@ -67,14 +65,10 @@ class Odoo():
         with self.write_lock:
             ls.send_notification('Odoo/loadingStatusUpdate', 'start')
             self.thread_access_condition.wait_empty()
-            context = threading.local()
-            context.lock_type = "write"
+            OdooLanguageServer.instance.access_mode.set("write")
             yield
-            context.lock_type = "none"
+            OdooLanguageServer.instance.access_mode.set("none")
             ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
-        while self.post_lock_jobs:
-            job, args = self.post_lock_jobs.pop(0)
-            job(*args)
 
     @contextmanager
     def acquire_read(self, timeout=0):
@@ -86,25 +80,24 @@ class Odoo():
         else:
             yield False
             return
-        context = threading.local()
-        context.lock_type = "read"
+        OdooLanguageServer.instance.access_mode.set("read")
         yield True
         self.thread_access_condition.release()
-        context.lock_type = "none"
+        OdooLanguageServer.instance.access_mode.set("none")
 
     @contextmanager
     def upgrade_to_write(self):
-        if threading.local().lock_type == "write": #TODO it doesn't work like that...
+        if OdooLanguageServer.instance.access_mode.get() == "write": #TODO it doesn't work like that...
             yield
             return
-        if threading.local().lock_type != "read":
+        if OdooLanguageServer.instance.access_mode.get() != "read":
             raise Exception("Can't upgrade to write from a non read lock")
         self.thread_access_condition.release()
         with self.acquire_write():
             yield
         with self.write_lock:
             self.thread_access_condition.acquire()
-            threading.local().lock_type = "read"
+            OdooLanguageServer.instance.access_mode.set("read")
 
     @staticmethod
     def get():
@@ -138,6 +131,7 @@ class Odoo():
                     Odoo.instance.build_database(ls, config)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
+                ls.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
                 ls.show_message_log(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
 
