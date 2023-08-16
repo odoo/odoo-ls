@@ -420,7 +420,9 @@ export function activate(context: ExtensionContext): void {
         return getCurrentConfig(context);
     }));
 
-    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (crashInfo: string) => { displayCrashMessage(context, crashInfo, odooOutputChannel) }));
+    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => { 
+        displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
+    }));
 
     if (getCurrentConfig(context)) {
         if (context.extensionMode === ExtensionMode.Production) {
