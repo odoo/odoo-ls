@@ -9,6 +9,7 @@ from server.constants import *
 class OdooLanguageServer(LanguageServer):
 
     instance = contextvars.ContextVar('instance', default=None)
+    access_mode = contextvars.ContextVar('access_mode', default="none")
 
     def __init__(self):
         print("Starting Odoo Language server using Python " + str(sys.version))
@@ -24,6 +25,7 @@ class OdooLanguageServer(LanguageServer):
     def launch_thread(self, target, args):
         def prepare_ctxt_thread(odoo_server, target, args):
             OdooLanguageServer.instance.set(odoo_server)
+            OdooLanguageServer.instance.access_mode.set("none")
             target(*args)
         threading.Thread(target=prepare_ctxt_thread, args=(self, target, args)).start()
 
