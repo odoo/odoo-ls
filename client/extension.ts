@@ -207,8 +207,13 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
     }
 }
 
+function getPythonPath() {
+    const workspacePath = workspace.getConfiguration("Odoo").get<string>("pythonPath", "python3");
+    return workspacePath && workspacePath != '' ? workspacePath : "python3";
+}
+
 function startLanguageServerClient(context: ExtensionContext, pythonPath:string, outputChannel: OutputChannel) {
-    let client: LanguageClient
+    let client: LanguageClient;
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
         client = startLangServerTCP(2087, outputChannel);
@@ -220,7 +225,7 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         if (!pythonPath) {
             outputChannel.appendLine("[INFO] Odoo.pythonPath is not set, defaulting to python3.");
         }
-        client = startLangServer(pythonPath ? pythonPath: "python3", ["-m", "server"], cwd, outputChannel);
+        client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
     }
 
     return client;
@@ -228,8 +233,7 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
 
 export function activate(context: ExtensionContext): void {
     const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
-    let pythonPath = workspace.getConfiguration("Odoo").get<string>("pythonPath", "python3");
-    pythonPath = pythonPath == '' ? "python3" : pythonPath;
+    let pythonPath = getPythonPath();
     let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
 
     if (getCurrentConfig(context)) {
