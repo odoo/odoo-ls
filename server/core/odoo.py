@@ -131,7 +131,7 @@ class Odoo():
                     Odoo.instance.build_database(ls, config)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
-                ls.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+                ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
                 ls.show_message_log(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
 
@@ -391,41 +391,45 @@ class Odoo():
             return
         except Exception:
             ls.show_message_log(traceback.format_exc(), MessageType.Error)
-            ls.lsp.send_request("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+            ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
     def file_rename(self, ls, old_path, new_path):
         from server.core.pythonArchBuilder import PythonArchBuilder
-        with Odoo.get().acquire_write(ls):
-            #unload old
-            file_symbol = self.get_file_symbol(old_path)
-            if file_symbol:
-                file_symbol.unload(file_symbol)
-            else:
-                return
-            del file_symbol
-            #build new
-            parent_path = os.sep.join(new_path.split(os.sep)[:-1])
-            parent_symbol = self.get_file_symbol(parent_path)
-            new_symbol = None
-            if not parent_symbol:
-                ls.show_message_log("parent symbol not found: " + parent_path, MessageType.Error)
-                ls.show_message("Unable to rename file. Internal representation is not right anymore", 1)
-            else:
-                new_tree = parent_symbol.get_tree()
-                new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
-                set_to_validate = self._search_symbols_to_rebuild(new_tree)
-                if set_to_validate:
-                    #if there is something that is trying to import the new file, build it.
-                    #Else, don't add it to the architecture to not add useless symbols (and overrides)
-                    if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi"):
-                        new_path = os.sep.join(new_path.split(os.sep)[:-1])
-                    pp = PythonArchBuilder(ls, parent_symbol, new_path)
-                    new_symbol = pp.load_arch()
-            #rebuild validations
-            if new_symbol:
-                for s in set_to_validate:
-                    self.add_to_arch_rebuild(s)
+        try:
+            with Odoo.get().acquire_write(ls):
+                #unload old
+                file_symbol = self.get_file_symbol(old_path)
+                if file_symbol:
+                    file_symbol.unload(file_symbol)
+                else:
+                    return
+                del file_symbol
+                #build new
+                parent_path = os.sep.join(new_path.split(os.sep)[:-1])
+                parent_symbol = self.get_file_symbol(parent_path)
+                new_symbol = None
+                if not parent_symbol:
+                    ls.show_message_log("parent symbol not found: " + parent_path, MessageType.Error)
+                    ls.show_message("Unable to rename file. Internal representation is not right anymore", 1)
+                else:
+                    new_tree = parent_symbol.get_tree()
+                    new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
+                    set_to_validate = self._search_symbols_to_rebuild(new_tree)
+                    if set_to_validate:
+                        #if there is something that is trying to import the new file, build it.
+                        #Else, don't add it to the architecture to not add useless symbols (and overrides)
+                        if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi"):
+                            new_path = os.sep.join(new_path.split(os.sep)[:-1])
+                        pp = PythonArchBuilder(ls, parent_symbol, new_path)
+                        new_symbol = pp.load_arch()
+                #rebuild validations
+                if new_symbol:
+                    for s in set_to_validate:
+                        self.add_to_arch_rebuild(s)
             self.process_rebuilds(ls)
+        except Exception:
+            ls.show_message_log(traceback.format_exc(), MessageType.Error)
+            ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
