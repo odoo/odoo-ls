@@ -515,6 +515,7 @@ class RootSymbol(Symbol):
 
     def add_symbol(self, symbol):
         """take a list of symbols name representing a relative path (ex: odoo.addon.models) and the symbol to add"""
+        from server.core.odoo import Odoo
         super().add_symbol(symbol)
         if symbol.type in [SymType.FILE, SymType.PACKAGE]:
             for path in symbol.paths:
@@ -524,6 +525,10 @@ class RootSymbol(Symbol):
                     if path.startswith(sysPath):
                         symbol.external = True
                         return
+                if path.startswith(Odoo.get().stubs_dir) or \
+                   path.startswith(Odoo.get().stdlib_dir):
+                   symbol.external = True
+                   return
 
 
 class ImportSymbol(Symbol):

@@ -155,8 +155,7 @@ class Odoo():
         from .pythonArchBuilder import PythonArchBuilder
         builtins_path = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib", "builtins.pyi")
         parser = PythonArchBuilder(ls, self.builtins, builtins_path)
-        mainSym = parser.load_arch()
-        mainSym.external = True
+        parser.load_arch()
         self.process_rebuilds(ls)
 
     def build_database(self, ls, used_config):
@@ -289,7 +288,6 @@ class Odoo():
                 evaluator.eval_arch()
                 continue
             elif self.rebuild_odoo:
-                from .pythonOdooBuilder import PythonOdooBuilder
                 if DEBUG_REBUILD and eval_rebuilt:
                     ls.show_message_log("Eval rebuilt done for " + "\n".join([str(t) for t in eval_rebuilt]))
                     eval_rebuilt = []
@@ -298,6 +296,7 @@ class Odoo():
                     continue
                 if DEBUG_REBUILD:
                     odoo_rebuilt.append(sym.get_tree())
+                from .pythonOdooBuilder import PythonOdooBuilder
                 validation = PythonOdooBuilder(ls, sym)
                 validation.load_odoo_content()
                 continue
