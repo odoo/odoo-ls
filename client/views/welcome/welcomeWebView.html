@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script type="module" src="${toolkitUri}"></script>
+        <script type="module" src="${mainUri}"></script>
+        <link rel="stylesheet" href="${styleUri}">
+    </head>
+    <body id="welcome-body">
+        <div id="welcome-container">
+            <a class="welcome-header" href = "https://odoo.com">
+                <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" id="welcome-logo" />
+            </a>
+            <h1 class="welcome-header">Welcome to Odoo</h1>
+            <div class="welcome-header" id="welcome-title">
+                Odoo Language Server will help you to write Odoo modules by providing you with autocompletion, code analysis and more.
+            </div>
+            ${welcomeAlertView}
+            <h2>How to install ?</h2>
+            <section>
+                <div>If you see this message, it means that your extension is already installed. But there is some configurations you'll
+                    need to do to make it work.
+                </div>
+                <ol>
+                    <li>Choose your python version. By default, the extension will run "python3" to execute itself. If you want
+                    to use a specific version, you can change the version in the settings. (File > Preferences > Settings > Extensions > Odoo > Python version).
+                    You can put a complete filepath or the command name (python3, python3.8, python3.9, etc...). Be sure to use a version greater than 3.8</li>
+                    <li>Install Python dependencies. Use the value you used in the point A (or "python3" if you skipped it) and run the following command:
+                    <code>'your_command' -m pip install parso, pygls</code></li>
+                    <li>That's it ! You are ready to use the extension !</li>
+                </ol>
+            </section>
+            <h2> How to use the extension ? </h2>
+            <section>
+                <p>
+                    The extension work by setting up a configuration, then analysing your code with the loaded configuration.</br>
+                    You have to first create the configurations you'll use later.
+                </p>
+                <p>
+                    Your available configurations are displayed here:<br/>
+                    <img class="img-margins" src=${image_1} /><br/>
+                    click on it to open the configuration selector panel:<br/>
+                    <img class="img-margins" src=${image_2} /><br/>
+                    To create a new configuration, click on "Add a configuration". To edit one, click on the wheel next to the configuration you want to edit.<br/>
+                    <img class="img-margins" src=${image_3} /><br/>
+                </p>
+                <p>
+                    Create your configuration with the information related to the odoo you want to use:<br/>
+                    <img class="img-margins" src=${image_4} /><br/>
+                </p>
+                <p>
+                    When your configuration is ready, select it for your panel. This selection will run for the current workspace.<br/>
+                    While the wheel next to the Odoo button is spinning, the extension is loading the configuration. When it's done, the wheel will stop spinning and the extension will start to help you in your work.<br/>
+                    You can use your vscode while the extension is loading, but no feature will be available until the configuration is ready.
+                </p>
+            </section>
+            <div class="display-welcome-checkbox welcome-header">
+                <vscode-checkbox id="displayOdooWelcomeOnStart" ${defaultState ? 'checked': ''}>Show Odoo welcome page on startup</vscode-checkbox>
+            </div>
+        </div>
+    </body>
+</html>

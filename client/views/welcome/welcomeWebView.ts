@@ -1,6 +1,8 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 import { getUri } from "../../utils/utils";
 import * as vscode from 'vscode';
+import * as path from 'path'
+import * as fs from 'fs'
 
 
 export class WelcomeWebView {
@@ -8,11 +10,17 @@ export class WelcomeWebView {
     private readonly _panel: WebviewPanel;
     private readonly _context: vscode.ExtensionContext;
     private _disposables: Disposable[] = [];
+    private htmlContent: string;
+    private htmlAlertContent: string;
 
     private constructor(panel: WebviewPanel, context: vscode.ExtensionContext) {
         this._panel = panel;
 
         this._context = context;
+        const htmlPath: vscode.Uri = vscode.Uri.file(path.join(context.extensionPath, 'client', 'views', 'welcome', 'welcomeWebView.html'));
+        this.htmlContent = fs.readFileSync(htmlPath.fsPath, 'utf8');
+        const alertHtmlPath: vscode.Uri = vscode.Uri.file(path.join(context.extensionPath, 'client', 'views', 'welcome', 'welcomeAlertView.html'));
+        this.htmlAlertContent = fs.readFileSync(alertHtmlPath.fsPath, 'utf8');
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
         this._panel.onDidDispose(this.dispose, this, this._disposables);
@@ -76,56 +84,20 @@ export class WelcomeWebView {
         const mainUri = getUri(webview, extensionUri, ["client", "views", "welcome", "welcomeWebView.js"]);
         const defaultState = this._context.globalState.get('Odoo.displayWelcomeView', null);
 
-        return /*html*/ `
-            <!DOCTYPE html>
-            <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <script type="module" src="${toolkitUri}"></script>
-                    <script type="module" src="${mainUri}"></script>
-                    <link rel="stylesheet" href="${styleUri}">
-                </head>
-                <body id="welcome-body">
-                    <div id="welcome-container">
-                        <a href = "https://odoo.com">
-                            <img src="https://odoocdn.com/openerp_website/static/src/img/assets/png/odoo_logo.png" id="welcome-logo" />
-                        </a>
-                        <h1>Welcome to Odoo</h1>
-                        <div class="alert">
-                            You are running a BETA version of this extension. Not everything will work as expected.</br>
-                            WARNING: This version will send NOT ANONYMOUS usage data to Odoo to help the development of the extension.</br>
-                            Will be send on a crash: vscode logs, extension logs, opened files, opened folders paths.
-                        </div>
-                        <section>
-                            <h2>What is contained in this version ?</h2>
-                            <div>As this is a work-in-progress, here is what you can expect from the extension:</div>
-                            <ul>
-                                <li>Autocompletion of Python stuff (class, functions, etc...)</li>
-                                <li>Autocompletion of some module stuff (self.env[", _inherit = ")</li>
-                                <li>Hover requests in Python files</li>
-                                <li>Go to definition requests in Python files</li>
-                                <li>Basic diagnostics about modules dependencies</li>
-                            </ul>
-                            And what is NOT in this version, or incomplete (do not report bug about it, we know it is not ready):
-                            <ul>
-                                <li>Multi-root workspaces and workspace folder updates</li>
-                                <li>xml parsing and autocompletion of data coming from xml</li>
-                                <li>__manifest__.py updates</li>
-                            </ul>
-                        </section>
-                        <section>
-                            <h3> How to use the extension ? </h3>
-                            <div>
-                            </div>
-                        </section>
-                        <div class="display-welcome-checkbox">
-                            <vscode-checkbox id="displayOdooWelcomeOnStart" ${defaultState ? 'checked': ''}>Show Odoo welcome page on startup</vscode-checkbox>
-                        </div>
-                    </div>
-                </body>
-            </html>
-        `;
+        let alertContent = "";
+        if (this._context.extension.packageJSON.version.includes("alpha") || this._context.extension.packageJSON.version.includes("beta")) {
+            alertContent = this.htmlAlertContent.replace("${version}", this._context.extension.packageJSON.version);
+        }
+
+        const help_1 = getUri(webview, extensionUri, ['images', 'help_1.png']);
+        const help_2 = getUri(webview, extensionUri, ['images', 'help_2.png']);
+        const help_3 = getUri(webview, extensionUri, ['images', 'help_3.png']);
+        const help_4 = getUri(webview, extensionUri, ['images', 'help_4.png']);
+
+        return this.htmlContent.replace("${styleUri}", styleUri.toString()).replace("${toolkitUri}", toolkitUri.toString())
+            .replace("${mainUri}", mainUri.toString()).replace("${defaultState}", defaultState).replace("${welcomeAlertView}", alertContent)
+            .replace("${image_1}", help_1.toString()).replace("${image_2}", help_2.toString()).replace("${image_3}", help_3.toString())
+            .replace("${image_4}", help_4.toString());
     }
 
     private _setWebviewMessageListener(webview: Webview, context: vscode.ExtensionContext) {
