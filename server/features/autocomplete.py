@@ -128,7 +128,6 @@ class AutoCompleteFeature:
                 if s.name.startswith(starts_with) and (not s.name.startswith("__") or starts_with.startswith("__")):
                     if s not in seen:
                         seen.add(s)
-                        print(s.name)
                         yield s
             if "comodel_name" in context and def_obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
                 model = Odoo.get().models.get(context["comodel_name"], None)
@@ -138,14 +137,12 @@ class AutoCompleteFeature:
                         for s in model_class.all_symbols(line=-1, include_inherits=True):
                             if s not in seen:
                                 seen.add(s)
-                                print(s.name)
                                 yield s
         else:
             for a in obj.get_attributes(module):
                 if a.name.startswith(starts_with) and (not a.name.startswith("__") or starts_with.startswith("__")):
                     if a not in seen:
                         seen.add(a)
-                        print(a.name)
                         yield a
 
     @staticmethod

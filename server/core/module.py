@@ -35,7 +35,8 @@ class Module():
         diagnostics += self.load_manifest(os.path.join(dir_path, "__manifest__.py"))
         if self.dir_name in Odoo.get().modules:
             #TODO merge ! or erase? or raise error? :(
-            print("already in: " + self.dir_name)
+            pass
+            #print("already in: " + self.dir_name)
         Odoo.get().modules[self.dir_name] = self
         f = FileMgr.getFileInfo(manifestPath)
         f.replace_diagnostics(BuildSteps.ARCH, diagnostics)
