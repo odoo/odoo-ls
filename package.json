@@ -42,6 +42,11 @@
         "command": "odoo.testCrashMessage",
         "title": "Open the crash notification",
         "category": "Odoo"
+      },
+      {
+        "command": "odoo.clearState",
+        "title": "Wipe the extension's state storage (!!!THIS ACTION IS IRREVERSIBLE!!!)",
+        "category": "Odoo"
       }
     ],
     "views": {},
@@ -85,7 +90,7 @@
       }
     }
   },
-  "main": "./client/out/extension",
+  "main": "./client/out/main.js",
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -b",

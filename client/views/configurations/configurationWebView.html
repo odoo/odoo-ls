@@ -37,7 +37,7 @@
                 <vscode-form-helper id="config-path-helper">
                     <% if (odooVersion) { %>
                         <p>Version <%= odooVersion %></p>
-                    <% } else { %>
+                    <% } else if (config.odooPath) { %>
                         <p>Not a valid Odoo folder.</p>
                     <% } %>
                 </vscode-form-helper>
