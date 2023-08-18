@@ -115,7 +115,7 @@ export class ConfigurationWebView {
         const config = this._context.globalState.get("Odoo.configurations")[this.configId];
         const htmlFile = fs.readFileSync(htmlPath.fsPath, 'utf-8');
         const nonce = getNonce();
-        const configsVersion: Map<String, String> = this._context.globalState.get("Odoo.configsVersion");
+        const configsVersion: Map<String, String> = this._context.globalState.get("Odoo.configsVersion", null);
 
         let data = {
             webviewElementsUri: webviewElementsUri,
@@ -125,7 +125,7 @@ export class ConfigurationWebView {
             config: config,
             cspSource: webview.cspSource,
             nonce: nonce,
-            odooVersion: configsVersion[`${this.configId}`] ? configsVersion[`${this.configId}`] : null
+            odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null
         };
         return ejs.render(htmlFile, data);
     }

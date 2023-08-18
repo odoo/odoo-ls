@@ -67,6 +67,30 @@ function getClientOptions(): LanguageClientOptions {
     };
 }
 
+function setMissingStateVariables(context: ExtensionContext, outputChannel: OutputChannel) {
+    const globalStateKeys = context.globalState.keys();
+    const workspaceStateKeys = context.workspaceState.keys();
+    let globalVariables = new Map<string, any>([
+        ["Odoo.configurations", {}],
+        ["Odoo.nextConfigId", 0]
+    ]);
+    const workspaceVariables = new Map([["Odoo.selectedConfiguration", [-1]]]);
+
+    for (let key of globalVariables.keys()) {
+        if (!globalStateKeys.includes(key)) {
+            outputChannel.appendLine(`${key} was missing in global state. Setting up the variable.`);
+            context.globalState.update(key, globalVariables.get(key));
+        }
+    }
+
+    for (let key of workspaceVariables.keys()) {
+        if (!workspaceStateKeys.includes(key)) {
+            outputChannel.appendLine(`${key} was missing in workspace state. Setting up the variable.`);
+            context.workspaceState.update(key, workspaceVariables.get(key));
+        }
+    }
+}
+
 function isPythonModuleInstalled(pythonPath: string, moduleName: string): boolean {
     try {
         execSync(pythonPath + ' -c "import ' + moduleName + '"');
@@ -236,6 +260,8 @@ export function activate(context: ExtensionContext): void {
     let pythonPath = getPythonPath();
     let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
 
+    odooOutputChannel.appendLine('[INFO] Starting the extension.');
+
     if (getCurrentConfig(context)) {
         if (context.extensionMode === ExtensionMode.Production) {
             if (checkPythonDependencies(pythonPath)) {
@@ -254,16 +280,8 @@ export function activate(context: ExtensionContext): void {
     odooStatusBar.command = "odoo.clickStatusBar"
     context.subscriptions.push(odooStatusBar);
 
-    // Initialize some settings on the extension's first launch.
-    if (context.globalState.get("Odoo.firstLaunch", true)) {
-        context.globalState.update("Odoo.configurations", {});
-        context.globalState.update('Odoo.nextConfigId', 0);
-        context.globalState.update("Odoo.firstLaunch", 0);
-    }
-
-    if (context.workspaceState.get("Odoo.selectedConfiguration", null) == null) {
-        context.workspaceState.update("Odoo.selectedConfiguration", -1);
-    }
+    // Initialize some settings on the extension's launch if they're missing from the state.
+    setMissingStateVariables(context, odooOutputChannel);
 
     context.subscriptions.push(
         commands.registerCommand('odoo.clickStatusBar', async () => {
@@ -335,7 +353,7 @@ export function activate(context: ExtensionContext): void {
         ConfigurationsChange.event((changes: Array<String> | null) => {
             setStatusConfig(context, odooStatusBar);
             if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
-                client.diagnostics.clear();
+                if (client.diagnostics) client.diagnostics.clear();
                 client.sendNotification("Odoo/configurationChanged");
             }
         })
@@ -353,7 +371,7 @@ export function activate(context: ExtensionContext): void {
                         );
                     });
                 } else {
-                    client.diagnostics.clear();
+                    if (client.diagnostics) client.diagnostics.clear();
                     client.sendNotification("Odoo/configurationChanged");
                 }
             } else {
@@ -385,11 +403,27 @@ export function activate(context: ExtensionContext): void {
         })
     );
 
+    // COMMANDS
     context.subscriptions.push(
         commands.registerCommand("odoo.openWelcomeView", () => {
             WelcomeWebView.render(context);
         })
     );
+
+    context.subscriptions.push(
+        commands.registerCommand("odoo.clearState", () => {
+            for (let key of context.globalState.keys()) {
+                odooOutputChannel.appendLine(`[INFO] Wiping ${key} from global storage.`);
+                context.globalState.update(key, undefined);
+            }
+
+            for (let key of context.workspaceState.keys()) {
+                odooOutputChannel.appendLine(`[INFO] Wiping ${key} from workspace storage.`);
+                context.workspaceState.update(key, undefined);
+            }
+            commands.executeCommand("workbench.action.reloadWindow");
+        }
+    ));
 
     switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
         case null:
