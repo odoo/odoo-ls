@@ -344,7 +344,6 @@ export function activate(context: ExtensionContext): void {
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
         selectedConfigurationChange.event(() => {
-            setStatusConfig(context, odooStatusBar);
             if (!checkPythonDependencies(pythonPath)) return;
             if (getCurrentConfig(context)) {
                 if (!client.isRunning()) {
@@ -357,10 +356,11 @@ export function activate(context: ExtensionContext): void {
                     client.diagnostics.clear();
                     client.sendNotification("Odoo/configurationChanged");
                 }
-            } else if (client.isRunning()) {
-                client.stop();
+            } else {
+                if (client.isRunning()) client.stop();
                 isLoading = false;
             }
+            setStatusConfig(context, odooStatusBar);
         })
     );
 
