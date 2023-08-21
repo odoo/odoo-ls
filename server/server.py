@@ -168,10 +168,11 @@ def did_open(ls, params: DidOpenTextDocumentParams):
 
 @odoo_server.feature("Odoo/configurationChanged")
 def client_config_changed(ls: OdooLanguageServer, params=None):
-    ls.show_message_log("Interrupting initialization", MessageType.Log)
-    Odoo.get().interrupt_initialization()
-    ls.show_message_log("Reset existing database", MessageType.Log)
-    Odoo.get().reset(ls)
+    if Odoo.get():
+        ls.show_message_log("Interrupting initialization", MessageType.Log)
+        Odoo.get().interrupt_initialization()
+        ls.show_message_log("Reset existing database", MessageType.Log)
+        Odoo.get().reset(ls)
     FileMgr.files = {}
     ls.show_message_log("Building new database", MessageType.Log)
     odoo_server.launch_thread(target=Odoo.initialize, args=(ls,))
