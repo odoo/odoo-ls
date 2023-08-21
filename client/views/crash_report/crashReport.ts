@@ -129,7 +129,7 @@ export class CrashReportWebView {
 
             switch (command) {
                 case "send_report":
-                    axios.post('https://iap-services.odoo.com/api/vscode/1/crash_report', {
+                    axios.post('https://iap-services.odoo.com/api/odools/vscode/1/crash_report', {
                         data: {
                             uid: this.UID,
                             document: this._document ? this._document.getText() : null,
