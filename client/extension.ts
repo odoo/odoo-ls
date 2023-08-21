@@ -427,7 +427,7 @@ export function activate(context: ExtensionContext): void {
 
     switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
         case null:
-            context.globalState.update('Odoo.displayWelcomeView', false);
+            context.globalState.update('Odoo.displayWelcomeView', true);
             WelcomeWebView.render(context);
             break;
         case true:

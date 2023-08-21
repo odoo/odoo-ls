@@ -3,9 +3,11 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <script type="module" src="${toolkitUri}"></script>
-        <script type="module" src="${mainUri}"></script>
-        <link rel="stylesheet" href="${styleUri}">
+        <script type="module" nonce="<%= nonce %>" src="<%= toolkitUri %>"></script>
+        <script type="module" nonce="<%= nonce %>" src="<%= mainUri %>"></script>
+        <link rel="stylesheet" href="<%= styleUri %>">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src <%= cspSource %>; img-src <%= cspSource %> https:; font-src <%= cspSource %>; script-src 'nonce-<%= nonce %>';">
+
     </head>
     <body id="welcome-body">
         <div id="welcome-container">
@@ -16,7 +18,10 @@
             <div class="welcome-header" id="welcome-title">
                 Odoo Language Server will help you to write Odoo modules by providing you with autocompletion, code analysis and more.
             </div>
-            ${welcomeAlertView}
+            <%- alertHTML %>
+            <div class="display-welcome-checkbox welcome-header">
+                <vscode-checkbox id="displayOdooWelcomeOnStart" <%= displayOnStartupCheckbox %>>Show Odoo welcome page on startup</vscode-checkbox>
+            </div>
             <h2>How to install ?</h2>
             <section>
                 <div>If you see this message, it means that your extension is already installed. But there is some configurations you'll
@@ -41,15 +46,15 @@
                 </p>
                 <p>
                     Your available configurations are displayed here:<br/>
-                    <img class="img-margins" src=${image_1} /><br/>
+                    <img class="img-margins" src="<%= image_1 %>" /><br/>
                     click on it to open the configuration selector panel:<br/>
-                    <img class="img-margins" src=${image_2} /><br/>
+                    <img class="img-margins" src="<%= image_2 %>" /><br/>
                     To create a new configuration, click on "Add a configuration". To edit one, click on the wheel next to the configuration you want to edit.<br/>
-                    <img class="img-margins" src=${image_3} /><br/>
+                    <img class="img-margins" src="<%= image_3 %>" /><br/>
                 </p>
                 <p>
                     Create your configuration with the information related to the odoo you want to use:<br/>
-                    <img class="img-margins" src=${image_4} /><br/>
+                    <img class="img-margins" src="<%= image_4 %>" /><br/>
                 </p>
                 <p>
                     When your configuration is ready, select it for your panel. This selection will run for the current workspace.<br/>
@@ -57,9 +62,6 @@
                     You can use your vscode while the extension is loading, but no feature will be available until the configuration is ready.
                 </p>
             </section>
-            <div class="display-welcome-checkbox welcome-header">
-                <vscode-checkbox id="displayOdooWelcomeOnStart" ${defaultState ? 'checked': ''}>Show Odoo welcome page on startup</vscode-checkbox>
-            </div>
         </div>
     </body>
 </html>
