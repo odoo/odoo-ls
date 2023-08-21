@@ -39,7 +39,8 @@ class PythonArchEval(ast.NodeVisitor):
         if not hasattr(self.symbol, "ast_node"):
             raise Exception("Symbol must have an ast_node")
         if not self.symbol.ast_node:
-            raise Exception("Symbol must have a valid ast_node")
+            self.ls.show_message_log("Symbol " + self.symbol.name + " (" + self.symbol.paths[0] + ") has no ast_node", MessageType.Error)
+            return None
         self.symbol.evalStatus = 1
         self.symbol.odooStatus = 0
         self.symbol.validationStatus = 0
