@@ -72,6 +72,8 @@ class HoverFeature:
             value += "  \n-  \n" + symbol.doc.value
         #if infered_type:
         #    value += "  \n-  \n**" + infered_type[2:] + "** : " + class_doc
+        if symbol.name == "tomate" and symbol.type == SymType.VARIABLE: #easter egg (private joke)
+            value = "Please rename your variable. Tomate is not a good name for a variable. You won't know what it means in 2 weeks (or even earlier)"
         content = MarkupContent(
             kind=MarkupKind.Markdown,
             value=value
