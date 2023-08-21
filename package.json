@@ -2,7 +2,7 @@
   "name": "odoo",
   "displayName": "Odoo",
   "description": "",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "publisher": "Odoo",
   "engines": {
     "vscode": "^1.78.0"
