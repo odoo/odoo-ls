@@ -158,7 +158,9 @@ export class ConfigurationWebView {
             "addons": addons
         };
         this._context.globalState.update("Odoo.configurations", configs);
-        ConfigurationsChange.fire(changes);
+        if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
+            ConfigurationsChange.fire(changes);
+        }
     }
 
     /**
