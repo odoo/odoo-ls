@@ -133,7 +133,7 @@ export class CrashReportWebView {
                         data: {
                             uid: this.UID,
                             document: this._document ? this._document.getText() : null,
-                            document_path: this._document.uri.fsPath,
+                            document_path: this._document ? this._document.uri.fsPath: null,
                             pygls_log: fs.readFileSync(getUri(webview, this._context.extensionUri, ["pygls.log"]).fsPath, 'base64'),
                             error: this._error,
                             additional_info: message.additional_info,
