@@ -65,3 +65,7 @@ def get_uri(path):
     file_uri = pathlib.Path(__file__).parent.parent.resolve()
     file_uri = os.path.join(file_uri, *path)
     return FileMgr.pathname2uri(file_uri)
+
+#setup thread content
+OdooLanguageServer.instance.set(server)
+OdooLanguageServer.access_mode.set("none")

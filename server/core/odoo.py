@@ -133,6 +133,7 @@ class Odoo():
             except Exception as e:
                 ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
                 ls.show_message_log(traceback.format_exc())
+                print(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
 
     def interrupt_initialization(self):
@@ -392,6 +393,7 @@ class Odoo():
             #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
             return
         except Exception:
+            print(traceback.format_exc())
             ls.show_message_log(traceback.format_exc(), MessageType.Error)
             ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
@@ -430,6 +432,7 @@ class Odoo():
                         self.add_to_arch_rebuild(s)
             self.process_rebuilds(ls)
         except Exception:
+            print(traceback.format_exc())
             ls.show_message_log(traceback.format_exc(), MessageType.Error)
             ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
