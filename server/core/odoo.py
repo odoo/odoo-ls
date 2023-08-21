@@ -371,6 +371,8 @@ class Odoo():
                     if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
                         path = os.sep.join(path.split(os.sep)[:-1])
                     file_symbol = self.get_file_symbol(path)
+                    if not file_symbol:
+                        return
                     parent = file_symbol.parent
                     file_symbol.unload(file_symbol)
                     del file_symbol
