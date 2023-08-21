@@ -1,8 +1,9 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
-import { getUri } from "../../utils/utils";
+import { getNonce, getUri } from "../../utils/utils";
 import * as vscode from 'vscode';
-import * as path from 'path'
-import * as fs from 'fs'
+import * as path from 'path';
+import * as fs from 'fs';
+import * as ejs from "ejs";
 
 
 export class WelcomeWebView {
@@ -80,13 +81,22 @@ export class WelcomeWebView {
             "toolkit.js",
         ]);
 
+        const htmlPath = getUri(webview, extensionUri, ["client", "views", "welcome", "welcomeWebView.html"]);
+        const htmlFile = fs.readFileSync(htmlPath.fsPath, 'utf-8');
+        const alertPath = getUri(webview, extensionUri, ["client", "views", "welcome", "welcomeAlertView.html"]);
+        let alertData;
+        const alertFile = fs.readFileSync(alertPath.fsPath, 'utf-8');
         const styleUri = getUri(webview, extensionUri, ["client", "views", "welcome", "style.css"]);
         const mainUri = getUri(webview, extensionUri, ["client", "views", "welcome", "welcomeWebView.js"]);
-        const defaultState = this._context.globalState.get('Odoo.displayWelcomeView', null);
+        const defaultState = this._context.globalState.get('Odoo.displayWelcomeView', false);
+        const nonce = getNonce();
 
-        let alertContent = "";
         if (this._context.extension.packageJSON.version.includes("alpha") || this._context.extension.packageJSON.version.includes("beta")) {
-            alertContent = this.htmlAlertContent.replace("${version}", this._context.extension.packageJSON.version);
+            alertData = {
+                version: this._context.extension.packageJSON.version
+            }
+        } else {
+            alertData = null;
         }
 
         const help_1 = getUri(webview, extensionUri, ['images', 'help_1.png']);
@@ -94,10 +104,21 @@ export class WelcomeWebView {
         const help_3 = getUri(webview, extensionUri, ['images', 'help_3.png']);
         const help_4 = getUri(webview, extensionUri, ['images', 'help_4.png']);
 
-        return this.htmlContent.replace("${styleUri}", styleUri.toString()).replace("${toolkitUri}", toolkitUri.toString())
-            .replace("${mainUri}", mainUri.toString()).replace("${defaultState}", defaultState).replace("${welcomeAlertView}", alertContent)
-            .replace("${image_1}", help_1.toString()).replace("${image_2}", help_2.toString()).replace("${image_3}", help_3.toString())
-            .replace("${image_4}", help_4.toString());
+        const data = {
+            styleUri: styleUri,
+            mainUri: mainUri,
+            toolkitUri: toolkitUri,
+            cspSource: webview.cspSource,
+            alertHTML: alertData ? ejs.render(alertFile, alertData) : '',
+            image_1: help_1,
+            image_2: help_2,
+            image_3: help_3,
+            image_4: help_4,
+            displayOnStartupCheckbox: defaultState ? 'checked': '',
+            nonce: nonce,
+        }
+
+        return ejs.render(htmlFile, data);
     }
 
     private _setWebviewMessageListener(webview: Webview, context: vscode.ExtensionContext) {
