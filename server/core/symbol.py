@@ -146,7 +146,8 @@ class Symbol(RegisterableObject):
         #follow the reference to the real symbol and returns it (not a RegisteredRef)
         sym = self
         instance = self.type in [SymType.VARIABLE]
-        if sym.eval == None and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]) and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).evalStatus == 0:
+        file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
+        if sym.eval == None and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval: #TODO shouldn't we launch arch builder in case of not in rebuild_arch_eval?
             ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
             ev.eval_arch()
         while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_rr(context):
@@ -154,7 +155,8 @@ class Symbol(RegisterableObject):
             if sym.eval.context and context:
                 context.update(sym.eval.context)
             sym = sym.eval.get_symbol(context)
-            if sym.eval == None and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]) and sym.get_in_parents([SymType.FILE, SymType.PACKAGE]).evalStatus == 0:
+            file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
+            if sym.eval == None and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval:
                 ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
                 ev.eval_arch()
         return sym, instance
