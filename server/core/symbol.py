@@ -273,7 +273,7 @@ class Symbol(RegisterableObject):
                     last = None
                     for localSym in self.localSymbols:
                         if localSym.name == symbol.name:
-                            if not last or last.start_pos[0] < localSym.start_pos:
+                            if not last or last.start_pos[0] < localSym.start_pos[0]:
                                 last = localSym
                     if last:
                         #if DEBUG_MEMORY:
