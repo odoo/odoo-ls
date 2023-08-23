@@ -43,7 +43,7 @@ class PythonOdooBuilder(ast.NodeVisitor):
         self.symStack[0].not_found_paths = []
         Odoo.get().not_found_symbols.discard(self.symStack[0])
         fileInfo = FileMgr.getFileInfo(self.filePath)
-        if not fileInfo.ast: #doesn"t compile or we don't want to validate it
+        if not fileInfo.ast: #we don't want to validate it
             return
         self._load()
         fileInfo.replace_diagnostics(BuildSteps.ODOO, self.diagnostics)

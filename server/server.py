@@ -164,7 +164,8 @@ def did_open(ls, params: DidOpenTextDocumentParams):
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
-    FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
+    f = FileMgr.getFileInfo(path, content, params.text_document.version, opened = True)
+    f.publish_diagnostics(ls) #publish for potential syntax errors
 
 @odoo_server.feature("Odoo/configurationChanged")
 def client_config_changed(ls: OdooLanguageServer, params=None):
