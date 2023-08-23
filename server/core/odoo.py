@@ -365,9 +365,9 @@ class Odoo():
                 ls.show_message_log("File change event: " + path + " version " + str(version))
                 with Odoo.get().acquire_write(ls):
                     file_info = FileMgr.getFileInfo(path, text, version, opened=True)
-                    if not file_info.ast:
-                        file_info.publish_diagnostics(ls)
-                        return #could emit syntax error in file_info["d_synt"]
+                    file_info.publish_diagnostics(ls)
+                    if file_info.version != version: #if the update didn't work
+                        return
                     #1 unload
                     if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
                         path = os.sep.join(path.split(os.sep)[:-1])

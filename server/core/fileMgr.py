@@ -32,28 +32,58 @@ class FileInfo:
                     content = f.read()
                 #tree = self.grammar.parse(content, error_recovery=False, path=self.filePath, cache = False)
                 self.ast = ast.parse(content, path)
-            self.diagnostics[BuildSteps.SYNTAX] = []
+            self.replace_diagnostics(BuildSteps.SYNTAX, [])
         except SyntaxError as e:
             diag = [Diagnostic(
                 range = Range(
-                    start=Position(line=e.lineno-1, character=e.offset),
-                    end=Position(line=e.lineno-1, character=e.offset+1) if sys.version_info < (3, 10) else \
-                        Position(line=e.end_lineno-1, character=e.end_offset)
+                    start=Position(line=e.lineno-1, character=e.offset-1),
+                    end=Position(line=e.lineno-1, character=e.offset-1) if sys.version_info < (3, 10) else \
+                        Position(line=e.end_lineno-1, character=e.end_offset-1)
                 ),
                 message = type(e).__name__ + ": " + e.msg,
                 source = EXTENSION_NAME
             )]
             #if syntax is invalid, we have to drop all other diagnostics
-            self.diagnostics[BuildSteps.ARCH] = []
-            self.diagnostics[BuildSteps.ARCH_EVAL] = []
-            self.diagnostics[BuildSteps.ODOO] = []
-            self.diagnostics[BuildSteps.VALIDATION] = []
-            self.diagnostics[BuildSteps.SYNTAX] = diag
+            self.replace_diagnostics(BuildSteps.ARCH, [])
+            self.replace_diagnostics(BuildSteps.ARCH_EVAL, [])
+            self.replace_diagnostics(BuildSteps.ODOO, [])
+            self.replace_diagnostics(BuildSteps.VALIDATION, [])
+            self.replace_diagnostics(BuildSteps.SYNTAX, diag)
             return False
         except ValueError as e:
+            diag = [Diagnostic(
+                range = Range(
+                    start=Position(line=0, character=0),
+                    end=Position(line=0, character=0)
+                ),
+                message = "File contains null characters",
+                source = EXTENSION_NAME
+            )]
+            #if syntax is invalid, we have to drop all other diagnostics
+            self.replace_diagnostics(BuildSteps.ARCH, [])
+            self.replace_diagnostics(BuildSteps.ARCH_EVAL, [])
+            self.replace_diagnostics(BuildSteps.ODOO, [])
+            self.replace_diagnostics(BuildSteps.VALIDATION, [])
+            self.replace_diagnostics(BuildSteps.SYNTAX, diag)
             return False
         except PermissionError as e:
+
+            diag = [Diagnostic(
+                range = Range(
+                    start=Position(line=0, character=0),
+                    end=Position(line=0, character=0)
+                ),
+                message = "PermissionError: Odoo extension does not have permission to read this file",
+                source = EXTENSION_NAME
+            )]
+            #if syntax is invalid, we have to drop all other diagnostics
+            self.replace_diagnostics(BuildSteps.ARCH, [])
+            self.replace_diagnostics(BuildSteps.ARCH_EVAL, [])
+            self.replace_diagnostics(BuildSteps.ODOO, [])
+            self.replace_diagnostics(BuildSteps.VALIDATION, [])
+            self.replace_diagnostics(BuildSteps.SYNTAX, diag)
             return False
+        return True
 
     def build_parso_tree(self, path, content):
         from server.core.odoo import Odoo
@@ -111,14 +141,18 @@ class FileMgr():
             f = FileInfo(path, version)
             f.build_ast(path, content)
             FileMgr.files[path] = f
+            f.version = version
         elif content:
             if f.version < version:
-                f.build_ast(path, content)
-                if opened:
-                    f.build_parso_tree(path, content)
+                valid = f.build_ast(path, content)
+                if valid:
+                    f.version = version
+                    if opened:
+                        f.build_parso_tree(path, content)
+                else:
+                    f.parso_tree = None
             elif opened and not f.parso_tree:
                 f.build_parso_tree(path, content)
-            f.version = version
         return f
 
     @staticmethod
