@@ -1,4 +1,5 @@
-import { Uri, Webview } from "vscode";
+import { execSync } from "child_process";
+import { ExtensionContext, Uri, Webview } from "vscode";
 
 /**
  * A helper function which will get the webview URI of a given file or resource.
@@ -22,4 +23,22 @@ export function getNonce() {
 		text += possible.charAt(Math.floor(Math.random() * possible.length));
 	}
 	return text;
+}
+
+export function getPythonVersion(context: ExtensionContext) {
+	// Hardcoded to python3 until configs have their own pythonPath
+	const pythonPath = "python3";
+	try {
+		return execSync(`${pythonPath} --version`, {encoding: 'utf8'})
+	} catch {
+		return null;
+	}
+}
+
+// Config related utils
+
+export function getCurrentConfig(context: ExtensionContext) {
+    const configs: any = context.globalState.get("Odoo.configurations");
+    const activeConfig: number = Number(context.workspaceState.get('Odoo.selectedConfiguration'));
+    return (configs && activeConfig > -1 ? configs[activeConfig] : null);
 }

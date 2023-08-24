@@ -1,5 +1,5 @@
 import { Disposable, Webview, WebviewPanel, window, Uri } from "vscode";
-import { getUri, getNonce } from "../../utils/utils";
+import { getUri, getNonce, getPythonVersion, getCurrentConfig } from "../../utils/utils";
 import axios from 'axios';
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
@@ -129,6 +129,14 @@ export class CrashReportWebView {
 
             switch (command) {
                 case "send_report":
+                    const config = getCurrentConfig(this._context);
+                    let configString = "";
+                    if (config) {
+                        configString += `Path: ${config.odooPath}\n`;
+                        configString += `Addons:\n${config.addons.map(i => `  - ${i}`).join('\n')}`;
+                    } else {
+                        configString += "Path: None\nAddons: None";
+                    }
                     axios.post('https://iap-services.odoo.com/api/odools/vscode/1/crash_report', {
                         data: {
                             uid: this.UID,
@@ -137,7 +145,9 @@ export class CrashReportWebView {
                             pygls_log: fs.readFileSync(getUri(webview, this._context.extensionUri, ["pygls.log"]).fsPath, 'base64'),
                             error: this._error,
                             additional_info: message.additional_info,
-                            version: this._context.extension.packageJSON.version
+                            version: this._context.extension.packageJSON.version,
+                            python_version: getPythonVersion(this._context),
+                            configuration: configString
                         }
                     });
                     this.dispose();
