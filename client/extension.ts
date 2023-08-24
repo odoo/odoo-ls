@@ -48,6 +48,7 @@ import {
     ConfigurationsChange
 } from './utils/events'
 import { execSync } from "child_process";
+import { getCurrentConfig } from "./utils/utils";
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
@@ -158,12 +159,6 @@ function startLangServer(
     clientOptions.outputChannel = outputChannel;
 
     return new LanguageClient(command, serverOptions, clientOptions);
-}
-
-function getCurrentConfig(context: ExtensionContext) {
-    const configs: any = context.globalState.get("Odoo.configurations");
-    const activeConfig: number = Number(context.workspaceState.get('Odoo.selectedConfiguration'));
-    return (configs && activeConfig > -1 ? configs[activeConfig] : null);
 }
 
 function setStatusConfig(context: ExtensionContext, statusItem: StatusBarItem) {
