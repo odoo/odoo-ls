@@ -205,7 +205,7 @@ export class ConfigurationWebView {
                                 command: "update_path",
                                 path: odooFolderPath
                             });
-                            await this._getOdooVersion(odooFolderPath, webview);
+                            this._getOdooVersion(odooFolderPath, webview);
                         }
                     });
                     break;
@@ -256,7 +256,7 @@ export class ConfigurationWebView {
                 if (!versionString) {
                     let versions = this._context.globalState.get('Odoo.configsVersion', {});
                     versions[`${this.configId}`] = null;
-                    await this._context.globalState.update('Odoo.configsVersion', versions);
+                    this._context.globalState.update('Odoo.configsVersion', versions);
                     webview.postMessage({
                         command: "update_config_folder_validity",
                         version: null
@@ -268,7 +268,7 @@ export class ConfigurationWebView {
                     const version = `${versionArray[0]}.${versionArray[1]}.${versionArray[2]}` + (versionArray[3] == 'FINAL' ? '' : ` ${versionArray[3]}${versionArray[4]}`);
                     let versions = this._context.globalState.get('Odoo.configsVersion', {});
                     versions[`${this.configId}`] = version;
-                    await this._context.globalState.update('Odoo.configsVersion', versions);
+                    this._context.globalState.update('Odoo.configsVersion', versions);
                     webview.postMessage({
                         command: "update_config_folder_validity",
                         version: version
@@ -279,7 +279,7 @@ export class ConfigurationWebView {
             // Folder is invalid if odoo/release.py was never found
             let versions = this._context.globalState.get('Odoo.configsVersion', {});
             versions[`${this.configId}`] = null;
-            await this._context.globalState.update('Odoo.configsVersion', versions);
+            this._context.globalState.update('Odoo.configsVersion', versions);
             webview.postMessage({
                 command: "update_config_folder_validity",
                 version: null
