@@ -337,6 +337,8 @@ class Odoo():
 
     def get_file_symbol(self, path):
         addonSymbol = self.symbols.get_symbol(["odoo", "addons"])
+        if not addonSymbol:
+            return []
         for dir_path in [self.instance.odooPath] + addonSymbol.paths:
             if path.startswith(dir_path):
                 tree = path.replace(".py", "")[len(dir_path)+1:].replace("\\", "/").split("/")
