@@ -20,7 +20,7 @@ class ParsoUtils:
         expr.append(element)
         evaluation, context = ParsoUtils.evaluateType(expr, scope_symbol)
         if isinstance(evaluation, Model):
-            module = fileSymbol.get_module()
+            module = fileSymbol.get_module_sym()
             if not module:
                 return "Can't evaluate the current module. Are you in a valid Odoo module?", None, None
             evaluation = evaluation.get_main_symbols(module)
@@ -29,7 +29,7 @@ class ParsoUtils:
             else:
                 return "Can't find the definition: 'Multiple models with the same name exists.'", None, None
         elif isinstance(evaluation, str):
-            module = fileSymbol.get_module()
+            module = fileSymbol.get_module_sym()
             if module:
                 model = Odoo.get().models.get(evaluation, None)
                 if model:
@@ -89,7 +89,7 @@ class ParsoUtils:
         """return the symbol of the type of the expr. if the expr represent a function call, the function symbol is returned."""
         obj = None #symbol or model
         node_iter = 0
-        module = scope_symbol.get_module()
+        module = scope_symbol.get_module_sym()
         context = {
             "args": None,
             "parent": None,

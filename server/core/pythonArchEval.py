@@ -127,11 +127,6 @@ class PythonArchEval(ast.NodeVisitor):
                 if variable.eval.get_symbol():
                     variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
-    def visit_FunctionDef(self, node):
-        if self.symbol.is_external():
-            return
-        ast.NodeVisitor.generic_visit(self, node)
-
     def _extract_base_name(attr):
         if isinstance(attr, ast.Name):
             return attr.id

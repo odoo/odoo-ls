@@ -33,7 +33,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             self.filePath = path
         else:
             self.filePath = path
-            if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
+            if path.endswith("__init__.py") or path.endswith("__init__.pyi") or path.endswith("__manifest__.py"):
                 self.filePath = os.path.dirname(path)
             self.ast_node = ast_node
         self.symStack = [parentSymbol] # symbols we are parsing in a stack. The first element is always the parent of the current one
@@ -58,10 +58,13 @@ class PythonArchBuilder(ast.NodeVisitor):
         if not self.filePath.endswith(".py") and not self.filePath.endswith(".pyi"):
             #check if this is a package:
             if os.path.exists(os.path.join(self.filePath, "__init__.py")) or os.path.exists(os.path.join(self.filePath, "__init__.pyi")):
-                symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
                 if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
                     os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
-                    symbol.isModule = True
+                    from server.core.module import ModuleSymbol
+                    symbol = ModuleSymbol(self.ls, self.filePath)
+                    symbol.load_module_info(self.ls)
+                else:
+                    symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 if os.path.exists(os.path.join(self.filePath, "__init__.py")):
@@ -95,7 +98,7 @@ class PythonArchBuilder(ast.NodeVisitor):
             elif self.symStack[-1].in_workspace:
                 fileInfo.publish_diagnostics(self.ls)
         if self.filePath.endswith("__init__.py"):
-            PythonArchBuilderOdooHooks.on_module_declaration(self.symStack[-1])
+            PythonArchBuilderOdooHooks.on_package_declaration(self.symStack[-1])
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         self.symStack[-1].archStatus = 2
         return self.symStack[-1]
@@ -108,7 +111,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.symStack[-1].add_symbol(symbol)
 
     def load_symbols_from_ast(self, ast):
-        #moduleName = self.symStack[-1].get_module()
+        #moduleName = self.symStack[-1].get_module_sym()
         #if moduleName and moduleName != 'base' or moduleName in Odoo.get().modules: #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
         #    self.currentModule = Odoo.get().modules[moduleName]
         self.visit(ast)
@@ -222,12 +225,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
                 symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
-        #We don't need what's inside the function?
-        if self.symStack[-1].is_external():
-            return
-        self.symStack.append(symbol)
-        ast.NodeVisitor.generic_visit(self, node)
-        self.symStack.pop()
 
     def visit_ClassDef(self, node):
         symbol = ClassSymbol(node.name, self.filePath)

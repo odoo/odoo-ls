@@ -313,26 +313,19 @@ class Odoo():
             validation_rebuilt = []
 
     def build_modules(self, ls):
-        from .module import Module
-        addonPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
-        for path in addonPaths:
+        from .pythonArchBuilder import PythonArchBuilder
+        addonsSymbol = self.symbols.get_symbol(["odoo", "addons"])
+        addonsPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
+        for path in addonsPaths:
             dirs = os.listdir(path)
             for dir in dirs:
-                Module(ls, os.path.join(path, dir))
+                PythonArchBuilder(ls, addonsSymbol, os.path.join(path, dir)).load_arch()
             if self.stop_init:
                 break
         if self.stop_init:
             return
-        loaded = []
-        if not DEBUG_BUILD_ONLY_BASE:
-            for module in Odoo.get().modules.values():
-                loaded += module.load_arch(ls)
-                if self.stop_init:
-                    break
-            self.process_rebuilds(ls)
-
-        if loaded:
-            ls.show_message_log("Modules loaded: " + ", ".join(loaded))
+        #needed?
+        self.process_rebuilds(ls)
 
         try:
             import psutil
@@ -343,17 +336,19 @@ class Odoo():
         ls.show_message_log(str(len(Odoo.get().modules)) + " modules found")
 
     def get_file_symbol(self, path):
-        if path.startswith(self.instance.odooPath):
-            tree = path.replace(".py", "")[len(self.instance.odooPath)+1:].replace("\\", "/").split("/")
-            if tree:
-                if tree[-1] == "__init__":
-                    tree.pop()
-                if tree[0] == "addons":
-                    tree = ["odoo"] + tree
-            return self.symbols.get_symbol(tree)
-        for addonPath in self.symbols.get_symbol(["odoo", "addons"]).paths:
-            if path.startswith(addonPath):
-                return self.symbols.get_symbol(["odoo", "addons"] + path.replace(".py", "")[len(addonPath)+1:].replace("\\", "/").split("/"))
+        addonSymbol = self.symbols.get_symbol(["odoo", "addons"])
+        for dir_path in [self.instance.odooPath] + addonSymbol.paths:
+            if path.startswith(dir_path):
+                tree = path.replace(".py", "")[len(dir_path)+1:].replace("\\", "/").split("/")
+                if tree:
+                    if dir_path != self.instance.odooPath:
+                        tree = addonSymbol.get_tree()[0] + tree
+                    else:
+                        if tree[0] == "addons":
+                            tree = ["odoo"] + tree
+                    if tree[-1] in ["__init__", "__manifest__"]:
+                        tree.pop()
+                return self.symbols.get_symbol(tree)
         return []
 
     def file_change(self, ls, path, text, version):
@@ -369,8 +364,6 @@ class Odoo():
                     if file_info.version != version: #if the update didn't work
                         return
                     #1 unload
-                    if path.endswith("__init__.py") or path.endswith("__init__.pyi"):
-                        path = os.sep.join(path.split(os.sep)[:-1])
                     file_symbol = self.get_file_symbol(path)
                     if not file_symbol:
                         return
@@ -378,6 +371,8 @@ class Odoo():
                     file_symbol.unload(file_symbol)
                     del file_symbol
                     #build new
+                    if path.endswith("__init__.py") or path.endswith("__init__.pyi") or path.endswith("__manifest__.py"):
+                        path = os.sep.join(path.split(os.sep)[:-1])
                     pp = PythonArchBuilder(ls, parent, path)
                     new_symbol = pp.load_arch()
                     new_symbol_tree = new_symbol.get_tree()
@@ -419,10 +414,10 @@ class Odoo():
                     new_tree = parent_symbol.get_tree()
                     new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
                     set_to_validate = self._search_symbols_to_rebuild(new_tree)
-                    if set_to_validate:
+                    if set_to_validate or parent_symbol.get_tree() == (["odoo", "addons"], []):
                         #if there is something that is trying to import the new file, build it.
                         #Else, don't add it to the architecture to not add useless symbols (and overrides)
-                        if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi"):
+                        if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi") or new_path.endswith("__manifest__.py"):
                             new_path = os.sep.join(new_path.split(os.sep)[:-1])
                         pp = PythonArchBuilder(ls, parent_symbol, new_path)
                         new_symbol = pp.load_arch()

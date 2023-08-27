@@ -64,9 +64,7 @@ class PythonValidator(ast.NodeVisitor):
             self.symStack[0].ast_node = None
 
     def validate_ast(self, ast):
-        module = self.symStack[-1].get_module_sym()
-        if module and (module.name != 'base' or module.name in Odoo.get().modules): #TODO hack to be able to import from base when no module has been loaded yet (example services/server.py line 429 in master)
-            self.currentModule = Odoo.get().modules[module.name]
+        self.currentModule = self.symStack[-1].get_module_sym()
         self.visit(ast)
 
     def visit_Try(self, node):
@@ -111,14 +109,14 @@ class PythonValidator(ast.NodeVisitor):
                 break
             else:
                 module = symbol.get_module_sym()
-                if module and not self.currentModule.is_in_deps(module.name) and not self.safeImport[-1]:
+                if module and not self.currentModule.is_in_deps(module.dir_name) and not self.safeImport[-1]:
                     self.diagnostics.append(Diagnostic(
                         range = Range(
                             start=Position(line=node.lineno-1, character=node.col_offset),
                             end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
                                 Position(line=node.lineno-1, character=node.end_col_offset)
                         ),
-                        message = module.name + " is not in the dependencies of the module",
+                        message = module.dir_name + " is not in the dependencies of the module",
                         source = EXTENSION_NAME,
                         severity = 2
                     ))

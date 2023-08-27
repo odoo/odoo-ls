@@ -44,7 +44,7 @@ class Symbol(RegisterableObject):
     """
 
     __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
-        "localSymbols",  "dependencies", "dependents", "parent", "isModule",
+        "localSymbols",  "dependencies", "dependents", "parent",
         "modelData", "external", "start_pos", "end_pos", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc")
 
@@ -103,7 +103,6 @@ class Symbol(RegisterableObject):
                 }
             }
         self.parent = None
-        self.isModule = False
         self.modelData = None
         self.external = False
         self.in_workspace = False
@@ -358,17 +357,11 @@ class Symbol(RegisterableObject):
         return current_symbol
 
     def get_module_sym(self):
+        from server.core.module import ModuleSymbol
         s = self
-        while s and not s.isModule:
+        while s and not isinstance(s, ModuleSymbol):
             s = s.parent
         return s
-
-    def get_module(self):
-        from server.core.odoo import Odoo
-        s = self.get_module_sym()
-        if not s:
-            return None
-        return Odoo.get().modules.get(s.name, None)
 
     def get_eval(self):
         return self.eval
@@ -401,7 +394,7 @@ class Symbol(RegisterableObject):
                     res.append(self.symbols[name])
         if self.isModel() and not prevent_comodel:
             model = Odoo.get().models[self.modelData.name]
-            sym = model.get_symbols(from_module or self.get_module())
+            sym = model.get_symbols(from_module or self.get_module_sym())
             for s in sym:
                 if s == self:
                     continue
