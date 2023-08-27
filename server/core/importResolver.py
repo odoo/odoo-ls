@@ -11,7 +11,7 @@ __all__ = ["resolve_import_stmt"]
 
 def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_aliases, level,
                     start_pos, end_pos):
-    """return a list of list(len=4) [[name, asname, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist,
+    """return a list of list(len=3) [[name, symbol, file_tree]] for each name in the import statement. If symbol doesn't exist,
     it will be created if possible or None will be returned.
     file_tree contains the the full file_tree to search for each name. Ex: from os import path => os
     from .test import A => tree to current file + test"""
@@ -106,12 +106,6 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, start_pos,
             #stubs file un typeshed are in a second directory in the same path
             full_path = os.path.join(full_path, name)
         if PythonUtils.is_dir_cs(full_path):
-            if parent_symbol.get_tree()[0] == ["odoo", "addons"]:
-                module = parent_symbol.get_module_sym()
-                if not module:
-                    """If we are searching for a odoo.addons.* element, skip it if we are not in a module.
-                    It means we are in a file like odoo/*, and modules are not loaded yet."""
-                    return
             parser = PythonArchBuilder(ls, parent_symbol, full_path)
             return parser.load_arch()
         elif PythonUtils.is_file_cs(full_path + ".py"):

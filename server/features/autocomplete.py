@@ -32,7 +32,7 @@ class AutoCompleteFeature:
                     return []
                 before = before[1:]
                 file_symbol = Odoo.get().get_file_symbol(path)
-                module = file_symbol.get_module()
+                module = file_symbol.get_module_sym()
                 if not module:
                     return []
                 models = Odoo.get().get_models(module, before)
@@ -59,7 +59,7 @@ class AutoCompleteFeature:
             file_symbol = Odoo.get().get_file_symbol(path)
             if not file_symbol:
                 return []
-            module = file_symbol.get_module()
+            module = file_symbol.get_module_sym()
             scope_symbol = file_symbol.get_scope_symbol(line)
             symbol_ancestors, context = ParsoUtils.evaluateType(expr, scope_symbol)
             if not symbol_ancestors:
@@ -82,7 +82,7 @@ class AutoCompleteFeature:
                 file_symbol = Odoo.get().get_file_symbol(path)
                 if not file_symbol:
                     return []
-                module = file_symbol.get_module()
+                module = file_symbol.get_module_sym()
                 scope_symbol = file_symbol.get_scope_symbol(line)
                 return CompletionList(
                     is_incomplete=False,
@@ -100,7 +100,7 @@ class AutoCompleteFeature:
                 s = s[:-1]
             before = s
             file_symbol = Odoo.get().get_file_symbol(path)
-            module = file_symbol.get_module()
+            module = file_symbol.get_module_sym()
             models = Odoo.get().get_models(module, before)
             if not models:
                 return []

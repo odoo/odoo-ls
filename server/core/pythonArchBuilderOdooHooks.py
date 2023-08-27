@@ -25,7 +25,7 @@ def Relational_get_context(self, args, keywords):
 class PythonArchBuilderOdooHooks:
 
     @staticmethod
-    def on_module_declaration(symbol):
+    def on_package_declaration(symbol):
         if symbol.name == "logging":
             if symbol.get_tree() == (["logging"], []):
                 get_logger = symbol.get_symbol([], ["getLogger"])

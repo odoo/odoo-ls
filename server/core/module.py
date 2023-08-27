@@ -15,34 +15,36 @@ from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
                              Unregistration, UnregistrationParams)
 
-class Module():
+class ModuleSymbol(Symbol):
 
     rootPath = ""
     loaded = False
 
-    name = ""
+    module_name = ""
     dir_name = ""
     depends = ["base"]
     data = []
 
     def __init__(self, ls, dir_path):
+        self.valid = True
         self.dir_name = os.path.split(dir_path)[1]
+        print("loading " + self.dir_name)
+        super().__init__(self.dir_name, SymType.PACKAGE, dir_path)
         self.rootPath = dir_path
         manifestPath = os.path.join(dir_path, "__manifest__.py")
         if not os.path.exists(manifestPath):
+            self.valid = False
             return
         diagnostics = []
         diagnostics += self.load_manifest(os.path.join(dir_path, "__manifest__.py"))
         if self.dir_name in Odoo.get().modules:
-            #TODO merge ! or erase? or raise error? :(
             pass
-            #print("already in: " + self.dir_name)
-        Odoo.get().modules[self.dir_name] = self
+        Odoo.get().modules[self.dir_name] = RegisteredRef(self)
         f = FileMgr.getFileInfo(manifestPath)
         f.replace_diagnostics(BuildSteps.ARCH, diagnostics)
         f.publish_diagnostics(ls)
 
-    def load_arch(self, ls):
+    def load_module_info(self, ls):
         if self.loaded:
             return []
         loaded = []
@@ -63,7 +65,7 @@ class Module():
         with open(manifestPath, "r", encoding="utf8") as f:
             md = f.read()
             dic = ast.literal_eval(md)
-            self.name = dic.get("name", "")
+            self.module_name = dic.get("name", "")
             self.depends = dic.get("depends", [])
             if self.dir_name != 'base':
                 self.depends.append("base")
@@ -76,38 +78,41 @@ class Module():
         diagnostics = []
         loaded = []
         for depend in self.depends:
-            if depend in Odoo.get().modules:
-                loaded += Odoo.get().modules[depend].load_arch(ls)
-            else:
-                diagnostics.append(Diagnostic(
-                    range = Range(
-                        start=Position(line=0, character=0),
-                        end=Position(line=0, character=1)
-                    ),
-                    message = f"Module {self.name} depends on {depend} which is not found. Please check your addonsPaths.",
-                    source = EXTENSION_NAME
-                ))
+            if depend not in Odoo.get().modules:
+                from server.core.importResolver import resolve_import_stmt
+                odoo_addons = Odoo.get().get_symbol(["odoo", "addons"], [])
+                alias = [ast.alias(name=depend, asname=None)]
+                _, dep_module, _ = resolve_import_stmt(ls, odoo_addons, odoo_addons, None, alias, 1, 0, 0)
+                if not dep_module:
+                    diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=0, character=0),
+                            end=Position(line=0, character=1)
+                        ),
+                        message = f"Module {self.name} depends on {depend} which is not found. Please check your addonsPaths.",
+                        source = EXTENSION_NAME
+                    ))
+                else:
+                    self.add_dependency(dep_module, BuildSteps.ARCH, BuildSteps.ARCH)
         return diagnostics, loaded
 
     def _load_data(self):
         return []
 
     def _load_arch(self, ls, path):
-        parser = PythonArchBuilder(ls, Odoo.get().symbols.get_symbol(["odoo", "addons"]), path)
-        module = parser.load_arch()
         if os.path.exists(os.path.join(path, "tests")):
-            tests_parser = PythonArchBuilder(ls, module, os.path.join(path, "tests"))
+            tests_parser = PythonArchBuilder(ls, self, os.path.join(path, "tests"))
             tests_parser.load_arch()
         return []
 
-    def is_in_deps(self, module_name):
-        if self.dir_name == module_name or module_name in self.depends:
+    def is_in_deps(self, dir_name):
+        if self.dir_name == dir_name or dir_name in self.depends:
             return True
         for dep in self.depends:
             dep_module = Odoo.get().modules.get(dep, None)
             if not dep_module:
                 continue
-            is_in = dep_module.is_in_deps(module_name)
+            is_in = dep_module.ref.is_in_deps(dir_name)
             if is_in:
                 return True
         return False
