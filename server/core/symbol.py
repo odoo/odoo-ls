@@ -179,6 +179,8 @@ class Symbol(RegisterableObject):
     @staticmethod
     def unload(symbol): #can't delete because of self? :o
         """Unload the symbol and his children. Mark all dependents symbol as 'to revalidate'."""
+        from server.core.odoo import Odoo
+        from server.core.module import ModuleSymbol
         if symbol.type == SymType.DIRTY:
             print("trying to unload a dirty symbol, skipping")
             return
@@ -206,6 +208,8 @@ class Symbol(RegisterableObject):
             #         if s != sym:
             #             to_unload.append(s)
             #     ast_node.linked_symbols.clear()
+            if isinstance(sym, ModuleSymbol):
+                Odoo.get().modules.pop(sym.dir_name, None)
             if sym.type in [SymType.FILE, SymType.PACKAGE]:
                 sym.invalidate(BuildSteps.ARCH)
             #if DEBUG_MEMORY:

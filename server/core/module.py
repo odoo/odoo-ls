@@ -7,7 +7,7 @@ from server.core.pythonArchBuilder import *
 from server.features.validation.pythonValidator import *
 from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              CompletionParams, ConfigurationItem,
-                             ConfigurationParams, Diagnostic,
+                             ConfigurationParams, Diagnostic, DiagnosticTag,
                              DidChangeTextDocumentParams,
                              DidCloseTextDocumentParams,
                              DidOpenTextDocumentParams, MessageType, Position,
@@ -35,12 +35,12 @@ class ModuleSymbol(Symbol):
         if not os.path.exists(manifestPath):
             self.valid = False
             return
+        f = FileMgr.getFileInfo(manifestPath)
         diagnostics = []
-        diagnostics += self.load_manifest(os.path.join(dir_path, "__manifest__.py"))
+        diagnostics += self.load_manifest(f)
         if self.dir_name in Odoo.get().modules:
             pass
         Odoo.get().modules[self.dir_name] = RegisteredRef(self)
-        f = FileMgr.getFileInfo(manifestPath)
         f.replace_diagnostics(BuildSteps.ARCH, diagnostics)
         f.publish_diagnostics(ls)
 
@@ -55,22 +55,90 @@ class ModuleSymbol(Symbol):
         self.loaded = True
         loaded.append(self.dir_name)
         f = FileMgr.getFileInfo(os.path.join(self.rootPath, "__manifest__.py"))
-        f.replace_diagnostics(BuildSteps.ARCH, diagnostics)
+        f.replace_diagnostics(BuildSteps.ARCH_EVAL, diagnostics) #ARCH_EVAL to use another level
         f.publish_diagnostics(ls)
         return loaded
 
-    def load_manifest(self, manifestPath):
+    def load_manifest(self, fileInfo):
         """ Load manifest to identify the module characteristics
         Returns list of diagnostics to publish in manifest file """
-        with open(manifestPath, "r", encoding="utf8") as f:
-            md = f.read()
-            dic = ast.literal_eval(md)
-            self.module_name = dic.get("name", "")
-            self.depends = dic.get("depends", [])
-            if self.dir_name != 'base':
-                self.depends.append("base")
-            self.data = dic.get("data", [])
-        return []
+        ast_body = fileInfo.ast.body
+        if len(ast_body) != 1 or (len(ast_body) > 1 and (not isinstance(ast_body[0], ast.Expr) or not ast_body[0].value or not isinstance(ast_body[0].value, ast.Dict))):
+            return [Diagnostic(
+                range = Range(
+                    start=Position(line=0, character=0),
+                    end=Position(line=0, character=1)
+                ),
+                message = "A manifest should only contains one dictionnary",
+                source = EXTENSION_NAME,
+                severity= 1,
+            )]
+        dic = ast_body[0].value
+        self.module_name = ""
+        self.data = []
+        self.depends = []
+        diags = []
+        for key, value in zip(dic.keys, dic.values):
+            if not isinstance(key, ast.Constant):
+                diags.append(self._create_diag(key, "Manifest keys should be strings", 1))
+            if key.value == "name":
+                if not isinstance(value, ast.Constant):
+                    diags.append(self._create_diag(key, "Name value should be a string", 1))
+                self.module_name = value.value
+            elif key.value == "depends":
+                if not isinstance(value, ast.List):
+                    diags.append(self._create_diag(key, "depends value should be a list of string", 1))
+                    continue
+                l = []
+                for el in value.elts:
+                    if not isinstance(el, ast.Constant):
+                        diags.append(self._create_diag(key, "dependency should be expressed with a string", 1))
+                        continue
+                    l.append(el.value)
+                self.depends = l
+            elif key.value == "data":
+                if not isinstance(value, ast.List):
+                    diags.append(self._create_diag(key, "data value should be a list of string", 1))
+                    continue
+                l = []
+                for el in value.elts:
+                    if not isinstance(el, ast.Constant):
+                        diags.append(self._create_diag(key, "data file should be expressed with a string", 1))
+                        continue
+                    l.append(el.value)
+                self.data = l
+            elif key.value == "active":
+                diags.append(Diagnostic(
+                    range = Range(
+                        start=Position(line=key.lineno-1, character=key.col_offset-1),
+                        end=Position(line=key.end_lineno-1, character=key.end_col_offset-1)
+                    ),
+                    message = "'active' is deprecated and has been replaced by 'auto_install'",
+                    source = EXTENSION_NAME,
+                    tags=[DiagnosticTag.Deprecated],
+                    severity= 1,
+                ))
+            else:
+                if key.value not in ["version", "description", "author", "website", "license",
+                                     "category", "demo", "auto_install", "external_dependencies",
+                                     "application", "assets", "installable", "maintainer",
+                                     "pre_init_hook", "post_init_hook", "uninstall_hook", "sequence",
+                                     "summary", "icon", "url"]:
+                    diags.append(self._create_diag(key, "Unkown key value", 1))
+        if self.dir_name != 'base':
+            self.depends.append("base")
+        return diags
+
+    def _create_diag(self, node, message, severity=1):
+        return Diagnostic(
+            range = Range(
+                start=Position(line=node.lineno-1, character=node.col_offset+1),
+                end=Position(line=node.end_lineno-1, character=node.end_col_offset-1)
+            ),
+            message = message,
+            source = EXTENSION_NAME,
+            severity= severity,
+        )
 
     def load_depends(self, ls):
         """ ensure that all modules indicates in the module dependencies are well loaded.
@@ -82,7 +150,7 @@ class ModuleSymbol(Symbol):
                 from server.core.importResolver import resolve_import_stmt
                 odoo_addons = Odoo.get().get_symbol(["odoo", "addons"], [])
                 alias = [ast.alias(name=depend, asname=None)]
-                _, dep_module, _ = resolve_import_stmt(ls, odoo_addons, odoo_addons, None, alias, 1, 0, 0)
+                _, dep_module, _  = resolve_import_stmt(ls, odoo_addons, odoo_addons, None, alias, 1, 0, 0)[0]
                 if not dep_module:
                     diagnostics.append(Diagnostic(
                         range = Range(
