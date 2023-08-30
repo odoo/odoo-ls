@@ -56,6 +56,8 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
+    if not path.endswith(".py"):
+        return None
     with Odoo.get().acquire_read(timeout=1) as acquired:
         if acquired:
             return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
@@ -66,6 +68,8 @@ def hover(ls, params: TextDocumentPositionParams):
     text_doc = ls.workspace.get_document(params.text_document.uri)
     content = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
+    if not path.endswith(".py"):
+        return None
     with Odoo.get().acquire_read(timeout=1) as acquired:
         if acquired:
             file_symbol = Odoo.get().get_file_symbol(path)
