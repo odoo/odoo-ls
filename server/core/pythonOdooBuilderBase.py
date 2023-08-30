@@ -40,8 +40,6 @@ class PythonOdooBuilder(ast.NodeVisitor):
         self.symStack[0].validationStatus = 0
         if DEBUG_ODOO_BUILDER:
             print("Load odoo: " + self.filePath)
-        self.symStack[0].not_found_paths = []
-        Odoo.get().not_found_symbols.discard(self.symStack[0])
         fileInfo = FileMgr.getFileInfo(self.filePath)
         if not fileInfo.ast: #we don't want to validate it
             return

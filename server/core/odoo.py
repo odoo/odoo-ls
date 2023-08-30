@@ -111,6 +111,11 @@ class Odoo():
                 return None
             ls.show_message_log("Building new Odoo knowledge database")
 
+            # import cProfile
+            # import pstats
+            # profiler = cProfile.Profile()
+            # profiler.enable()
+
             try:
                 Odoo.instance = Odoo()
                 config = ls.lsp.send_request("Odoo/getConfiguration").result()
@@ -135,6 +140,11 @@ class Odoo():
                 ls.show_message_log(traceback.format_exc())
                 print(traceback.format_exc())
                 ls.show_message_log(f'Error ocurred: {e}', MessageType.Error)
+
+            # profiler.disable()
+            # stats = pstats.Stats(profiler)
+            # stats.strip_dirs()
+            # stats.dump_stats('/home/odoo/profiling_odoo.prof')
 
     def interrupt_initialization(self):
         self.stop_init = True
@@ -401,6 +411,13 @@ class Odoo():
                 #unload old
                 file_symbol = self.get_file_symbol(old_path)
                 if file_symbol:
+                    #delete file cache
+                    FileMgr.delete_path(ls, old_path)
+                    s = list(file_symbol.moduleSymbols.values())
+                    for sym in s:
+                        FileMgr.delete_path(ls, sym.paths[0])
+                        s.extend(sym.moduleSymbols.values())
+                    #delete symbol
                     file_symbol.unload(file_symbol)
                 else:
                     return

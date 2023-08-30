@@ -2,6 +2,7 @@
 **/.gitignore
 .gitmodules
 **/.git
+**/.vscode
 **/.github
 **/*.vsix
 **/*.map

@@ -28,7 +28,6 @@ class ModuleSymbol(Symbol):
     def __init__(self, ls, dir_path):
         self.valid = True
         self.dir_name = os.path.split(dir_path)[1]
-        print("loading " + self.dir_name)
         super().__init__(self.dir_name, SymType.PACKAGE, dir_path)
         self.rootPath = dir_path
         manifestPath = os.path.join(dir_path, "__manifest__.py")
@@ -152,6 +151,8 @@ class ModuleSymbol(Symbol):
                 alias = [ast.alias(name=depend, asname=None)]
                 _, dep_module, _  = resolve_import_stmt(ls, odoo_addons, odoo_addons, None, alias, 1, 0, 0)[0]
                 if not dep_module:
+                    Odoo.get().not_found_symbols.add(self)
+                    self.not_found_paths.append(["odoo", "addons", depend])
                     diagnostics.append(Diagnostic(
                         range = Range(
                             start=Position(line=0, character=0),
@@ -162,6 +163,8 @@ class ModuleSymbol(Symbol):
                     ))
                 else:
                     self.add_dependency(dep_module, BuildSteps.ARCH, BuildSteps.ARCH)
+            else:
+                self.add_dependency(Odoo.get().modules[depend].ref, BuildSteps.ARCH, BuildSteps.ARCH)
         return diagnostics, loaded
 
     def _load_data(self):
