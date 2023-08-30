@@ -168,6 +168,18 @@ class FileMgr():
         return False
 
     @staticmethod
+    def delete_path(ls, path):
+        to_del = FileMgr.files.pop(path, None)
+        if to_del:
+            to_del.need_push = True
+            to_del.replace_diagnostics(BuildSteps.ARCH, [])
+            to_del.replace_diagnostics(BuildSteps.ARCH_EVAL, [])
+            to_del.replace_diagnostics(BuildSteps.ODOO, [])
+            to_del.replace_diagnostics(BuildSteps.VALIDATION, [])
+            to_del.replace_diagnostics(BuildSteps.SYNTAX, [])
+            to_del.publish_diagnostics(ls)
+
+    @staticmethod
     def delete_info(path):
         fileInfo = FileMgr.files.get(path, None)
         if fileInfo:
