@@ -123,7 +123,7 @@ class ModuleSymbol(Symbol):
                                      "application", "assets", "installable", "maintainer",
                                      "pre_init_hook", "post_init_hook", "uninstall_hook", "sequence",
                                      "summary", "icon", "url"]:
-                    diags.append(self._create_diag(key, "Unkown key value", 1))
+                    pass #diags.append(self._create_diag(key, "Unkown key value", 1))
         if self.dir_name != 'base':
             self.depends.append("base")
         return diags
