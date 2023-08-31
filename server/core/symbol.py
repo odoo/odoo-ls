@@ -104,7 +104,7 @@ class Symbol(RegisterableObject):
             }
         self.parent = None
         self.modelData = None
-        self.external = False
+        self.external = False #use is_external()
         self.in_workspace = False
         self.start_pos = (0, 0) # (line, column)
         self.end_pos = (0, 0) # (line, column)
@@ -144,9 +144,10 @@ class Symbol(RegisterableObject):
         from server.core.odoo import Odoo
         #follow the reference to the real symbol and returns it (not a RegisteredRef)
         sym = self
+        can_eval_external = not self.is_external()
         instance = self.type in [SymType.VARIABLE]
         file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
-        if sym.eval == None and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval: #TODO shouldn't we launch arch builder in case of not in rebuild_arch_eval?
+        if sym.eval == None and (not sym.is_external() or can_eval_external) and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval: #TODO shouldn't we launch arch builder in case of not in rebuild_arch_eval?
             ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
             ev.eval_arch()
         while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_rr(context):
@@ -155,7 +156,7 @@ class Symbol(RegisterableObject):
                 context.update(sym.eval.context)
             sym = sym.eval.get_symbol(context)
             file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
-            if sym.eval == None and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval:
+            if sym.eval == None and (not sym.is_external() or can_eval_external)  and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval:
                 ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
                 ev.eval_arch()
         return sym, instance
