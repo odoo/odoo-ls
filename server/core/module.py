@@ -152,7 +152,7 @@ class ModuleSymbol(Symbol):
                 _, dep_module, _  = resolve_import_stmt(ls, odoo_addons, odoo_addons, None, alias, 1, 0, 0)[0]
                 if not dep_module:
                     Odoo.get().not_found_symbols.add(self)
-                    self.not_found_paths.append(["odoo", "addons", depend])
+                    self.not_found_paths.append((BuildSteps.ARCH, ["odoo", "addons", depend]))
                     diagnostics.append(Diagnostic(
                         range = Range(
                             start=Position(line=0, character=0),

@@ -7,6 +7,7 @@ import re
 import sys
 import traceback
 import threading
+from collections import defaultdict
 from ..constants import *
 from .symbol import *
 from .fileMgr import *
@@ -391,9 +392,7 @@ class Odoo():
                     del new_symbol
                     #rebuild validations
                     if new_symbol_tree:
-                        set_to_validate = self._search_symbols_to_rebuild(new_symbol_tree)
-                        for s in set_to_validate:
-                            self.add_to_arch_rebuild(s)
+                        self.add_to_rebuilds(self._search_symbols_to_rebuild(new_symbol_tree))
                     self.process_rebuilds(ls)
             #snapshot2 = tracemalloc.take_snapshot()
 
@@ -432,23 +431,34 @@ class Odoo():
                 else:
                     new_tree = parent_symbol.get_tree()
                     new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
-                    set_to_validate = self._search_symbols_to_rebuild(new_tree)
-                    if set_to_validate or parent_symbol.get_tree() == (["odoo", "addons"], []):
+                    dict_to_validate = self._search_symbols_to_rebuild(new_tree)
+                    if dict_to_validate or parent_symbol.get_tree() == (["odoo", "addons"], []):
                         #if there is something that is trying to import the new file, build it.
                         #Else, don't add it to the architecture to not add useless symbols (and overrides)
                         if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi") or new_path.endswith("__manifest__.py"):
                             new_path = os.sep.join(new_path.split(os.sep)[:-1])
                         pp = PythonArchBuilder(ls, parent_symbol, new_path)
                         new_symbol = pp.load_arch()
-                #rebuild validations
-                if new_symbol:
-                    for s in set_to_validate:
-                        self.add_to_arch_rebuild(s)
+                    #rebuild validations
+                    if new_symbol:
+                        self.add_to_rebuilds(dict_to_validate)
             self.process_rebuilds(ls)
         except Exception:
             print(traceback.format_exc())
             ls.show_message_log(traceback.format_exc(), MessageType.Error)
             ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+
+    def add_to_rebuilds(self, symbols):
+        """add a dictionnary of symbols to the rebuild list. The dict must have the format
+        {BuildStep: Iterator[symbols]}"""
+        for s in symbols.get(BuildSteps.ARCH, []):
+            self.add_to_arch_rebuild(s)
+        for s in symbols.get(BuildSteps.ARCH_EVAL, []):
+            self.add_to_arch_eval(s)
+        for s in symbols.get(BuildSteps.ODOO, []):
+            self.add_to_init_odoo(s)
+        for s in symbols.get(BuildSteps.VALIDATION, []):
+            self.add_to_validations(s)
 
     def add_to_arch_rebuild(self, symbol):
         """ add a symbol to the list of arch rebuild to do."""
@@ -496,13 +506,12 @@ class Odoo():
 
     def _search_symbols_to_rebuild(self, tree):
         flat_tree = [item for l in tree for item in l]
-        new_set_to_revalidate = RegisteredRefSet()
+        new_dict_to_revalidate = defaultdict(lambda: RegisteredRefSet())
         for s in self.not_found_symbols:
-            for p in s.not_found_paths:
-                if flat_tree[:len(p)] == p[:len(flat_tree)]: #TODO wrong
-                    new_set_to_revalidate.add(s)
-                    #print("found one pending: " + str(s.get_tree()))
-        return new_set_to_revalidate
+            for step, tree in s.not_found_paths:
+                if flat_tree[:len(tree)] == tree[:len(flat_tree)]:
+                    new_dict_to_revalidate[step].add(s)
+        return new_dict_to_revalidate
 
     def get_models(self, module = None, start_name = ""):
         res = []
