@@ -90,24 +90,7 @@ class PythonValidator(ast.NodeVisitor):
 
         for node_alias, symbol, file_tree in symbols:
             name = node_alias.name
-            if not symbol:
-                if (file_tree + name.split("."))[0] in BUILT_IN_LIBS:
-                    continue
-                if not self.safeImport[-1]:
-                    self.symStack[0].not_found_paths.append(file_tree + name.split("."))
-                    Odoo.get().not_found_symbols.add(self.symStack[0])
-                    self.diagnostics.append(Diagnostic(
-                        range = Range(
-                            start=Position(line=node.lineno-1, character=node.col_offset),
-                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                Position(line=node.lineno-1, character=node.end_col_offset)
-                        ),
-                        message = ".".join(file_tree + [name]) + " not found",
-                        source = EXTENSION_NAME,
-                        severity = 2
-                    ))
-                break
-            else:
+            if symbol:
                 module = symbol.get_module_sym()
                 if module and not self.currentModule.is_in_deps(module.dir_name) and not self.safeImport[-1]:
                     self.diagnostics.append(Diagnostic(

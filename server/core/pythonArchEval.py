@@ -28,6 +28,7 @@ class PythonArchEval(ast.NodeVisitor):
         self.fileSymbol = self.symbol.get_in_parents([SymType.FILE, SymType.PACKAGE])
         self.ls = ls
         self.diagnostics = []
+        self.safeImport = [False]
         #self.currentModule = None
 
     def eval_arch(self):
@@ -76,11 +77,14 @@ class PythonArchEval(ast.NodeVisitor):
             return
         symbols = resolve_import_stmt(self.ls, self.fileSymbol, self.symbol, from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
 
-        for node_alias, symbol, _ in symbols:
+        for node_alias, symbol, file_tree in symbols:
             if not hasattr(node_alias, "symbol"): #If no symbol, the import is probably not at the top level of the file. TODO: check it?
                 continue
             variable = node_alias.symbol
-            if variable and symbol:
+            if not variable:
+                continue
+            if symbol:
+                #resolve the symbol and build necessary evaluations
                 ref = symbol.follow_ref()[0]
                 old_ref = None
                 while ref.eval == None and ref != old_ref:
@@ -91,9 +95,25 @@ class PythonArchEval(ast.NodeVisitor):
                         evaluator.eval_arch()
                         Odoo.get().rebuild_arch_eval.remove(file)
                     ref = ref.follow_ref()[0]
-                if ref != variable: #loop detected
+                if ref != variable: #anti-loop
                     variable.ref.eval = Evaluation().eval_import(symbol)
                     variable.ref.add_dependency(symbol, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
+            else:
+                if (file_tree + node_alias.name.split("."))[0] in BUILT_IN_LIBS:
+                    continue
+                if not self.safeImport[-1]:
+                    self.symbol.not_found_paths.append((BuildSteps.ARCH_EVAL, file_tree + node_alias.name.split(".")))
+                    Odoo.get().not_found_symbols.add(self.symbol)
+                    self.diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=node.lineno-1, character=node.col_offset),
+                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                Position(line=node.lineno-1, character=node.end_col_offset)
+                        ),
+                        message = ".".join(file_tree + [node_alias.name]) + " not found",
+                        source = EXTENSION_NAME,
+                        severity = 2
+                    ))
 
     def visit_Try(self, node):
         return
@@ -136,7 +156,11 @@ class PythonArchEval(ast.NodeVisitor):
             pass
         return ""
 
-    def _create_diagnostic_base_not_found(self, node, full_name):
+    def _create_diagnostic_base_not_found(self, symbol, not_found_name, node, full_name):
+        full_tree = symbol.get_tree()
+        full_tree = full_tree[0] + [not_found_name]
+        symbol.not_found_paths.append((BuildSteps.ARCH_EVAL, full_tree))
+        Odoo.get().not_found_symbols.add(symbol)
         self.diagnostics.append(
             Diagnostic(
                 range = Range(
@@ -157,14 +181,16 @@ class PythonArchEval(ast.NodeVisitor):
                 base_elements = full_base.split(".")
                 iter_element = symbol.parent.inferName(base_elements[0], node.lineno)
                 if not iter_element:
-                    self._create_diagnostic_base_not_found(base, full_base)
+                    self._create_diagnostic_base_not_found(symbol.parent, base_elements[0], base, full_base)
                     continue
                 iter_element, _ = iter_element.follow_ref()
+                previous_element = iter_element
                 found = True
                 compiled = False
                 for base_element in base_elements[1:]:
                     if iter_element.type == SymType.COMPILED:
                         compiled = True
+                    previous_element = iter_element
                     iter_element = iter_element.get_member_symbol(base_element, prevent_comodel=True)
                     if not iter_element:
                         found = False
@@ -178,7 +204,7 @@ class PythonArchEval(ast.NodeVisitor):
                     (not found and iter_element.type != SymType.COMPILED and \
                     not iter_element.is_external() and \
                     (iter_element.type != SymType.CLASS and not iter_element.eval)):
-                    self._create_diagnostic_base_not_found(base, full_base)
+                    self._create_diagnostic_base_not_found(previous_element, base_element, base, full_base)
                     continue
                 if iter_element.type != SymType.CLASS:
                     self.diagnostics.append(
