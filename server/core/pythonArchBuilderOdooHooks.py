@@ -63,21 +63,24 @@ class PythonArchBuilderOdooHooks:
                 if symbol:
                     cr_var.start_pos = symbol.start_pos
                     cr_var.end_pos = symbol.end_pos
-                cr_var.doc = "the current user id (for access rights checks)"
+                cr_var.doc = Symbol("str", SymType.PRIMITIVE, [])
+                cr_var.doc.value = "the current user id (for access rights checks)"
                 symbol.add_symbol(cr_var)
                 # ---------- env.context ----------
                 context_var = Symbol("context", SymType.VARIABLE, symbol.paths)
                 if symbol:
                     context_var.start_pos = symbol.start_pos
                     context_var.end_pos = symbol.end_pos
-                context_var.doc = "the current context dictionary (arbitrary metadata)"
+                context_var.doc = Symbol("str", SymType.PRIMITIVE, [])
+                context_var.doc.value = "the current context dictionary (arbitrary metadata)"
                 symbol.add_symbol(context_var)
                 # ---------- env.su ----------
                 attr_var = Symbol("su", SymType.VARIABLE, symbol.paths)
                 if symbol:
                     attr_var.start_pos = symbol.start_pos
                     attr_var.end_pos = symbol.end_pos
-                attr_var.doc = "whether in superuser mode"
+                attr_var.doc = Symbol("str", SymType.PRIMITIVE, [])
+                attr_var.doc.value = "whether in superuser mode"
                 symbol.add_symbol(attr_var)
         elif symbol.name in ["Many2one", "Many2many", "One2many"]:
             if symbol.get_tree() in [(["odoo", "fields"], ["Many2one"]),
