@@ -592,6 +592,16 @@ class ClassSymbol(Symbol):
                             res.append(s_iter)
         return res
 
+    def get_base_distance(self, base_name, level = 0):
+        #for a base name, find how many levels of inheritance are needed to reach it
+        if base_name == self.name:
+            return level
+        for base in self.bases:
+            dist = base.get_base_distance(base_name, level + 1)
+            if dist:
+                return dist
+        return 0
+
 
 class SuperSymbol(Symbol):
 

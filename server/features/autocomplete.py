@@ -2,9 +2,46 @@ from server.constants import *
 from server.core.odoo import Odoo
 from server.core.symbol import Symbol
 from server.features.parsoUtils import ParsoUtils
-from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItemKind, CompletionItem)
+from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItemKind, CompletionItem,  CompletionItemLabelDetails)
 
 class AutoCompleteFeature:
+
+    @staticmethod
+    def get_sort_text(symbol, cl, cl_to_complete):
+        #return the text used for sorting the result for "symbol". cl is the class owner of symbol, and cl_to_completee the class
+        # of the symbol to complete
+        # ~ is used as last char of ascii table and } before last one
+        base_dist = 0
+        if cl_to_complete:
+            base_dist = cl_to_complete.get_base_distance(cl.name)
+        text = base_dist * "}" + (cl.name if cl else "") + symbol.name
+        if symbol.name.startswith("_"):
+            text = "~" + text
+        return text
+
+    @staticmethod
+    def build_symbol_completion_item(sym_to_complete, symbol, module):
+        cl_to_complete = sym_to_complete.get_in_parents([SymType.CLASS])
+        cl = symbol.get_in_parents([SymType.CLASS])
+
+        return CompletionItem(
+            label=symbol.name,
+            label_details = CompletionItemLabelDetails(
+                detail="",
+                description=cl.name if cl else "",
+            ),
+            sort_text = AutoCompleteFeature.get_sort_text(symbol, cl, cl_to_complete),
+            documentation=symbol.doc,
+            kind = AutoCompleteFeature._getCompletionItemKind(symbol),
+        )
+
+    @staticmethod
+    def build_model_completion_item(model, module):
+        return CompletionItem(
+            label=model.name,
+            documentation=model.get_documentation(module),
+            kind = CompletionItemKind.Interface if model.is_abstract(module) else CompletionItemKind.Class,
+        )
 
     @staticmethod
     def autocomplete(path, content, line, char):
@@ -38,11 +75,7 @@ class AutoCompleteFeature:
                 models = Odoo.get().get_models(module, before)
                 return CompletionList(
                     is_incomplete=False,
-                    items=[CompletionItem(
-                        label=m.name,
-                        documentation=m.get_documentation(module),
-                        kind = CompletionItemKind.Interface if m.is_abstract(module) else CompletionItemKind.Class,
-                    ) for m in models]
+                    items=[AutoCompleteFeature.build_model_completion_item(m, module) for m in models]
                 )
         #Try to complete expression
         if element and element.type == 'operator' and element.value == ".":
@@ -69,11 +102,8 @@ class AutoCompleteFeature:
             symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
             return CompletionList(
                 is_incomplete=False,
-                items=[CompletionItem(
-                    label=symbol.name,
-                    documentation=str(symbol.type).lower(),
-                    kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                ) for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, context, -1)]
+                items=[AutoCompleteFeature.build_symbol_completion_item(symbol_ancestors, symbol, module)
+                       for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, context, -1)]
             )
         elif element and element.type == 'name':
             #TODO maybe not useful as vscode provide basic dictionnay autocompletion with seen names in the file
@@ -86,11 +116,8 @@ class AutoCompleteFeature:
                 scope_symbol = file_symbol.get_scope_symbol(line)
                 return CompletionList(
                     is_incomplete=False,
-                    items=[CompletionItem(
-                        label=symbol.name,
-                        #documentation=symbol.doc,
-                        kind = AutoCompleteFeature._getCompletionItemKind(symbol),
-                    ) for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, {}, line, element.value)]
+                    items=[AutoCompleteFeature.build_symbol_completion_item(scope_symbol, symbol, module)
+                           for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, {}, line, element.value)]
                 )
         elif element and element.type == 'string':
             s = element.value
@@ -107,11 +134,7 @@ class AutoCompleteFeature:
             expr = ParsoUtils.get_previous_leafs_expr(element)
             return CompletionList(
                 is_incomplete=False,
-                items=[CompletionItem(
-                    label=m.name,
-                    documentation=m.get_documentation(module),
-                    kind = CompletionItemKind.Interface if m.is_abstract(module) else CompletionItemKind.Class,
-                ) for m in models]
+                items=[AutoCompleteFeature.build_model_completion_item(m, module) for m in models]
             )
         else:
             print("Automplete use case unknown")
