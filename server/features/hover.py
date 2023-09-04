@@ -35,7 +35,7 @@ class HoverFeature:
             if infered_type and type != "module":
                 if symbol.type == SymType.FUNCTION and not symbol.is_property:
                     value += " -> " + infered_type
-                else:
+                elif symbol.name != infered_type:
                     value += ": " + infered_type
             value += "  \n```"
             return value
@@ -45,10 +45,6 @@ class HoverFeature:
         if type_ref[0] != symbol:
             infered_type = type_ref[0].name
         type = str(symbol.type).lower()
-        if symbol.type == SymType.VARIABLE and not type_ref[1]:
-            type = str(type_ref[0].type).lower()
-            if type_ref[0].type == SymType.FILE:
-                type = "module"
         if symbol.type == SymType.FUNCTION:
             if symbol.is_property:
                 type = "property"
