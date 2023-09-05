@@ -60,7 +60,7 @@ def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList
         return None
     with Odoo.get().acquire_read(timeout=1) as acquired:
         if acquired:
-            return AutoCompleteFeature.autocomplete(path, content, params.position.line, params.position.character)
+            return AutoCompleteFeature.autocomplete(path, content, params.position.line+1, params.position.character+1)
 
 @odoo_server.feature(TEXT_DOCUMENT_HOVER)
 def hover(ls, params: TextDocumentPositionParams):
