@@ -1,5 +1,6 @@
 from server.constants import *
 from server.core.odoo import Odoo
+from server.core.model import Model
 from server.core.symbol import Symbol
 from server.features.parsoUtils import ParsoUtils
 from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItemKind, CompletionItem,  CompletionItemLabelDetails)
@@ -17,18 +18,31 @@ class AutoCompleteFeature:
         text = base_dist * "}" + (cl.name if cl else "") + symbol.name
         if symbol.name.startswith("_"):
             text = "~" + text
+        if symbol.name.startswith("__"):
+            text = "~" + text
         return text
 
     @staticmethod
     def build_symbol_completion_item(sym_to_complete, symbol, module):
-        cl_to_complete = sym_to_complete.get_in_parents([SymType.CLASS])
-        cl = symbol.get_in_parents([SymType.CLASS])
+        if isinstance(sym_to_complete, Symbol):
+            cl_to_complete = sym_to_complete.get_in_parents([SymType.CLASS])
+            cl = symbol.get_in_parents([SymType.CLASS])
+            description = cl.name if cl else ""
+        else:
+            cl_to_complete = None
+            cl = symbol.get_in_parents([SymType.CLASS])
+            model = cl.get_model()
+            description = cl.name if cl else ""
+            if model:
+                cl = model
+                description = "(" + cl.name + ")"
+
 
         return CompletionItem(
             label=symbol.name,
             label_details = CompletionItemLabelDetails(
                 detail="",
-                description=cl.name if cl else "",
+                description=description,
             ),
             sort_text = AutoCompleteFeature.get_sort_text(symbol, cl, cl_to_complete),
             documentation=symbol.doc,
@@ -47,7 +61,7 @@ class AutoCompleteFeature:
     def autocomplete(path, content, line, char):
         from ..pythonUtils import PythonUtils
         parsoTree = Odoo.get().grammar.parse(content, error_recovery=True, cache = False)
-        element = parsoTree.get_leaf_for_position((line+1, char), include_prefixes=True)
+        element = parsoTree.get_leaf_for_position((line, char-1), include_prefixes=True)
         #Test assignement
         assigns = []
         i = 1
@@ -148,7 +162,7 @@ class AutoCompleteFeature:
         if isinstance(obj, Symbol):
             def_obj = obj.follow_ref(context)[0]
             for s in def_obj.all_symbols(line=line, include_inherits=True):
-                if s.name.startswith(starts_with) and (not s.name.startswith("__") or starts_with.startswith("__")):
+                if s.name.startswith(starts_with):
                     if s not in seen:
                         seen.add(s)
                         yield s
@@ -163,7 +177,7 @@ class AutoCompleteFeature:
                                 yield s
         else:
             for a in obj.get_attributes(module):
-                if a.name.startswith(starts_with) and (not a.name.startswith("__") or starts_with.startswith("__")):
+                if a.name.startswith(starts_with):
                     if a not in seen:
                         seen.add(a)
                         yield a

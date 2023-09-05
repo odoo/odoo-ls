@@ -69,23 +69,36 @@ class Model():
                 inherit.update(symbol.inherit)
         return list(inherit)
 
-    def get_attributes(self, from_module):
+    def get_attributes(self, from_module, _evaluated = set()):
         """Return all attributes that are in the model from the "from_module" perspective"""
         impl = self.get_symbols(from_module)
+        _evaluated.add(self.name)
         #TODO respect dependencies and don't take overrding functions
         #TODO return only fields variables
         res = {}
         for sym in impl:
             for sub_sym in sym.all_symbols(include_inherits=True):
                 res[sub_sym.name] = sub_sym
+            # model inheritances
+            if sym.modelData:
+                if sym.modelData.inherit:
+                    for inherit in sym.modelData.inherit:
+                        if inherit not in _evaluated:
+                            inherit_model = Odoo.get().models.get(inherit, None)
+                            if inherit_model:
+                                for sub_sym in inherit_model.get_attributes(from_module, _evaluated):
+                                    res[sub_sym.name] = sub_sym
         return res.values()
+
+    def get_base_distance(self, name, from_module):
+        pass
 
 ###################################
 #  Symbol compatibility methods   #
 ###################################
 # These methods are there to allow usage of Model objects as Symbol objects
 
-    def isModel(self):
+    def isModel(self): #TODO beurk, it doesn't mean that on Symbol
         return True
 
     def get_member_symbol(self, name, from_module, all=False):
