@@ -7,8 +7,10 @@ import ast
 
 class PythonUtils():
 
+    case_preserving_fs = Path(__file__.upper()).is_file()
+
     @staticmethod
-    def exists_cs(p: Path) -> bool:
+    def _exists_cs(p: Path) -> bool:
         """Check if path exists, enforce case sensitivity.
 
         Arguments:
@@ -19,28 +21,24 @@ class PythonUtils():
         if not p.exists():
             return False
 
-        while True:
-            # At root, p == p.parent --> break loop and return True
-            if p == p.parent:
-                return True
-            # If string representation of path is not in parent directory, return False
-            if str(p) not in map(str, p.parent.iterdir()):
-                return False
-            p = p.parent
+        if PythonUtils.case_preserving_fs:
+            while p.parent != p:
+                # If string representation of path is not in parent directory, return False
+                if str(p) not in map(str, p.parent.iterdir()):
+                    return False
+                p = p.parent
+
+        return True
 
     @staticmethod
     def is_file_cs(path:str):
         p = Path(path)
-        if not p.is_file():
-            return False
-        return PythonUtils.exists_cs(p)
+        return p.is_file() and PythonUtils._exists_cs(p)
 
     @staticmethod
     def is_dir_cs(path:str):
         p = Path(path)
-        if not p.is_dir():
-            return False
-        return PythonUtils.exists_cs(p)
+        return p.is_dir() and PythonUtils._exists_cs(p)
 
     # @staticmethod
     # def inferTypeParso(expr):
