@@ -29,11 +29,13 @@ function main() {
   const nameTextfield = document.getElementById('config-name-textfield');
   const pathTextfield = document.getElementById('config-path-textfield');
   const pathButton = document.getElementById('config-path-button');
+  const saveButton = document.getElementById('save-button');
+  const deleteButton = document.getElementById('delete-button');
 
   addFolderButton.addEventListener("click", addFolderClick);
-  nameTextfield.addEventListener("vsc-change", saveConfig);
-  pathTextfield.addEventListener("vsc-change", saveConfig);
   pathButton.addEventListener('vsc-click', openOdooFolder);
+  saveButton.addEventListener('click', saveConfig);
+  deleteButton.addEventListener('click', deleteConfig);
 
 
   // Send a message to notify the extension 
@@ -61,6 +63,12 @@ function addFolderClick() {
 function openOdooFolder() {
   vscode.postMessage({
     command: "open_odoo_folder"
+  });
+}
+
+function deleteConfig() {
+  vscode.postMessage({
+    command: "delete_config"
   });
 }
 
