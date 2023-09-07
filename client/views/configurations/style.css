@@ -31,26 +31,29 @@
 }
 
 #add-folder-container {
-  margin-top: 2px;
-  display: flex;
+  justify-content: end; 
   width: 100%;
-  box-sizing: border-box;
-  justify-content: end;
 }
 
-#add-folder-button { 
+.button-container {
+  margin-top: 2px;
+  display: flex;
+  box-sizing: border-box;
+}
+
+.button { 
   display: flex;
   box-sizing: border-box;
   padding: 0.5em;
   user-select: none;
 }
 
-#add-folder-button:hover {
+.button:hover {
   cursor: pointer;
   background-color: var(--vscode-settings-rowHoverBackground);
 }
 
-#add-folder-button:active {
+.button:active {
   background-color: var(--vscode-input-background);
 }
 

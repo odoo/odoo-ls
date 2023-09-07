@@ -130,6 +130,10 @@ export class ConfigurationWebView {
         return ejs.render(htmlFile, data);
     }
 
+    private _updateWebviewTitle(panel: WebviewPanel, title: String){
+        panel.title = title.toString()
+    }
+
     private _saveConfig(configs: any, odooPath: String, name: String, addons: Array<String>): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
@@ -138,6 +142,10 @@ export class ConfigurationWebView {
             changes.push("odooPath");
         }
         
+        if (configs[this.configId]["name"] != name) {
+            changes.push("name");
+        }
+
         if (oldAddons.length != addons.length) {
             changes.push("addons");
         } else {
@@ -161,8 +169,19 @@ export class ConfigurationWebView {
         if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
             ConfigurationsChange.fire(changes);
         }
+
+        if (changes.includes('name')){
+            this._updateWebviewTitle(this._panel, name)
+        }
     }
 
+    private _deleteConfig(configs: any): void {
+        let changes = [];
+        delete configs[this.configId]
+        this._context.globalState.update("Odoo.configurations", configs);
+        this.dispose()
+        ConfigurationsChange.fire(changes);
+    }
     /**
      * Sets up an event listener to listen for messages passed from the webview context and
      * executes code based on the message that is recieved.
@@ -228,6 +247,9 @@ export class ConfigurationWebView {
                             });
                         }
                     });
+                    break;
+                case "delete_config":
+                    this._deleteConfig(configs);
                     break;
             }
         },
