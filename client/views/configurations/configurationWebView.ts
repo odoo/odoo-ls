@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { URI } from "vscode-languageclient";
 import * as readline from 'readline';
+import untildify from 'untildify';
 
 /**
  * This class manages the state and behavior of ConfigurationWebView webview panels.
@@ -131,11 +132,11 @@ export class ConfigurationWebView {
         return ejs.render(htmlFile, data);
     }
 
-    private _updateWebviewTitle(panel: WebviewPanel, title: String){
-        panel.title = title.toString()
+    private _updateWebviewTitle(panel: WebviewPanel, title: string){
+        panel.title = title
     }
 
-    private _saveConfig(configs: any, odooPath: String, name: String, addons: Array<String>, pythonPath:String = "python3"): void {
+    private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
 
@@ -163,9 +164,9 @@ export class ConfigurationWebView {
         configs[this.configId] = {
             "id": this.configId,
             "name": name,
-            "odooPath": odooPath,
+            "odooPath": untildify(odooPath),
             "addons": addons,
-            "pythonPath": pythonPath,
+            "pythonPath": untildify(pythonPath),
         };
         this._context.globalState.update("Odoo.configurations", configs);
         if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
@@ -218,7 +219,7 @@ export class ConfigurationWebView {
                         canSelectFiles: false,
                         canSelectFolders: true
                     };
-                    window.showOpenDialog(odooFolderOptions).then(async fileUri => {
+                    window.showOpenDialog(odooFolderOptions).then(fileUri => {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooFolderPath = fileUri[0].fsPath;
@@ -262,7 +263,7 @@ export class ConfigurationWebView {
                         canSelectFiles: false,
                         canSelectFolders: false,
                     };
-                    window.showOpenDialog(pythonPathOptions).then(async fileUri => {
+                    window.showOpenDialog(pythonPathOptions).then(fileUri => {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooPythonPath = fileUri[0].fsPath;
@@ -274,6 +275,9 @@ export class ConfigurationWebView {
                         }
                     });
                     break;
+                case "update_version":
+                    this._getOdooVersion(message.odooPath, webview);
+                    break;
             }
         },
             undefined,
@@ -281,9 +285,9 @@ export class ConfigurationWebView {
         );
     }
 
-    private async _getOdooVersion(odooPath: URI, webview: Webview) {
+    private _getOdooVersion(odooPath: URI, webview: Webview) {
         let versionString = null;
-        const releasePath = odooPath + '/odoo/release.py';
+        const releasePath = untildify(odooPath) + '/odoo/release.py';
         if (fs.existsSync(releasePath)) {
             const rl = readline.createInterface({
                 input: fs.createReadStream(releasePath),
@@ -296,7 +300,7 @@ export class ConfigurationWebView {
                     rl.close();
                 }
             });
-            rl.on('close', async () => {
+            rl.on('close', () => {
                 // Folder is invalid if we don't find any version info
                 if (!versionString) {
                     let versions = this._context.globalState.get('Odoo.configsVersion', {});

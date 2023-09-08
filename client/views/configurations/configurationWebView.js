@@ -31,6 +31,7 @@ window.addEventListener("message", event => {
 
 function main() {
   const addFolderButton = document.getElementById('add-folder-button');
+  const pathTextfield = document.getElementById('config-path-textfield');
   const pathButton = document.getElementById('config-path-button');
   const pythonPathButton = document.getElementById('config-python-path-button');
   const saveButton = document.getElementById('save-button');
@@ -41,7 +42,7 @@ function main() {
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
   pythonPathButton.addEventListener('vsc-click', openPythonPath);
-
+  pathTextfield.addEventListener("vsc-change", updateVersion);
 
   // Send a message to notify the extension 
   // that the DOM is loaded and ready.
@@ -84,6 +85,12 @@ function deleteConfig() {
   });
 }
 
+function updateVersion(){
+  vscode.postMessage({
+    command: "update_version",
+    odooPath: document.getElementById("config-path-textfield").value,
+  })
+}
 function renderAddonsTree(addons) {
   const tree = document.getElementById('addons-tree');
   const icons = {
