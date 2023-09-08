@@ -25,9 +25,7 @@ export function getNonce() {
 	return text;
 }
 
-export function getPythonVersion(context: ExtensionContext) {
-	// Hardcoded to python3 until configs have their own pythonPath
-	const pythonPath = "python3";
+export function getPythonVersion(context: ExtensionContext, pythonPath: String = "python3") {
 	try {
 		return execSync(`${pythonPath} --version`, {encoding: 'utf8'})
 	} catch {

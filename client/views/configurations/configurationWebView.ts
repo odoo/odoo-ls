@@ -74,6 +74,7 @@ export class ConfigurationWebView {
                 {
                     // Enable JavaScript in the webview
                     enableScripts: true,
+                    retainContextWhenHidden: true,
                 }
             );
             ConfigurationWebView.panels.set(configId, new ConfigurationWebView(panel, configId, context));
@@ -134,7 +135,7 @@ export class ConfigurationWebView {
         panel.title = title.toString()
     }
 
-    private _saveConfig(configs: any, odooPath: String, name: String, addons: Array<String>): void {
+    private _saveConfig(configs: any, odooPath: String, name: String, addons: Array<String>, pythonPath:String = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
 
@@ -163,7 +164,8 @@ export class ConfigurationWebView {
             "id": this.configId,
             "name": name,
             "odooPath": odooPath,
-            "addons": addons
+            "addons": addons,
+            "pythonPath": pythonPath,
         };
         this._context.globalState.update("Odoo.configurations", configs);
         if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
@@ -199,7 +201,8 @@ export class ConfigurationWebView {
                     const odooPath = message.odooPath;
                     const name = message.name;
                     const addons = message.addons;
-                    this._saveConfig(configs, odooPath, name, addons);
+                    const pythonPath = message.pythonPath;
+                    this._saveConfig(configs, odooPath, name, addons, pythonPath);
                     break;
                 case "view_ready":
                     webview.postMessage({
@@ -219,7 +222,7 @@ export class ConfigurationWebView {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooFolderPath = fileUri[0].fsPath;
-                            this._saveConfig(configs, odooFolderPath, config["name"], config["addons"]);
+                            this._saveConfig(configs, odooFolderPath, config["name"], config["addons"], config["pythonPath"]);
                             webview.postMessage({
                                 command: "update_path",
                                 path: odooFolderPath
@@ -240,7 +243,7 @@ export class ConfigurationWebView {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const newAddons = [...config["addons"], fileUri[0].fsPath];
-                            this._saveConfig(configs, config["odooPath"], config["name"], newAddons);
+                            this._saveConfig(configs, config["odooPath"], config["name"], newAddons, config["pythonPath"]);
                             webview.postMessage({
                                 command: "render_addons",
                                 addons: newAddons
@@ -250,6 +253,26 @@ export class ConfigurationWebView {
                     break;
                 case "delete_config":
                     this._deleteConfig(configs);
+                    break;
+                case "open_python_path":
+                    const pythonPathOptions: vscode.OpenDialogOptions = {
+                        title: "Add Python path",
+                        openLabel: 'Add path',
+                        canSelectMany: false,
+                        canSelectFiles: false,
+                        canSelectFolders: false,
+                    };
+                    window.showOpenDialog(pythonPathOptions).then(async fileUri => {
+                        if (fileUri && fileUri[0]) {
+                            let config = configs[this.configId];
+                            const odooPythonPath = fileUri[0].fsPath;
+                            this._saveConfig(configs, config["odooPath"], config["name"], config["addons"], odooPythonPath);
+                            webview.postMessage({
+                                command: "update_python_path",
+                                pythonPath: odooPythonPath
+                            });
+                        }
+                    });
                     break;
             }
         },
