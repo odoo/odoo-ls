@@ -187,7 +187,8 @@ async function addNewConfiguration(context: ExtensionContext) {
                 "id": configId,
                 "name": `New Configuration ${configId}`,
                 "odooPath": "",
-                "addons": []
+                "addons": [],
+                "pythonPath": "python3",
             }
         }
     );
@@ -226,9 +227,9 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
     }
 }
 
-function getPythonPath() {
-    const workspacePath = workspace.getConfiguration("Odoo").get<string>("pythonPath", "python3");
-    return workspacePath && workspacePath != '' ? workspacePath : "python3";
+function getPythonPath(context: ExtensionContext) {
+    const config = getCurrentConfig(context);
+    return config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
 }
 
 function startLanguageServerClient(context: ExtensionContext, pythonPath:string, outputChannel: OutputChannel) {
@@ -252,10 +253,11 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
 
 export function activate(context: ExtensionContext): void {
     const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
-    let pythonPath = getPythonPath();
+    let pythonPath = getPythonPath(context);
     let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
 
     odooOutputChannel.appendLine('[INFO] Starting the extension.');
+    odooOutputChannel.appendLine(pythonPath);
 
     if (getCurrentConfig(context)) {
         if (context.extensionMode === ExtensionMode.Production) {
