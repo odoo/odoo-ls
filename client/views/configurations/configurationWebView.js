@@ -38,11 +38,11 @@ function main() {
   const deleteButton = document.getElementById('delete-button');
 
   addFolderButton.addEventListener("click", addFolderClick);
+  pathTextfield.addEventListener("vsc-change", updateVersion);
   pathButton.addEventListener('vsc-click', openOdooFolder);
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
   pythonPathButton.addEventListener('vsc-click', openPythonPath);
-  pathTextfield.addEventListener("vsc-change", updateVersion);
 
   // Send a message to notify the extension 
   // that the DOM is loaded and ready.
