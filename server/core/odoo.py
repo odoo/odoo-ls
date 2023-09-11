@@ -330,7 +330,8 @@ class Odoo():
         for path in addonsPaths:
             dirs = os.listdir(path)
             for dir in dirs:
-                PythonArchBuilder(ls, addonsSymbol, os.path.join(path, dir)).load_arch()
+                if os.path.isdir(os.path.join(path, dir)):
+                    PythonArchBuilder(ls, addonsSymbol, os.path.join(path, dir)).load_arch(require_module=True)
             if self.stop_init:
                 break
         if self.stop_init:
@@ -364,9 +365,34 @@ class Odoo():
                 return self.symbols.get_symbol(tree)
         return []
 
+    def _unload_path(self, ls, path, clean_cache=False):
+        """unload the symbol with 'path'. If clean_cache==True, remove the matching cache from FileMgr.
+        Return the parent symbol of the unloaded symbol"""
+        file_symbol = self.get_file_symbol(path)
+        parent = None
+        if file_symbol:
+            parent = file_symbol.parent
+            if clean_cache:
+                FileMgr.delete_path(ls, path)
+                s = list(file_symbol.moduleSymbols.values())
+                for sym in s:
+                    FileMgr.delete_path(ls, sym.paths[0])
+                    s.extend(sym.moduleSymbols.values())
+            file_symbol.unload(file_symbol)
+        return parent
+
+    def _build_new_symbol(self, ls, path, parent):
+        """ build a new symbol for the file at 'path' and return the new symbol tree"""
+        from .pythonArchBuilder import PythonArchBuilder
+        if path.endswith("__init__.py") or path.endswith("__init__.pyi") or path.endswith("__manifest__.py"):
+            path = os.sep.join(path.split(os.sep)[:-1])
+        pp = PythonArchBuilder(ls, parent, path)
+        new_symbol = pp.load_arch()
+        new_symbol_tree = new_symbol.get_tree()
+        return new_symbol_tree
+
     def file_change(self, ls, path, text, version):
         try:
-            from .pythonArchBuilder import PythonArchBuilder
 
             #snapshot1 = tracemalloc.take_snapshot()
             if path.endswith(".py"):
@@ -377,22 +403,14 @@ class Odoo():
                     if file_info.version != version: #if the update didn't work
                         return
                     #1 unload
-                    file_symbol = self.get_file_symbol(path)
-                    if not file_symbol:
+                    parent = self._unload_path(ls, path, False)
+                    if not parent:
                         return
-                    parent = file_symbol.parent
-                    file_symbol.unload(file_symbol)
-                    del file_symbol
                     #build new
-                    if path.endswith("__init__.py") or path.endswith("__init__.pyi") or path.endswith("__manifest__.py"):
-                        path = os.sep.join(path.split(os.sep)[:-1])
-                    pp = PythonArchBuilder(ls, parent, path)
-                    new_symbol = pp.load_arch()
-                    new_symbol_tree = new_symbol.get_tree()
-                    del new_symbol
+                    new_symbol_tree = self._build_new_symbol(ls, path, parent)
                     #rebuild validations
                     if new_symbol_tree:
-                        self.add_to_rebuilds(self._search_symbols_to_rebuild(new_symbol_tree))
+                        self._search_symbols_to_rebuild(new_symbol_tree)
                     self.process_rebuilds(ls)
             #snapshot2 = tracemalloc.take_snapshot()
 
@@ -404,44 +422,22 @@ class Odoo():
             ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
     def file_rename(self, ls, old_path, new_path):
-        from server.core.pythonArchBuilder import PythonArchBuilder
         try:
             with Odoo.get().acquire_write(ls):
-                #unload old
-                file_symbol = self.get_file_symbol(old_path)
-                if file_symbol:
-                    #delete file cache
-                    FileMgr.delete_path(ls, old_path)
-                    s = list(file_symbol.moduleSymbols.values())
-                    for sym in s:
-                        FileMgr.delete_path(ls, sym.paths[0])
-                        s.extend(sym.moduleSymbols.values())
-                    #delete symbol
-                    file_symbol.unload(file_symbol)
-                else:
-                    return
-                del file_symbol
+                #unload old path
+                if old_path:
+                    self._unload_path(ls, old_path, True)
                 #build new
-                parent_path = os.sep.join(new_path.split(os.sep)[:-1])
-                parent_symbol = self.get_file_symbol(parent_path)
-                new_symbol = None
-                if not parent_symbol:
-                    ls.show_message_log("parent symbol not found: " + parent_path, MessageType.Error)
-                    ls.show_message("Unable to rename file. Internal representation is not right anymore", 1)
-                else:
-                    new_tree = parent_symbol.get_tree()
+                if new_path:
+                    new_parent = self.get_file_symbol(os.sep.join(new_path.split(os.sep)[:-1]))
+                    self._build_new_symbol(ls, new_path, new_parent)
+                    new_tree = new_parent.get_tree()
                     new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
-                    dict_to_validate = self._search_symbols_to_rebuild(new_tree)
-                    if dict_to_validate or parent_symbol.get_tree() == (["odoo", "addons"], []):
+                    rebuilt_needed = self._search_symbols_to_rebuild(new_tree)
+                    if rebuilt_needed or new_parent.get_tree() == (["odoo", "addons"], []):
                         #if there is something that is trying to import the new file, build it.
                         #Else, don't add it to the architecture to not add useless symbols (and overrides)
-                        if new_path.endswith("__init__.py") or new_path.endswith("__init__.pyi") or new_path.endswith("__manifest__.py"):
-                            new_path = os.sep.join(new_path.split(os.sep)[:-1])
-                        pp = PythonArchBuilder(ls, parent_symbol, new_path)
-                        new_symbol = pp.load_arch()
-                    #rebuild validations
-                    if new_symbol:
-                        self.add_to_rebuilds(dict_to_validate)
+                        new_tree = self._build_new_symbol(ls, new_path, new_parent)
             self.process_rebuilds(ls)
         except Exception:
             print(traceback.format_exc())
@@ -505,13 +501,24 @@ class Odoo():
             self.rebuild_validation.add(file)
 
     def _search_symbols_to_rebuild(self, tree):
+        """ Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
+        from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt"""
         flat_tree = [item for l in tree for item in l]
         new_dict_to_revalidate = defaultdict(lambda: RegisteredRefSet())
+        found_symbols = RegisteredRefSet()
         for s in self.not_found_symbols:
-            for step, tree in s.not_found_paths:
+            for index in range(len(s.not_found_paths)):
+                step, tree = s.not_found_paths[index]
                 if flat_tree[:len(tree)] == tree[:len(flat_tree)]:
                     new_dict_to_revalidate[step].add(s)
-        return new_dict_to_revalidate
+                    del s.not_found_paths[index]
+            if not s.not_found_paths:
+                found_symbols.add(s)
+        self.not_found_symbols -= found_symbols
+        need_rebuild = bool(new_dict_to_revalidate)
+        if need_rebuild:
+            self.add_to_rebuilds(new_dict_to_revalidate)
+        return need_rebuild
 
     def get_models(self, module = None, start_name = ""):
         res = []
