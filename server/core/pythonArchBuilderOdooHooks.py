@@ -43,7 +43,7 @@ class PythonArchBuilderOdooHooks:
         if symbol.name == "BaseModel": #fast, basic check
             if symbol.get_tree() == (["odoo", "models"], ["BaseModel"]): #slower but more precise verification
                 # ---------- env ----------
-                env_var = Symbol("env", SymType.VARIABLE, symbol.paths)
+                env_var = Symbol("env", SymType.VARIABLE)
                 slot_sym = symbol.get_symbol([], ["__slots__"])
                 if not slot_sym:
                     return #TODO should never happen
@@ -53,33 +53,33 @@ class PythonArchBuilderOdooHooks:
         if symbol.name == "Environment": #fast, basic check
             if symbol.get_tree() == (["odoo", "api"], ["Environment"]): #slower but more precise verification
                 # ---------- env.cr ----------
-                cr_var = Symbol("cr", SymType.VARIABLE, symbol.paths)
+                cr_var = Symbol("cr", SymType.VARIABLE)
                 if symbol:
                     cr_var.start_pos = symbol.start_pos
                     cr_var.end_pos = symbol.end_pos
                 symbol.add_symbol(cr_var)
                 # ---------- env.uid ----------
-                cr_var = Symbol("uid", SymType.VARIABLE, symbol.paths)
+                cr_var = Symbol("uid", SymType.VARIABLE)
                 if symbol:
                     cr_var.start_pos = symbol.start_pos
                     cr_var.end_pos = symbol.end_pos
-                cr_var.doc = Symbol("str", SymType.PRIMITIVE, [])
+                cr_var.doc = Symbol("str", SymType.PRIMITIVE)
                 cr_var.doc.value = "the current user id (for access rights checks)"
                 symbol.add_symbol(cr_var)
                 # ---------- env.context ----------
-                context_var = Symbol("context", SymType.VARIABLE, symbol.paths)
+                context_var = Symbol("context", SymType.VARIABLE)
                 if symbol:
                     context_var.start_pos = symbol.start_pos
                     context_var.end_pos = symbol.end_pos
-                context_var.doc = Symbol("str", SymType.PRIMITIVE, [])
+                context_var.doc = Symbol("str", SymType.PRIMITIVE)
                 context_var.doc.value = "the current context dictionary (arbitrary metadata)"
                 symbol.add_symbol(context_var)
                 # ---------- env.su ----------
-                attr_var = Symbol("su", SymType.VARIABLE, symbol.paths)
+                attr_var = Symbol("su", SymType.VARIABLE)
                 if symbol:
                     attr_var.start_pos = symbol.start_pos
                     attr_var.end_pos = symbol.end_pos
-                attr_var.doc = Symbol("str", SymType.PRIMITIVE, [])
+                attr_var.doc = Symbol("str", SymType.PRIMITIVE)
                 attr_var.doc.value = "whether in superuser mode"
                 symbol.add_symbol(attr_var)
         elif symbol.name in ["Many2one", "Many2many", "One2many"]:

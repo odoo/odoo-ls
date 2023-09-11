@@ -43,8 +43,8 @@ class Odoo():
         self.modules = {}
 
         # symbols is the list of declared symbols and their related declaration, filtered by name
-        self.symbols = RootSymbol("root", SymType.ROOT, [])
-        self.builtins = RootSymbol("builtins", SymType.ROOT, [])
+        self.symbols = RootSymbol("root", SymType.ROOT)
+        self.builtins = RootSymbol("builtins", SymType.ROOT)
 
         self.rebuild_arch = RegisteredRefSet()
         self.rebuild_arch_eval = RegisteredRefSet()

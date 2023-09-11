@@ -43,17 +43,16 @@ class Symbol(RegisterableObject):
     to get more information
     """
 
-    __slots__ = ("name", "type", "eval", "paths", "ast_node", "value", "symbols", "moduleSymbols",
+    __slots__ = ("name", "type", "eval", "ast_node", "value", "symbols", "moduleSymbols",
         "localSymbols",  "dependencies", "dependents", "parent",
         "modelData", "external", "start_pos", "end_pos", "archStatus", "odooStatus", "validationStatus",
         "not_found_paths", "i_ext", "doc")
 
-    def __init__(self, name, type, paths):
+    def __init__(self, name, type):
         super().__init__()
         self.name = name
         self.type: SymType = type
         self.eval = None
-        self.paths = paths if isinstance(paths, list) else [paths]
         self.i_ext = "" # indicates if i should be added at the end of the path (for __init__.pyi for example)
         self.ast_node = None
         self.value = None #ref to ast node that can be used to evalute the symbol
@@ -511,6 +510,11 @@ class Symbol(RegisterableObject):
             symbols.append(s)
         return sorted(symbols, key=lambda x: x.start_pos[0])
 
+    def get_paths(self):
+        if self.parent:
+            return self.parent.get_paths()
+        return []
+
 class RootSymbol(Symbol):
 
     def add_symbol(self, symbol):
@@ -530,24 +534,55 @@ class RootSymbol(Symbol):
                    symbol.external = True
                    return
 
+    def get_paths(self):
+        return []
+
+class ConcreteSymbol(Symbol):
+
+    def __init__(self, name, type, paths):
+        super().__init__(name, type)
+        self.paths = paths if isinstance(paths, list) else [paths]
+
+    def get_paths(self):
+        return self.paths
+
+class FileSymbol(ConcreteSymbol):
+
+    def __init__(self, name, paths):
+        super().__init__(name, SymType.FILE, paths)
+
+class PackageSymbol(ConcreteSymbol):
+
+    def __init__(self, name, paths):
+        super().__init__(name, SymType.PACKAGE, paths)
+
+class NamespaceSymbol(ConcreteSymbol):
+
+    def __init__(self, name, paths):
+        super().__init__(name, SymType.NAMESPACE, paths)
+
+class CompiledSymbol(ConcreteSymbol):
+
+    def __init__(self, name, paths):
+        super().__init__(name, SymType.COMPILED, paths)
 
 class ImportSymbol(Symbol):
 
-    def __init__(self, name, paths):
-        super().__init__(name, SymType.VARIABLE, paths)
+    def __init__(self, name):
+        super().__init__(name, SymType.VARIABLE)
 
 
 class FunctionSymbol(Symbol):
 
-    def __init__(self, name, paths, is_property):
-        super().__init__(name, SymType.FUNCTION, paths)
+    def __init__(self, name, is_property):
+        super().__init__(name, SymType.FUNCTION)
         self.is_property = is_property
 
 
 class ClassSymbol(Symbol):
 
-    def __init__(self, name, paths):
-        super().__init__(name, SymType.CLASS, paths)
+    def __init__(self, name):
+        super().__init__(name, SymType.CLASS)
         self.bases = RegisteredRefSet()
 
     def inherits(self, symbol, checked=None):
@@ -608,7 +643,7 @@ class SuperSymbol(Symbol):
     def __init__(self, symbol):
         """SuperSymbol is a proxy symbol that is used to handle "super()" calls. It can take multiple
         symbols that will represent the super classes, and will call them in order to respect the mro"""
-        super().__init__("Super", SymType.FUNCTION, symbol.paths)
+        super().__init__("Super", SymType.FUNCTION)
         from server.core.evaluation import Evaluation
         self.is_property = False
         self.eval = Evaluation()

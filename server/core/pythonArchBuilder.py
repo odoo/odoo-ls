@@ -65,7 +65,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                     symbol = ModuleSymbol(self.ls, self.filePath)
                     symbol.load_module_info(self.ls)
                 else:
-                    symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.PACKAGE, self.filePath)
+                    symbol = PackageSymbol(self.filePath.split(os.sep)[-1], self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 if os.path.exists(os.path.join(self.filePath, "__init__.py")):
@@ -74,12 +74,12 @@ class PythonArchBuilder(ast.NodeVisitor):
                     self.filePath = os.path.join(self.filePath, "__init__.pyi")
                     symbol.i_ext = "i"
             else:
-                symbol = Symbol(self.filePath.split(os.sep)[-1], SymType.NAMESPACE, self.filePath)
+                symbol = NamespaceSymbol(self.filePath.split(os.sep)[-1], self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 return self.symStack[1]
         else:
-            symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], SymType.FILE, self.filePath)
+            symbol = FileSymbol(self.filePath.split(os.sep)[-1].split(".py")[0], self.filePath)
             self.symStack[-1].add_symbol(symbol)
             self.symStack.append(symbol)
         if require_module and not isinstance(symbol, ModuleSymbol):
@@ -149,7 +149,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 fileSymbol = self.symStack[1]
                 for s in symbol.symbols.values():
                     if allowed_names == True or s.name in allowed_names:
-                        variable = ImportSymbol(s.name, self.symStack[-1].paths[0])
+                        variable = ImportSymbol(s.name)
                         variable.start_pos = (node.lineno, node.col_offset)
                         variable.end_pos = (node.end_lineno, node.end_col_offset)
                         variable.eval = Evaluation().eval_import(s)
@@ -158,7 +158,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                             fileSymbol.add_dependency(eval_sym, BuildSteps.ARCH, BuildSteps.ARCH)
                         self.symStack[-1].add_symbol(variable)
             else:
-                variable = ImportSymbol(import_name.asname if import_name.asname else import_name.name.split(".")[0], self.symStack[1].paths[0])
+                variable = ImportSymbol(import_name.asname if import_name.asname else import_name.name.split(".")[0])
                 variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 import_name.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)
@@ -167,7 +167,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         assigns = PythonUtils.unpack_assign(node.target, node.value, {})
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
+                variable = Symbol(variable_name.id, SymType.VARIABLE)
                 variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 if value:
                     variable.value = value
@@ -178,7 +178,7 @@ class PythonArchBuilder(ast.NodeVisitor):
         assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
-                variable = Symbol(variable_name.id, SymType.VARIABLE, self.filePath)
+                variable = Symbol(variable_name.id, SymType.VARIABLE)
                 variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 variable.value = value
                 self.symStack[-1].add_symbol(variable)
@@ -196,7 +196,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                         evaluation = variable.eval
                         if evaluation and evaluation.get_symbol() and evaluation.get_symbol().type == SymType.PRIMITIVE:
                             for var_name in evaluation.get_symbol().value:
-                                var = Symbol(var_name, SymType.VARIABLE, self.filePath)
+                                var = Symbol(var_name, SymType.VARIABLE)
                                 var.start_pos, var.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                                 var.eval = None
                                 self.__all__symbols_to_add.append(var)
@@ -212,17 +212,17 @@ class PythonArchBuilder(ast.NodeVisitor):
                 is_static = True
             if isinstance(decorator, ast.Name) and decorator.id == "property":
                 is_property = True
-        symbol = FunctionSymbol(node.name, self.filePath, is_property)
+        symbol = FunctionSymbol(node.name, is_property)
         symbol.start_pos, symbol.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
         doc = ast.get_docstring(node)
         if doc:
-            symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
+            symbol.doc = Symbol("str", SymType.PRIMITIVE)
             symbol.doc.value = doc
         if not is_static and node.args:
             class_sym = self.symStack[-1]
             if class_sym and class_sym.type == SymType.CLASS and node.args.args:
                 self_name = node.args.args[0].arg
-                self_sym = Symbol(self_name, SymType.VARIABLE, self.filePath)
+                self_sym = Symbol(self_name, SymType.VARIABLE)
                 self_sym.start_pos, self_sym.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 self_sym.eval = Evaluation()
                 self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
@@ -230,12 +230,12 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.symStack[-1].add_symbol(symbol)
 
     def visit_ClassDef(self, node):
-        symbol = ClassSymbol(node.name, self.filePath)
+        symbol = ClassSymbol(node.name)
         symbol.start_pos, symbol.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
         node.symbol = RegisteredRef(symbol)
         doc = ast.get_docstring(node)
         if doc:
-            symbol.doc = Symbol("str", SymType.PRIMITIVE, self.filePath)
+            symbol.doc = Symbol("str", SymType.PRIMITIVE)
             symbol.doc.value = doc
         self.symStack[-1].add_symbol(symbol)
         self.symStack.append(symbol)
@@ -246,7 +246,7 @@ class PythonArchBuilder(ast.NodeVisitor):
     def visit_For(self, node):
         if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE, SymType.FUNCTION]:
             if isinstance(node.target, ast.Name): #do not handle tuples for now
-                variable = Symbol(node.target.id, SymType.VARIABLE, self.filePath)
+                variable = Symbol(node.target.id, SymType.VARIABLE)
                 variable.start_pos, variable.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
                 node.target.symbol = RegisteredRef(variable)
                 self.symStack[-1].add_symbol(variable)

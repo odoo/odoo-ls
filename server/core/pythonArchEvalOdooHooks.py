@@ -72,7 +72,7 @@ class PythonArchEvalOdooHooks:
         ids = symbol.get_symbol([], ["ids"])
         if ids:
             ids.eval = Evaluation()
-            ids.eval._main_symbol = Symbol("list", SymType.VARIABLE, "")
+            ids.eval._main_symbol = Symbol("list", SymType.VARIABLE)
             ids.eval._symbol = RegisteredRef(ids.eval._main_symbol)
             ids.eval.instance = True
             ids.eval.value = []

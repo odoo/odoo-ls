@@ -15,7 +15,7 @@ from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
                              SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
                              Unregistration, UnregistrationParams)
 
-class ModuleSymbol(Symbol):
+class ModuleSymbol(ConcreteSymbol):
 
     rootPath = ""
     loaded = False

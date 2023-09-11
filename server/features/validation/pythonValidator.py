@@ -150,7 +150,7 @@ class PythonValidator(ast.NodeVisitor):
                         self.classContentCache[-1].log_access = bool(value.value)
             if self.symStack[-1].type in ["class", "file"]:
                 if variable not in self.symStack[-1].symbols:
-                    variable = Symbol(variable, "variable", self.filePath)
+                    variable = Symbol(variable, "variable")
                     variable.startLine = node.lineno
                     variable.endLine = node.end_lineno
                     variable.eval = PythonUtils.evaluateTypeAST(value, self.symStack[-1])
@@ -160,7 +160,7 @@ class PythonValidator(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node):
         return
-        symbol = Symbol(node.name, "function", self.filePath)
+        symbol = Symbol(node.name, "function")
         symbol.startLine = node.lineno
         symbol.endLine = node.end_lineno
         if self.symStack[-1].type in ["file", "function"]:
@@ -258,11 +258,11 @@ class PythonValidator(ast.NodeVisitor):
 
     def add_magic_fields(self, symbol, node, data):
         def create_symbol(name, type, lineno):
-            variable = Symbol(name, SymType.VARIABLE, self.filePath)
+            variable = Symbol(name, SymType.VARIABLE)
             variable.start_pos = (lineno, 0)
             variable.end_pos =(lineno, 1)
             #TODO adapt
-            #variable.eval = Symbol(type, SymType.PRIMITIVE, "")
+            #variable.eval = Symbol(type, SymType.PRIMITIVE)
             symbol.add_symbol(variable)
             return variable
         if symbol.get_tree() == ["odoo", "models", "Model"]:
