@@ -4,7 +4,7 @@ from pathlib import Path
 from server.pythonUtils import PythonUtils
 from ..constants import *
 from .odoo import Odoo
-from .symbol import Symbol
+from .symbol import CompiledSymbol
 
 __all__ = ["resolve_import_stmt"]
 
@@ -95,7 +95,7 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, start_pos,
     from .pythonArchBuilder import PythonArchBuilder
     if parent_symbol and parent_symbol.type == SymType.COMPILED:
         #in case of compiled file, import symbols to resolve imports
-        variable = Symbol(asname if asname else name, SymType.COMPILED, file_symbol.paths[0])
+        variable = CompiledSymbol(asname if asname else name, "")
         variable.start_pos = start_pos
         variable.end_pos = end_pos
         variable.eval = None
@@ -118,13 +118,13 @@ def _resolve_new_symbol(ls, file_symbol, parent_symbol, name, asname, start_pos,
             if os.name == "nt":
                 paths = glob.glob(full_path + r".*.pyd")
                 if paths:
-                    sym = Symbol(name, SymType.COMPILED, paths)
+                    sym = CompiledSymbol(name, paths)
                     parent_symbol.add_symbol(sym)
                     return sym
             else:
                 paths = glob.glob(full_path + r".*.so")
                 if paths:
-                    sym = Symbol(name, SymType.COMPILED, paths)
+                    sym = CompiledSymbol(name, paths)
                     parent_symbol.add_symbol(sym)
                     return sym
     return False
