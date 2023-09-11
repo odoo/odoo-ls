@@ -17,8 +17,6 @@ from contextlib import contextmanager
 from lsprotocol.types import (ConfigurationItem, WorkspaceConfigurationParams)
 from pygls.server import LanguageServer, MessageType
 
-from ..constants import CONFIGURATION_SECTION
-
 #for debug
 import time
 
