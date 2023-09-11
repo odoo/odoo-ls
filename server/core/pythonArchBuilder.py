@@ -42,13 +42,15 @@ class PythonArchBuilder(ast.NodeVisitor):
         self.__all__symbols_to_add = []
         #self.currentModule = None
 
-    def load_arch(self):
+    def load_arch(self, require_module=False):
         """load all symbols at self.path. All dependencies (odoo modules) must have been loaded first.
+        if require_module, a manifest is needed to load the arch
         Excpected behaviour:
         On new element, not present in tree: load symbol and subsequent symbols.
         The code will follow all found import statement and try to import symbols from them too.
         On an existing symbol, the symbol will be simply returned
         """
+        from server.core.module import ModuleSymbol
         if DEBUG_ARCH_BUILDER:
             print("Load arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else ""))
         existing_symbol = self.symStack[-1].get_symbol([self.filePath.split(os.sep)[-1].split(".py")[0]])
@@ -60,7 +62,6 @@ class PythonArchBuilder(ast.NodeVisitor):
             if os.path.exists(os.path.join(self.filePath, "__init__.py")) or os.path.exists(os.path.join(self.filePath, "__init__.pyi")):
                 if self.symStack[0].get_tree() == (["odoo", "addons"], []) and \
                     os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
-                    from server.core.module import ModuleSymbol
                     symbol = ModuleSymbol(self.ls, self.filePath)
                     symbol.load_module_info(self.ls)
                 else:
@@ -81,6 +82,8 @@ class PythonArchBuilder(ast.NodeVisitor):
             symbol = Symbol(self.filePath.split(os.sep)[-1].split(".py")[0], SymType.FILE, self.filePath)
             self.symStack[-1].add_symbol(symbol)
             self.symStack.append(symbol)
+        if require_module and not isinstance(symbol, ModuleSymbol):
+            return None
         #parse the Python file
         self.tree = self.symStack[-1].get_tree()
         self.symStack[-1].archStatus = 1

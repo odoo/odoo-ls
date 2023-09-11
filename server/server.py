@@ -148,13 +148,29 @@ def did_rename_files(ls, params):
             new_path = new_path[0].capitalize() + new_path[1:]
         odoo_server.launch_thread(target=Odoo.get().file_rename, args=(ls, old_path, new_path))
 
-@odoo_server.feature(WORKSPACE_DID_DELETE_FILES)
-def did_delete_files(ls, params):
-    print("deleted file")
+@odoo_server.feature(WORKSPACE_DID_DELETE_FILES, FileOperationRegistrationOptions(filters = [
+    FileOperationFilter(pattern = FileOperationPattern(glob = "**"))
+]))
+def did_delete_files(ls, params: DeleteFilesParams):
+    for f in params.files:
+        path = urllib.parse.urlparse(urllib.parse.unquote(f.uri)).path
+        path = urllib.request.url2pathname(path)
+        #TODO find better than this small hack for windows (get disk letter in capital)
+        if os.name == "nt":
+            path = path[0].capitalize() + path[1:]
+        odoo_server.launch_thread(target=Odoo.get().file_rename, args=(ls, path, ""))
 
-@odoo_server.feature(WORKSPACE_DID_CREATE_FILES)
-def did_create_files(ls, params):
-    print("created file")
+@odoo_server.feature(WORKSPACE_DID_CREATE_FILES, FileOperationRegistrationOptions(filters = [
+    FileOperationFilter(pattern = FileOperationPattern(glob = "**"))
+]))
+def did_create_files(ls, params: CreateFilesParams):
+    for f in params.files:
+        new_path = urllib.parse.urlparse(urllib.parse.unquote(f.uri)).path
+        new_path = urllib.request.url2pathname(new_path)
+        #TODO find better than this small hack for windows (get disk letter in capital)
+        if os.name == "nt":
+            new_path = new_path[0].capitalize() + new_path[1:]
+        odoo_server.launch_thread(target=Odoo.get().file_rename, args=(ls, "", new_path))
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_CLOSE)
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):

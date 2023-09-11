@@ -98,6 +98,19 @@ class PythonArchEval(ast.NodeVisitor):
                 if ref != variable: #anti-loop
                     variable.ref.eval = Evaluation().eval_import(symbol)
                     variable.ref.add_dependency(symbol, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
+                else:
+                    self.symbol.not_found_paths.append((BuildSteps.ARCH_EVAL, file_tree + node_alias.name.split(".")))
+                    Odoo.get().not_found_symbols.add(self.symbol)
+                    self.diagnostics.append(Diagnostic(
+                        range = Range(
+                            start=Position(line=node.lineno-1, character=node.col_offset),
+                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                Position(line=node.lineno-1, character=node.end_col_offset)
+                        ),
+                        message = ".".join(file_tree + [node_alias.name]) + " not found",
+                        source = EXTENSION_NAME,
+                        severity = 2
+                    ))
             else:
                 if (file_tree + node_alias.name.split("."))[0] in BUILT_IN_LIBS:
                     continue
