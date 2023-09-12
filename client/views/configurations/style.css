@@ -6,7 +6,7 @@
   }
 }
 
-#config-path-textfield {
+#config-path-textfield, #config-python-path-textfield  {
   width: 80%;
 }
 
