@@ -223,7 +223,6 @@ export class ConfigurationWebView {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooFolderPath = fileUri[0].fsPath;
-                            this._saveConfig(configs, odooFolderPath, config["name"], config["addons"], config["pythonPath"]);
                             webview.postMessage({
                                 command: "update_path",
                                 path: odooFolderPath
@@ -244,7 +243,6 @@ export class ConfigurationWebView {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const newAddons = [...config["addons"], fileUri[0].fsPath];
-                            this._saveConfig(configs, config["odooPath"], config["name"], newAddons, config["pythonPath"]);
                             webview.postMessage({
                                 command: "render_addons",
                                 addons: newAddons
@@ -267,7 +265,6 @@ export class ConfigurationWebView {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooPythonPath = fileUri[0].fsPath;
-                            this._saveConfig(configs, config["odooPath"], config["name"], config["addons"], odooPythonPath);
                             webview.postMessage({
                                 command: "update_python_path",
                                 pythonPath: odooPythonPath
