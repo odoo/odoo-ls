@@ -49,6 +49,7 @@ import {
 } from './utils/events'
 import { execSync } from "child_process";
 import { getCurrentConfig } from "./utils/utils";
+import * as fs from 'fs';
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
@@ -91,9 +92,18 @@ function setMissingStateVariables(context: ExtensionContext, outputChannel: Outp
         }
     }
 }
+function activatePath(pythonPath: String){
+    let activatePathArray = pythonPath.split('/').slice(0, pythonPath.split('/').length-1)
+    let activatePath  = activatePathArray.join('/') + '/activate'
+    if (fs.existsSync(activatePath)) {
+           execSync(`source ${activatePath}`)
+    }
+    return 
+}
 
 function isPythonModuleInstalled(pythonPath: string, moduleName: string): boolean {
     try {
+        activatePath(pythonPath)
         execSync(pythonPath + ' -c "import ' + moduleName + '"');
         return true;
     } catch (error) {
