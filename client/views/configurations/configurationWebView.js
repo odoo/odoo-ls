@@ -67,6 +67,13 @@ function addFolderClick() {
   });
 }
 
+function deleteAddon(addons){
+  vscode.postMessage({
+    command: "delete_addons_folder",
+    addons: addons,
+  });
+}
+
 function openOdooFolder() {
   vscode.postMessage({
     command: "open_odoo_folder"
@@ -117,7 +124,7 @@ function renderAddonsTree(addons) {
       case "delete":
         data.splice(action.item.path[0], 1);
         tree.data = data;
-        saveConfig();
+        deleteAddon(getAddons(tree.data));
         break;
     }
   });
