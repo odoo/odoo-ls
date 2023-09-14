@@ -92,18 +92,9 @@ function setMissingStateVariables(context: ExtensionContext, outputChannel: Outp
         }
     }
 }
-function activatePath(pythonPath: String){
-    let activatePathArray = pythonPath.split('/').slice(0, pythonPath.split('/').length-1)
-    let activatePath  = activatePathArray.join('/') + '/activate'
-    if (fs.existsSync(activatePath)) {
-           execSync(`source ${activatePath}`)
-    }
-    return 
-}
 
 function isPythonModuleInstalled(pythonPath: string, moduleName: string): boolean {
     try {
-        activatePath(pythonPath)
         execSync(pythonPath + ' -c "import ' + moduleName + '"');
         return true;
     } catch (error) {
@@ -242,6 +233,18 @@ function getPythonPath(context: ExtensionContext) {
     return config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
 }
 
+function activateVenv(pythonPath: String) {
+    try {
+        let activatePathArray = pythonPath.split('/').slice(0, pythonPath.split('/').length - 1)
+        let activatePath = activatePathArray.join('/') + '/activate'
+        if (fs.existsSync(activatePath)) {
+            execSync(`. ${activatePath}`)
+        }
+    }
+    catch (error) {
+    }
+}
+
 function startLanguageServerClient(context: ExtensionContext, pythonPath:string, outputChannel: OutputChannel) {
     let client: LanguageClient;
     if (context.extensionMode === ExtensionMode.Development) {
@@ -253,7 +256,10 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         const cwd = path.join(__dirname, "..", "..");
 
         if (!pythonPath) {
-            outputChannel.appendLine("[INFO] Odoo.pythonPath is not set, defaulting to python3.");
+            outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
+        }
+        else {
+            activateVenv(pythonPath)
         }
         client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
     }
@@ -391,24 +397,24 @@ export function activate(context: ExtensionContext): void {
 
     // Temporary. Ideally I'd dispose the current client and regenerate a new one
     // but it would require far too much effort for what it achieves.
-    context.subscriptions.push(
-        workspace.onDidChangeConfiguration(async event => {
-            let affected = event.affectsConfiguration("Odoo.pythonPath");
-            if (affected) {
-                window.showInformationMessage(
-                    "Odoo: Modifying Odoo.pythonPath requires a reload for the change to take effect.",
-                    "Reload VSCode",
-                    "Later"
-                ).then(selection => {
-                    switch (selection) {
-                        case ("Reload VSCode"):
-                            commands.executeCommand("workbench.action.reloadWindow");
-                            break;
-                    }
-                });
-            }
-        })
-    );
+    // context.subscriptions.push(
+    //     workspace.onDidChangeConfiguration(async event => {
+    //         let affected = event.affectsConfiguration("Odoo.pythonPath");
+    //         if (affected) {
+    //             window.showInformationMessage(
+    //                 "Odoo: Modifying pythonPath requires a reload for the change to take effect.",
+    //                 "Reload VSCode",
+    //                 "Later"
+    //             ).then(selection => {
+    //                 switch (selection) {
+    //                     case ("Reload VSCode"):
+    //                         commands.executeCommand("workbench.action.reloadWindow");
+    //                         break;
+    //                 }
+    //             });
+    //         }
+    //     })
+    // );
 
     // COMMANDS
     context.subscriptions.push(

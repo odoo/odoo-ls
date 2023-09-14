@@ -25,6 +25,7 @@ export class ConfigurationWebView {
     private readonly _panel: WebviewPanel;
     private _disposables: Disposable[] = [];
     private readonly _context: vscode.ExtensionContext
+    private addons: Array<String> = [];
 
     /**
      * The ConfigurationWebView class private constructor (called only from the render method).
@@ -241,14 +242,16 @@ export class ConfigurationWebView {
                     };
                     window.showOpenDialog(addonsFolderOptions).then(fileUri => {
                         if (fileUri && fileUri[0]) {
-                            let config = configs[this.configId];
-                            const newAddons = [...config["addons"], fileUri[0].fsPath];
+                            this.addons = [...this.addons, fileUri[0].fsPath];
                             webview.postMessage({
                                 command: "render_addons",
-                                addons: newAddons
+                                addons: this.addons,
                             });
                         }
                     });
+                    break;
+                case "delete_addons_folder":
+                    this.addons = message.addons;
                     break;
                 case "delete_config":
                     this._deleteConfig(configs);
