@@ -152,6 +152,19 @@ class Odoo():
         with Odoo.instance.acquire_write(ls):
             Odoo.instance = None
 
+    @staticmethod
+    def reload_database(ls):
+        if Odoo.get():
+            ls.show_message_log("Interrupting initialization", MessageType.Log)
+            Odoo.get().interrupt_initialization()
+            ls.show_message_log("Reset existing database", MessageType.Log)
+            Odoo.get().reset(ls)
+        FileMgr.files = {}
+        ls.show_message_log("Building new database", MessageType.Log)
+        ls.show_message("Reloading Odoo database", MessageType.Info)
+        ls.launch_thread(target=Odoo.initialize, args=(ls,))
+
+
     def get_symbol(self, fileTree, nameTree = []):
         return self.symbols.get_symbol(fileTree, nameTree)
 
@@ -270,7 +283,7 @@ class Odoo():
                 already_arch_rebuilt.add(tree)
                 parent = sym.parent
                 ast_node = sym.ast_node
-                path = sym.paths[0]
+                path = sym.get_paths()[0]
                 sym.unload(sym)
                 del sym
                 #build new
@@ -374,7 +387,7 @@ class Odoo():
                 FileMgr.delete_path(ls, path)
                 s = list(file_symbol.moduleSymbols.values())
                 for sym in s:
-                    FileMgr.delete_path(ls, sym.paths[0])
+                    FileMgr.delete_path(ls, sym.get_paths()[0])
                     s.extend(sym.moduleSymbols.values())
             file_symbol.unload(file_symbol)
         return parent
@@ -390,57 +403,42 @@ class Odoo():
         return new_symbol_tree
 
     def file_change(self, ls, path, text, version):
-        try:
-
-            #snapshot1 = tracemalloc.take_snapshot()
-            if path.endswith(".py"):
-                ls.show_message_log("File change event: " + path + " version " + str(version))
-                with Odoo.get().acquire_write(ls):
-                    file_info = FileMgr.getFileInfo(path, text, version, opened=True)
-                    file_info.publish_diagnostics(ls)
-                    if file_info.version != version: #if the update didn't work
-                        return
-                    #1 unload
-                    parent = self._unload_path(ls, path, False)
-                    if not parent:
-                        return
-                    #build new
-                    new_symbol_tree = self._build_new_symbol(ls, path, parent)
-                    #rebuild validations
-                    if new_symbol_tree:
-                        self._search_symbols_to_rebuild(new_symbol_tree)
-                    self.process_rebuilds(ls)
-            #snapshot2 = tracemalloc.take_snapshot()
-
-            #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
-            return
-        except Exception:
-            print(traceback.format_exc())
-            ls.show_message_log(traceback.format_exc(), MessageType.Error)
-            ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
-
-    def file_rename(self, ls, old_path, new_path):
-        try:
+        #snapshot1 = tracemalloc.take_snapshot()
+        if path.endswith(".py"):
+            ls.show_message_log("File change event: " + path + " version " + str(version))
             with Odoo.get().acquire_write(ls):
-                #unload old path
-                if old_path:
-                    self._unload_path(ls, old_path, True)
+                file_info = FileMgr.getFileInfo(path, text, version, opened=True)
+                file_info.publish_diagnostics(ls)
+                if file_info.version != version: #if the update didn't work
+                    return
+                #1 unload
+                parent = self._unload_path(ls, path, False)
+                if not parent:
+                    return
                 #build new
-                if new_path:
-                    new_parent = self.get_file_symbol(os.sep.join(new_path.split(os.sep)[:-1]))
-                    self._build_new_symbol(ls, new_path, new_parent)
-                    new_tree = new_parent.get_tree()
-                    new_tree[1].append(new_path.split(os.sep)[-1].replace(".py", ""))
-                    rebuilt_needed = self._search_symbols_to_rebuild(new_tree)
-                    if rebuilt_needed or new_parent.get_tree() == (["odoo", "addons"], []):
-                        #if there is something that is trying to import the new file, build it.
-                        #Else, don't add it to the architecture to not add useless symbols (and overrides)
-                        new_tree = self._build_new_symbol(ls, new_path, new_parent)
-            self.process_rebuilds(ls)
-        except Exception:
-            print(traceback.format_exc())
-            ls.show_message_log(traceback.format_exc(), MessageType.Error)
-            ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+                new_symbol_tree = self._build_new_symbol(ls, path, parent)
+                #rebuild validations
+                if new_symbol_tree:
+                    self._search_symbols_to_rebuild(new_symbol_tree)
+                # self.process_rebuilds(ls) #No more process, it is done at end of queue at (EventQueue.py/process)
+        #snapshot2 = tracemalloc.take_snapshot()
+        #top_stats = snapshot2.compare_to(snapshot1, 'lineno')
+
+    def file_delete(self, ls, path):
+        with Odoo.get().acquire_write(ls):
+            self._unload_path(ls, path, True)
+
+    def file_create(self, ls, path):
+        with Odoo.get().acquire_write(ls):
+            new_parent = self.get_file_symbol(os.sep.join(path.split(os.sep)[:-1]))
+            self._build_new_symbol(ls, path, new_parent)
+            new_tree = new_parent.get_tree()
+            new_tree[1].append(path.split(os.sep)[-1].replace(".py", ""))
+            rebuilt_needed = self._search_symbols_to_rebuild(new_tree)
+            if rebuilt_needed or new_parent.get_tree() == (["odoo", "addons"], []):
+                #if there is something that is trying to import the new file, build it.
+                #Else, don't add it to the architecture to not add useless symbols (and overrides)
+                new_tree = self._build_new_symbol(ls, path, new_parent)
 
     def add_to_rebuilds(self, symbols):
         """add a dictionnary of symbols to the rebuild list. The dict must have the format

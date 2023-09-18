@@ -6,6 +6,9 @@ from lsprotocol.types import MessageType
 from pygls.server import LanguageServer
 from server.constants import *
 
+from server.updateEventQueue import UpdateEventQueue
+
+
 class OdooLanguageServer(LanguageServer):
 
     instance = contextvars.ContextVar('instance', default=None)
@@ -14,7 +17,7 @@ class OdooLanguageServer(LanguageServer):
     def __init__(self):
         print("Starting Odoo Language server using Python " + str(sys.version))
         self.id_lock = threading.Lock()
-        self.id = 0
+        self.file_change_event_queue = UpdateEventQueue(1.0)
         self.config = None
         super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
 

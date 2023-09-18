@@ -65,7 +65,7 @@ def _resolve_packages(file_symbol, level, from_stmt):
     to use in a get_symbol search"""
     file_tree = []
     if level != 0:
-        if level > len(Path(file_symbol.paths[0]).parts):
+        if level > len(Path(file_symbol.get_paths()[0]).parts):
             print("ERROR: level is too big ! The current path doesn't have enough parents")
             return
         if file_symbol.type == SymType.PACKAGE:

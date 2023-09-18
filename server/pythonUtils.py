@@ -1,7 +1,7 @@
+import traceback
+from lsprotocol.types import MessageType
+from functools import wraps
 from .constants import *
-from .core.odoo import Odoo
-from .core.symbol import *
-from .core.model import *
 from pathlib import Path
 import ast
 
@@ -206,3 +206,14 @@ class PythonUtils():
                 pass
                 # print("ERROR: unpack_assign not implemented for " + str(node_targets) + " and " + str(node_values))
         return acc
+
+def send_error_on_traceback(func):
+    @wraps(func)
+    def wrapper_func(*args, **kwargs):
+        from server.OdooLanguageServer import odoo_server
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
+            odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
+    return wrapper_func

@@ -134,14 +134,20 @@ class FileMgr():
 
     @staticmethod
     def getFileInfo(path, content=False, version=1, opened=False):
+        """ a version of -100 and empty content force a reload from disk"""
         if os.name == "nt":
             path = path[0].capitalize() + path[1:]
         f = FileMgr.files.get(path, None)
+        if version == -100 and not content:
+            with open(path, "rb") as file:
+                content = file.read()
+            if f:
+                version = f.version + 1
         if not f:
             f = FileInfo(path, version)
             f.build_ast(path, content)
             FileMgr.files[path] = f
-            f.version = version
+            f.version = version if version != -100 else 1
         elif content:
             if f.version < version:
                 valid = f.build_ast(path, content)
