@@ -212,7 +212,7 @@ def send_error_on_traceback(func):
     def wrapper_func(*args, **kwargs):
         from server.OdooLanguageServer import odoo_server
         try:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
         except Exception:
             odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
             odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
