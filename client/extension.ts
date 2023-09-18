@@ -228,11 +228,6 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
     }
 }
 
-function getPythonPath(context: ExtensionContext) {
-    const config = getCurrentConfig(context);
-    return config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
-}
-
 function activateVenv(pythonPath: String) {
     try {
         let activatePathArray = pythonPath.split('/').slice(0, pythonPath.split('/').length - 1)
@@ -243,6 +238,13 @@ function activateVenv(pythonPath: String) {
     }
     catch (error) {
     }
+}
+
+function getPythonPath(context: ExtensionContext) {
+    const config = getCurrentConfig(context);
+    const pythonPath = config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
+    activateVenv(pythonPath)
+    return pythonPath
 }
 
 function startLanguageServerClient(context: ExtensionContext, pythonPath:string, outputChannel: OutputChannel) {
@@ -258,43 +260,48 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         if (!pythonPath) {
             outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
         }
-        else {
-            activateVenv(pythonPath)
-        }
         client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
     }
 
     return client;
 }
 
-export function activate(context: ExtensionContext): void {
-    const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
-    let pythonPath = getPythonPath(context);
-    let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
+function initializeSubscriptions(context: ExtensionContext, client: LanguageClient, odooOutputChannel: OutputChannel): void {
 
-    odooOutputChannel.appendLine('[INFO] Starting the extension.');
-    odooOutputChannel.appendLine(pythonPath);
-
-    if (getCurrentConfig(context)) {
-        if (context.extensionMode === ExtensionMode.Production) {
-            if (checkPythonDependencies(pythonPath)) {
-                client.start();
+    function checkRestartPythonServer(){
+        if (getCurrentConfig(context)) {
+            let oldPythonPath = pythonPath
+            pythonPath = getPythonPath(context);
+            if (oldPythonPath != pythonPath) {
+                odooOutputChannel.appendLine('[INFO] Python path changed, restarting language server: ' + oldPythonPath + " " + pythonPath);
+                if (client.diagnostics) client.diagnostics.clear();
+                if (client.isRunning()) client.stop();
+                if (client) client.dispose();
+                client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
+                for (const disposable of context.subscriptions) {
+                    try {
+                        disposable.dispose();
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+                initializeSubscriptions(context, client, odooOutputChannel)
+                client.start().then(() => {
+                    client.sendNotification(
+                        "Odoo/configurationChanged",
+                    );
+                })
             }
-        } else {
-            client.start();
         }
     }
 
-    // new ConfigurationsExplorer(context);
+    let pythonPath = getPythonPath(context);
 
     odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     setStatusConfig(context, odooStatusBar);
     odooStatusBar.show();
     odooStatusBar.command = "odoo.clickStatusBar"
     context.subscriptions.push(odooStatusBar);
-
-    // Initialize some settings on the extension's launch if they're missing from the state.
-    setMissingStateVariables(context, odooOutputChannel);
 
     context.subscriptions.push(
         commands.registerCommand('odoo.clickStatusBar', async () => {
@@ -360,7 +367,6 @@ export function activate(context: ExtensionContext): void {
             qpick.show();
         })
     );
-
     // Listen to changes to Configurations
     context.subscriptions.push(
         ConfigurationsChange.event((changes: Array<String> | null) => {
@@ -369,14 +375,18 @@ export function activate(context: ExtensionContext): void {
                 if (client.diagnostics) client.diagnostics.clear();
                 client.sendNotification("Odoo/configurationChanged");
             }
+            if(changes && changes.includes('pythonPath')){
+                checkRestartPythonServer()
+            }
         })
     );
 
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
         selectedConfigurationChange.event(() => {
-            if (!checkPythonDependencies(pythonPath)) return;
-            if (getCurrentConfig(context)) {
+            if (getCurrentConfig(context)) { 
+                checkRestartPythonServer()
+                if (!checkPythonDependencies(pythonPath)) return;
                 if (!client.isRunning()) {
                     client.start().then(() => {
                         client.sendNotification(
@@ -436,7 +446,53 @@ export function activate(context: ExtensionContext): void {
             }
             commands.executeCommand("workbench.action.reloadWindow");
         }
-    ));
+        ));
+
+    context.subscriptions.push(
+        client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
+            switch (state) {
+                case "start":
+                    isLoading = true;
+                    break;
+                case "stop":
+                    isLoading = false;
+                    break;
+            }
+            setStatusConfig(context, odooStatusBar);
+        })
+    );
+    context.subscriptions.push(client.onRequest("Odoo/getConfiguration", (params) => {
+        return getCurrentConfig(context);
+    }));
+
+    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => {
+        displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
+    }));
+
+}
+export function activate(context: ExtensionContext): void {
+    const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
+    let pythonPath = getPythonPath(context);
+    let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
+
+    odooOutputChannel.appendLine('[INFO] Starting the extension.');
+    odooOutputChannel.appendLine(pythonPath);
+
+    if (getCurrentConfig(context)) {
+        if (context.extensionMode === ExtensionMode.Production) {
+            if (checkPythonDependencies(pythonPath)) {
+                client.start();
+            }
+        } else {
+            client.start();
+        }
+    }
+
+    // new ConfigurationsExplorer(context);
+
+    initializeSubscriptions(context, client, odooOutputChannel)
+    // Initialize some settings on the extension's launch if they're missing from the state.
+    setMissingStateVariables(context, odooOutputChannel);
 
     switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
         case null:
@@ -452,28 +508,6 @@ export function activate(context: ExtensionContext): void {
     if (config) {
         odooStatusBar.text = `Odoo (${config["name"]})`;
     }
-
-    context.subscriptions.push(
-        client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
-            switch (state) {
-                case "start":
-                    isLoading = true;
-                    break;
-                case "stop":
-                    isLoading = false;
-                    break;
-            }
-            setStatusConfig(context, odooStatusBar);
-        })
-    );
-
-    context.subscriptions.push(client.onRequest("Odoo/getConfiguration", (params) => {
-        return getCurrentConfig(context);
-    }));
-
-    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => { 
-        displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
-    }));
 
     if (getCurrentConfig(context)) {
         if (context.extensionMode === ExtensionMode.Production) {
