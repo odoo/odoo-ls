@@ -149,6 +149,10 @@ export class ConfigurationWebView {
             changes.push("name");
         }
 
+        if (configs[this.configId]["pythonPath"] != pythonPath) {
+            changes.push("pythonPath");
+        }
+
         if (oldAddons.length != addons.length) {
             changes.push("addons");
         } else {
