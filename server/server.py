@@ -44,7 +44,14 @@ from .constants import *
 COUNT_DOWN_START_IN_SECONDS = 10
 COUNT_DOWN_SLEEP_IN_SECONDS = 1
 
-from server.OdooLanguageServer import OdooLanguageServer, odoo_server
+@odoo_server.feature(SHUTDOWN)
+@send_error_on_traceback
+def shutdown(ls):
+    if Odoo.get():
+        ls.show_message_log("Interrupting initialization", MessageType.Log)
+        Odoo.get().interrupt_initialization()
+        ls.show_message_log("Reset existing database", MessageType.Log)
+        Odoo.get().reset(ls)
 
 @odoo_server.feature(TEXT_DOCUMENT_COMPLETION, CompletionOptions(trigger_characters=[',', '.', '"', "'"]))
 def completions(ls, params: Optional[CompletionParams] = None) -> CompletionList:
