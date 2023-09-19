@@ -242,8 +242,11 @@ function activateVenv(pythonPath: String) {
 
 function getPythonPath(context: ExtensionContext) {
     const config = getCurrentConfig(context);
-    const pythonPath = config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
-    activateVenv(pythonPath)
+    let pythonPath = null
+    if(config){
+        pythonPath = config["pythonPath"] != '' ? config["pythonPath"] : "python3";    
+        activateVenv(pythonPath)
+    }
     return pythonPath
 }
 
@@ -258,9 +261,11 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         const cwd = path.join(__dirname, "..", "..");
 
         if (!pythonPath) {
-            outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
+            outputChannel.appendLine("[INFO] pythonPath is not set, odoo disabled");
         }
-        client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
+        else {
+            client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
+        }
     }
 
     return client;
