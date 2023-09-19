@@ -36,6 +36,9 @@ class Odoo():
         self.version_micro = 0
         self.stop_init = False
 
+        self.refreshMode = "afterDelay"
+        self.autoSaveDelay = 1000
+
         self.grammar = None
 
 
@@ -117,7 +120,15 @@ class Odoo():
 
             try:
                 Odoo.instance = Odoo()
-                config = ls.lsp.send_request("Odoo/getConfiguration").result()
+                odooConfig = ls.lsp.send_request("Odoo/getConfiguration").result()
+                config = ls.get_configuration(WorkspaceConfigurationParams(items=[
+                    ConfigurationItem(
+                        scope_uri='workspaceDefinedConfigurations',
+                        section="Odoo")
+                ])).result()
+                Odoo.instance.refreshMode = config[0]["autoRefresh"]
+                Odoo.instance.autoSaveDelay = config[0]["autoRefreshDelay"]
+                ls.file_change_event_queue.set_delay(Odoo.instance.autoSaveDelay)
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
                     Odoo.instance.symbols.paths.append(Odoo.instance.stubs_dir)
@@ -128,11 +139,11 @@ class Odoo():
                     # add stubs for not installed packages
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
-                    Odoo.instance.odooPath = config.odooPath
+                    Odoo.instance.odooPath = odooConfig.odooPath
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.load_builtins(ls)
-                    Odoo.instance.build_database(ls, config)
+                    Odoo.instance.build_database(ls, odooConfig)
                     ls.show_message_log("End building database in " + str(time.time() - Odoo.instance.start_build_time) + " seconds")
             except Exception as e:
                 ls.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})

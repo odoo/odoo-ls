@@ -59,7 +59,11 @@ def init(ls, params):
                 register_options = DidChangeWatchedFilesRegistrationOptions(watchers = [
                     FileSystemWatcher(glob_pattern = "**", kind = WatchKind.Create | WatchKind.Change | WatchKind.Delete)
                 ])
-            )
+            ),
+            Registration(
+                id = str(uuid.uuid4()),
+                method = WORKSPACE_DID_CHANGE_CONFIGURATION
+            ),
         ]
     ))
 
@@ -135,6 +139,10 @@ def definition(ls, params: TextDocumentPositionParams):
 @send_error_on_traceback
 def did_change(ls, params: DidChangeTextDocumentParams):
     """Text document did change notification."""
+    if not Odoo.get():
+        return
+    if Odoo.get().refreshMode != "afterDelay":
+        return
     text_doc = ls.workspace.get_document(params.text_document.uri)
     source = text_doc.source
     path = FileMgr.uri2pathname(params.text_document.uri)
@@ -234,3 +242,15 @@ def workspace_diagnostics(ls, params:WorkspaceDiagnosticParams):
 @send_error_on_traceback
 def document_signature(ls, params: SignatureHelpParams):
     print("Signature help")
+
+@odoo_server.feature(WORKSPACE_DID_CHANGE_CONFIGURATION)
+@send_error_on_traceback
+def did_change_configuration(ls, params: DidChangeConfigurationParams):
+    config = ls.get_configuration(WorkspaceConfigurationParams(items=[
+        ConfigurationItem(
+            scope_uri='workspaceDefinedConfigurations',
+            section="Odoo")
+    ])).result()
+    Odoo.get().refreshMode = config[0]["autoRefresh"]
+    Odoo.get().autoSaveDelay = config[0]["autoRefreshDelay"]
+    ls.file_change_event_queue.set_delay(Odoo.instance.autoSaveDelay)

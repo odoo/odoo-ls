@@ -70,6 +70,23 @@
       "type": "object",
       "title": "Odoo",
       "properties": {
+        "Odoo.autoRefresh": {
+          "scope": "window",
+          "type": "string",
+          "default": "afterDelay",
+          "enum": ["onSave", "afterDelay", "off"],
+          "enumDescriptions": [
+            "Refreshes the server data when the user saves a file",
+            "Refreshes the server data after a delay",
+            "Disables the auto-refresh feature"],
+          "description": "Define when the server has to refresh its data according to the new updates"
+        },
+        "Odoo.autoRefreshDelay": {
+          "scope": "window",
+          "type": "number",
+          "default": 1000,
+          "markdownDescription": "Define the delay the server has to wait before refreshing data after an update."
+        },
         "Odoo.trace.server": {
           "scope": "window",
           "type": "string",

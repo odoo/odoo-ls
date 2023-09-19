@@ -54,6 +54,10 @@ class UpdateEventQueue:
         self.panic_mode = False
         self.lock = threading.Lock()
 
+    def set_delay(self, delay):
+        """Set the delay in milliseconds"""
+        self.delay = delay / 1000.0
+
     def push(self, event:UpdateEvent):
         with self.lock:
             if self.panic_mode:
