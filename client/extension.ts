@@ -242,11 +242,8 @@ function activateVenv(pythonPath: String) {
 
 function getPythonPath(context: ExtensionContext) {
     const config = getCurrentConfig(context);
-    let pythonPath = null
-    if(config){
-        pythonPath = config["pythonPath"] != '' ? config["pythonPath"] : "python3";    
-        activateVenv(pythonPath)
-    }
+    const pythonPath = config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
+    activateVenv(pythonPath)
     return pythonPath
 }
 
@@ -261,11 +258,9 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         const cwd = path.join(__dirname, "..", "..");
 
         if (!pythonPath) {
-            outputChannel.appendLine("[INFO] pythonPath is not set, odoo disabled");
+            outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
         }
-        else {
-            client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
-        }
+        client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
     }
 
     return client;
@@ -291,11 +286,13 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     }
                 }
                 initializeSubscriptions(context, client, odooOutputChannel)
-                client.start().then(() => {
-                    client.sendNotification(
-                        "Odoo/configurationChanged",
-                    );
-                })
+                if (context.extensionMode === ExtensionMode.Production) {
+                    if (checkPythonDependencies(pythonPath)) {
+                        client.start();
+                    }
+                } else {
+                    client.start();
+                }
             }
         }
     }
@@ -380,8 +377,15 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                 if (client.diagnostics) client.diagnostics.clear();
                 client.sendNotification("Odoo/configurationChanged");
             }
-            if(changes && changes.includes('pythonPath')){
+            if (changes && changes.includes('pythonPath')) {
                 checkRestartPythonServer()
+                if (checkPythonDependencies(pythonPath)) {
+                    client.sendNotification("Odoo/configurationChanged");
+                } else {
+                    isLoading = false;
+                    setStatusConfig(context, odooStatusBar);
+
+                }
             }
         })
     );
@@ -391,16 +395,20 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
         selectedConfigurationChange.event(() => {
             if (getCurrentConfig(context)) { 
                 checkRestartPythonServer()
-                if (!checkPythonDependencies(pythonPath)) return;
-                if (!client.isRunning()) {
-                    client.start().then(() => {
-                        client.sendNotification(
-                            "Odoo/clientReady",
-                        );
-                    });
-                } else {
-                    if (client.diagnostics) client.diagnostics.clear();
-                    client.sendNotification("Odoo/configurationChanged");
+                if (checkPythonDependencies(pythonPath)) {
+                    if (!client.isRunning()) {
+                        client.start().then(() => {
+                            client.sendNotification(
+                                "Odoo/clientReady",
+                            );
+                        });
+                    } else {
+                        if (client.diagnostics) client.diagnostics.clear();
+                        client.sendNotification("Odoo/configurationChanged");
+                    }
+                }
+                else {
+                    isLoading=false;
                 }
             } else {
                 if (client.isRunning()) client.stop();
@@ -409,27 +417,6 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
             setStatusConfig(context, odooStatusBar);
         })
     );
-
-    // Temporary. Ideally I'd dispose the current client and regenerate a new one
-    // but it would require far too much effort for what it achieves.
-    // context.subscriptions.push(
-    //     workspace.onDidChangeConfiguration(async event => {
-    //         let affected = event.affectsConfiguration("Odoo.pythonPath");
-    //         if (affected) {
-    //             window.showInformationMessage(
-    //                 "Odoo: Modifying pythonPath requires a reload for the change to take effect.",
-    //                 "Reload VSCode",
-    //                 "Later"
-    //             ).then(selection => {
-    //                 switch (selection) {
-    //                     case ("Reload VSCode"):
-    //                         commands.executeCommand("workbench.action.reloadWindow");
-    //                         break;
-    //                 }
-    //             });
-    //         }
-    //     })
-    // );
 
     // COMMANDS
     context.subscriptions.push(

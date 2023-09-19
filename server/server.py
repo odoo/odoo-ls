@@ -69,7 +69,7 @@ def init(ls, params):
 
 @odoo_server.feature(SHUTDOWN)
 @send_error_on_traceback
-def shutdown(ls):
+def shutdown(ls, params):
     if Odoo.get():
         ls.show_message_log("Interrupting initialization", MessageType.Log)
         Odoo.get().interrupt_initialization()
