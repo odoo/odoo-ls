@@ -122,7 +122,7 @@ class Odoo():
                 odooConfig = ls.lsp.send_request("Odoo/getConfiguration").result()
                 config = ls.get_configuration(WorkspaceConfigurationParams(items=[
                     ConfigurationItem(
-                        scope_uri='workspaceDefinedConfigurations',
+                        scope_uri='window',
                         section="Odoo")
                 ])).result()
                 Odoo.instance.refreshMode = config[0]["autoRefresh"]
