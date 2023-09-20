@@ -520,5 +520,7 @@ export function deactivate(): Thenable<void> | undefined {
     if (!client) {
         return undefined;
     }
-    return client.stop();
+    if (client.diagnostics) client.diagnostics.clear();
+    if (client.isRunning()) client.stop();
+    return client.dispose();
 }
