@@ -184,11 +184,10 @@ export class ConfigurationWebView {
     }
 
     private _deleteConfig(configs: any): void {
-        let changes = [];
         delete configs[this.configId]
         this._context.globalState.update("Odoo.configurations", configs);
         this.dispose()
-        ConfigurationsChange.fire(changes);
+        ConfigurationsChange.fire(null);
     }
     /**
      * Sets up an event listener to listen for messages passed from the webview context and
