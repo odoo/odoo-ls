@@ -252,7 +252,6 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
         client = startLangServerTCP(2087, outputChannel);
-        context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", outputChannel); }));
     } else {
         // Production - Client is going to run the server (for use within `.vsix` package)
         const cwd = path.join(__dirname, "..", "..");
@@ -284,6 +283,9 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     } catch (e) {
                         console.error(e);
                     }
+                }
+                if (context.extensionMode === ExtensionMode.Development) {
+                    context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", odooOutputChannel); }));
                 }
                 initializeSubscriptions(context, client, odooOutputChannel)
                 if (context.extensionMode === ExtensionMode.Production) {
