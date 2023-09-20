@@ -41,7 +41,6 @@ class Odoo():
 
         self.grammar = None
 
-
         self.models = {}
         self.modules = {}
 

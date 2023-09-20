@@ -141,18 +141,16 @@ class FileMgr():
         if version == -100 and not content:
             with open(path, "rb") as file:
                 content = file.read()
-            if f:
-                version = f.version + 1
         if not f:
             f = FileInfo(path, version)
             f.build_ast(path, content)
             FileMgr.files[path] = f
             f.version = version if version != -100 else 1
         elif content:
-            if f.version < version:
+            if f.version < version or version == -100:
                 valid = f.build_ast(path, content)
                 if valid:
-                    f.version = version
+                    f.version = version if version != -100 else f.version
                     if opened:
                         f.build_parso_tree(path, content)
                 else:
