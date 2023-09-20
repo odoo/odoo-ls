@@ -246,11 +246,14 @@ def document_signature(ls, params: SignatureHelpParams):
 @odoo_server.feature(WORKSPACE_DID_CHANGE_CONFIGURATION)
 @send_error_on_traceback
 def did_change_configuration(ls, params: DidChangeConfigurationParams):
-    config = ls.get_configuration(WorkspaceConfigurationParams(items=[
+
+    def on_change_config(config):
+        Odoo.get().refreshMode = config[0]["autoRefresh"]
+        Odoo.get().autoSaveDelay = config[0]["autoRefreshDelay"]
+        ls.file_change_event_queue.set_delay(Odoo.instance.autoSaveDelay)
+
+    ls.get_configuration(WorkspaceConfigurationParams(items=[
         ConfigurationItem(
-            scope_uri='workspaceDefinedConfigurations',
+            scope_uri='window',
             section="Odoo")
-    ])).result()
-    Odoo.get().refreshMode = config[0]["autoRefresh"]
-    Odoo.get().autoSaveDelay = config[0]["autoRefreshDelay"]
-    ls.file_change_event_queue.set_delay(Odoo.instance.autoSaveDelay)
+    ]), callback=on_change_config)
