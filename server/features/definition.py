@@ -20,7 +20,7 @@ class DefinitionFeature:
             symbol = [symbol]
         res = []
         for s in symbol:
-            for path in s.paths: #to be sure, but it should always have a length of 1, who would want to see the definition of odoo.addons?
+            for path in s.get_paths(): #to be sure, but it should always have a length of 1, who would want to see the definition of odoo.addons?
                 range = Range(
                     start=Position(line=s.start_pos[0]-1, character=s.start_pos[1]),
                     end=Position(line=s.end_pos[0]-1, character=s.end_pos[1])

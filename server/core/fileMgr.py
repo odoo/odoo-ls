@@ -191,6 +191,12 @@ class FileMgr():
             fileInfo.parso_tree = None
 
     @staticmethod
+    def delete_parso(path):
+        fileInfo = FileMgr.files.get(path, None)
+        if fileInfo:
+            fileInfo.parso_tree = None
+
+    @staticmethod
     def reset_diagnostics(ls):
         for file in FileMgr.files.values():
             for d in file.diagnostics.values():
