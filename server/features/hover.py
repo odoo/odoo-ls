@@ -57,12 +57,14 @@ class HoverFeature:
         value += "  \n***  \n"
         #BLOCK 2: useful links:
         if infered_type not in ["Any", "constant"]:
-            path = FileMgr.pathname2uri(type_ref[0].get_paths()[0])
-            if type_ref[0].type == SymType.PACKAGE:
-                path = os.path.join(path, "__init__.py")
-            value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].start_pos[0]) + ")" + "  \n"
-            #SEPARATOR
-            value += "  \n***  \n"
+            paths = type_ref[0].get_paths()
+            if paths:
+                path = FileMgr.pathname2uri(paths[0])
+                if type_ref[0].type == SymType.PACKAGE:
+                    path = os.path.join(path, "__init__.py")
+                value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].start_pos[0]) + ")" + "  \n"
+                #SEPARATOR
+                value += "  \n***  \n"
         #BLOCK 3: doc
         if symbol.doc:
             value += "  \n-  \n" + symbol.doc.value
