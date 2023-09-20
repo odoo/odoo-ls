@@ -230,8 +230,8 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 
 function activateVenv(pythonPath: String) {
     try {
-        let activatePathArray = pythonPath.split('/').slice(0, pythonPath.split('/').length - 1)
-        let activatePath = activatePathArray.join('/') + '/activate'
+        let activatePathArray = pythonPath.split(path.sep).slice(0, pythonPath.split(path.sep).length - 1)
+        let activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
         if (fs.existsSync(activatePath)) {
             execSync(`. ${activatePath}`)
         }
