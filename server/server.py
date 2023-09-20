@@ -206,7 +206,7 @@ def did_create_files(ls, params: CreateFilesParams):
 def did_close(server: OdooLanguageServer, params: DidCloseTextDocumentParams):
     """Text document did close notification."""
     path = FileMgr.uri2pathname(params.text_document.uri)
-    FileMgr.removeParsoTree(path)
+    FileMgr.delete_parso(path)
 
 @odoo_server.feature(TEXT_DOCUMENT_DID_OPEN)
 @send_error_on_traceback
