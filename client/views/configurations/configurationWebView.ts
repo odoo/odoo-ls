@@ -134,7 +134,7 @@ export class ConfigurationWebView {
     }
 
     private _updateWebviewTitle(panel: WebviewPanel, title: string){
-        panel.title = title
+        panel.title = `Odoo: ${title}`
     }
 
     private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
