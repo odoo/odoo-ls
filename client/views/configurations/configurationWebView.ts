@@ -37,6 +37,7 @@ export class ConfigurationWebView {
         this._panel = panel;
         this._context = context;
         this.configId = configId;
+        this.addons = context.globalState.get("Odoo.configurations")[configId]["addons"];
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
