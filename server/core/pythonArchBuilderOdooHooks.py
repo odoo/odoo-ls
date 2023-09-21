@@ -52,33 +52,36 @@ class PythonArchBuilderOdooHooks:
                 symbol.add_symbol(env_var)
         if symbol.name == "Environment": #fast, basic check
             if symbol.get_tree() == (["odoo", "api"], ["Environment"]): #slower but more precise verification
+                ref_to_new = symbol.get_symbol([], ["__new__"])
+                if not ref_to_new:
+                    ref_to_new = symbol
                 # ---------- env.cr ----------
                 cr_var = Symbol("cr", SymType.VARIABLE)
-                if symbol:
-                    cr_var.start_pos = symbol.start_pos
-                    cr_var.end_pos = symbol.end_pos
+                if ref_to_new:
+                    cr_var.start_pos = ref_to_new.start_pos
+                    cr_var.end_pos = ref_to_new.end_pos
                 symbol.add_symbol(cr_var)
                 # ---------- env.uid ----------
                 cr_var = Symbol("uid", SymType.VARIABLE)
-                if symbol:
-                    cr_var.start_pos = symbol.start_pos
-                    cr_var.end_pos = symbol.end_pos
+                if ref_to_new:
+                    cr_var.start_pos = ref_to_new.start_pos
+                    cr_var.end_pos = ref_to_new.end_pos
                 cr_var.doc = Symbol("str", SymType.PRIMITIVE)
                 cr_var.doc.value = "the current user id (for access rights checks)"
                 symbol.add_symbol(cr_var)
                 # ---------- env.context ----------
                 context_var = Symbol("context", SymType.VARIABLE)
-                if symbol:
-                    context_var.start_pos = symbol.start_pos
-                    context_var.end_pos = symbol.end_pos
+                if ref_to_new:
+                    context_var.start_pos = ref_to_new.start_pos
+                    context_var.end_pos = ref_to_new.end_pos
                 context_var.doc = Symbol("str", SymType.PRIMITIVE)
                 context_var.doc.value = "the current context dictionary (arbitrary metadata)"
                 symbol.add_symbol(context_var)
                 # ---------- env.su ----------
                 attr_var = Symbol("su", SymType.VARIABLE)
-                if symbol:
-                    attr_var.start_pos = symbol.start_pos
-                    attr_var.end_pos = symbol.end_pos
+                if ref_to_new:
+                    attr_var.start_pos = ref_to_new.start_pos
+                    attr_var.end_pos = ref_to_new.end_pos
                 attr_var.doc = Symbol("str", SymType.PRIMITIVE)
                 attr_var.doc.value = "whether in superuser mode"
                 symbol.add_symbol(attr_var)

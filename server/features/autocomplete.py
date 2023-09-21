@@ -2,8 +2,10 @@ from server.constants import *
 from server.core.odoo import Odoo
 from server.core.model import Model
 from server.core.symbol import Symbol
+from server.features.hover import HoverFeature
 from server.features.parsoUtils import ParsoUtils
-from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItemKind, CompletionItem,  CompletionItemLabelDetails)
+from lsprotocol.types import (CompletionItemKind, CompletionList, CompletionItemKind, CompletionItem,
+                              CompletionItemLabelDetails, MarkupContent, MarkupKind)
 
 class AutoCompleteFeature:
 
@@ -27,15 +29,25 @@ class AutoCompleteFeature:
         if isinstance(sym_to_complete, Symbol):
             cl_to_complete = sym_to_complete.get_in_parents([SymType.CLASS])
             cl = symbol.get_in_parents([SymType.CLASS])
-            description = cl.name if cl else ""
+            sym_type = symbol.follow_ref()[0]
+            description = ""
+            if sym_type.type == SymType.CLASS:
+                description = sym_type.name
+            elif sym_type == SymType.PRIMITIVE:
+                description = sym_type.value
         else:
             cl_to_complete = None
             cl = symbol.get_in_parents([SymType.CLASS])
             model = cl.get_model()
-            description = cl.name if cl else ""
+            sym_type = symbol.follow_ref()[0]
+            description = ""
+            if sym_type.type == SymType.CLASS:
+                description = sym_type.name
+            elif sym_type == SymType.PRIMITIVE:
+                description = sym_type.value
             if model:
                 cl = model
-                description = "(" + cl.name + ")"
+                description = "(" + cl.name + ") " + description
 
 
         return CompletionItem(
@@ -45,7 +57,7 @@ class AutoCompleteFeature:
                 description=description,
             ),
             sort_text = AutoCompleteFeature.get_sort_text(symbol, cl, cl_to_complete),
-            documentation=symbol.doc,
+            documentation=HoverFeature.build_markdown_description(symbol, None),
             kind = AutoCompleteFeature._getCompletionItemKind(symbol),
         )
 

@@ -21,8 +21,7 @@ class HoverFeature:
         return HoverFeature._build_hover(symbol, range, context)
 
     @staticmethod
-    def _build_hover(symbol, range, context):
-
+    def build_markdown_description(symbol, context):
 
         def build_block_1(symbol, type, infered_type):
             value =  "```python  \n"
@@ -53,8 +52,6 @@ class HoverFeature:
         #class_doc = type_ref[0].doc and type_ref[0].doc.value if type_ref[1] else ""
         #BLOCK 1: (type) **name** -> infered_type
         value = build_block_1(symbol, type, infered_type)
-        #SEPARATOR
-        value += "  \n***  \n"
         #BLOCK 2: useful links:
         if infered_type not in ["Any", "constant"]:
             paths = type_ref[0].get_paths()
@@ -62,21 +59,23 @@ class HoverFeature:
                 path = FileMgr.pathname2uri(paths[0])
                 if type_ref[0].type == SymType.PACKAGE:
                     path = os.path.join(path, "__init__.py")
-                value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].start_pos[0]) + ")" + "  \n"
-                #SEPARATOR
                 value += "  \n***  \n"
+                value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].start_pos[0]) + ")" + "  \n"
         #BLOCK 3: doc
         if symbol.doc:
-            value += "  \n-  \n" + symbol.doc.value
+            value += "  \n***  \n" + symbol.doc.value
         #if infered_type:
         #    value += "  \n-  \n**" + infered_type[2:] + "** : " + class_doc
         if symbol.name == "tomate" and symbol.type == SymType.VARIABLE: #easter egg (private joke)
             value = "Please rename your variable. Tomate is not a good name for a variable. You won't know what it means in 2 weeks (or even earlier)"
-        content = MarkupContent(
+        return MarkupContent(
             kind=MarkupKind.Markdown,
             value=value
         )
+
+    @staticmethod
+    def _build_hover(symbol, range, context):
         return Hover(
-            contents=content,
+            contents=HoverFeature.build_markdown_description(symbol, context),
             range=range
         )
