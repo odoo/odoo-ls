@@ -528,10 +528,11 @@ class Odoo():
 
     def get_models(self, module = None, start_name = ""):
         res = []
+        module_acc = set()
         for name, model in self.models.items():
             if name.startswith(start_name):
                 if module:
-                    if model.get_main_symbols(module):
+                    if model.get_main_symbols(module, module_acc):
                         res += [model]
                 else:
                     res += [model]

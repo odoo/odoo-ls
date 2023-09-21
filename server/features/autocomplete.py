@@ -62,11 +62,19 @@ class AutoCompleteFeature:
         )
 
     @staticmethod
-    def build_model_completion_item(model, module):
-        return CompletionItem(
-            label=model.name,
-            documentation=model.get_documentation(module),
-            kind = CompletionItemKind.Interface if model.is_abstract(module) else CompletionItemKind.Class,
+    def build_model_completion_list(models, module):
+        """Return a CompletionList for the given models, module is needed to filter documentation"""
+        module_acc = set()
+        items = []
+        for m in models:
+            items.append(CompletionItem(
+                label=m.name,
+                documentation=m.get_documentation(module, module_acc),
+                kind = CompletionItemKind.Interface if m.is_abstract(module, module_acc) else CompletionItemKind.Class,
+            ))
+        return CompletionList(
+            is_incomplete=False,
+            items=items
         )
 
     @staticmethod
@@ -99,10 +107,7 @@ class AutoCompleteFeature:
                 if not module:
                     return []
                 models = Odoo.get().get_models(module, before)
-                return CompletionList(
-                    is_incomplete=False,
-                    items=[AutoCompleteFeature.build_model_completion_item(m, module) for m in models]
-                )
+                return AutoCompleteFeature.build_model_completion_list(models, module)
         #Try to complete expression
         if element and element.type == 'operator' and element.value == ".":
             # containers = []
@@ -146,6 +151,10 @@ class AutoCompleteFeature:
                            for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, {}, line, element.value)]
                 )
         elif element and element.type == 'string':
+            import cProfile
+            import pstats
+            profiler = cProfile.Profile()
+            profiler.enable()
             s = element.value
             if s[0] in ['"', "'"]:
                 s = s[1:]
@@ -158,10 +167,12 @@ class AutoCompleteFeature:
             if not models:
                 return []
             expr = ParsoUtils.get_previous_leafs_expr(element)
-            return CompletionList(
-                is_incomplete=False,
-                items=[AutoCompleteFeature.build_model_completion_item(m, module) for m in models]
-            )
+            res = AutoCompleteFeature.build_model_completion_list(models, module)
+            profiler.disable()
+            stats = pstats.Stats(profiler)
+            stats.strip_dirs()
+            stats.dump_stats('/home/odoo/profiling_odoo.prof')
+            return res
         else:
             print("Automplete use case unknown")
 

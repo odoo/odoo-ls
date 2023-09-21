@@ -176,14 +176,20 @@ class ModuleSymbol(ConcreteSymbol):
             tests_parser.load_arch()
         return []
 
-    def is_in_deps(self, dir_name):
+    def is_in_deps(self, dir_name, module_acc:set=None):
+        """Return True if dir_name is in the dependencies of the module.
+        A module_acc can be given to speedup the search in dependencies by holding previous results"""
         if self.dir_name == dir_name or dir_name in self.depends:
             return True
         for dep in self.depends:
+            if module_acc and dep in module_acc:
+                return True
             dep_module = Odoo.get().modules.get(dep, None)
             if not dep_module:
                 continue
             is_in = dep_module.ref.is_in_deps(dir_name)
             if is_in:
+                if module_acc is not None:
+                    module_acc.add(dep)
                 return True
         return False

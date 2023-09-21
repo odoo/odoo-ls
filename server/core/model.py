@@ -12,18 +12,24 @@ class Model():
     def add_symbol(self, symbol):
         self.impl_sym.add(symbol)
 
-    def get_main_symbols(self, from_module = None):
+    def get_main_symbols(self, from_module = None, module_acc:set = None):
         """Return all the symbols that declare the module in the dependencies of the from_module, or all main symbols
-        if from_module is None."""
+        if from_module is None.
+        A module_acc can be given to speedup the process. It should be a set of module names that are in the dependencies
+        """
         res = []
         for sym in self.impl_sym:
             if sym.modelData.name not in sym.modelData.inherit:
-                if not from_module or from_module.is_in_deps(sym.get_module_sym().dir_name):
+                if not from_module or \
+                (module_acc and sym.get_module_sym().dir_name in module_acc) or \
+                from_module.is_in_deps(sym.get_module_sym().dir_name, module_acc):
                     res.append(sym)
+                    if module_acc is not None:
+                        module_acc.add(sym.get_module_sym().dir_name)
         return res
 
-    def is_abstract(self, from_module = None):
-        main_symbol = self.get_main_symbols(from_module)
+    def is_abstract(self, from_module = None, module_acc:set=None):
+        main_symbol = self.get_main_symbols(from_module, module_acc)
         if main_symbol and len(main_symbol) == 1:
             for base in main_symbol[0].bases:
                 if base.name == 'BaseModel': #TODO not perfect, what about ancestors? what about an "abstract = False" attribute?
@@ -32,8 +38,8 @@ class Model():
                     return False
         return False
 
-    def get_documentation(self, from_module = None):
-        main_symbol = self.get_main_symbols(from_module)
+    def get_documentation(self, from_module = None, module_acc:set=None):
+        main_symbol = self.get_main_symbols(from_module, module_acc)
         if main_symbol and len(main_symbol) == 1:
             description = main_symbol[0].get_member_symbol("_description", from_module=from_module, prevent_comodel=False)
             description_text = main_symbol[0].name
