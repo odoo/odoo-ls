@@ -50,6 +50,7 @@ import {
 import { execSync } from "child_process";
 import { getCurrentConfig } from "./utils/utils";
 import * as fs from 'fs';
+import { getConfigurationStructure, stateInit } from "./utils/validation";
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
@@ -69,12 +70,60 @@ function getClientOptions(): LanguageClientOptions {
     };
 }
 
+function validateState(context: ExtensionContext, outputChannel: OutputChannel) {
+    try {
+        let globalState = context.globalState
+        let stateVersion = globalState.get('Odoo.stateVersion', false)
+        if (!stateVersion || stateVersion != stateInit['Odoo.stateVersion']) {
+            for (let key of Object.keys(stateInit)) {
+                let state = globalState.get(key, null)
+                let versionState = stateInit[key]
+                if (!state) {
+                    globalState.update(key, versionState)
+                }
+                else {
+                    let updates = false
+                    let configurations = {}
+                    if (key === 'Odoo.configurations' && Object.keys(state).length > 0) {
+                        for (let configId of Object.keys(state)) {
+                            let config = state[configId]
+                            let configStruct = getConfigurationStructure()
+                            for (let confKey of Object.keys(configStruct)) {
+                                if (!(confKey in config)) {
+                                    config[confKey] = configStruct[confKey]
+                                    updates = true
+                                }
+                            }
+
+                            configurations = {
+                                ...configurations,
+                                [configId]: config,
+                            }
+                        }
+                    }
+                    if (updates) {
+                        globalState.update(key, configurations)
+                    }
+                }
+
+            }
+            globalState.update('Odoo.stateVersion', stateInit['Odoo.stateVersion'])
+        }
+
+    }
+    catch (error) {
+        outputChannel.appendLine(error)
+        displayCrashMessage(context, error, outputChannel, 'func.validateState')
+    }
+}
+
 function setMissingStateVariables(context: ExtensionContext, outputChannel: OutputChannel) {
     const globalStateKeys = context.globalState.keys();
     const workspaceStateKeys = context.workspaceState.keys();
     let globalVariables = new Map<string, any>([
-        ["Odoo.configurations", {}],
-        ["Odoo.nextConfigId", 0]
+        ["Odoo.configurations", stateInit["Odoo.configuration"]],
+        ["Odoo.nextConfigId", stateInit["Odoo.nextConfigId"]],
+        ["Odoo.stateVersion", stateInit["Odoo.stateVersion"]],
     ]);
     const workspaceVariables = new Map([["Odoo.selectedConfiguration", [-1]]]);
 
@@ -184,13 +233,7 @@ async function addNewConfiguration(context: ExtensionContext) {
         "Odoo.configurations",
         {
             ...configs,
-            [configId]: {
-                "id": configId,
-                "name": `New Configuration ${configId}`,
-                "odooPath": "",
-                "addons": [],
-                "pythonPath": "python3",
-            }
+            [configId]: getConfigurationStructure(configId),
         }
     );
     ConfigurationsChange.fire(null);
@@ -526,6 +569,7 @@ export function activate(context: ExtensionContext): void {
         initializeSubscriptions(context, client, odooOutputChannel)
         // Initialize some settings on the extension's launch if they're missing from the state.
         setMissingStateVariables(context, odooOutputChannel);
+        validateState(context, odooOutputChannel)
 
         switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
             case null:
