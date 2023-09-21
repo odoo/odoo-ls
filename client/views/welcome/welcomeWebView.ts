@@ -28,7 +28,6 @@ export class WelcomeWebView {
 
         // Set the HTML content for the webview panel
         this._panel.webview.html = this._getWebviewContent(this._panel.webview, this._context.extensionUri);
-        throw new Error();
         this._setWebviewMessageListener(this._panel.webview, this._context);
     }
 
