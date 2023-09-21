@@ -15,19 +15,20 @@ export class CrashReportWebView {
     private readonly _context: vscode.ExtensionContext;
     private readonly _document: vscode.TextDocument;
     private readonly _error: String;
-
+    private readonly _command: String;
     /**
      * The ConfigurationWebView class private constructor (called only from the render method).
      *
      * @param panel A reference to the webview panel
      * @param extensionUri The URI of the directory containing the extension
      */
-    private constructor(panel: WebviewPanel, uid: String ,context: vscode.ExtensionContext, document: vscode.TextDocument, error: String) {
+    private constructor(panel: WebviewPanel, uid: String, context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null) {
         this._panel = panel;
         this._context = context;
         this._document = document;
         this._error = error;
         this.UID = uid;
+        this._command = command; 
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
@@ -46,7 +47,7 @@ export class CrashReportWebView {
      *
      * @param extensionUri The URI of the directory containing the extension.
      */
-    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String) {
+    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null) {
         if (!CrashReportWebView.panels) {
             CrashReportWebView.panels = new Map();
         }
@@ -65,7 +66,7 @@ export class CrashReportWebView {
             }
         );
         const UID = crypto.randomBytes(8).toString('hex');
-        CrashReportWebView.panels.set(UID, new CrashReportWebView(panel, UID, context, document, error));
+        CrashReportWebView.panels.set(UID, new CrashReportWebView(panel, UID, context, document, error, command));
     }
 
     /**
@@ -147,7 +148,8 @@ export class CrashReportWebView {
                             additional_info: message.additional_info,
                             version: this._context.extension.packageJSON.version,
                             python_version: getPythonVersion(this._context),
-                            configuration: configString
+                            configuration: configString,
+                            command: this._command, 
                         }
                     });
                     this.dispose();
