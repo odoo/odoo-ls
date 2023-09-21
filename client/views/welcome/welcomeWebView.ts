@@ -13,7 +13,7 @@ export class WelcomeWebView {
     private _disposables: Disposable[] = [];
     private htmlContent: string;
     private htmlAlertContent: string;
-   
+
     private constructor(panel: WebviewPanel, context: vscode.ExtensionContext) {
         this._panel = panel;
 
@@ -28,6 +28,7 @@ export class WelcomeWebView {
 
         // Set the HTML content for the webview panel
         this._panel.webview.html = this._getWebviewContent(this._panel.webview, this._context.extensionUri);
+
         this._setWebviewMessageListener(this._panel.webview, this._context);
     }
 
