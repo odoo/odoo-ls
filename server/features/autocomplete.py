@@ -151,10 +151,6 @@ class AutoCompleteFeature:
                            for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, {}, line, element.value)]
                 )
         elif element and element.type == 'string':
-            import cProfile
-            import pstats
-            profiler = cProfile.Profile()
-            profiler.enable()
             s = element.value
             if s[0] in ['"', "'"]:
                 s = s[1:]
@@ -168,10 +164,6 @@ class AutoCompleteFeature:
                 return []
             expr = ParsoUtils.get_previous_leafs_expr(element)
             res = AutoCompleteFeature.build_model_completion_list(models, module)
-            profiler.disable()
-            stats = pstats.Stats(profiler)
-            stats.strip_dirs()
-            stats.dump_stats('/home/odoo/profiling_odoo.prof')
             return res
         else:
             print("Automplete use case unknown")
