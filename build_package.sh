@@ -4,4 +4,4 @@ PACKAGE_VERSION=$(cat package.json \
   | awk -F: '{ print $2 }' \
   | sed 's/[",]//g')
 echo "detected version: $PACKAGE_VERSION"
-./node_modules/@vscode/vsce/vsce package
+vsce package
