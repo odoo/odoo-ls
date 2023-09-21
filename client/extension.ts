@@ -203,7 +203,7 @@ function changeSelectedConfig(context: ExtensionContext, configId: Number) {
     selectedConfigurationChange.fire(null);
 }
 
-async function displayCrashMessage(context: ExtensionContext, crashInfo: string, outputChannel: OutputChannel) {
+async function displayCrashMessage(context: ExtensionContext, crashInfo: string, outputChannel: OutputChannel, command: string = null) {
     // Capture the content of the file active when the crash happened
     let activeFile: TextDocument;
     if (window.activeTextEditor) {
@@ -220,7 +220,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 
     switch (selection) {
         case ("Send crash report"):
-            CrashReportWebView.render(context, activeFile, crashInfo);
+            CrashReportWebView.render(context, activeFile, crashInfo, command);
             break
         case ("Open logs"):
             outputChannel.show();
@@ -229,14 +229,10 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 }
 
 function activateVenv(pythonPath: String) {
-    try {
-        let activatePathArray = pythonPath.split(path.sep).slice(0, pythonPath.split(path.sep).length - 1)
-        let activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
-        if (fs.existsSync(activatePath)) {
-            execSync(`. ${activatePath}`)
-        }
-    }
-    catch (error) {
+    let activatePathArray = pythonPath.split(path.sep).slice(0, pythonPath.split(path.sep).length - 1)
+    let activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
+    if (fs.existsSync(activatePath)) {
+        execSync(`. ${activatePath}`)
     }
 }
 
@@ -309,85 +305,109 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
 
     context.subscriptions.push(
         commands.registerCommand('odoo.clickStatusBar', async () => {
-            const qpick = window.createQuickPick();
-            const configs: Map<integer, object> = context.globalState.get("Odoo.configurations");
-            let selectedConfiguration = null;
-            const currentConfig = getCurrentConfig(context);
-            let currentConfigItem: QuickPickItem;
-            const configMap = new Map();
-            const separator = { kind: QuickPickItemKind.Separator };
-            const addConfigItem = {
-                label: "$(add) Add new configuration"
-            };
-            const disabledItem = {
-                label: "Disabled"
+            try {
+                const qpick = window.createQuickPick();
+                const configs: Map<integer, object> = context.globalState.get("Odoo.configurations");
+                let selectedConfiguration = null;
+                const currentConfig = getCurrentConfig(context);
+                let currentConfigItem: QuickPickItem;
+                const configMap = new Map();
+                const separator = { kind: QuickPickItemKind.Separator };
+                const addConfigItem = {
+                    label: "$(add) Add new configuration"
+                };
+                const disabledItem = {
+                    label: "Disabled"
+                }
+                const gearIcon = new ThemeIcon("gear");
+
+                for (const configId in configs) {
+                    if (currentConfig && configId == currentConfig["id"])
+                        continue;
+                    configMap.set({ "label": configs[configId]["name"], "buttons": [{ iconPath: gearIcon }] }, configId)
+                }
+
+                let picks = [disabledItem, ...Array.from(configMap.keys())];
+                if (picks.length)
+                    picks.push(separator);
+
+                if (currentConfig) {
+                    currentConfigItem = { "label": currentConfig["name"], "description": "(current)", "buttons": [{ iconPath: gearIcon }] };
+                    picks.splice(currentConfig["id"] + 1, 0, currentConfigItem);
+                }
+
+                picks.push(addConfigItem);
+                qpick.title = "Select a configuration";
+                qpick.items = picks;
+                qpick.activeItems = currentConfig ? [picks[currentConfig["id"] + 1]] : [picks[0]];
+
+                qpick.onDidChangeSelection(selection => {
+                    selectedConfiguration = selection[0];
+                });
+
+                qpick.onDidTriggerItemButton(buttonEvent => {
+                    if (buttonEvent.button.iconPath == gearIcon) {
+                        let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
+                        try{
+                            ConfigurationWebView.render(context, Number(buttonConfigId));
+                        }
+                        catch (error) {
+                            odooOutputChannel.appendLine(error)
+                            displayCrashMessage(context, error, odooOutputChannel, 'render.ConfigurationWebView')
+                        }
+                    }
+                });
+
+                qpick.onDidAccept(async () => {
+                    if (selectedConfiguration == addConfigItem) {
+                        try {
+                            await addNewConfiguration(context);
+                        }
+                        catch (error) {
+                            odooOutputChannel.appendLine(error)
+                            displayCrashMessage(context, error, odooOutputChannel, 'render.ConfigurationWebView')
+                        }
+                    }
+                    else if (selectedConfiguration == disabledItem) {
+                        changeSelectedConfig(context, -1);
+                    }
+                    else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
+                        changeSelectedConfig(context, configMap.get(selectedConfiguration));
+                    }
+                    qpick.hide();
+                });
+                qpick.onDidHide(() => qpick.dispose());
+                qpick.show();
             }
-            const gearIcon = new ThemeIcon("gear");
-
-            for (const configId in configs) {
-                if (currentConfig && configId == currentConfig["id"])
-                    continue;
-                configMap.set({ "label": configs[configId]["name"], "buttons": [{ iconPath: gearIcon }] }, configId)
+            catch (error) {
+                odooOutputChannel.appendLine(error)
+                displayCrashMessage(context, error, odooOutputChannel, 'odoo.clickStatusBar')
             }
-
-            let picks = [disabledItem, ...Array.from(configMap.keys())];
-            if (picks.length)
-                picks.push(separator);
-
-            if (currentConfig) {
-                currentConfigItem = { "label": currentConfig["name"], "description": "(current)", "buttons": [{ iconPath: gearIcon }] };
-                picks.splice(currentConfig["id"] + 1, 0, currentConfigItem);
-            }
-
-            picks.push(addConfigItem);
-            qpick.title = "Select a configuration";
-            qpick.items = picks;
-            qpick.activeItems = currentConfig ? [picks[currentConfig["id"] + 1]] : [picks[0]];
-
-            qpick.onDidChangeSelection(selection => {
-                selectedConfiguration = selection[0];
-            });
-
-            qpick.onDidTriggerItemButton(buttonEvent => {
-                if (buttonEvent.button.iconPath == gearIcon) {
-                    let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
-                    ConfigurationWebView.render(context, Number(buttonConfigId));
-                }
-            });
-
-            qpick.onDidAccept(async () => {
-                if (selectedConfiguration == addConfigItem) {
-                    await addNewConfiguration(context);
-                }
-                else if (selectedConfiguration == disabledItem) {
-                    changeSelectedConfig(context, -1);
-                }
-                else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
-                    changeSelectedConfig(context, configMap.get(selectedConfiguration));
-                }
-                qpick.hide();
-            });
-            qpick.onDidHide(() => qpick.dispose());
-            qpick.show();
         })
     );
     // Listen to changes to Configurations
     context.subscriptions.push(
         ConfigurationsChange.event((changes: Array<String> | null) => {
-            setStatusConfig(context, odooStatusBar);
-            if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
-                if (client.diagnostics) client.diagnostics.clear();
-                client.sendNotification("Odoo/configurationChanged");
-            }
-            if (changes && changes.includes('pythonPath')) {
-                checkRestartPythonServer()
-                if (checkPythonDependencies(pythonPath)) {
+            try {
+                setStatusConfig(context, odooStatusBar);
+                if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
+                    if (client.diagnostics) client.diagnostics.clear();
                     client.sendNotification("Odoo/configurationChanged");
-                } else {
-                    isLoading = false;
-                    setStatusConfig(context, odooStatusBar);
-
                 }
+                if (changes && changes.includes('pythonPath')) {
+                    checkRestartPythonServer()
+                    if (checkPythonDependencies(pythonPath)) {
+                        client.sendNotification("Odoo/configurationChanged");
+                    } else {
+                        isLoading = false;
+                        setStatusConfig(context, odooStatusBar);
+
+                    }
+                }
+            }
+            catch (error) {
+                odooOutputChannel.appendLine(error)
+                displayCrashMessage(context, error, odooOutputChannel, 'event.ConfigurationsChange')
             }
         })
     );
@@ -395,50 +415,68 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
         selectedConfigurationChange.event(() => {
-            if (getCurrentConfig(context)) { 
-                checkRestartPythonServer()
-                if (checkPythonDependencies(pythonPath)) {
-                    if (!client.isRunning()) {
-                        client.start().then(() => {
-                            client.sendNotification(
-                                "Odoo/clientReady",
-                            );
-                        });
-                    } else {
-                        if (client.diagnostics) client.diagnostics.clear();
-                        client.sendNotification("Odoo/configurationChanged");
+            try {
+                if (getCurrentConfig(context)) {
+                    checkRestartPythonServer()
+                    if (checkPythonDependencies(pythonPath)) {
+                        if (!client.isRunning()) {
+                            client.start().then(() => {
+                                client.sendNotification(
+                                    "Odoo/clientReady",
+                                );
+                            });
+                        } else {
+                            if (client.diagnostics) client.diagnostics.clear();
+                            client.sendNotification("Odoo/configurationChanged");
+                        }
                     }
+                    else {
+                        isLoading = false;
+                    }
+                } else {
+                    if (client.isRunning()) client.stop();
+                    isLoading = false;
                 }
-                else {
-                    isLoading=false;
-                }
-            } else {
-                if (client.isRunning()) client.stop();
-                isLoading = false;
+                setStatusConfig(context, odooStatusBar);
             }
-            setStatusConfig(context, odooStatusBar);
+            catch (error) {
+                odooOutputChannel.appendLine(error)
+                displayCrashMessage(context, error, odooOutputChannel, 'event.selectedConfigurationChange')
+            }
         })
     );
 
     // COMMANDS
     context.subscriptions.push(
         commands.registerCommand("odoo.openWelcomeView", () => {
-            WelcomeWebView.render(context);
+            try {
+                WelcomeWebView.render(context);
+            }
+            catch (error) {
+                odooOutputChannel.appendLine(error)
+                displayCrashMessage(context, error, odooOutputChannel, 'odoo.openWelcomeView')
+            }
         })
     );
 
     context.subscriptions.push(
         commands.registerCommand("odoo.clearState", () => {
-            for (let key of context.globalState.keys()) {
-                odooOutputChannel.appendLine(`[INFO] Wiping ${key} from global storage.`);
-                context.globalState.update(key, undefined);
-            }
+            try {
+                for (let key of context.globalState.keys()) {
+                    odooOutputChannel.appendLine(`[INFO] Wiping ${key} from global storage.`);
+                    context.globalState.update(key, undefined);
+                }
 
-            for (let key of context.workspaceState.keys()) {
-                odooOutputChannel.appendLine(`[INFO] Wiping ${key} from workspace storage.`);
-                context.workspaceState.update(key, undefined);
+                for (let key of context.workspaceState.keys()) {
+                    odooOutputChannel.appendLine(`[INFO] Wiping ${key} from workspace storage.`);
+                    context.workspaceState.update(key, undefined);
+                }
+                commands.executeCommand("workbench.action.reloadWindow");
             }
-            commands.executeCommand("workbench.action.reloadWindow");
+            catch (error) {
+                odooOutputChannel.appendLine(error)
+                displayCrashMessage(context, error, odooOutputChannel, 'odoo.clearState')
+            }
         }
         ));
 
@@ -466,55 +504,61 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
 }
 export function activate(context: ExtensionContext): void {
     const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
-    let pythonPath = getPythonPath(context);
-    let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
+    try {
+        let pythonPath = getPythonPath(context);
+        let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
 
-    odooOutputChannel.appendLine('[INFO] Starting the extension.');
-    odooOutputChannel.appendLine(pythonPath);
+        odooOutputChannel.appendLine('[INFO] Starting the extension.');
+        odooOutputChannel.appendLine(pythonPath);
 
-    if (getCurrentConfig(context)) {
-        if (context.extensionMode === ExtensionMode.Production) {
-            if (checkPythonDependencies(pythonPath)) {
+        if (getCurrentConfig(context)) {
+            if (context.extensionMode === ExtensionMode.Production) {
+                if (checkPythonDependencies(pythonPath)) {
+                    client.start();
+                }
+            } else {
                 client.start();
             }
-        } else {
-            client.start();
         }
-    }
 
-    // new ConfigurationsExplorer(context);
+        // new ConfigurationsExplorer(context);
 
-    initializeSubscriptions(context, client, odooOutputChannel)
-    // Initialize some settings on the extension's launch if they're missing from the state.
-    setMissingStateVariables(context, odooOutputChannel);
+        initializeSubscriptions(context, client, odooOutputChannel)
+        // Initialize some settings on the extension's launch if they're missing from the state.
+        setMissingStateVariables(context, odooOutputChannel);
 
-    switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
-        case null:
-            context.globalState.update('Odoo.displayWelcomeView', true);
-            WelcomeWebView.render(context);
-            break;
-        case true:
-            WelcomeWebView.render(context);
-            break;
-    }
+        switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
+            case null:
+                context.globalState.update('Odoo.displayWelcomeView', true);
+                WelcomeWebView.render(context);
+                break;
+            case true:
+                WelcomeWebView.render(context);
+                break;
+        }
 
-    const config = getCurrentConfig(context);
-    if (config) {
-        odooStatusBar.text = `Odoo (${config["name"]})`;
-    }
+        const config = getCurrentConfig(context);
+        if (config) {
+            odooStatusBar.text = `Odoo (${config["name"]})`;
+        }
 
-    if (getCurrentConfig(context)) {
-        if (context.extensionMode === ExtensionMode.Production) {
-            if (checkPythonDependencies(pythonPath, false)) {
+        if (getCurrentConfig(context)) {
+            if (context.extensionMode === ExtensionMode.Production) {
+                if (checkPythonDependencies(pythonPath, false)) {
+                    client.sendNotification(
+                        "Odoo/clientReady",
+                    );
+                }
+            } else {
                 client.sendNotification(
                     "Odoo/clientReady",
                 );
             }
-        } else {
-            client.sendNotification(
-                "Odoo/clientReady",
-            );
         }
+    }
+    catch (error) {
+        odooOutputChannel.appendLine(error)
+        displayCrashMessage(context, error, odooOutputChannel, 'odoo.activate')
     }
 }
 
