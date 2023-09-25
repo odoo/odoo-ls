@@ -20,6 +20,8 @@
 
 import * as net from "net";
 import * as path from "path";
+import * as fs from "fs";
+import * as semver from "semver";
 import {
     commands,
     ExtensionContext,
@@ -51,7 +53,6 @@ import {
 } from './utils/events'
 import { execSync } from "child_process";
 import { getCurrentConfig } from "./utils/utils";
-import * as fs from 'fs';
 import { getConfigurationStructure, stateInit } from "./utils/validation";
 import * as os from 'os';
 let client: LanguageClient;
@@ -127,6 +128,7 @@ function setMissingStateVariables(context: ExtensionContext, outputChannel: Outp
         ["Odoo.configurations", stateInit["Odoo.configuration"]],
         ["Odoo.nextConfigId", stateInit["Odoo.nextConfigId"]],
         ["Odoo.stateVersion", stateInit["Odoo.stateVersion"]],
+        ["Odoo.lastRecordedVersion", context.extension.packageJSON.version], 
     ]);
     const workspaceVariables = new Map([["Odoo.selectedConfiguration", [-1]]]);
 
@@ -171,6 +173,33 @@ function checkPythonDependencies(pythonPath: string, notification: boolean = tru
         return false
     }
     return true;
+}
+
+
+function isExtensionUpdated(context: ExtensionContext) {
+    const currentSemVer = semver.parse(context.extension.packageJSON.version);
+    const lastRecordedSemVer = semver.parse(context.globalState.get("Odoo.lastRecordedVersion", ""));
+
+    if (currentSemVer > lastRecordedSemVer) return true;
+    return false;
+}
+
+function displayUpdatedNotification(context: ExtensionContext) {
+    window.showInformationMessage(
+        "The Odoo extension has been updated.",
+        "Show changelog",
+        "Dismiss"
+    ).then(selection => {
+        switch (selection) {
+            case "Show changelog":
+                ChangelogWebview.render(context);
+                break;
+        }
+    })
+}
+
+function updateLastRecordedVersion(context: ExtensionContext) {
+    context.globalState.update("Odoo.lastRecordedVersion", context.extension.packageJSON.version);
 }
 
 function startLangServerTCP(addr: number, outputChannel: OutputChannel): LanguageClient {
@@ -291,7 +320,7 @@ function activateVenv(pythonPath: String) {
 
 function getPythonPath(context: ExtensionContext) {
     const config = getCurrentConfig(context);
-    const pythonPath = config && config["pythonPath"] != '' ? config["pythonPath"] : "python3";
+    const pythonPath = config && config["pythonPath"] ? config["pythonPath"] : "python3";
     activateVenv(pythonPath)
     return pythonPath
 }
@@ -603,8 +632,11 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                 odooOutputChannel.appendLine(error)
                 displayCrashMessage(context, error, odooOutputChannel, 'odoo.clearState')
             }
-        }
-        ));
+        }));
+
+    context.subscriptions.push(commands.registerCommand("odoo.openChangelogView", () => {
+        ChangelogWebview.render(context);
+    }));
 
     context.subscriptions.push(
         client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
@@ -626,7 +658,6 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
     context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => {
         displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
     }));
-
 }
 export function activate(context: ExtensionContext): void {
     const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
@@ -668,6 +699,12 @@ export function activate(context: ExtensionContext): void {
         if (config) {
             odooStatusBar.text = `Odoo (${config["name"]})`;
         }
+
+        // Check if the extension was updated since the last time.
+        if (isExtensionUpdated(context)) displayUpdatedNotification(context);
+
+        // We update the last used version on every run.
+        updateLastRecordedVersion(context);
 
         if (getCurrentConfig(context)) {
             if (context.extensionMode === ExtensionMode.Production) {
