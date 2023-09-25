@@ -39,6 +39,11 @@
         "category": "Odoo"
       },
       {
+        "command": "odoo.openChangelogView",
+        "title": "Open the Changelog page",
+        "category": "Odoo"
+      },
+      {
         "command": "odoo.testCrashMessage",
         "title": "Open the crash notification",
         "category": "Odoo"
@@ -74,11 +79,16 @@
           "scope": "window",
           "type": "string",
           "default": "afterDelay",
-          "enum": ["onSave", "afterDelay", "off"],
+          "enum": [
+            "onSave",
+            "afterDelay",
+            "off"
+          ],
           "enumDescriptions": [
             "Refreshes the server data when the user saves a file",
             "Refreshes the server data after a delay",
-            "Disables the auto-refresh feature"],
+            "Disables the auto-refresh feature"
+          ],
           "description": "Define when the server has to refresh its data according to the new updates"
         },
         "Odoo.autoRefreshDelay": {
@@ -115,6 +125,7 @@
     "@types/node": "^16.11.6",
     "@types/vscode": "^1.78.0",
     "@types/vscode-webview": "^1.57.0",
+    "@types/semver": "^7.5.2",
     "@typescript-eslint/eslint-plugin": "^5.3.0",
     "@typescript-eslint/parser": "^5.3.0",
     "esbuild": "^0.19.2",
@@ -127,8 +138,9 @@
     "@vscode/webview-ui-toolkit": "^1.2.2",
     "axios": "^1.4.0",
     "ejs": "^3.1.9",
-    "untildify": "^5.0.0",
     "markdown-it": "^13.0.1",
+    "semver": "^7.5.4",
+    "untildify": "^5.0.0",
     "vscode-languageclient": "^8.1.0"
   }
 }

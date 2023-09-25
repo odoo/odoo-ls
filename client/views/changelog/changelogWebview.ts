@@ -4,8 +4,6 @@ import {readFileSync} from 'fs';
 import * as ejs from "ejs";
 import MarkdownIt = require('markdown-it');
 import { getNonce, getUri } from "../../utils/utils";
-import { get } from "http";
-
 
 const md = new MarkdownIt('commonmark');
 
@@ -42,9 +40,6 @@ export class ChangelogWebview {
 
         // Set the HTML content for the webview panel
         this._panel.webview.html = this._getWebviewContent(this._panel.webview, context.extensionUri);
-
-        // Set an event listener to listen for messages passed from the webview context
-        this._setWebviewMessageListener(this._panel.webview);
    }
 
     /**
@@ -108,7 +103,7 @@ export class ChangelogWebview {
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
       // HTML Rendering is done here
-      const changelogUri = Uri.joinPath(extensionUri, "changelog.md");
+      const changelogUri = Uri.joinPath(extensionUri, "CHANGELOG.md");
       const changelogContent: string = readFileSync(changelogUri.fsPath, 'utf8');
       const htmlPath = getUri(webview, extensionUri, ["client", "views", "changelog", "body.html"]);
       const styleUri = getUri(webview, extensionUri, ["client", "views", "changelog", "style.css"]);
@@ -122,29 +117,5 @@ export class ChangelogWebview {
       }
 
       return ejs.render(htmlFile, data);
-   }
-
-   
-
-    /**
-     * Sets up an event listener to listen for messages passed from the webview context and
-     * executes code based on the message that is recieved.
-     *
-     * @param webview A reference to the extension webview
-     * @param context A reference to the extension context
-     */
-    private _setWebviewMessageListener(webview: Webview) {
-        webview.onDidReceiveMessage((message: any) => {
-            const command = message.command;
-
-            switch (command) {
-               case "sample_command":
-                  //do things
-                  break;
-            }
-         },
-            undefined,
-            this._disposables
-         );
    }
 }
