@@ -142,7 +142,7 @@ class PythonArchEval(ast.NodeVisitor):
         self.safeImport.pop()
 
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
-        assigns = PythonUtils.unpack_assign(node.target, node.value, {})
+        assigns = PythonUtils.unpack_assign(node.target, node.annotation, node.value, {})
         for variable_name, value in assigns.items():
             variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol.ref or None
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
@@ -152,7 +152,7 @@ class PythonArchEval(ast.NodeVisitor):
                         variable.add_dependency(variable.eval.get_symbol(), BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
 
     def visit_Assign(self, node):
-        assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
+        assigns = PythonUtils.unpack_assign(node.targets, [], node.value, {})
         for variable_name, value in assigns.items():
             variable = hasattr(variable_name, "symbol") and variable_name.symbol and variable_name.symbol.ref or None
             if variable and variable.parent.type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:

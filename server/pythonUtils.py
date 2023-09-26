@@ -172,7 +172,7 @@ class PythonUtils():
     #     return (last_atomic_expr, list_expr, current)
 
     @staticmethod
-    def unpack_assign(node_targets, node_values, acc = {}):
+    def unpack_assign(node_targets, node_annotation, node_values, acc = {}):
         """ Unpack assignement to extract variables and values.
             This method will return a dictionnary that hold each variables and the set value (still in ast node)
             example: variable = variable2 = "test" (2 targets, 1 value)

@@ -106,7 +106,7 @@ class PythonValidator(ast.NodeVisitor):
 
     def visit_Assign(self, node):
         return
-        assigns = self.unpack_assign(node.targets, node.value, {})
+        assigns = self.unpack_assign(node.targets, [], node.value, {})
         for variable, value in assigns.items():
             #TODO add other inference type than Name
             if isinstance(value, ast.Name):
