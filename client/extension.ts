@@ -33,6 +33,7 @@ import {
     QuickPickItemKind,
     TextDocument,
     OutputChannel,
+    Uri,
 } from "vscode";
 import {
     LanguageClient,
@@ -51,10 +52,12 @@ import { execSync } from "child_process";
 import { getCurrentConfig } from "./utils/utils";
 import * as fs from 'fs';
 import { getConfigurationStructure, stateInit } from "./utils/validation";
+import { v4 as uuidv4 } from 'uuid';
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
 let isLoading: boolean;
+let debugFile = `pygls-${uuidv4()}.log`
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -263,7 +266,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 
     switch (selection) {
         case ("Send crash report"):
-            CrashReportWebView.render(context, activeFile, crashInfo, command);
+            CrashReportWebView.render(context, activeFile, crashInfo, command, debugFile);
             break
         case ("Open logs"):
             outputChannel.show();
@@ -298,7 +301,7 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         if (!pythonPath) {
             outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
         }
-        client = startLangServer(pythonPath, ["-m", "server"], cwd, outputChannel);
+        client = startLangServer(pythonPath, ["-m", "server", "--log", debugFile], cwd, outputChannel);
     }
 
     return client;
@@ -540,6 +543,10 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
         return getCurrentConfig(context);
     }));
 
+    context.subscriptions.push(client.onRequest("Odoo/getDebugFile", (params) => {
+        return Uri.joinPath(context.extensionUri, debugFile).fsPath;
+    }));
+
     context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => {
         displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
     }));
@@ -552,7 +559,6 @@ export function activate(context: ExtensionContext): void {
         let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
 
         odooOutputChannel.appendLine('[INFO] Starting the extension.');
-        odooOutputChannel.appendLine(pythonPath);
 
         if (getCurrentConfig(context)) {
             if (context.extensionMode === ExtensionMode.Production) {
@@ -606,11 +612,12 @@ export function activate(context: ExtensionContext): void {
     }
 }
 
-export function deactivate(): Thenable<void> | undefined {
+export function deactivate(context:ExtensionContext): Thenable<void> | undefined {
     if (!client) {
         return undefined;
     }
     if (client.diagnostics) client.diagnostics.clear();
-    if (client.isRunning()) client.stop();
-    return client.dispose();
+    return client.stop().then(()=>{
+        client.dispose()
+    });
 }
