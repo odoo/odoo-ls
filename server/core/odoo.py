@@ -30,6 +30,7 @@ class Odoo():
 
     def __init__(self):
         self.odooPath = ""
+        self.debugFile = ""
 
         self.version_major = 0
         self.version_minor = 0
@@ -128,6 +129,7 @@ class Odoo():
             try:
                 Odoo.instance = Odoo()
                 odooConfig = ls.lsp.send_request("Odoo/getConfiguration").result()
+                debugFile = ls.lsp.send_request("Odoo/getDebugFile").result()
                 config = ls.get_configuration(WorkspaceConfigurationParams(items=[
                     ConfigurationItem(
                         scope_uri='window',
@@ -147,6 +149,7 @@ class Odoo():
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = odooConfig.odooPath
+                    Odoo.instance.debugFile = debugFile
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.load_builtins(ls)

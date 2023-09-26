@@ -21,7 +21,6 @@ from .server import odoo_server
 from .constants import *
 
 FORMAT = '(%(process)d) [%(levelname)s] %(message)s'
-logging.basicConfig(format=FORMAT, filename="pygls.log", level=logging.WARNING, filemode="w")
 
 def add_arguments(parser):
     parser.description = "simple odoo server example"
@@ -42,12 +41,17 @@ def add_arguments(parser):
         "--port", type=int, default=2087,
         help="Bind to this port"
     )
+    parser.add_argument(
+        "--log", type=str, default="pygls.log",
+        help="Bind to this port"
+    )
 
 
 def main():
     parser = argparse.ArgumentParser()
     add_arguments(parser)
     args = parser.parse_args()
+    logging.basicConfig(format=FORMAT, filename=args.log, level=logging.WARNING, filemode="w")
 
     if "alpha" in EXTENSION_VERSION or "beta" in EXTENSION_VERSION:
         logging.getLogger().setLevel(logging.DEBUG)

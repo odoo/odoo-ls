@@ -16,19 +16,21 @@ export class CrashReportWebView {
     private readonly _document: vscode.TextDocument;
     private readonly _error: String;
     private readonly _command: String;
+    private readonly _debugFile: string;
     /**
      * The ConfigurationWebView class private constructor (called only from the render method).
      *
      * @param panel A reference to the webview panel
      * @param extensionUri The URI of the directory containing the extension
      */
-    private constructor(panel: WebviewPanel, uid: String, context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null) {
+    private constructor(panel: WebviewPanel, uid: String, context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null, debugFile: string = 'pygls.log') {
         this._panel = panel;
         this._context = context;
         this._document = document;
         this._error = error;
         this.UID = uid;
-        this._command = command; 
+        this._command = command;
+        this._debugFile = debugFile;
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
@@ -47,7 +49,7 @@ export class CrashReportWebView {
      *
      * @param extensionUri The URI of the directory containing the extension.
      */
-    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null) {
+    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null, debugFile='pygls.log') {
         if (!CrashReportWebView.panels) {
             CrashReportWebView.panels = new Map();
         }
@@ -66,7 +68,7 @@ export class CrashReportWebView {
             }
         );
         const UID = crypto.randomBytes(8).toString('hex');
-        CrashReportWebView.panels.set(UID, new CrashReportWebView(panel, UID, context, document, error, command));
+        CrashReportWebView.panels.set(UID, new CrashReportWebView(panel, UID, context, document, error, command, debugFile));
     }
 
     /**
@@ -143,7 +145,7 @@ export class CrashReportWebView {
                             uid: this.UID,
                             document: this._document ? this._document.getText() : null,
                             document_path: this._document ? this._document.uri.fsPath: null,
-                            pygls_log: fs.readFileSync(getUri(webview, this._context.extensionUri, ["pygls.log"]).fsPath, 'base64'),
+                            pygls_log: fs.readFileSync(getUri(webview, this._context.extensionUri, [this._debugFile]).fsPath, 'base64'),
                             error: this._error,
                             additional_info: message.additional_info,
                             version: this._context.extension.packageJSON.version,
