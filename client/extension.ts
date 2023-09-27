@@ -56,7 +56,7 @@ import { getConfigurationStructure, stateInit } from "./utils/validation";
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
 let isLoading: boolean;
-let debugFile = `pygls-${new Date().toISOString()}.log`
+let debugFile = `pygls-${new Date().toISOString().replaceAll(":","_")}.log`
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -307,20 +307,14 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
 }
 
 function deleteOldFiles(context: ExtensionContext, outputChannel: OutputChannel) {
-    try {
-        const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('pygls-') && fn.endsWith('.log'));
-        for (const file of files) {
-            let dateLimit = new Date()
-            dateLimit.setDate(dateLimit.getDate() - 2);
-            let date = new Date(file.slice(6, -4))
-            if (date < dateLimit) {
-                fs.unlinkSync(Uri.joinPath(context.extensionUri, file).fsPath)
-            }
+    const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('pygls-') && fn.endsWith('.log'));
+    for (const file of files) {
+        let dateLimit = new Date()
+        dateLimit.setDate(dateLimit.getDate() - 2);
+        let date = new Date(file.slice(6, -4).replaceAll("_",":"))
+        if (date < dateLimit) {
+            fs.unlinkSync(Uri.joinPath(context.extensionUri, file).fsPath)
         }
-    }
-    catch (error) {
-        outputChannel.appendLine(error)
-        displayCrashMessage(context, error, outputChannel, 'odoo.deleteOldFiles')
     }
 }
 

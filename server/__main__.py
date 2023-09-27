@@ -43,7 +43,7 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "--log", type=str, default="pygls.log",
-        help="Bind to this port"
+        help="Debug log file name"
     )
 
 
