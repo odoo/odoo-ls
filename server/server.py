@@ -73,13 +73,6 @@ def shutdown(ls, params):
     if Odoo.get():
         ls.show_message_log("Interrupting initialization", MessageType.Log)
         Odoo.get().interrupt_initialization()
-        ls.show_message_log("Deleting log file", MessageType.Log)
-        try:        
-            debugFile = Odoo.get().debugFile
-            if os.path.exists(debugFile):
-                os.remove(debugFile)
-        except Exception as e:
-            ls.show_message_log(e)
         ls.show_message_log("Reset existing database", MessageType.Log)
         Odoo.get().reset(ls)
 
@@ -264,15 +257,3 @@ def did_change_configuration(ls, params: DidChangeConfigurationParams):
             scope_uri='window',
             section="Odoo")
     ]), callback=on_change_config)
-
-# @odoo_server.feature("Odoo/deleteDebugFile")
-# @send_error_on_traceback
-# def deleteDebugFile(ls, params=None):       
-#     ls.show_message_log("server delete debug called")
-#     try:
-#         debugFile = params.debugFile
-#         if os.path.exists(debugFile):
-#             os.remove(debugFile)
-#     except e:
-#         ls.show_message_log(e)
-    
