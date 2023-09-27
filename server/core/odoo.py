@@ -62,17 +62,25 @@ class Odoo():
         self.stdlib_dir = os.path.join(pathlib.Path(__file__).parent.parent.resolve(), "typeshed", "stdlib")
 
     @contextmanager
-    def acquire_write(self, ls):
-        with self.write_lock:
-            ls.send_notification('Odoo/loadingStatusUpdate', 'start')
-            self.thread_access_condition.wait_empty()
-            OdooLanguageServer.access_mode.set("write")
-            yield
-            OdooLanguageServer.access_mode.set("none")
-            ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
+    def acquire_write(self, ls, timeout=-1):
+        if OdooLanguageServer.access_mode.get() == "write":
+            yield True
+            return
+        if self.write_lock.acquire(timeout=timeout):
+            try:
+                ls.send_notification('Odoo/loadingStatusUpdate', 'start')
+                self.thread_access_condition.wait_empty()
+                OdooLanguageServer.access_mode.set("write")
+                yield Odoo.get() == self
+                OdooLanguageServer.access_mode.set("none")
+                ls.send_notification('Odoo/loadingStatusUpdate', 'stop')
+            finally:
+                self.write_lock.release()
+        else:
+            yield False
 
     @contextmanager
-    def acquire_read(self, timeout=0):
+    def acquire_read(self, timeout=-1):
         if self.write_lock.acquire(timeout=timeout):
             try:
                 self.thread_access_condition.acquire()
@@ -82,13 +90,13 @@ class Odoo():
             yield False
             return
         OdooLanguageServer.access_mode.set("read")
-        yield True
+        yield Odoo.get() == self # to be sure Odoo.instance is still bound to the same instance
         self.thread_access_condition.release()
         OdooLanguageServer.access_mode.set("none")
 
     @contextmanager
     def upgrade_to_write(self):
-        if OdooLanguageServer.access_mode.get() == "write": #TODO it doesn't work like that...
+        if OdooLanguageServer.access_mode.get() == "write":
             yield
             return
         if OdooLanguageServer.access_mode.get() != "read":

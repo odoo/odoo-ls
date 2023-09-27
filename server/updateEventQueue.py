@@ -82,19 +82,23 @@ class UpdateEventQueue:
         from server.core.odoo import Odoo
         from server.OdooLanguageServer import odoo_server
         with self.lock:
-            if not self.queue:
-                return
-            if self.queue[-1].time + self.delay > time.time():
-                self.thread = threading.Timer(self.queue[-1].time + self.delay - time.time(), self.process)
-                self.thread.start()
-                return
             self.thread = None
-            if self.panic_mode:
-                Odoo.reload_database(odoo_server)
+            if self.queue:
+                if self.queue[-1].time + self.delay > time.time():
+                    self.thread = threading.Timer(self.queue[-1].time + self.delay - time.time(), self.process)
+                    self.thread.start()
+                    return
+                if self.panic_mode:
+                    Odoo.reload_database(odoo_server)
+                    self.queue.clear()
+                    self.panic_mode = False
+                    return
+                for e in self.queue:
+                    e.process()
                 self.queue.clear()
-                self.panic_mode = False
-                return
-            for e in self.queue:
-                e.process()
-            self.queue.clear()
-            Odoo.get().process_rebuilds(odoo_server)
+            with Odoo.get().acquire_write(odoo_server, 1) as acquired:
+                if acquired:
+                    Odoo.get().process_rebuilds(odoo_server)
+                else:
+                    self.thread = threading.Timer(1.0, self.process)
+                    self.thread.start()
