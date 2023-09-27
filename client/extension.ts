@@ -293,6 +293,7 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
     if (context.extensionMode === ExtensionMode.Development) {
         // Development - Run the server manually
         client = startLangServerTCP(2087, outputChannel);
+        debugFile='pygls.log'
     } else {
         // Production - Client is going to run the server (for use within `.vsix` package)
         const cwd = path.join(__dirname, "..", "..");
