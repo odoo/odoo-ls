@@ -52,12 +52,11 @@ import { execSync } from "child_process";
 import { getCurrentConfig } from "./utils/utils";
 import * as fs from 'fs';
 import { getConfigurationStructure, stateInit } from "./utils/validation";
-import { v4 as uuidv4 } from 'uuid';
 
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
 let isLoading: boolean;
-let debugFile = `pygls-${uuidv4()}.log`
+let debugFile = `pygls-${new Date().toISOString()}.log`
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -307,6 +306,24 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
     return client;
 }
 
+function deleteOldFiles(context: ExtensionContext, outputChannel: OutputChannel) {
+    try {
+        const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('pygls-') && fn.endsWith('.log'));
+        for (const file of files) {
+            let dateLimit = new Date()
+            dateLimit.setDate(dateLimit.getDate() - 2);
+            let date = new Date(file.slice(6, -4))
+            if (date < dateLimit) {
+                fs.unlinkSync(Uri.joinPath(context.extensionUri, file).fsPath)
+            }
+        }
+    }
+    catch (error) {
+        outputChannel.appendLine(error)
+        displayCrashMessage(context, error, outputChannel, 'odoo.deleteOldFiles')
+    }
+}
+
 function initializeSubscriptions(context: ExtensionContext, client: LanguageClient, odooOutputChannel: OutputChannel): void {
 
     function checkRestartPythonServer(){
@@ -543,10 +560,6 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
         return getCurrentConfig(context);
     }));
 
-    context.subscriptions.push(client.onRequest("Odoo/getDebugFile", (params) => {
-        return Uri.joinPath(context.extensionUri, debugFile).fsPath;
-    }));
-
     context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => {
         displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
     }));
@@ -557,7 +570,7 @@ export function activate(context: ExtensionContext): void {
     try {
         let pythonPath = getPythonPath(context);
         let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
-
+        deleteOldFiles(context, odooOutputChannel)
         odooOutputChannel.appendLine('[INFO] Starting the extension.');
 
         if (getCurrentConfig(context)) {
@@ -617,7 +630,6 @@ export function deactivate(context:ExtensionContext): Thenable<void> | undefined
         return undefined;
     }
     if (client.diagnostics) client.diagnostics.clear();
-    return client.stop().then(()=>{
-        client.dispose()
-    });
+    if (client.isRunning()) client.stop();
+    return client.dispose();
 }
