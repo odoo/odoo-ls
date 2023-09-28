@@ -21,6 +21,12 @@ node_modules/
 **/tests/
 **/test_cases/
 .pytest_cache
+**/.nox/
+**/noxfile.py
+**/requirements.txt
+**/requirements.in
+**/venv/
+**/__pycache__/
 
 !node_modules/@bendera/vscode-webview-elements/**
 !node_modules/@vscode/codicons/**
@@ -28,3 +34,4 @@ node_modules/
 !node_modules/axios/**
 !node_modules/ejs/**
 !node_modules/vscode-languageclient/**
+!node_modules/untildify/**
