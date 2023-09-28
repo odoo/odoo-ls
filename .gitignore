@@ -8,3 +8,4 @@ env
 *.log
 *.vsix
 package-lock.json
+venv
