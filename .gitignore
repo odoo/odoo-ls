@@ -3,8 +3,13 @@ node_modules
 client/server
 .vscode-test
 .vscode/settings.json
+server/libs/
 env
 *.pyc
 *.log
 *.vsix
 package-lock.json
+venv
+.nox
+.vscode
+__pycache__

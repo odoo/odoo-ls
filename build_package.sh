@@ -4,4 +4,4 @@ PACKAGE_VERSION=$(cat package.json \
   | awk -F: '{ print $2 }' \
   | sed 's/[",]//g')
 echo "detected version: $PACKAGE_VERSION"
-vsce package
+nox --session build_package

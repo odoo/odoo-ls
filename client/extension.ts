@@ -444,13 +444,7 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", odooOutputChannel); }));
                 }
                 initializeSubscriptions(context, client, odooOutputChannel)
-                if (context.extensionMode === ExtensionMode.Production) {
-                    if (checkPythonDependencies(pythonPath)) {
-                        client.start();
-                    }
-                } else {
-                    client.start();
-                }
+                client.start();
             }
         }
     }
@@ -557,13 +551,7 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                 }
                 if (changes && changes.includes('pythonPath')) {
                     checkRestartPythonServer()
-                    if (checkPythonDependencies(pythonPath)) {
-                        client.sendNotification("Odoo/configurationChanged");
-                    } else {
-                        isLoading = false;
-                        setStatusConfig(context, odooStatusBar);
-
-                    }
+                    client.sendNotification("Odoo/configurationChanged");
                 }
             }
             catch (error) {
@@ -581,20 +569,15 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     checkRestartPythonServer()
                     checkOdooPath(context);
                     checkAddons(context, odooOutputChannel);
-                    if (checkPythonDependencies(pythonPath)) {
-                        if (!client.isRunning()) {
-                            client.start().then(() => {
-                                client.sendNotification(
-                                    "Odoo/clientReady",
-                                );
-                            });
-                        } else {
-                            if (client.diagnostics) client.diagnostics.clear();
-                            client.sendNotification("Odoo/configurationChanged");
-                        }
-                    }
-                    else {
-                        isLoading = false;
+                    if (!client.isRunning()) {
+                        client.start().then(() => {
+                            client.sendNotification(
+                                "Odoo/clientReady",
+                            );
+                        });
+                    } else {
+                        if (client.diagnostics) client.diagnostics.clear();
+                        client.sendNotification("Odoo/configurationChanged");
                     }
                 } else {
                     if (client.isRunning()) client.stop();
@@ -676,13 +659,7 @@ export function activate(context: ExtensionContext): void {
         odooOutputChannel.appendLine('[INFO] Starting the extension.');
 
         if (getCurrentConfig(context)) {
-            if (context.extensionMode === ExtensionMode.Production) {
-                if (checkPythonDependencies(pythonPath)) {
-                    client.start();
-                }
-            } else {
-                client.start();
-            }
+            client.start();
         }
 
         // new ConfigurationsExplorer(context);
@@ -715,17 +692,9 @@ export function activate(context: ExtensionContext): void {
         updateLastRecordedVersion(context);
 
         if (getCurrentConfig(context)) {
-            if (context.extensionMode === ExtensionMode.Production) {
-                if (checkPythonDependencies(pythonPath, false)) {
-                    client.sendNotification(
-                        "Odoo/clientReady",
-                    );
-                }
-            } else {
-                client.sendNotification(
-                    "Odoo/clientReady",
-                );
-            }
+            client.sendNotification(
+                "Odoo/clientReady",
+            );
         }
     }
     catch (error) {
