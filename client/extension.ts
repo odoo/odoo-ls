@@ -42,7 +42,8 @@ import {
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./views/welcome/welcomeWebView";
 import { ConfigurationWebView } from './views/configurations/configurationWebView';
-import { CrashReportWebView } from './views/crash_report/crashReport'
+import { CrashReportWebView } from './views/crash_report/crashReport';
+import { ChangelogWebview } from "./views/changelog/changelogWebview";
 import {
     selectedConfigurationChange,
     ConfigurationsChange
