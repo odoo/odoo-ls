@@ -326,6 +326,61 @@ function deleteOldFiles(context: ExtensionContext, outputChannel: OutputChannel)
     }
 }
 
+async function checkAddons(context: ExtensionContext, odooOutputChannel: OutputChannel) {
+    let files = await workspace.findFiles('**/__manifest__.py')
+    let currentConfig = getCurrentConfig(context)
+    let missingFiles = files.filter(file => {
+        return !currentConfig.addons.some((addon) => file.fsPath.startsWith(addon))
+    })
+    let missingPaths = [...new Set(missingFiles.map(file => {
+        let filePath = file.fsPath.split(path.sep)
+        return filePath.slice(0, filePath.length - 2).join(path.sep)
+    }))]
+    odooOutputChannel.appendLine("Missing addon paths : " + missingPaths.length)
+    if (missingPaths.length > 0) {
+        odooOutputChannel.appendLine("Missing addon paths : " + JSON.stringify(missingPaths))
+        const selection = await window.showWarningMessage(
+            `We detected addon paths that weren't added in the current configuration. Would you like to add them?`,
+            "Update current configuration",
+            "View Paths",
+            "Ignore"
+        );
+        switch (selection) {
+            case ("Update current configuration"):
+                ConfigurationWebView.render(context, currentConfig.id);
+                break
+            case ("View Paths"):
+                odooOutputChannel.show();
+                break
+        }
+    }
+}
+
+async function checkOdooPath(context: ExtensionContext) {
+    let currentConfig = getCurrentConfig(context)
+    for (const f of workspace.workspaceFolders) {
+        let odoo_path = undefined
+        if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath)) {
+            odoo_path = f.uri
+        }
+        else if (fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
+            odoo_path = Uri.joinPath(f.uri, 'odoo')
+        }
+        if (odoo_path && currentConfig && odoo_path.fsPath !== currentConfig.odooPath) {
+            const selection = await window.showWarningMessage(
+                `The Odoo configuration selected does not match the odoo path in the workspace. Would you like to change it?`,
+                "Update current configuration",
+                "Ignore"
+            );
+            switch (selection) {
+                case ("Update current configuration"):
+                    ConfigurationWebView.render(context, currentConfig.id);
+                    break
+            }
+        }
+    }
+}
+
 function initializeSubscriptions(context: ExtensionContext, client: LanguageClient, odooOutputChannel: OutputChannel): void {
 
     function checkRestartPythonServer(){
@@ -361,7 +416,8 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
     }
 
     let pythonPath = getPythonPath(context);
-
+    checkOdooPath(context);
+    checkAddons(context, odooOutputChannel);
     odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     setStatusConfig(context, odooStatusBar);
     odooStatusBar.show();
@@ -456,6 +512,8 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
             try {
                 setStatusConfig(context, odooStatusBar);
                 if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
+                    checkOdooPath(context);
+                    checkAddons(context,odooOutputChannel);
                     if (client.diagnostics) client.diagnostics.clear();
                     client.sendNotification("Odoo/configurationChanged");
                 }
