@@ -308,7 +308,7 @@ function startLanguageServerClient(context: ExtensionContext, pythonPath:string,
         if (!pythonPath) {
             outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
         }
-        client = startLangServer(pythonPath, ["-m", "server", "--log", debugFile], cwd, outputChannel);
+        client = startLangServer(pythonPath, ["-m", "server", "--log", debugFile, "clean-odoo-lsp"], cwd, outputChannel);
     }
 
     return client;
@@ -328,15 +328,22 @@ function deleteOldFiles(context: ExtensionContext, outputChannel: OutputChannel)
 
 function initializeSubscriptions(context: ExtensionContext, client: LanguageClient, odooOutputChannel: OutputChannel): void {
 
+    let terminal = window.terminals.find(t => t.name === 'close-odoo-client')
+    if (!terminal){
+        window.createTerminal({ name: `close-odoo-client`, hideFromUser:true})
+    }
+
+    context.subscriptions.push(window.onDidCloseTerminal((terminal) => {
+        if (terminal.name === 'close-odoo-client') closeClient(client)
+    }))
+
     function checkRestartPythonServer(){
         if (getCurrentConfig(context)) {
             let oldPythonPath = pythonPath
             pythonPath = getPythonPath(context);
             if (oldPythonPath != pythonPath) {
                 odooOutputChannel.appendLine('[INFO] Python path changed, restarting language server: ' + oldPythonPath + " " + pythonPath);
-                if (client.diagnostics) client.diagnostics.clear();
-                if (client.isRunning()) client.stop();
-                if (client) client.dispose();
+                closeClient(client)
                 client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
                 for (const disposable of context.subscriptions) {
                     try {
@@ -627,11 +634,15 @@ export function activate(context: ExtensionContext): void {
     }
 }
 
-export function deactivate(context:ExtensionContext): Thenable<void> | undefined {
+ function closeClient(client: LanguageClient) {
+    if (client.diagnostics) client.diagnostics.clear();
+    if (client.isRunning()) return client.stop().then(() => client.dispose())
+    return client.dispose();
+}
+
+export function deactivate(): Thenable<void> | undefined {
     if (!client) {
         return undefined;
     }
-    if (client.diagnostics) client.diagnostics.clear();
-    if (client.isRunning()) client.stop();
-    return client.dispose();
+    return closeClient(client)
 }

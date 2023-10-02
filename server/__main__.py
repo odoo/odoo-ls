@@ -42,8 +42,13 @@ def add_arguments(parser):
         help="Bind to this port"
     )
     parser.add_argument(
+<<<<<<< HEAD
         "--log", type=str, default="pygls.log",
         help="Debug log file name"
+=======
+        "clean-odoo-lsp",
+        help="Ensure clean shutdown when extension uninstalled"
+>>>>>>> 5fac476 ([IMP] detect when a window is closed and close server)
     )
 
 

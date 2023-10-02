@@ -107,7 +107,8 @@
     "esbuild-base": "esbuild ./client/extension.ts --bundle --outfile=client/out/main.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
-    "test-compile": "tsc -p ./"
+    "test-compile": "tsc -p ./",
+    "vscode:uninstall": "node ./client/utils/cleanup.mjs"
   },
   "devDependencies": {
     "@types/ejs": "^3.1.2",
