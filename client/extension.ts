@@ -273,21 +273,16 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 
 function activateVenv(pythonPath: String) {
     let activatePathArray = pythonPath.split(path.sep).slice(0, pythonPath.split(path.sep).length - 1)
-    let activatePath
-    switch(os.type()){
-        case 'Linux':
-            activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
-            if (fs.existsSync(activatePath)) {
+    let activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
+    if (fs.existsSync(activatePath)) {
+        switch (os.type()) {
+            case 'Linux':
                 execSync(`. ${activatePath}`)
-            }
-            break;
-        case 'Windows_NT':
-            activatePath = `${activatePathArray.join(path.sep)}${path.sep}Activate.ps1`
-            if (fs.existsSync(activatePath)) {
-                execSync('Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force')
+                break;
+            case 'Windows_NT':
                 execSync(`${activatePath}`)
-            }
-            break;
+                break;
+        }
     }
 }
 
