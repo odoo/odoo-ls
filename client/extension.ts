@@ -52,7 +52,7 @@ import { execSync } from "child_process";
 import { getCurrentConfig } from "./utils/utils";
 import * as fs from 'fs';
 import { getConfigurationStructure, stateInit } from "./utils/validation";
-
+import * as os from 'os';
 let client: LanguageClient;
 let odooStatusBar: StatusBarItem;
 let isLoading: boolean;
@@ -275,9 +275,21 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 
 function activateVenv(pythonPath: String) {
     let activatePathArray = pythonPath.split(path.sep).slice(0, pythonPath.split(path.sep).length - 1)
-    let activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
-    if (fs.existsSync(activatePath)) {
-        execSync(`. ${activatePath}`)
+    let activatePath
+    switch(os.type()){
+        case 'Linux':
+            activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
+            if (fs.existsSync(activatePath)) {
+                execSync(`. ${activatePath}`)
+            }
+            break;
+        case 'Windows_NT':
+            activatePath = `${activatePathArray.join(path.sep)}${path.sep}Activate.ps1`
+            if (fs.existsSync(activatePath)) {
+                execSync('Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force')
+                execSync(`${activatePath}`)
+            }
+            break;
     }
 }
 
