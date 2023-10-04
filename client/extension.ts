@@ -190,7 +190,8 @@ function startLangServerTCP(addr: number, outputChannel: OutputChannel): Languag
     clientOptions.outputChannel = outputChannel;
 
     return new LanguageClient(
-        `tcp lang server (port ${addr})`,
+        'odooServer',
+        `Odoo Server`,
         serverOptions,
         clientOptions
     );
@@ -210,7 +211,7 @@ function startLangServer(
     const clientOptions: LanguageClientOptions = getClientOptions();
     clientOptions.outputChannel = outputChannel;
 
-    return new LanguageClient(command, serverOptions, clientOptions);
+    return new LanguageClient('odooServer', 'Odoo Server', serverOptions, clientOptions);
 }
 
 function setStatusConfig(context: ExtensionContext, statusItem: StatusBarItem) {
