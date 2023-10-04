@@ -97,7 +97,7 @@
           "default": 1000,
           "markdownDescription": "Define the delay the server has to wait before refreshing data after an update."
         },
-        "Odoo.trace.server": {
+        "odooServer.trace.server": {
           "scope": "window",
           "type": "string",
           "enum": [
