@@ -13,3 +13,4 @@ venv
 .nox
 .vscode
 __pycache__
+requirements.txt
