@@ -167,6 +167,8 @@ class Odoo():
         self.stop_init = True
 
     def reset(self, ls):
+        self.thread_access_condition.release()
+        self.write_lock.release()
         with Odoo.instance.acquire_write(ls):
             Odoo.instance = None
 
