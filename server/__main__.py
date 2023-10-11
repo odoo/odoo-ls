@@ -45,7 +45,10 @@ def add_arguments(parser):
         "--log", type=str, default="pygls.log",
         help="Debug log file name"
     )
-    parser.add_argument("clean-odoo-lsp")
+    parser.add_argument(
+        "--id", type=str, default="clean-odoo-lsp",
+        help="Identifier to help find process"
+    )
 
 
 def main():
