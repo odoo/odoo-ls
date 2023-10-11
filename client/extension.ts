@@ -358,17 +358,33 @@ async function checkAddons(context: ExtensionContext, odooOutputChannel: OutputC
 
 async function checkOdooPath(context: ExtensionContext) {
     let currentConfig = getCurrentConfig(context)
-    let validatePath = workspace.getWorkspaceFolder(Uri.parse(currentConfig.odooPath))
-    if (!validatePath) {
-        const selection = await window.showWarningMessage(
-            `The Odoo configuration selected does not match the odoo path in the workspace. Would you like to change it?`,
-            "Update current configuration",
-            "Ignore"
-        );
-        switch (selection) {
-            case ("Update current configuration"):
-                ConfigurationWebView.render(context, currentConfig.id);
+    let odooFound = workspace.getWorkspaceFolder(Uri.parse(currentConfig.odooPath))
+    if (!odooFound) {
+        let invalidPath = false
+        for (const f of workspace.workspaceFolders) {
+            let odoo_path = undefined
+            if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath)) {
+                odoo_path = f.uri
+            }
+            else if (fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
+                odoo_path = Uri.joinPath(f.uri, 'odoo')
+            }
+            if (odoo_path && currentConfig && odoo_path.fsPath !== currentConfig.odooPath) {
+                invalidPath = true
                 break
+            }
+        }
+        if (invalidPath) {
+            const selection = await window.showWarningMessage(
+                `The Odoo configuration selected does not match the odoo path in the workspace. Would you like to change it?`,
+                "Update current configuration",
+                "Ignore"
+            );
+            switch (selection) {
+                case ("Update current configuration"):
+                    ConfigurationWebView.render(context, currentConfig.id);
+                    break
+            }
         }
     }
 }
@@ -408,8 +424,6 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
     }
 
     let pythonPath = getPythonPath(context);
-    checkOdooPath(context);
-    checkAddons(context, odooOutputChannel);
     odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     setStatusConfig(context, odooStatusBar);
     odooStatusBar.show();
@@ -533,6 +547,8 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
             try {
                 if (getCurrentConfig(context)) {
                     checkRestartPythonServer()
+                    checkOdooPath(context);
+                    checkAddons(context, odooOutputChannel);
                     if (checkPythonDependencies(pythonPath)) {
                         if (!client.isRunning()) {
                             client.start().then(() => {
@@ -636,7 +652,8 @@ export function activate(context: ExtensionContext): void {
         }
 
         // new ConfigurationsExplorer(context);
-
+        checkOdooPath(context);
+        checkAddons(context, odooOutputChannel);
         initializeSubscriptions(context, client, odooOutputChannel)
         // Initialize some settings on the extension's launch if they're missing from the state.
         setMissingStateVariables(context, odooOutputChannel);
