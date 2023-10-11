@@ -147,34 +147,19 @@ function setMissingStateVariables(context: ExtensionContext, outputChannel: Outp
     }
 }
 
-function isPythonModuleInstalled(pythonPath: string, moduleName: string): boolean {
-    try {
-        execSync(pythonPath + ' -c "import ' + moduleName + '"');
-        return true;
-    } catch (error) {
-        return false;
-    }
+function checkPythonVersion(pythonPath: string) {
+    const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
+    const pythonVersion = semver.parse(versionString)
+    if (semver.lt(pythonVersion, "3.8.0")) return false
+    return true
 }
 
-function checkPythonDependencies(pythonPath: string, notification: boolean = true) {
-    let missingDep: Array<string> = [];
-    if (!pythonPath) return false;
-
-    if (!isPythonModuleInstalled(pythonPath, 'pygls')) {
-        missingDep.push('pygls');
-    }
-    if (!isPythonModuleInstalled(pythonPath, 'parso')) {
-        missingDep.push('parso');
-    }
-
-    if (missingDep.length) {
-        if (notification)
-            window.showErrorMessage(`Odoo: Couldn't start the Language Server. Missing Python ${missingDep.length == 1 ? 'dependency': 'dependencies'}: ${missingDep.join(", ")}`);
-        return false
-    }
-    return true;
+function displayInvalidPythonError(context: ExtensionContext) {
+    const selection = window.showErrorMessage(
+        "Unable to start the Odoo Language Server. Python 3.8+ is required.",
+        "Dismiss"
+    );
 }
-
 
 function isExtensionUpdated(context: ExtensionContext) {
     const currentSemVer = semver.parse(context.extension.packageJSON.version);
@@ -444,7 +429,11 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", odooOutputChannel); }));
                 }
                 initializeSubscriptions(context, client, odooOutputChannel)
-                client.start();
+                if (checkPythonVersion(pythonPath)) {
+                    client.start();
+                } else {
+                    displayInvalidPythonError(context);
+                }
             }
         }
     }
@@ -655,13 +644,10 @@ export function activate(context: ExtensionContext): void {
     try {
         let pythonPath = getPythonPath(context);
         let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
+        const config = getCurrentConfig(context);
         deleteOldFiles(context, odooOutputChannel)
         odooOutputChannel.appendLine('[INFO] Starting the extension.');
-
-        if (getCurrentConfig(context)) {
-            client.start();
-        }
-
+        
         // new ConfigurationsExplorer(context);
         checkOdooPath(context);
         checkAddons(context, odooOutputChannel);
@@ -680,21 +666,22 @@ export function activate(context: ExtensionContext): void {
                 break;
         }
 
-        const config = getCurrentConfig(context);
-        if (config) {
-            odooStatusBar.text = `Odoo (${config["name"]})`;
-        }
-
         // Check if the extension was updated since the last time.
         if (isExtensionUpdated(context)) displayUpdatedNotification(context);
 
         // We update the last used version on every run.
         updateLastRecordedVersion(context);
 
-        if (getCurrentConfig(context)) {
-            client.sendNotification(
-                "Odoo/clientReady",
-            );
+        if (config) {
+            odooStatusBar.text = `Odoo (${config["name"]})`
+            if (checkPythonVersion(pythonPath)) {
+                client.start()
+                client.sendNotification(
+                    "Odoo/clientReady",
+                );
+            } else {
+                displayInvalidPythonError(context)
+            }
         }
     }
     catch (error) {
@@ -703,7 +690,7 @@ export function activate(context: ExtensionContext): void {
     }
 }
 
- function closeClient(client: LanguageClient) {
+function closeClient(client: LanguageClient) {
     if (client.diagnostics) client.diagnostics.clear();
     if (client.isRunning()) return client.stop().then(() => client.dispose())
     return client.dispose();

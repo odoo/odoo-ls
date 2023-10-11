@@ -11,7 +11,7 @@
             "outFiles": ["${workspaceRoot}/client/out/**/*.js"],
             "preLaunchTask": {
                 "type": "npm",
-                "script": "esbuild-base"
+                "script": "esbuild"
             },
             "env": {
                 "VSCODE_DEBUG_MODE": "true"

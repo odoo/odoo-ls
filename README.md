@@ -4,7 +4,7 @@
 
 ### Requirements
 
-- Python 3.7 or greater
+- Python 3.8 or greater
 - An active virtual environment (`python3 -m venv venv`)
 - nox (`pip install nox`)
 - node >= 14.19.0
