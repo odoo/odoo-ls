@@ -362,14 +362,8 @@ async function checkOdooPath(context: ExtensionContext) {
     if (!odooFound) {
         let invalidPath = false
         for (const f of workspace.workspaceFolders) {
-            let odoo_path = undefined
-            if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath)) {
-                odoo_path = f.uri
-            }
-            else if (fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
-                odoo_path = Uri.joinPath(f.uri, 'odoo')
-            }
-            if (odoo_path && currentConfig && odoo_path.fsPath !== currentConfig.odooPath) {
+            if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath) ||
+                fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
                 invalidPath = true
                 break
             }
