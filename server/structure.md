@@ -1,28 +1,30 @@
-# Odoo LSP, comment ça marche?
+# Odoo LSP, how does it work?
+
+You want to read the code of the Odoo language server? It is probably better to start here, as you'll have a small introduction of concepts and objectives of the project !
 
 ## A - Symbols
 
-Un symbole représente tout élément venant du code python: variable, fichier, fonctions, classes, etc...
-Un symbole peut donc être de plusieurs types:
-- NAMESPACE: un dossier
-- PACKAGE: un dossier contenant un fichier `__init__.py`
-- FILE: un fichier
-- COMPILED: une ressource compilée
-- CLASS: une classe
-- VARIABLE: une variable
-- FUNCTION: une fonction
-- PRIMITIVE: une évaluation d'un type primitif
+A symbol represents any element coming from the workspace: directory, file, but even variables, classes, functions, etc...
+So a Symbol can be of multiple types:
+- NAMESPACE: A directory
+- PACKAGE: A directory containing the file `__init__.py`
+- FILE: A file
+- COMPILED: A compiled resource
+- CLASS: A class
+- VARIABLE: A variable
+- FUNCTION: A function
+- PRIMITIVE: An evaluation of a primitive variable
 
-Les symboles entre eux forment un graphe, de la manière suivante:
-  - Un symbole a un et un seul parent.
-  - Un symbole a trois listes d'enfants:
-    - les `symbols`: la liste des sous-symboles exposés provenant d'un fichier python
-    - les `modulesSymbols`: la liste des sous-symbols provenant de la structure des fichiers sur le disque
-    - les `localSymbols`: les candidats à la liste 'symbols' qui se sont fait rejetés car écrasés par un autre du même nom, conservés pour une évaluation locale potentielle
+Together, symbols are creating a graph, like this:
+  - A symbol has one and only one parent.
+  - A symbol has three lists of children:
+    - `symbols`: list of all exposed subsymbols in a file that you will get if you import the file
+    - `modulesSymbols`: List of all subsymbols coming from the disk organization. Example: the content of a directory
+    - `localSymbols`: All candidates to the `symbols` list, but that were rejected because erased by another declaration of a symbol with the same name.
 
-Exemple:
+Example:
 
-Prenons la structure de fichier suivante:
+Let's take the following file structure:
 
 ```
 addons (dir)
@@ -31,13 +33,13 @@ addons (dir)
         | file.py (file)
 ```
 
-`__init__.py` contient
+`__init__.py` contains
 
 ```python
 from . import file
 ```
 
-et `file.py` contient
+et `file.py` contains
 
 ```python
 import os
@@ -53,7 +55,7 @@ class Test(models.Model):
         return None
 ```
 
-Nous obtiendrons les symboles suivants:
+We will get the following symbols:
 
 - `root`
   - type: ROOT
@@ -76,7 +78,6 @@ Nous obtiendrons les symboles suivants:
   - symbols: [`file (A)`]
   - moduleSymbols: `file (B)`
   - localSymbols: []
-`file (A)` et `file (B)`réfèrent à deux `file` différents:
 - `file (A)`
   - type: VARIABLE
   - path: path_to_project + `addons/module/__init__.py`
@@ -134,51 +135,54 @@ Nous obtiendrons les symboles suivants:
   - moduleSymbols: []
   - localSymbols: []
 
-### Référencement
+### Symbol id reference
 
-Un élément de l'arbre peut être identifié par une "clé" unique, représentant le chemin à suivre depuis l'élément root pour atteindre le symbole.
-Ce "chemin" est un tuple de deux listes.
-La première liste contient tous les éléments 'génériques', et la deuxième les éléments propres à un fichier.
-Exemple basé sur la structure utilisée précédement:
+A node of the graph (a symbol) can be identified by an unique "key", representing the path to follow from the root node to the symbol.
+This path is a tuple of two lists. The first one contains all 'generic' elements, and the second one all the elements linked to a specific file.
+
+Example based on the previously given structure:
 ```python
 (["addons", "module", "file"], ["Test", "func"])
 ```
-La particularité de cette double liste est quelle permet de résoudre une ambiguité dans l'arbre: les fichiers versus les variables.
-Dans un chemin avec une seule liste, le symbole 
+This path is expressed in two lists to resolve some ambiguïties: files versus variables
+
+In a path with only one list, the symbol
 ```python
 ["addons", "module", "file"]
 ```
-est ambigü. En effet, est-ce que `file` fait référence au fichier `file.py` ou à la variable `file` contenue dans `module`.
-La double liste permet de casser cette ambiguité:
+would be ambiguous. Indeed, is `"file"` referencing the file `file.py` or the variable `file` in `module/__init__.py`?
+
+The double list is breaking this ambiguity:
 ```python
 (["addons", "module", "file"], [])
 ```
-représente le fichier, tandis que 
+will represent the file, while
 ```python
 (["addons", "module"], ["file"])
 ```
-représente la variable.
-En effet, la première liste représente la structure sur le disque (`moduleSymbols`), et la seconde les éléments contenus dans un fichier (`symbols`), avec en fallback les symbols du disque (`moduleSymbols`).
-Toutefois, sans ambiguïté dans l'arbre, le chemin complet peut se mettre dans la première liste.
+will represent the variable.
+
+Effectively, the first list is representing the disk structure (`moduleSymbols`), and the second one any element in a file (`symbols`). If an element of the second list is not present in a file, it will however fallback on the disk structure (`moduleSymbols`).
 
 
 ## B - Evaluation
 
-Un symbole contient une Evaluation. Il s'agit de la valeur à laquelle le symbole est évalué, si c'est possible.
-Evidement, pas d'évaluation pour les FILE, NAMESPACE, PACKAGE.
-les FUNCTION ont une Evaluation de leur valeur retour.
+A symbol contains an Evaluation. If possible, it will contains the evaluated value of the symbol.
+Of course FILE, NAMESPACE, PACKAGE,... won't have any Evaluation.
+A FUNCTION will have an Evaluation for their return value.
+
 
 ## C - Memory management
 
-Python c'est bien. Mais la gestion de la mémoire peut vite devenir chaotique, et la structure du code (graphe et référence vers des symboles dans les evaluations et autres caches) rend l'update (suppression, invalidation) de mémoire très difficile. En particulier, la suppression d'un élément de l'arbre des symboles n'invalide pas toutes les références à cet élément dans tous les autres éléments du code (evaluation et caches). Pour palier à ça, il est possible soit:
-  - d'utiliser la notation (voir plus haut) permettant de retrouver un élément dans l'arbre et ne jamais le référencer directement (mais cela implique beaucoup de recherches dans l'arbre, et un stockage long de chaine de charactère représentant le chemin dans l'arbre)
-  - d'utiliser des pointeurs faibles. ([weakref](https://docs.python.org/3/library/weakref.html))
-  - d'utiliser des références à double sens: une référence peut être supprimée par l'objet qu'elle référence
+Python is good. But memory management can quickly become chaotic, and the structure of the code (graph and reference to symbols in evaluations and other caches) makes updating (deletion, invalidation) of memory very difficult. In particular, removing an element from the symbol tree does not invalidate all references to this element in all other elements of the code (evaluation and caches). To overcome this, it is possible either:
+   - to use the notation (see above) allowing you to find an element in the tree and never reference it directly (but this involves a lot of searches in the tree, and a long storage of character strings representing the path in the tree)
+   - to use weak pointers. ([weakref](https://docs.python.org/3/library/weakref.html))
+   - use two-way references: a reference can be deleted by the object it references
 
-La première solution a été rejetée par sa lourdeur à l'exécution et par la difficulté de debugging de l'application, aucune référence n'étant résolue lors d'un breakpoint
+The first solution was rejected by its cumbersome execution and by the difficulty of debugging the application, no reference being resolved during a breakpoint
 
-La deuxième solution, d'abord implémentée à titre d'essai a vite montré ses limites lors d'une utilisation régulière. En effet, un weakref ne devient invalide que lorsque le garbage collector a effectivement détruit un objet.
-Il est donc parfois possible de réssusciter un objet supprimé:
+The second solution, first implemented on a trial basis, quickly showed its limits during regular use. Indeed, a weakref only becomes invalid when the garbage collector has actually destroyed an object.
+It is therefore sometimes possible to resurrect a deleted object:
 ```python
 a = 5
 ref = weakref.ref(a)
@@ -186,100 +190,100 @@ del a
 old_a = ref() #if the garbage collector did not collect a already, old_a will be a strong ref to a
 ```
 
-La troisième solution a alors été choisie et implémentée dans le fichier references.py afin de remplacer weakref. Le principe est de proposer la même interface que weakref, mais de ne pas se baser sur le garbage collector. Lorsqu'un objet est supprimé, il appelle toutes les références qui le pointent et signale sa suppression immédiatement.
+The third solution was then chosen and implemented in the references.py file to replace weakref. The principle is to offer the same interface as weakref, but not to rely on the garbage collector. When an object is deleted, it calls all references pointing to it and reports its deletion immediately.
 
-Le code est donc organisé comme suit, et ce principe doit être une règle SAINTE pour tout développement dans le projet:
-Tous les symboles ne sont référencés de manière forte qu'*UNE SEULE FOIS*, par leur symbole parent. TOUTE AUTRE référence à un symbole depuis un autre endroit du code, ou meme entre symbole doit se faire via des references faibles (RegisteredRef).
-Ainsi la suppression d'un symbole est immédiate et effective.
+The code is therefore organized as follows, and this principle must be a HOLY rule for all development in the project:
+All symbols are strongly referenced *ONLY* by their parent symbol. ANY OTHER reference to a symbol from another place in the code, or even between symbols must be done via weak references (RegisteredRef).
+Thus the deletion of a symbol is immediate and effective.
 
-### Accès asynchrone
+### Asynchronous access
 
-Ceci amène tout doucement à un autre problème: lorsque du code prend une référence sur un weakref et donc un symbole, le nombre de référence passe à 2 (ou plus), et la suppression d'un symbole n'est plus immédiate.
-Plus généralement, on aimerait assurer une consistance des données à travers plusieurs threads.
-Ceci est effectué par 3 méthodes:
-`Odoo.acquire_write()`, `Odoo.acquire_read()` et `Odoo.upgrade_to_write()`
+This slowly leads to another problem: when code takes a reference to a weakref and therefore a symbol, the reference number increases to 2 (or more), and the deletion of a symbol is no longer immediate.
+More generally, we would like to ensure data consistency across several threads.
+This is done by 3 methods:
+`Odoo.acquire_write()`, `Odoo.acquire_read()` and `Odoo.upgrade_to_write()`
 
-Avant tout accès aux données du LSP, il convient de demander l'accès correspondant au besoin, et de s'y tenir. Si un accès en lecture a besoin d'être élevé en accès en écriture, `Odoo.upgrade_to_write()` peut être utilisé. Il est garanti que seul un accès en écriture peut avoir lieu simulatément, mais il peut y avoir autant de lecteur qu'on veut. Aucun accès en écriture et lecture ne peut être simultané.
-Demander un accès en écriture revient à rendre le plugin monothread pour la durée du lock.
+Before any access to LSP data, you should request access corresponding to the need, and stick to it. If a read access needs to be elevated to a write access, `Odoo.upgrade_to_write()` can be used. It is guaranteed that only one write access can take place simultaneously, but there can be as many readers as you want. No write and read access can be simultaneous.
+Requesting write access will make the plugin single-threaded for the duration of the lock.
 
 ## D - Construction de la base de données
 
-L'arbre de symbol doit bien entendu être construit et maintenu à jour. Ce processus est fait de la manière suivante:
+The symbol tree must of course be well constructed and maintained during the utilization of the extension.
 
-- A) construire l'architecture 
-- B) Evaluation de l'architecture
-- C) Initialiser les objets Odoo
-- D) répéter A et B pour base, puis les modules
-- E) Valider le code
+- A) Build the architecture
+- B) Evaluate the architecture
+- C) Initialize Odoo stuff (models, etc...)
+  - repeat A and B for base, then for modules
+- D) Valider le code
 
-### Construire l'architecture
+### Build the architecture
 
-Cette étape prépare l'arbre de base en construisant tous les symboles détectés dans les fichiers. Cette partie charge tous les fichiers python en suivant les différents imports (+ les dossiers `tests` dans les modules) et construit l'arbre correspondant.
+This step prepares the basic tree by constructing all the symbols detected in the files. This part loads all the python files following the different imports (+ the `tests` folders in the modules) and builds the corresponding tree.
 
-*Note: Les librairies externes sont aussi parsées si trouvées. Si pas, le code cherche un stubs existant dans le repo `typeshed` embarqué. Toutefois, afin de réduire la mémoire utilisée, l'arbre est figé une fois parsé, aucun changement ne peut y être apporté par la suite et les caches sont figés. (TODO: généraliser à tout dossier hors workspace)*
+*Note: External libraries are also parsed if found. however, the code looks first for an existing stubs in the embedded `typeshed` repo. In order to reduce the memory used, the tree of external elements is frozen once parsed, no changes can be made to it subsequently and the caches are frozen. (TODO: generalize to any folder outside of workspace)*
 
-### Evaluation de l'architecture
+### Architecture Evaluation
 
-Cette partie contient l'évaluation des symboles. Si possible, le code va essayer d'évaluer et associer la valeur trouvée au symbole.
-Cette évaluation concerne toutes les variables à la racine d'un fichier ou d'une classe uniquement. Les symboles sous une fonction ne sont pas évalués à cette étape, car ils ont souvent besoin d'avoir la structure Odoo de construite. Néanmoins, si une doc existe pour la fonction, la valeur de retour peut déjà être évaluée (TODO ?)
+This part contains the evaluation of symbols. If possible, the code will try to evaluate and associate the value found with the symbol.
+This evaluation concerns all variables at the root of a file or class only. Symbols under a function are not evaluated at this step, as they often need to have the Odoo structure constructed. However, if a doc exists for the function, the return value can already be evaluated (TODO?)
 
-### Initialiser les objets Odoo
+### Odoo object initialization
 
-Cette étape repasse sur les symboles précédement créés pour reconstruire la structure d'Odoo: models, modules, etc... sont regroupés et cachés pour un accès plus rapide par la suite.
-Le stockage des données de référence RESTE l'arbre de symboles.
-Toutefois, la classe Odoo contient des objets avec des références vers cet arbre:
-- `models`: dictionnaire, qui pour chaque nom de modèle (ex: `"mail.thread"`), associe un objet Model. Cet objet recueille l'ensemble des symboles représentant un modèle, et permet de répondre à des requêtes sur un modèle auxquelles il va répondre en utilisant ces symboles.
-- `modules`: regroupe l'ensemble des symboles représentant un module Odoo, ainsi que les informations du manifest qui y est lié.
+This step goes over the symbols previously created to reconstruct the structure of Odoo: models, modules, etc... are grouped and hidden for faster access later.
+The storage of original data REMAINS the symbol tree.
+However, the Odoo class contains objects with references to this tree:
+- `models`: dictionary, which for each model name (ex: `"mail.thread"`), associates a Model object. This object collects all the symbols representing a model, and makes it possible to respond to queries on a model to which it will respond using these symbols.
+- `modules`: brings together all the symbols representing an Odoo module, as well as the information from the manifest linked to it.
 
-Cette étape permet aussi de créer les symboles qui échappent à la première étape de par leur nature dynamique: `self.env`, `env.cr`, etc...
+This step also allows too the creation of symbols that escape the first step due to their dynamic nature: `self.env`, `env.cr`, etc...
 
 ### Validation
 
-Cette dernière étape ne construit pas la base de données, mais fait un dernier passage dessus afin de pouvoir en générer des diagnostiques maintenant que la base de données est complète.
-C'est l'étape qui rajoute tous les infos/warnings/erreurs dans le projet.
+This last step does not build the database, but makes a final pass over it in order to be able to generate diagnostics now that the database is complete.
+This is the step that adds all the information/warnings/errors to the project.
 
-## E - Mise à jour et dépendences
+## E - Updates and dependencies
 
-~~La drogue c'est mal.~~ Une fois la base de données construite, il s'agit évidement de la garder à jour.
-Pour chaque mise à jour du code, il convient donc de refléter les changements dans les structures de symboles.
+Once the database is built, it is obviously a matter of keeping it up to date.
+For each code update, it is therefore necessary to reflect the changes in the symbol structures.
 
-Un première possibilité serait d'analyser le changement effectué et de changer localement les symboles concernés. Toutefois cette solution implique énormément de code et de complexité pour réussir à isoler ces changements et garder une consistance dans l'arbre final.
+A first possibility would be to analyze the change made and to locally change the symbols concerned. However, this solution involves a lot of code and complexity to successfully isolate these changes and maintain consistency in the final tree.
 
-L'autre solution est de reconstruire l'entiereté d'un fichier lors d'une modification, quelle qu'elle soit. En réalité, lorsqu'un fichier est chargé en mémoire, l'analyser est très rapide, et le cout de reconstruire l'entiereté du fichier au lieu du symbole concerné est beaucoup trop faible pour justifier un code beaucoup plus lourd.
+The other solution is to rebuild the entire file during any modification. In reality, when a file is loaded into memory, analyzing it is very fast, and the cost of reconstructing the entire file instead of the symbol concerned is far too low to justify much heavier code.
 
-Une fois le fichier reconstruit, il convient de s'assurer que tous les éléments autres que ces symboles soient aussi mis à jour. Que ce soit les Evaluations pointant vers ces symboles ou d'autres parties de l'arbre dont la construction en dépendait.
-Pour cela, lors de la construction/evaluation/validation d'un symbole, si un autre entre dans le processus, le premier symbole est noté comme "dépendant de" sur le second symbole.
-Lors de la reconstruction d'un fichier, tous les symbols supprimés marques ajoutent leurs dépendences (inversées) dans une liste de symboles à reconstruire/évaluer/valider. Ceux-ci feront potentiellement de même avec leurs dépendences. 
+Once the file is rebuilt, it is necessary to ensure that all elements other than these symbols are also updated. Whether it was the Evaluations pointing to these symbols or other parts of the tree whose construction depended on them.
+For this, during the construction/evaluation/validation of a symbol, if another enters the process, the first symbol is noted as "dependent on" on the second symbol.
+When rebuilding a file, all deleted symbols add their (inverted) dependencies into a list of symbols to rebuild/evaluate/validate. These will potentially do the same with their dependencies.
 
-Note: Dans le cas d'un code erroné, il peut arriver qu'une évaluation échoue car le symbole qui est censé être pointé n'existe pas. Dans ce cas la dépendence ne peut être créé et aucune résolution d'erreur ne peut se faire si le symbole venait à apparaitre. Dès lors, tous les symboles manquants sont enregistrés dans la classe Odoo, et tout nouveau symbole vérifie dans cette liste s'il ne résout pas une erreur existante.
+Note: In the case of an incorrect code, it may happen that an evaluation fails because the symbol which is supposed to be pointed to does not exist. In this case the dependency cannot be created and no error resolution can be done if the symbol were to appear. From then on, all missing symbols are saved in the Odoo class, and any new symbol checks this list if it does not resolve an existing error.
 
-### types de dépendences
+### Dependency types
 
-Lorsqu'un symbole enregistre sa dépendence auprès d'un autre symbole, il indique le type de dépendence:
-- __ARCH__: la construction du symbole dépend du second symbole. Un exemple typique serait `import *`. cette instruction va créer toute une série de symboles qui dépendent du fichier importé. Si le fichier importé est modifié, alors les symboles ajouté par `import *` doivent être relistés
-- __ARCH_EVAL__: L'architecture des symboles ne dépend pas du second symbole, mais son évaluation bien. Cette dépendence est différente de la première, car la liste de symbole n'est pas modifiée. Elle permet de ne pas propager une modification architecturalle trop loin.
-- __ODOO__: les éléments propres à Odoo ont été modifiés (_inherit, _name, base class, etc...)
-- __VALIDATION__: La validation indique qu'une erreur pourrait survenir si le second symbole est modifié.
+When a symbol registers its dependency on another symbol, it indicates the type of dependency:
+- __ARCH__: the construction of the symbol depends on the second symbol. A typical example would be `import *`. this instruction will create a whole series of symbols which depend on the imported file. If the imported file is modified, then the symbols added by `import *` must be relisted
+- __ARCH_EVAL__: The architecture of the symbols does not depend on the second symbol, but its evaluation does. This dependency is different from the first, because the symbol list is not modified. It makes it possible to not propagate an architectural modification too far.
+- __ODOO__: elements specific to Odoo have been modified (_inherit, _name, base class, etc...)
+- __VALIDATION__: Validation indicates that an error could occur if the second symbol is modified.
 
-## F - comme Features
+## F - as Features
 
-Le language serveur, avec sa base de données et ses notifications, peut fournir les fonctionnalités suivantes:
+The language server, with its database and notifications, can provide the following functionalities:
 
-- __Diagnostique__: Donne une liste d'indication sur le code analysé. Ces diagnostiques peuvent être trouvés dans l'onglet "problèmes" sur vscode, et visibles généralement dans le code via un soulignement bleu/jaune/rouge.
-- __Hover__: Donne une bulle d'information a afficher concernant l'élément se trouvant actuellement sous le curseur de la souris
-- __Go To Definition__: Permet de se rendre directement à l'emplacement de la déclaration du symbole sous le curseur.
-- __Autocomplétion__: fournit une liste de candidats pour compléter le code sous le curseur
-- __Refactoring (A venir)__: Aide au refactoring avec "replace all". 
+- __Diagnostics__: Gives a list of indications on the analyzed code. These diagnostics can be found in the "problems" tab on vscode, and usually visible in the code via a blue/yellow/red underline.
+- __Hover__: Gives an information bubble to display concerning the element currently under the mouse cursor
+- __Go To Definition__: Allows you to go directly to the location of the symbol declaration under the cursor.
+- __Autocompletion__: provides a list of candidates to complete the code under the cursor
+- __Refactoring (Coming soon)__: Help with refactoring with "replace all".
 
-## G - Requêtes d'évaluation
+## G - Evaluation requests
 
-Afin de pouvoir répondre aux requêtes d'autocomplétion, aux Hover et aux goto definition, parsoUtils.evaluateType est une fonction capable d'évaluer le type d'un morceau de code donné en paramètre.
-C'est l'interface principale pour interagir avec la base de connaissance.
+In order to respond to autocompletion queries, hovers and goto definitions, parsoUtils.evaluateType is a function capable of evaluating the type of a piece of code given as a parameter.
+This is the main interface for interacting with the knowledge base.
 
-Cette fonction utilise un context pour transférer les informations importantes d'étape en étape. Ce contexte contient trois clés: args, parent et module.
+This function uses a context to transfer important information from step to step. This context contains three keys: args, parent and module.
 
-Dans le cas de `self.env["test"].func(a)`
-- le context lors de l'évaluation de self sera `{module: currentModule}`
-- le context lors de l'évaluation de env sera `{args: None, parent: self, module: currentModule}`
-- le context lors de l'évaluation de env.__getitem__ sera `{args: "test", parent: env, module: currentModule}`
-- le context lors de l'évaluation de func() sera `{args: {a}, parent: TestModel, module: currentModule}`
+In the case of `self.env["test"].func(a)`
+- context when evaluating self will be `{module: currentModule}`
+- context when evaluating env will be `{args: None, parent: self, module: currentModule}`
+- context when evaluating env.__getitem__ will be `{args: "test", parent: env, module: currentModule}`
+- the context when evaluating func() will be `{args: {a}, parent: TestModel, module: currentModule}`
