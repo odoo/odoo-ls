@@ -8,9 +8,9 @@ env
 *.pyc
 *.log
 *.vsix
-package-lock.json
+vscode/package-lock.json
 venv
-.nox
-.vscode
-__pycache__
-requirements.txt
+vscode/.nox
+vscode/__pycache__
+vscode/requirements.txt
+vscode/server

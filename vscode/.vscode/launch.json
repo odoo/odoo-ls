@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "configurations": [
         {
-            "name": "Launch Client",
+            "name": "Launch VsCode Client",
             "type": "extensionHost",
             "request": "launch",
             "runtimeExecutable": "${execPath}",
@@ -25,7 +25,7 @@
             "args": ["--tcp"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/..",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
@@ -38,7 +38,7 @@
             "args": ["--ws"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/..",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
@@ -51,7 +51,7 @@
             "args": ["test_setup.py", "-s"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}/server/tests/unit",
+            "cwd": "${workspaceFolder}/../server/tests/unit",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
@@ -99,7 +99,7 @@
     "compounds": [
         {
             "name": "Server + Client",
-            "configurations": ["Launch Server", "Launch Client"]
+            "configurations": ["Launch Server", "Launch VsCode Client"]
         }
     ]
 }

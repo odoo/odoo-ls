@@ -143,8 +143,9 @@ def build_package(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
+    session.run("python3", "-c", '"from dirsync import sync; sync(\'../server\', \'server\', \'sync\', purge=True, create=True)"')
     session.run("vsce", "package", external=True)
-
+    session.run("rm", "-r", "server", external=True)
 
 @nox.session()
 def update_packages(session: nox.Session) -> None:
