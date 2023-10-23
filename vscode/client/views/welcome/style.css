@@ -1,0 +1,43 @@
+#welcome-container {
+  max-width: 75%;
+  font-size: 1rem;
+  margin-left:auto;
+  margin-right:auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.welcome-header {
+  margin-left:auto;
+  margin-right:auto;
+}
+
+.img-margins {
+  margin: 1em;
+  border: solid black;
+}
+
+#welcome-title {
+  font-size: 1.3rem;
+  text-align:center;
+}
+
+li{
+  margin: 15px 0;
+}
+
+.alert {
+  padding: 20px;
+  font-size: 1.3em;
+  background-color: #d88629; /* Red */
+  color: white;
+  margin-bottom: 15px;
+  margin-top: 15px;
+}
+
+#welcome-logo {
+  width: 200px;
+  margin-top: 2em
+}

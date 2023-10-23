@@ -1,0 +1,17 @@
+out
+node_modules
+client/server
+.vscode-test
+.vscode/settings.json
+server/libs/
+env
+*.pyc
+*.log
+*.vsix
+vscode/package-lock.json
+venv
+vscode/.nox
+vscode/__pycache__
+vscode/requirements.txt
+vscode/server
+vscode/CHANGELOG.md

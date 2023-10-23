@@ -1,0 +1,105 @@
+// A launch configuration that compiles the extension and then opens it inside a new window
+{
+    "version": "1.0.0",
+    "configurations": [
+        {
+            "name": "Launch VsCode Client",
+            "type": "extensionHost",
+            "request": "launch",
+            "runtimeExecutable": "${execPath}",
+            "args": ["--extensionDevelopmentPath=${workspaceRoot}"],
+            "outFiles": ["${workspaceRoot}/client/out/**/*.js"],
+            "preLaunchTask": {
+                "type": "npm",
+                "script": "esbuild"
+            },
+            "env": {
+                "VSCODE_DEBUG_MODE": "true"
+            }
+        },
+        {
+            "name": "Launch Server",
+            "type": "python",
+            "request": "launch",
+            "module": "server",
+            "args": ["--tcp"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/..",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Server [WebSockets]",
+            "type": "python",
+            "request": "launch",
+            "module": "server",
+            "args": ["--ws"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/..",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Test Setup",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_setup.py", "-s"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/../server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Test OdooLS",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_odoo_ls.py", "-s", "--disable-warnings"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Test OdooLS requests",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_odoo_requests.py", "-s", "--disable-warnings"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Launch Test References",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_references.py", "-s", "--disable-warnings"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+    ],
+    "compounds": [
+        {
+            "name": "Server + Client",
+            "configurations": ["Launch Server", "Launch VsCode Client"]
+        }
+    ]
+}
