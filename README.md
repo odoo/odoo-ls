@@ -26,6 +26,13 @@ An extension that will bundle the Odoo Language Server and give needed settings 
 
 All modules in this repository are actually in development and not released in a stable and valid version. You can face crashs or inconsistent results by using it. Please consult each directory to get a better idea of the state of each project.
 
+## Branches description
+
+`master` contains all new merged content
+`alpha` contains all features that are freezed for the next beta version and tested internally
+`beta` contains the latest pre-released public version (downloadable packages, available on marketplace that supports pre-release tags)
+`release` contains the latest released public version (downloadable packages, available on marketplace)
+
 ## Contributing
 
 Do not hesitate to create [issues](https://github.com/odoo/odoo-ls/issues) or to open a [discussion](https://github.com/odoo/odoo-ls/discussions) would you have any problem or remark about the projects. Do not hesitate to browse the [wiki](https://github.com/odoo/odoo-ls/wiki) too.
