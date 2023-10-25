@@ -54,7 +54,8 @@
       {
         "command": "odoo.testCrashMessage",
         "title": "Open the crash notification",
-        "category": "Odoo"
+        "category": "Odoo",
+        "when": "inDebugMode"
       },
       {
         "command": "odoo.clearState",

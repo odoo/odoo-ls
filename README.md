@@ -1,6 +1,7 @@
 # Odoo Development Tools
 
-This repository contains various tools and extensions you can install in your favorite IDE to help writing nice code with the Odoo Frameworks. The main tool is actually the early version of a language server that will provide you autocompletion, file validation, hover requests, go to definition, and more.
+This repository contains a language server for the Odoo framework that will provide autocompletion, file validation, hover requests, go to definition, and more. This language server is made available for your favorite IDE with the different extensions of this repository.
+Actually only vscode is available, but others will come later.
 Please consult the readme of each directory to learn more about each project.
 
 ## Table of Contents
