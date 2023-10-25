@@ -42,7 +42,7 @@ class PythonArchBuilder(ast.NodeVisitor):
     def load_arch(self, require_module=False):
         """load all symbols at self.path. All dependencies (odoo modules) must have been loaded first.
         if require_module, a manifest is needed to load the arch
-        Excpected behaviour:
+        Expected behaviour:
         On new element, not present in tree: load symbol and subsequent symbols.
         The code will follow all found import statement and try to import symbols from them too.
         On an existing symbol, the symbol will be simply returned
@@ -61,8 +61,11 @@ class PythonArchBuilder(ast.NodeVisitor):
                     os.path.exists(os.path.join(self.filePath, "__manifest__.py")):
                     symbol = ModuleSymbol(self.ls, self.filePath)
                     symbol.load_module_info(self.ls)
-                else:
+                elif(not require_module):
                     symbol = PackageSymbol(self.filePath.split(os.sep)[-1], self.filePath)
+                else:
+                    return None
+                
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 if os.path.exists(os.path.join(self.filePath, "__init__.py")):

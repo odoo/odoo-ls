@@ -4,8 +4,9 @@ from concurrent.futures import Future
 from mock import Mock
 from pygls.workspace import Document, Workspace
 from lsprotocol.types import WorkspaceFolder
+from contextlib import contextmanager
 
-
+from ...core.odoo import Odoo
 from ...odoo_language_server import (
     OdooLanguageServer
 )
@@ -35,6 +36,7 @@ test_addons_path = pathlib.Path(__file__).parent.parent.resolve()
 test_addons_path = os.path.join(test_addons_path, 'data', 'addons')
 
 server = OdooLanguageServer()
+server.file_change_event_queue.set_delay(1)
 server.publish_diagnostics = Mock()
 server.show_message = Mock()
 server.show_message_log = Mock()
@@ -77,3 +79,18 @@ def get_uri(path):
 #setup thread content
 OdooLanguageServer.instance.set(server)
 OdooLanguageServer.access_mode.set("none")
+
+#helper functions
+@contextmanager
+def safe_acquire_read(timeout=-1):
+    with Odoo.get().acquire_read(timeout=timeout) as acquired:
+        try:
+            yield acquired
+        except AssertionError as e:
+            Odoo.get().thread_access_condition.release()
+            raise(e)
+
+def execute_event(event):
+    event.process()
+    with Odoo.get().acquire_write(server):
+        Odoo.get().process_rebuilds(server)
