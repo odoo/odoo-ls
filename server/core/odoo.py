@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import parso
 import pathlib
@@ -90,6 +92,7 @@ class Odoo():
             return
         OdooLanguageServer.access_mode.set("read")
         yield Odoo.get() == self # to be sure Odoo.instance is still bound to the same instance
+        
         self.thread_access_condition.release()
         OdooLanguageServer.access_mode.set("none")
 
@@ -108,7 +111,7 @@ class Odoo():
             OdooLanguageServer.access_mode.set("read")
 
     @staticmethod
-    def get():
+    def get() -> Odoo:
         return Odoo.instance
 
     @staticmethod
