@@ -1,16 +1,22 @@
+import asyncio
+import io
+import json
+import threading
 import time
 
 import pytest
 from unittest.mock import patch, mock_open
 from lsprotocol.types import (DidChangeTextDocumentParams, VersionedTextDocumentIdentifier, RenameFilesParams, FileRename)
+from pygls.server import StdOutTransportAdapter
+from pygls.workspace import Document, Workspace
 
-from ...server import (
-    _did_change_after_delay,
+from ...controller import (
     did_rename_files
 )
+from ...update_event_queue import EditEvent
 from .setup import *
 from ...core.odoo import Odoo
-from ...core.symbol import ClassSymbol
+from ...core.symbol import Symbol, ClassSymbol
 from ...constants import *
 from ...references import RegisteredRef
 from ...python_utils import PythonUtils
@@ -259,7 +265,13 @@ CONSTANT_3 = 3"""
         ),
         content_changes = []
     )
-    _did_change_after_delay(server, params, 0) #call deferred func
+
+    text_doc = server.workspace.get_document(params.text_document.uri)
+    source = text_doc.source
+    path = FileMgr.uri2pathname(params.text_document.uri)
+    event = EditEvent(server, path, source, params.text_document.version)
+    server.file_change_event_queue.push(event)    
+    
     time.sleep(2) #TODO find a better than using time.sleep to wait for job to start
     with Odoo.get().acquire_read(): # wait for job to finish
         base_test_models = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "base_test_models"])

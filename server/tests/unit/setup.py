@@ -2,17 +2,18 @@ import os
 import pathlib
 from concurrent.futures import Future
 from mock import Mock
-from pygls.workspace import Workspace
+from pygls.workspace import Document, Workspace
 from lsprotocol.types import WorkspaceFolder
 
-from ...server import (
+
+from ...odoo_language_server import (
     OdooLanguageServer
 )
 from ...core.file_mgr import FileMgr
 """
 To run tests:
 
-pip install pytest, mock, pytest-asyncio, pytest-dependency
+pip install pytest mock pytest-asyncio pytest-dependency pygls parso
 cd server/tests/unit
 set up the next constants to match your local configuration, then
 pytest test_setup.py -- test that your setup is correct and that OdooLS is starting correctly
@@ -24,9 +25,9 @@ add -s if you want to see the logs from OdooLS
 
 # SETUP CONSTANTS
 
-ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-servers/test_odoo/odoo'
+ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-projects/community-VS/odoo'
 if os.name == "nt":
-    ODOO_COMMUNITY_PATH = 'E:\Mes Documents\odoo\community'
+    ODOO_COMMUNITY_PATH = r'E:\Mes Documents\odoo\community'
 
 # Prepare DATA
 
@@ -37,7 +38,7 @@ server = OdooLanguageServer()
 server.publish_diagnostics = Mock()
 server.show_message = Mock()
 server.show_message_log = Mock()
-server.lsp.workspace = Workspace('', None,
+server.lsp._workspace = Workspace('', None,
                                 workspace_folders=[WorkspaceFolder(test_addons_path, "addons"), WorkspaceFolder(ODOO_COMMUNITY_PATH, "odoo")])
 server.lsp._send_only_body = True
 
@@ -53,9 +54,15 @@ config.addons = [test_addons_path]
 config_result = Future()
 config_result.set_result(config)
 
+config_workspace = [{'autoRefresh': 'afterDelay', 'autoRefreshDelay': 1000}]
+config_workspace_result = Future()
+config_workspace_result.set_result(config_workspace)
+
 def  request_side_effect(*args, **kwargs):
     if args[0] == 'Odoo/getConfiguration':
         return config_result
+    elif args[0] == 'workspace/configuration':
+        return config_workspace_result
 
 # There is a possibility this might mess with other send_request calls
 # Consider this a temporary fix - sode
