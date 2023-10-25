@@ -41,7 +41,7 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(format=FORMAT, filename=args.log, level=logging.WARNING, filemode="w")
 
-    if "alpha" in EXTENSION_VERSION or "beta" in EXTENSION_VERSION:
+    if "alpha" in EXTENSION_VERSION:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if args.tcp:
