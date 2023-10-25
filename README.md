@@ -1,7 +1,8 @@
-# Odoo Development Tools
+# Odoo Language Server
 
 This repository contains a language server for the Odoo framework that will provide autocompletion, file validation, hover requests, go to definition, and more. This language server is made available for your favorite IDE with the different extensions of this repository.
 Actually only vscode is available, but others will come later.
+To learn more about language servers, read https://microsoft.github.io/language-server-protocol/
 Please consult the readme of each directory to learn more about each project.
 
 ## Table of Contents
