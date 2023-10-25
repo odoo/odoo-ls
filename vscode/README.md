@@ -3,7 +3,7 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=Odoo.odoo">
   <img src="https://github.com/odoo/odoo-ls/blob/master/vscode/images/odoo_logo.png?raw=true"></a>
   <br>
-  Odoo
+  Visual Studio Extension
   <br>
 </h1>
 
