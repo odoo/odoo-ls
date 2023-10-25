@@ -115,11 +115,11 @@ class Symbol(RegisterableObject):
         self.doc = None
 
     def __str__(self):
-        return "(" + self.name + " - " + str(self.type) + " - " + str(self.paths) + ")"
+        return "(" + self.name + " - " + str(self.type) + " - " + str(self.get_paths()) + ")"
 
     def __del__(self):
         if DEBUG_MEMORY:
-            print("symbol deleted " + self.name + " at " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+            print("symbol deleted " + self.name + " at " + os.sep.join(self.get_paths()))
 
     def all_symbols(self, line=-1, include_inherits=False):
         if line != -1:
@@ -198,7 +198,7 @@ class Symbol(RegisterableObject):
                 to_unload.remove(sym)
 
             if DEBUG_MEMORY:
-                print("unloading " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
+                print("unloading " + sym.name + " at " + os.sep.join(sym.get_paths()))
             #no more children at this point, start unloading the symbol
             sym.parent.remove_symbol(sym)
             #add other symbols related to same ast node (for "import *" nodes)
@@ -213,7 +213,7 @@ class Symbol(RegisterableObject):
             if sym.type in [SymType.FILE, SymType.PACKAGE]:
                 sym.invalidate(BuildSteps.ARCH)
             #if DEBUG_MEMORY:
-            #    print("is now dirty : " + sym.name + " at " + os.sep.join(sym.paths[0].split(os.sep)[-3:]))
+            #    print("is now dirty : " + sym.name + " at " + os.sep.join(sym.get_paths()))
             sym.localSymbols.clear()
             sym.moduleSymbols.clear()
             sym.symbols.clear()
@@ -269,7 +269,7 @@ class Symbol(RegisterableObject):
             if in_symbols:
                 if symbol == in_symbols:
                     #if DEBUG_MEMORY:
-                    #    print("symbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                    #    print("symbols - remove " + symbol.name + " from " + os.sep.join(self.get_paths()))
                     del self.symbols[symbol.name]
                     if symbol.parent and self.parent == self:
                         symbol.parent = None
@@ -280,7 +280,7 @@ class Symbol(RegisterableObject):
                                 last = localSym
                     if last:
                         #if DEBUG_MEMORY:
-                        #    print("move sym - " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                        #    print("move sym - " + symbol.name + " from " + os.sep.join(self.get_paths()))
                         self.symbols[symbol.name] = last
                         self.localSymbols.remove(last)
                 else:
@@ -290,14 +290,14 @@ class Symbol(RegisterableObject):
                         if symbol.parent and self.parent == self:
                             symbol.parent = None
                         #if DEBUG_MEMORY:
-                        #    print("localSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                        #    print("localSymbols - remove " + symbol.name + " from " + os.sep.join(self.get_paths()))
                     except ValueError:
                         if DEBUG_MEMORY:
                             print("Symbol to delete not found")
         else:
             if symbol.name in self.moduleSymbols:
                 #if DEBUG_MEMORY:
-                #    print("moduleSymbols - remove " + symbol.name + " from " + os.sep.join(self.paths[0].split(os.sep)[-3:]))
+                #    print("moduleSymbols - remove " + symbol.name + " from " + os.sep.join(self.get_paths()))
                 if symbol.parent and self.parent == self:
                     symbol.parent = None
                 del self.moduleSymbols[symbol.name]
