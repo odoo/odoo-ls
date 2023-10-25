@@ -28,7 +28,7 @@ All modules in this repository are actually in development and not released in a
 
 ## Contributing
 
-Do not hesitate to create issues or to open a discussion would you have any problem or remark about the projects
+Do not hesitate to create [issues](https://github.com/odoo/odoo-ls/issues) or to open a [discussion](https://github.com/odoo/odoo-ls/discussions) would you have any problem or remark about the projects. Do not hesitate to browse the [wiki](https://github.com/odoo/odoo-ls/wiki) too.
 
 ## License
 
