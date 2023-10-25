@@ -61,10 +61,10 @@
             "type": "python",
             "request": "launch",
             "module": "pytest",
-            "args": ["test_odoo_ls.py", "-s", "--disable-warnings"],
+            "args": ["test_odoo_ls.py", "-s", "-rs", "--disable-warnings"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}/server/tests/unit",
+            "cwd": "${workspaceFolder}/../server/tests/unit",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
@@ -77,7 +77,7 @@
             "args": ["test_odoo_requests.py", "-s", "--disable-warnings"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}/server/tests/unit",
+            "cwd": "${workspaceFolder}/../server/tests/unit",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
@@ -90,7 +90,7 @@
             "args": ["test_references.py", "-s", "--disable-warnings"],
             "justMyCode": false,
             "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}/server/tests/unit",
+            "cwd": "${workspaceFolder}/../server/tests/unit",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
