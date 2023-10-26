@@ -26,7 +26,7 @@ add -s if you want to see the logs from OdooLS
 
 # SETUP CONSTANTS
 
-ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-projects/community-VS/odoo'
+ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-servers/server_c/odoo'
 if os.name == "nt":
     ODOO_COMMUNITY_PATH = r'E:\Mes Documents\odoo\community'
 
