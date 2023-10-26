@@ -38,7 +38,7 @@ class FileInfo:
                 range = Range(
                     start=Position(line=e.lineno-1, character=e.offset-1),
                     end=Position(line=e.lineno-1, character=e.offset-1) if sys.version_info < (3, 10) else \
-                        Position(line=e.end_lineno-1, character=e.end_offset-1)
+                        Position(line=e.end_lineno-1, character=e.end_offset-1 if e.end_offset > 0 else 0)
                 ),
                 message = type(e).__name__ + ": " + e.msg,
                 source = EXTENSION_NAME
