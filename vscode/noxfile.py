@@ -13,7 +13,7 @@ import nox  # pylint: disable=import-error
 def _install_bundle(session: nox.Session) -> None:
     session.install(
         "-t",
-        "./server/libs",
+        "../server/libs",
         "--no-cache-dir",
         "--implementation",
         "py",
