@@ -65,7 +65,6 @@ class PythonArchBuilder(ast.NodeVisitor):
                     symbol = PackageSymbol(self.filePath.split(os.sep)[-1], self.filePath)
                 else:
                     return None
-                
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 if os.path.exists(os.path.join(self.filePath, "__init__.py")):
@@ -133,8 +132,10 @@ class PythonArchBuilder(ast.NodeVisitor):
                 if len(self.symStack) != 2: # only at top level. we can't follow the import at arch level
                     continue
                 symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
-                _, symbol, _ = symbols[0] #unpack
+                _, symbol, tree = symbols[0] #unpack
                 if not symbol:
+                    Odoo.get().not_found_symbols.add(self.symStack[1])
+                    self.symStack[1].not_found_paths.append((BuildSteps.ARCH, tree))
                     continue
                 allowed_names = True
                 #in case of *, the symbol is the parent_symbol from which we will import all symbols
