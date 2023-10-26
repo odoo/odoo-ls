@@ -457,7 +457,6 @@ class Odoo():
     def file_create(self, ls, path):
         with Odoo.get().acquire_write(ls):
             new_parent = self.get_file_symbol(os.sep.join(path.split(os.sep)[:-1]))
-            self._build_new_symbol(ls, path, new_parent)
             new_tree = new_parent.get_tree()
             new_tree[1].append(path.split(os.sep)[-1].replace(".py", ""))
             rebuilt_needed = self._search_symbols_to_rebuild(new_tree)
