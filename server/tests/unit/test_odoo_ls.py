@@ -13,7 +13,7 @@ from pygls.workspace import Document, Workspace
 from ...controller import (
     did_rename_files
 )
-from ...update_event_queue import EditEvent
+from ...update_event_queue import EditEvent, UpdateEvent, UpdateEventType
 from .setup import *
 from ...core.odoo import Odoo
 from ...core.symbol import Symbol, ClassSymbol
@@ -295,8 +295,6 @@ def test_rename():
         with patch("builtins.open", mock_open(read_data=data)) as mock_file:
             old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
-            file = FileRename(old_uri, new_uri)
-            params = RenameFilesParams([file])
             mock = Mock()
             normal_isfile = PythonUtils.is_file_cs
             def _validated_variables_file(*args, **kwargs):
@@ -315,24 +313,30 @@ def test_rename():
                     return normal_isfile(*args, **kwargs)
             mock.side_effect = _validated_variables_file
             PythonUtils.is_file_cs = mock # ensure that new file name is detected as valid
-            did_rename_files(server, params)# TODO modernize this 
-            time.sleep(10) #TODO find a better than using time.sleep to wait for job to start
-        with safe_acquire_read(): # wait for job to finish
-            #A check that symbols are not imported anymore from old file
-            constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
-            assert "CONSTANT_1" not in constants_dir.symbols # TODO ERROR ON HERE --> it's a bug 
-            assert "CONSTANT_2" in constants_dir.symbols
-            assert "CONSTANT_3" not in constants_dir.symbols
-            constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
-            assert "CONSTANT_1" not in constants_data_dir.symbols
-            assert "CONSTANT_2" in constants_data_dir.symbols
-            assert "CONSTANT_3" not in constants_data_dir.symbols
-            assert not search_in_local(constants_data_dir, "CONSTANT_2")
-            assert "variables" not in constants_data_dir.moduleSymbols
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
-            assert constants_data_file == None
-            constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
-            assert constants_data_file == None #As the file is not imported by any file, it should not be available
+
+            # manually rename files to use mocked server
+            old_path = FileMgr.uri2pathname(old_uri)
+            new_path = FileMgr.uri2pathname(new_uri)
+            delete_event = UpdateEvent(server, old_path, UpdateEventType.DELETE)
+            execute_event(delete_event)
+            create_event = UpdateEvent(server, new_path, UpdateEventType.CREATE)
+            execute_event(create_event)
+            with safe_acquire_read(): # wait for job to finish
+                #A check that symbols are not imported anymore from old file
+                constants_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants"])
+                assert "CONSTANT_1" not in constants_dir.symbols # TODO ERROR ON HERE --> it's a bug 
+                assert "CONSTANT_2" in constants_dir.symbols
+                assert "CONSTANT_3" not in constants_dir.symbols
+                constants_data_dir = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data"])
+                assert "CONSTANT_1" not in constants_data_dir.symbols
+                assert "CONSTANT_2" in constants_data_dir.symbols
+                assert "CONSTANT_3" not in constants_data_dir.symbols
+                assert not search_in_local(constants_data_dir, "CONSTANT_2")
+                assert "variables" not in constants_data_dir.moduleSymbols
+                constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
+                assert constants_data_file == None
+                constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
+                assert constants_data_file == None #As the file is not imported by any file, it should not be available
 
             # B now change data/__init__.py to include the new file, and check that imports are resolved
             file_uri = get_uri(['data', 'addons', 'module_1', 'constants', 'data', '__init__.py'])
@@ -367,24 +371,29 @@ CONSTANT_2 = 22"""
                 assert "variables" in constants_data_dir.moduleSymbols
                 constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
                 assert constants_data_file == None
-            
+
             # C let's go back to old name, then rename again to variables, to see if everything resolve correctly
             PythonUtils.is_file_cs = Mock(return_value=False) #prevent disk access to old file
             old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
-            file = FileRename(old_uri, new_uri)
-            params = RenameFilesParams([file])
             mock.side_effect = _validated_constants_file
-            did_rename_files(server, params)
+            old_path = FileMgr.uri2pathname(old_uri)
+            new_path = FileMgr.uri2pathname(new_uri)
+            delete_event = UpdateEvent(server, old_path, UpdateEventType.DELETE)
+            execute_event(delete_event)
+            create_event = UpdateEvent(server, new_path, UpdateEventType.CREATE)
+            execute_event(create_event)
             PythonUtils.is_file_cs = Mock(return_value=True) #prevent disk access to old file
             old_uri = get_uri(["data", "addons", "module_1", "constants", "data", "constants.py"])
             new_uri = get_uri(["data", "addons", "module_1", "constants", "data", "variables.py"])
-            file = FileRename(old_uri, new_uri)
-            params = RenameFilesParams([file])
             mock.side_effect = _validated_variables_file
-            did_rename_files(server, params)
+            old_path = FileMgr.uri2pathname(old_uri)
+            new_path = FileMgr.uri2pathname(new_uri)
+            delete_event = UpdateEvent(server, old_path, UpdateEventType.DELETE)
+            execute_event(delete_event)
+            create_event = UpdateEvent(server, new_path, UpdateEventType.CREATE)
+            execute_event(create_event)
 
-            time.sleep(2) #TODO find a better than using time.sleep to wait for job to start
             with safe_acquire_read(): # wait for job to finish
                 var_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "variables"])
                 assert var_data_file
@@ -405,7 +414,6 @@ CONSTANT_2 = 22"""
                 constants_data_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "constants", "data", "constants"])
                 assert constants_data_file == None
                 PythonUtils.is_file_cs = normal_isfile
-                server.workspace.get_document.reset_mock()
 
 def test_rename_inherit():
     model = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "models"], ["model_model"])
