@@ -16,6 +16,7 @@ To run tests:
 
 pip install pytest mock pytest-asyncio pytest-dependency pygls parso
 cd server/tests/unit
+put your cominity path like this : export COMUNITY_PATH=YOUR_PATH
 set up the next constants to match your local configuration, then
 pytest test_setup.py -- test that your setup is correct and that OdooLS is starting correctly
 pytest test_odoo_ls.py -- test the different OdooLS functionalities
@@ -26,9 +27,7 @@ add -s if you want to see the logs from OdooLS
 
 # SETUP CONSTANTS
 
-ODOO_COMMUNITY_PATH = '/home/odoo/Documents/odoo-servers/server_c/odoo'
-if os.name == "nt":
-    ODOO_COMMUNITY_PATH = r'E:\Mes Documents\odoo\community'
+ODOO_COMMUNITY_PATH = os.getenv("COMUNITY_PATH") 
 
 # Prepare DATA
 
