@@ -169,7 +169,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.symStack[-1].add_symbol(variable)
 
     def visit_AnnAssign(self, node: AnnAssign) -> Any:
-        assigns = PythonUtils.unpack_assign(node.target, node.value, {})
+        assigns = PythonUtils.unpack_assign(node.target, node.value)
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable = Symbol(variable_name.id, SymType.VARIABLE)
@@ -180,7 +180,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self.symStack[-1].add_symbol(variable)
 
     def visit_Assign(self, node):
-        assigns = PythonUtils.unpack_assign(node.targets, node.value, {})
+        assigns = PythonUtils.unpack_assign(node.targets, node.value)
         for variable_name, value in assigns.items():
             if self.symStack[-1].type in [SymType.CLASS, SymType.FILE, SymType.PACKAGE]:
                 variable = Symbol(variable_name.id, SymType.VARIABLE)

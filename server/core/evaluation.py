@@ -109,6 +109,7 @@ class Evaluation():
             if not base_ref or not base_ref.ref:
                 return (None, False, {})
             base = base_ref.ref
+            base, instance = base.follow_ref()
             if base.type == SymType.CLASS and inst == False:
                 return base_ref, True, base.get_context(node.args, node.keywords)
             elif base.type == SymType.CLASS and inst == True:
@@ -132,7 +133,7 @@ class Evaluation():
         elif isinstance(node, ast.Name):
             infered_sym = parentSymbol.infer_name(node.id, node.lineno)
             if not infered_sym:
-                return (None, False, {})
-            symbol, instance = infered_sym.follow_ref()
-            symbol = RegisteredRef(symbol)
+                 return (None, False, {})
+            _, instance = infered_sym.follow_ref()
+            symbol = RegisteredRef(infered_sym)
         return (symbol, instance, {})

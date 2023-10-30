@@ -172,36 +172,47 @@ class PythonUtils():
     #     return (last_atomic_expr, list_expr, current)
 
     @staticmethod
-    def unpack_assign(node_targets, node_values, acc = {}):
+    def unpack_assign(node_targets, node_values, acc = None):
         """ Unpack assignement to extract variables and values.
             This method will return a dictionnary that hold each variables and the set value (still in ast node)
             example: variable = variable2 = "test" (2 targets, 1 value)
             ast.Assign => {"variable": ast.Node("test"), "variable2": ast.Node("test")}
          """
+
+        if not acc:
+            acc = {}
+        
+        # a.b = 1 // a[0] = 1
         if isinstance(node_targets, ast.Attribute) or isinstance(node_targets, ast.Subscript):
             return acc
+
+        # a = 1
         if isinstance(node_targets, ast.Name):
             acc[node_targets] = node_values
             return acc
-        if isinstance(node_targets, ast.Tuple) and not isinstance(node_values, ast.Tuple):
+
+        # a,b = 1
+        if isinstance(node_targets, (ast.Tuple, ast.List)) and not isinstance(node_values, (ast.Tuple, ast.List)):
             #we can't unpack (a,b) = c as we can't unpack c here
             return acc
+        
         for target in node_targets:
             if isinstance(target, ast.Name):
                 acc[target] = node_values
-            elif isinstance(target, ast.Tuple) and isinstance(node_values, ast.Tuple):
-                if len(target.elts) != len(node_values.elts):
-                    print("ERROR: unable to unpack assignement")
-                    return acc
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                if isinstance(node_values, (ast.Tuple, ast.List)):
+                    if len(target.elts) != len(node_values.elts):
+                        print("ERROR: unable to unpack assignement")
+                        return acc
+                    else:
+                        #TODO handle a,b = b,a
+                        for nt, nv in zip(target.elts, node_values.elts):
+                            PythonUtils.unpack_assign(nt, nv, acc)
                 else:
-                    #TODO handle a,b = b,a
-                    for nt, nv in zip(target.elts, node_values.elts):
-                        PythonUtils.unpack_assign(nt, nv, acc)
-            elif isinstance(target, ast.Tuple):
-                for elt in target.elts:
-                    #We only want local variables
-                    if isinstance(elt, ast.Name):
-                        pass #TODO to infer this, we should be able to follow right values (func for example) and unsplit it
+                    for elt in target.elts:
+                        #We only want local variables
+                        if isinstance(elt, ast.Name):
+                            pass #TODO to infer this, we should be able to follow right values (func for example) and unsplit it
             else:
                 pass
                 # print("ERROR: unpack_assign not implemented for " + str(node_targets) + " and " + str(node_values))
