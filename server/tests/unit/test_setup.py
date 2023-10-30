@@ -7,7 +7,7 @@ from ...core.odoo import Odoo
 
 @pytest.mark.dependency()
 def test_setup():
-    assert os.path.exists(ODOO_COMMUNITY_PATH), "Please set up ODOO_COMMUNITY_PATH constant to match your local configuration before runnning tests"
+    assert os.path.exists(ODOO_COMMUNITY_PATH), "Please set up COMMUNITY_PATH environment variable to match your local configuration before runnning tests"
     assert os.path.exists(os.path.join(ODOO_COMMUNITY_PATH, "odoo", "release.py")), "Please set up ODOO_COMMUNITY_PATH to a valid Odoo Community repository"
 
 @pytest.mark.dependency(depends=["test_setup"])
