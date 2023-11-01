@@ -147,10 +147,8 @@ class ModuleSymbol(ConcreteSymbol):
         loaded = []
         for depend in self.depends:
             if depend not in Odoo.get().modules:
-                from .import_resolver import resolve_import_stmt
-                odoo_addons = Odoo.get().get_symbol(["odoo", "addons"], [])
-                alias = [ast.alias(name=depend, asname=None)]
-                _, dep_module, _  = resolve_import_stmt(ls, odoo_addons, odoo_addons, None, alias, 1, 0, 0)[0]
+                from .import_resolver import find_module
+                dep_module = find_module(ls, depend)
                 if not dep_module:
                     Odoo.get().not_found_symbols.add(self)
                     self.not_found_paths.append((BuildSteps.ARCH, ["odoo", "addons", depend]))
