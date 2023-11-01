@@ -60,6 +60,18 @@ def resolve_import_stmt(ls, source_file_symbol, parent_symbol, from_stmt, name_a
             res[name_index][1] = name_symbol
     return res
 
+def find_module(ls, name):
+    from .python_arch_builder import PythonArchBuilder
+    odoo_addons = Odoo.get().get_symbol(["odoo", "addons"], [])
+    for path in odoo_addons.get_paths():
+        full_path = os.path.join(path, name)
+        if PythonUtils.is_dir_cs(full_path):
+            parser = PythonArchBuilder(ls, odoo_addons, full_path)
+            sym = parser.load_arch(require_module=True)
+            if sym:
+                return sym
+    return None
+
 def _resolve_packages(file_symbol, level, from_stmt):
     """based on the file path and the from statement of an import statement, return the file tree
     to use in a get_symbol search"""

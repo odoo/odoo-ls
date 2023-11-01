@@ -72,11 +72,13 @@ class PythonArchBuilder(ast.NodeVisitor):
                 else:
                     self.filePath = os.path.join(self.filePath, "__init__.pyi")
                     symbol.i_ext = "i"
-            else:
+            elif not require_module:
                 symbol = NamespaceSymbol(self.filePath.split(os.sep)[-1], self.filePath)
                 self.symStack[-1].add_symbol(symbol)
                 self.symStack.append(symbol)
                 return self.symStack[1]
+            else:
+                return None
         else:
             symbol = FileSymbol(self.filePath.split(os.sep)[-1].split(".py")[0], self.filePath)
             self.symStack[-1].add_symbol(symbol)
