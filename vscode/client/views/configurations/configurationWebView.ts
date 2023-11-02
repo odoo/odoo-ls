@@ -1,6 +1,6 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
-import { getUri, getNonce } from "../../utils/utils";
-import {ConfigurationsChange} from "../../utils/events"
+import { getUri, getNonce } from "../../common/utils";
+import {ConfigurationsChange} from "../../common/events"
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -138,7 +138,7 @@ export class ConfigurationWebView {
         panel.title = `Odoo: ${title}`
     }
 
-    private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
+    private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
 
@@ -148,10 +148,6 @@ export class ConfigurationWebView {
         
         if (configs[this.configId]["name"] != name) {
             changes.push("name");
-        }
-
-        if (configs[this.configId]["pythonPath"] != pythonPath) {
-            changes.push("pythonPath");
         }
 
         if (oldAddons.length != addons.length) {
@@ -172,7 +168,6 @@ export class ConfigurationWebView {
             "name": name,
             "odooPath": untildify(odooPath),
             "addons": addons,
-            "pythonPath": untildify(pythonPath),
         };
         this._context.globalState.update("Odoo.configurations", configs);
         if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
@@ -207,8 +202,7 @@ export class ConfigurationWebView {
                     const odooPath = message.odooPath;
                     const name = message.name;
                     const addons = message.addons;
-                    const pythonPath = message.pythonPath;
-                    this._saveConfig(configs, odooPath, name, addons, pythonPath);
+                    this._saveConfig(configs, odooPath, name, addons);
                     break;
                 case "view_ready":
                     webview.postMessage({
@@ -259,25 +253,6 @@ export class ConfigurationWebView {
                     break;
                 case "delete_config":
                     this._deleteConfig(configs);
-                    break;
-                case "open_python_path":
-                    const pythonPathOptions: vscode.OpenDialogOptions = {
-                        title: "Add Python path",
-                        openLabel: 'Add path',
-                        canSelectMany: false,
-                        canSelectFiles: false,
-                        canSelectFolders: false,
-                    };
-                    window.showOpenDialog(pythonPathOptions).then(fileUri => {
-                        if (fileUri && fileUri[0]) {
-                            let config = configs[this.configId];
-                            const odooPythonPath = fileUri[0].fsPath;
-                            webview.postMessage({
-                                command: "update_python_path",
-                                pythonPath: odooPythonPath
-                            });
-                        }
-                    });
                     break;
                 case "update_version":
                     this._getOdooVersion(message.odooPath, webview);

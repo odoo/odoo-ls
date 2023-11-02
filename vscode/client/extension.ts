@@ -10,7 +10,6 @@ import {
     ExtensionMode,
     QuickPickItem,
     StatusBarAlignment,
-    StatusBarItem,
     ThemeIcon,
     workspace,
     window,
@@ -31,16 +30,13 @@ import { CrashReportWebView } from './views/crash_report/crashReport';
 import { ChangelogWebview } from "./views/changelog/changelogWebview";
 import {
     selectedConfigurationChange,
-    ConfigurationsChange
-} from './utils/events'
-import { execSync } from "child_process";
-import { getCurrentConfig } from "./utils/utils";
-import { getConfigurationStructure, stateInit } from "./utils/validation";
-import * as os from 'os';
-let client: LanguageClient;
-let odooStatusBar: StatusBarItem;
-let isLoading: boolean;
-let debugFile = `pygls-${new Date().toISOString().replaceAll(":","_")}.log`
+    ConfigurationsChange,
+    clientStopped
+} from './common/events'
+import { IInterpreterDetails, getInterpreterDetails, initializePython, onDidChangePythonInterpreter } from "./common/python";
+import { getCurrentConfig } from "./common/utils";
+import { getConfigurationStructure, stateInit } from "./common/validation";
+
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -50,13 +46,11 @@ function getClientOptions(): LanguageClientOptions {
             { scheme: "untitled", language: "python" },
         ],
         synchronize: {
-            // Notify the server about file changes to '.clientrc files contain in the workspace
-            fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
         },
     };
 }
 
-function validateState(context: ExtensionContext, outputChannel: OutputChannel) {
+function validateState(context: ExtensionContext) {
     try {
         let globalState = context.globalState
         let stateVersion = globalState.get('Odoo.stateVersion', false)
@@ -98,12 +92,12 @@ function validateState(context: ExtensionContext, outputChannel: OutputChannel) 
 
     }
     catch (error) {
-        outputChannel.appendLine(error)
-        displayCrashMessage(context, error, outputChannel, 'func.validateState')
+        global.LSCLIENT.error(error);
+        displayCrashMessage(context, error, 'func.validateState')
     }
 }
 
-function setMissingStateVariables(context: ExtensionContext, outputChannel: OutputChannel) {
+function setMissingStateVariables(context: ExtensionContext) {
     const globalStateKeys = context.globalState.keys();
     const workspaceStateKeys = context.workspaceState.keys();
     let globalVariables = new Map<string, any>([
@@ -116,31 +110,17 @@ function setMissingStateVariables(context: ExtensionContext, outputChannel: Outp
 
     for (let key of globalVariables.keys()) {
         if (!globalStateKeys.includes(key)) {
-            outputChannel.appendLine(`${key} was missing in global state. Setting up the variable.`);
+            global.LSCLIENT.info(`${key} was missing in global state. Setting up the variable.`);
             context.globalState.update(key, globalVariables.get(key));
         }
     }
 
     for (let key of workspaceVariables.keys()) {
         if (!workspaceStateKeys.includes(key)) {
-            outputChannel.appendLine(`${key} was missing in workspace state. Setting up the variable.`);
+            global.LSCLIENT.info(`${key} was missing in workspace state. Setting up the variable.`);
             context.workspaceState.update(key, workspaceVariables.get(key));
         }
     }
-}
-
-function checkPythonVersion(pythonPath: string) {
-    const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
-    const pythonVersion = semver.parse(versionString)
-    if (semver.lt(pythonVersion, "3.8.0")) return false
-    return true
-}
-
-function displayInvalidPythonError(context: ExtensionContext) {
-    const selection = window.showErrorMessage(
-        "Unable to start the Odoo Language Server. Python 3.8+ is required.",
-        "Dismiss"
-    );
 }
 
 function isExtensionUpdated(context: ExtensionContext) {
@@ -151,18 +131,17 @@ function isExtensionUpdated(context: ExtensionContext) {
     return false;
 }
 
-function displayUpdatedNotification(context: ExtensionContext) {
-    window.showInformationMessage(
+async function displayUpdatedNotification(context: ExtensionContext) {
+    const selection = await window.showInformationMessage(
         "The Odoo extension has been updated.",
         "Show changelog",
         "Dismiss"
-    ).then(selection => {
-        switch (selection) {
-            case "Show changelog":
-                ChangelogWebview.render(context);
-                break;
-        }
-    })
+    )
+    switch (selection) {
+        case "Show changelog":
+            ChangelogWebview.render(context);
+            break;
+    }
 }
 
 function updateLastRecordedVersion(context: ExtensionContext) {
@@ -211,10 +190,10 @@ function startLangServer(
     return new LanguageClient('odooServer', 'Odoo Server', serverOptions, clientOptions);
 }
 
-function setStatusConfig(context: ExtensionContext, statusItem: StatusBarItem) {
-    const config = getCurrentConfig(context);
+async function setStatusConfig(context: ExtensionContext) {
+    const config = await getCurrentConfig(context);
     let text = (config ? `Odoo (${config["name"]})` : `Odoo (Disabled)`);
-    statusItem.text = (isLoading) ? "$(loading~spin) " + text : text;
+    global.STATUS_BAR.text = (global.IS_LOADING) ? "$(loading~spin) " + text : text;
 }
 
 function getLastConfigId(context: ExtensionContext): number | undefined {
@@ -241,12 +220,12 @@ async function addNewConfiguration(context: ExtensionContext) {
     ConfigurationWebView.render(context, configId);
 }
 
-function changeSelectedConfig(context: ExtensionContext, configId: Number) {
-    context.workspaceState.update("Odoo.selectedConfiguration", configId);
+async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
+    await context.workspaceState.update("Odoo.selectedConfiguration", configId);
     selectedConfigurationChange.fire(null);
 }
 
-async function displayCrashMessage(context: ExtensionContext, crashInfo: string, outputChannel: OutputChannel, command: string = null) {
+async function displayCrashMessage(context: ExtensionContext, crashInfo: string, command: string = null, outputChannel = global.LSCLIENT.outputChannel) {
     // Capture the content of the file active when the crash happened
     let activeFile: TextDocument;
     if (window.activeTextEditor) {
@@ -263,7 +242,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 
     switch (selection) {
         case ("Send crash report"):
-            CrashReportWebView.render(context, activeFile, crashInfo, command, debugFile);
+            CrashReportWebView.render(context, activeFile, crashInfo, command, global.DEBUG_FILE);
             break
         case ("Open logs"):
             outputChannel.show();
@@ -271,62 +250,69 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
     }
 }
 
-function activateVenv(pythonPath: String) {
-    let activatePathArray = pythonPath.split(path.sep).slice(0, pythonPath.split(path.sep).length - 1)
-    let activatePath = `${activatePathArray.join(path.sep)}${path.sep}activate`
-    if (fs.existsSync(activatePath)) {
-        switch (os.type()) {
-            case 'Linux':
-                execSync(`. ${activatePath}`)
-                break;
-            case 'Windows_NT':
-                execSync(`${activatePath}`)
-                break;
+async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
+    let client = global.LSCLIENT;
+    try {
+        const interpreter = await getInterpreterDetails();
+        const pythonPath = interpreter.path[0];
+
+        if (context.extensionMode === ExtensionMode.Development) {
+            // Development - Run the server manually
+            await commands.executeCommand('setContext', 'odoo.showCrashNotificationCommand', true);
+            client = startLangServerTCP(2087, outputChannel);
+            global.DEBUG_FILE = 'pygls.log';
+        } else {
+            // Production - Client is going to run the server (for use within `.vsix` package)
+            const cwd = path.join(__dirname, "..", "..");
+            client = startLangServer(pythonPath, ["-m", "server", "--log", global.DEBUG_FILE, "--id", "clean-odoo-lsp"], cwd, outputChannel);
         }
+
+        context.subscriptions.push(
+            client.onNotification("Odoo/loadingStatusUpdate", async (state: String) => {
+                switch (state) {
+                    case "start":
+                        global.IS_LOADING = true;
+                        break;
+                    case "stop":
+                        global.IS_LOADING = false;
+                        break;
+                }
+                await setStatusConfig(context);
+            }),
+            client.onRequest("Odoo/getConfiguration", async (params) => {
+                return await getCurrentConfig(context);
+            }),
+            client.onNotification("Odoo/displayCrashNotification", async (params) => {
+                await displayCrashMessage(context, params["crashInfo"]);
+            })
+        );
+        if (autoStart) {
+            await client.start();
+            await client.sendNotification("Odoo/clientReady");
+        }
+        return client;
+    } catch (error) {
+        outputChannel.appendLine("Couldn't Start Language server.");
+        outputChannel.appendLine(error);
+        await displayCrashMessage(context, error, 'initLanguageServer' , outputChannel);
     }
 }
 
-function getPythonPath(context: ExtensionContext) {
-    const config = getCurrentConfig(context);
-    const pythonPath = config && config["pythonPath"] ? config["pythonPath"] : "python3";
-    activateVenv(pythonPath)
-    return pythonPath
-}
-
-function startLanguageServerClient(context: ExtensionContext, pythonPath:string, outputChannel: OutputChannel) {
-    let client: LanguageClient;
-    if (context.extensionMode === ExtensionMode.Development) {
-        // Development - Run the server manually
-        client = startLangServerTCP(2087, outputChannel);
-        debugFile='pygls.log'
-    } else {
-        // Production - Client is going to run the server (for use within `.vsix` package)
-        const cwd = path.join(__dirname, "..", "..");
-
-        if (!pythonPath) {
-            outputChannel.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
-        }
-        client = startLangServer(pythonPath, ["-m", "server", "--log", debugFile, "--id", "clean-odoo-lsp"], cwd, outputChannel);
-    }
-
-    return client;
-}
-
-function deleteOldFiles(context: ExtensionContext, outputChannel: OutputChannel) {
+function deleteOldFiles(context: ExtensionContext) {
     const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('pygls-') && fn.endsWith('.log'));
     for (const file of files) {
-        let dateLimit = new Date()
+        let dateLimit = new Date();
         dateLimit.setDate(dateLimit.getDate() - 2);
-        let date = new Date(file.slice(6, -4).replaceAll("_",":"))
+        let date = new Date(file.slice(6, -4).replaceAll("_",":"));
         if (date < dateLimit) {
-            fs.unlinkSync(Uri.joinPath(context.extensionUri, file).fsPath)
+            fs.unlinkSync(Uri.joinPath(context.extensionUri, file).fsPath);
         }
     }
 }
 
-async function checkAddons(context: ExtensionContext, odooOutputChannel: OutputChannel) {
+async function checkAddons(context: ExtensionContext) {
     let files = await workspace.findFiles('**/__manifest__.py')
-    let currentConfig = getCurrentConfig(context)
+    let currentConfig = await getCurrentConfig(context);
     if (currentConfig) {
         let missingFiles = files.filter(file => {
             return !(
@@ -339,94 +325,193 @@ async function checkAddons(context: ExtensionContext, odooOutputChannel: OutputC
             return filePath.slice(0, filePath.length - 2).join(path.sep)
         }))]
         if (missingPaths.length > 0) {
-            odooOutputChannel.appendLine("Missing addon paths : " + JSON.stringify(missingPaths))
-            const selection = await window.showWarningMessage(
+            global.LSCLIENT.warn("Missing addon paths : " + JSON.stringify(missingPaths))
+            window.showWarningMessage(
                 `We detected addon paths that weren't added in the current configuration. Would you like to add them?`,
                 "Update current configuration",
                 "View Paths",
                 "Ignore"
-            );
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig.id);
-                    break
-                case ("View Paths"):
-                    odooOutputChannel.show();
-                    break
-            }
+            ).then(selection => {
+                switch (selection) {
+                    case ("Update current configuration"):
+                        ConfigurationWebView.render(context, currentConfig.id);
+                        break
+                    case ("View Paths"):
+                        global.LSCLIENT.outputChannel.show();
+                        break
+                }
+            });
         }
     }
 }
 
 async function checkOdooPath(context: ExtensionContext) {
-    let currentConfig = getCurrentConfig(context)
+    let currentConfig = await getCurrentConfig(context);
     let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.parse(currentConfig.odooPath)) : true
     if (!odooFound) {
         let invalidPath = false
         for (const f of workspace.workspaceFolders) {
             if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath) ||
                 fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
-                invalidPath = true
-                break
+                invalidPath = true;
+                break;
             }
         }
         if (invalidPath) {
-            const selection = await window.showWarningMessage(
+            window.showWarningMessage(
                 `The Odoo configuration selected does not match the odoo path in the workspace. Would you like to change it?`,
                 "Update current configuration",
                 "Ignore"
-            );
+            ).then(selection => {
             switch (selection) {
                 case ("Update current configuration"):
                     ConfigurationWebView.render(context, currentConfig.id);
                     break
-            }
+                }
+            })
         }
     }
 }
 
-function initializeSubscriptions(context: ExtensionContext, client: LanguageClient, odooOutputChannel: OutputChannel): void {
+async function initStatusBar(context: ExtensionContext): Promise<void> {
+    global.STATUS_BAR = window.createStatusBarItem(StatusBarAlignment.Left, 100);
+    global.STATUS_BAR.command = "odoo.clickStatusBar"
+    context.subscriptions.push(global.STATUS_BAR);
+    await setStatusConfig(context);
+    global.STATUS_BAR.show();
+}
 
+
+async function initializeSubscriptions(context: ExtensionContext): Promise<void> {
     let terminal = window.terminals.find(t => t.name === 'close-odoo-client')
     if (!terminal){
         window.createTerminal({ name: `close-odoo-client`, hideFromUser:true})
     }
 
-    context.subscriptions.push(window.onDidCloseTerminal((terminal) => {
-        if (terminal.name === 'close-odoo-client') closeClient(client)
+    context.subscriptions.push(window.onDidCloseTerminal(async (terminal) => {
+        if (terminal.name === 'close-odoo-client') await stopClient();
     }))
 
-    function checkRestartPythonServer(){
-        if (getCurrentConfig(context)) {
-            let oldPythonPath = pythonPath
-            pythonPath = getPythonPath(context);
-            if (oldPythonPath != pythonPath) {
-                odooOutputChannel.appendLine('[INFO] Python path changed, restarting language server: ' + oldPythonPath + " " + pythonPath);
-                closeClient(client)
-                client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
-                for (const disposable of context.subscriptions) {
-                    try {
-                        disposable.dispose();
-                    } catch (e) {
-                        console.error(e);
-                    }
-                }
-                initializeSubscriptions(context, client, odooOutputChannel)
-                if (checkPythonVersion(pythonPath)) {
-                    client.start();
-                } else {
-                    displayInvalidPythonError(context);
+    // Listen to changes to Configurations
+    context.subscriptions.push(
+        ConfigurationsChange.event(async (changes: Array<String> | null) => {
+            try {
+                let client = global.LSCLIENT;
+                await setStatusConfig(context);
+                if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
+                    await checkOdooPath(context);
+                    await checkAddons(context);
+                    if (client.diagnostics) client.diagnostics.clear();
+                    await client.sendNotification("Odoo/configurationChanged");
                 }
             }
-        }
-    }
+            catch (error) {
+                global.LSCLIENT.error(error)
+                await displayCrashMessage(context, 'event.ConfigurationsChange')
+            }
+        })
+    );
 
-    let pythonPath = getPythonPath(context);
-    odooStatusBar = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-    setStatusConfig(context, odooStatusBar);
-    odooStatusBar.show();
-    odooStatusBar.command = "odoo.clickStatusBar"
-    context.subscriptions.push(odooStatusBar);
+    // Listen to changes to the selected Configuration
+    context.subscriptions.push(
+        selectedConfigurationChange.event(async () => {
+            try {
+                if (!global.CAN_QUEUE_CONFIG_CHANGE) return;
+
+                if (global.CLIENT_IS_STOPPING) {
+                    global.CAN_QUEUE_CONFIG_CHANGE = false;
+                    await waitForClientStop();
+                    global.CAN_QUEUE_CONFIG_CHANGE = true;
+                }
+
+                let client = global.LSCLIENT;
+                if (await getCurrentConfig(context)) {
+                    await checkOdooPath(context);
+                    await checkAddons(context);
+                    if (!client) {
+                        global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
+                        client = global.LSCLIENT;
+                    }
+                    if (client.needsStart()) {
+                        await client.start();
+                        await client.sendNotification(
+                            "Odoo/clientReady",
+                        );
+                    } else {
+                        if (client.diagnostics) client.diagnostics.clear();
+                        await client.sendNotification("Odoo/configurationChanged");
+                    }
+                } else {
+                    if (client?.isRunning()) await stopClient();
+                    global.IS_LOADING = false;
+                }
+                await setStatusConfig(context);
+            }
+            catch (error) {
+                global.LSCLIENT.error(error);
+                await displayCrashMessage(context, error, 'event.selectedConfigurationChange');
+            }
+        })
+    );
+    
+    // Listen to changes to Python Interpreter
+    context.subscriptions.push(
+        onDidChangePythonInterpreter(async (e: IInterpreterDetails) => {
+            let startClient = false;
+            global.CAN_QUEUE_CONFIG_CHANGE = false;
+            if (global.LSCLIENT) {
+                if (global.CLIENT_IS_STOPPING) {
+                    await waitForClientStop();
+                }
+                if (global.LSCLIENT?.isRunning()) {
+                    await stopClient();
+                }
+                await global.LSCLIENT.dispose();
+            }
+            if (await getCurrentConfig(context)) {
+                startClient = true;
+            }
+            global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL, startClient);
+            global.CAN_QUEUE_CONFIG_CHANGE = true;
+        })
+    );
+
+    // COMMANDS
+    context.subscriptions.push(
+        commands.registerCommand("odoo.openWelcomeView", async () => {
+            try {
+                WelcomeWebView.render(context);
+            }
+            catch (error) {
+                global.LSCLIENT.error(error)
+                await displayCrashMessage(context, error, 'odoo.openWelcomeView')
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        commands.registerCommand("odoo.clearState", async () => {
+            try {
+                for (let key of context.globalState.keys()) {
+                    global.LSCLIENT.info(`Wiping ${key} from global storage.`);
+                    await context.globalState.update(key, undefined);
+                }
+
+                for (let key of context.workspaceState.keys()) {
+                    global.LSCLIENT.info(`Wiping ${key} from workspace storage.`);
+                    await context.workspaceState.update(key, undefined);
+                }
+                await commands.executeCommand("workbench.action.reloadWindow");
+            }
+            catch (error) {
+                global.LSCLIENT.error(error);
+                await displayCrashMessage(context, error, 'odoo.clearState');
+            }
+        }));
+
+    context.subscriptions.push(commands.registerCommand("odoo.openChangelogView", () => {
+        ChangelogWebview.render(context);
+    }));
 
     context.subscriptions.push(
         commands.registerCommand('odoo.clickStatusBar', async () => {
@@ -434,7 +519,7 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                 const qpick = window.createQuickPick();
                 const configs: Map<integer, object> = context.globalState.get("Odoo.configurations");
                 let selectedConfiguration = null;
-                const currentConfig = getCurrentConfig(context);
+                const currentConfig = await getCurrentConfig(context);
                 let currentConfigItem: QuickPickItem;
                 const configMap = new Map();
                 const separator = { kind: QuickPickItemKind.Separator };
@@ -470,15 +555,14 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     selectedConfiguration = selection[0];
                 });
 
-                qpick.onDidTriggerItemButton(buttonEvent => {
+                qpick.onDidTriggerItemButton(async (buttonEvent) => {
                     if (buttonEvent.button.iconPath == gearIcon) {
                         let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
-                        try{
+                        try {
                             ConfigurationWebView.render(context, Number(buttonConfigId));
-                        }
-                        catch (error) {
-                            odooOutputChannel.appendLine(error)
-                            displayCrashMessage(context, error, odooOutputChannel, 'render.ConfigurationWebView')
+                        } catch (error) {
+                            global.LSCLIENT.error(error);
+                            await displayCrashMessage(context, error, 'render.ConfigurationWebView');
                         }
                     }
                 });
@@ -489,15 +573,15 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                             await addNewConfiguration(context);
                         }
                         catch (error) {
-                            odooOutputChannel.appendLine(error)
-                            displayCrashMessage(context, error, odooOutputChannel, 'render.ConfigurationWebView')
+                            global.LSCLIENT.error(error)
+                            await displayCrashMessage(context, error, 'render.ConfigurationWebView')
                         }
                     }
                     else if (selectedConfiguration == disabledItem) {
-                        changeSelectedConfig(context, -1);
+                        await changeSelectedConfig(context, -1);
                     }
                     else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
-                        changeSelectedConfig(context, configMap.get(selectedConfiguration));
+                        await changeSelectedConfig(context, configMap.get(selectedConfiguration));
                     }
                     qpick.hide();
                 });
@@ -505,144 +589,36 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                 qpick.show();
             }
             catch (error) {
-                odooOutputChannel.appendLine(error)
-                displayCrashMessage(context, error, odooOutputChannel, 'odoo.clickStatusBar')
+                global.LSCLIENT.error(error)
+                await displayCrashMessage(context, error, 'odoo.clickStatusBar')
             }
         })
     );
-    // Listen to changes to Configurations
-    context.subscriptions.push(
-        ConfigurationsChange.event((changes: Array<String> | null) => {
-            try {
-                setStatusConfig(context, odooStatusBar);
-                if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
-                    checkOdooPath(context);
-                    checkAddons(context,odooOutputChannel);
-                    if (client.diagnostics) client.diagnostics.clear();
-                    client.sendNotification("Odoo/configurationChanged");
-                }
-                if (changes && changes.includes('pythonPath')) {
-                    checkRestartPythonServer()
-                    client.sendNotification("Odoo/configurationChanged");
-                }
-            }
-            catch (error) {
-                odooOutputChannel.appendLine(error)
-                displayCrashMessage(context, error, odooOutputChannel, 'event.ConfigurationsChange')
-            }
-        })
-    );
-
-    // Listen to changes to the selected Configuration
-    context.subscriptions.push(
-        selectedConfigurationChange.event(() => {
-            try {
-                if (getCurrentConfig(context)) {
-                    checkRestartPythonServer()
-                    checkOdooPath(context);
-                    checkAddons(context, odooOutputChannel);
-                    if (!client.isRunning()) {
-                        client.start().then(() => {
-                            client.sendNotification(
-                                "Odoo/clientReady",
-                            );
-                        });
-                    } else {
-                        if (client.diagnostics) client.diagnostics.clear();
-                        client.sendNotification("Odoo/configurationChanged");
-                    }
-                } else {
-                    if (client.isRunning()) client.stop();
-                    isLoading = false;
-                }
-                setStatusConfig(context, odooStatusBar);
-            }
-            catch (error) {
-                odooOutputChannel.appendLine(error)
-                displayCrashMessage(context, error, odooOutputChannel, 'event.selectedConfigurationChange')
-            }
-        })
-    );
-
-    // COMMANDS
-    context.subscriptions.push(
-        commands.registerCommand("odoo.openWelcomeView", () => {
-            try {
-                WelcomeWebView.render(context);
-            }
-            catch (error) {
-                odooOutputChannel.appendLine(error)
-                displayCrashMessage(context, error, odooOutputChannel, 'odoo.openWelcomeView')
-            }
-        })
-    );
-
-    context.subscriptions.push(
-        commands.registerCommand("odoo.clearState", () => {
-            try {
-                for (let key of context.globalState.keys()) {
-                    odooOutputChannel.appendLine(`[INFO] Wiping ${key} from global storage.`);
-                    context.globalState.update(key, undefined);
-                }
-
-                for (let key of context.workspaceState.keys()) {
-                    odooOutputChannel.appendLine(`[INFO] Wiping ${key} from workspace storage.`);
-                    context.workspaceState.update(key, undefined);
-                }
-                commands.executeCommand("workbench.action.reloadWindow");
-            }
-            catch (error) {
-                odooOutputChannel.appendLine(error)
-                displayCrashMessage(context, error, odooOutputChannel, 'odoo.clearState')
-            }
-        }));
-
-    context.subscriptions.push(commands.registerCommand("odoo.openChangelogView", () => {
-        ChangelogWebview.render(context);
-    }));
 
     if (context.extensionMode === ExtensionMode.Development) {
-        context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", odooOutputChannel); }));
+        context.subscriptions.push(
+            commands.registerCommand(
+                "odoo.testCrashMessage", async () => {
+                    await displayCrashMessage(context, "Test crash message");
+                }
+            )
+        );
     }
-
-    context.subscriptions.push(
-        client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
-            switch (state) {
-                case "start":
-                    isLoading = true;
-                    break;
-                case "stop":
-                    isLoading = false;
-                    break;
-            }
-            setStatusConfig(context, odooStatusBar);
-        })
-    );
-    context.subscriptions.push(client.onRequest("Odoo/getConfiguration", (params) => {
-        return getCurrentConfig(context);
-    }));
-
-    context.subscriptions.push(client.onNotification("Odoo/displayCrashNotification", (params) => {
-        displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
-    }));
 }
 
-export function activate(context: ExtensionContext): void {
-    const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
+export async function activate(context: ExtensionContext): Promise<void> {
     try {
-        let pythonPath = getPythonPath(context);
-        let client = startLanguageServerClient(context, pythonPath, odooOutputChannel);
-        const config = getCurrentConfig(context);
-        deleteOldFiles(context, odooOutputChannel)
-        odooOutputChannel.appendLine('[INFO] Starting the extension.');
-        
-        // new ConfigurationsExplorer(context);
-        checkOdooPath(context);
-        checkAddons(context, odooOutputChannel);
-        initializeSubscriptions(context, client, odooOutputChannel)
+        global.CAN_QUEUE_CONFIG_CHANGE = true;
+        global.DEBUG_FILE = `pygls-${new Date().toISOString().replaceAll(":","_")}.log`;
+        global.OUTPUT_CHANNEL = window.createOutputChannel('Odoo', 'python');
+        global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
         // Initialize some settings on the extension's launch if they're missing from the state.
-        setMissingStateVariables(context, odooOutputChannel);
-        validateState(context, odooOutputChannel)
+        setMissingStateVariables(context);
+        validateState(context);
+
+        await initializePython(context.subscriptions);
+        await initStatusBar(context);
+        await initializeSubscriptions(context);
 
         switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
             case null:
@@ -655,38 +631,53 @@ export function activate(context: ExtensionContext): void {
         }
 
         // Check if the extension was updated since the last time.
-        if (isExtensionUpdated(context)) displayUpdatedNotification(context);
+        if (isExtensionUpdated(context)) await displayUpdatedNotification(context);
 
         // We update the last used version on every run.
         updateLastRecordedVersion(context);
 
+        const config = await getCurrentConfig(context);
         if (config) {
-            odooStatusBar.text = `Odoo (${config["name"]})`
-            if (checkPythonVersion(pythonPath)) {
-                client.start()
-                client.sendNotification(
-                    "Odoo/clientReady",
-                );
-            } else {
-                displayInvalidPythonError(context)
-            }
+            deleteOldFiles(context)
+            global.LSCLIENT.info('Starting the extension.');
+
+            await checkOdooPath(context);
+            await checkAddons(context);
+
+            global.STATUS_BAR.text = `Odoo (${config["name"]})`
+            await global.LSCLIENT.start();
+            await global.LSCLIENT.sendNotification(
+                "Odoo/clientReady",
+            );
         }
     }
     catch (error) {
-        odooOutputChannel.appendLine(error)
-        displayCrashMessage(context, error, odooOutputChannel, 'odoo.activate')
+        global.LSCLIENT.error(error);
+        displayCrashMessage(context, error, 'odoo.activate');
     }
 }
 
-function closeClient(client: LanguageClient) {
-    if (client.diagnostics) client.diagnostics.clear();
-    if (client.isRunning()) return client.stop().then(() => client.dispose())
-    return client.dispose();
+async function waitForClientStop() {
+    return new Promise<void>(resolve => {
+        clientStopped.event(e => {
+            resolve();
+        })
+    });
 }
 
-export function deactivate(): Thenable<void> | undefined {
-    if (!client) {
-        return undefined;
+async function stopClient() {
+    if (global.LSCLIENT && !global.CLIENT_IS_STOPPING) {
+        global.LSCLIENT.info("Stopping LS Client.");
+        global.CLIENT_IS_STOPPING = true;
+        await global.LSCLIENT.stop(15000);
+        global.CLIENT_IS_STOPPING = false;
+        clientStopped.fire(null);
+        global.LSCLIENT.info("LS Client stopped.");
     }
-    return closeClient(client)
+}
+
+export async function deactivate(): Promise<void> {
+    if (global.LSCLIENT) {
+        return global.LSCLIENT.dispose();
+    }
 }

@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import {readFileSync} from 'fs';
 import * as ejs from "ejs";
 import MarkdownIt = require('markdown-it');
-import { getNonce, getUri } from "../../utils/utils";
+import { getNonce, getUri } from "../../common/utils";
 
 const md = new MarkdownIt('commonmark');
 

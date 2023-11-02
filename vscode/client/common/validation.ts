@@ -12,6 +12,5 @@ export function getConfigurationStructure(id: number = 0) {
         "name": `New Configuration ${id}`,
         "odooPath": "",
         "addons": [],
-        "pythonPath": "python3",
     }
 }

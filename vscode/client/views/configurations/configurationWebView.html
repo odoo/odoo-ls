@@ -42,25 +42,6 @@
                     <% } %>
                 </vscode-form-helper>
             </vscode-form-group>
-            <vscode-form-group variant="vertical">
-                <vscode-label for="config-python-path-textfield">
-                   Python path
-                </vscode-label>
-                <vscode-textfield id="config-python-path-textfield" value="<%= config.pythonPath %>" placeholder="Path to the python executable">
-                    <vscode-icon
-                        label="Open Python path"
-                        title="Open Python path"
-                        slot="content-after"
-                        name="folder-opened"
-                        id="config-python-path-button"
-                        action-icon
-                    >
-                    </vscode-icon>
-                </vscode-textfield>
-                <vscode-form-helper id="config-path-helper">
-                    <p>Path to the Python binary the Language Server will run on.</p>
-                </vscode-form-helper>
-            </vscode-form-group>
             <vscode-form-group id="config-addons" variant="vertical">
                 <vscode-label for="addons-scrollable" side-aligned="end">Additional addons</vscode-label>
                 <vscode-scrollable id="addons-scrollable">
