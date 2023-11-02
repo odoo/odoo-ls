@@ -310,13 +310,19 @@ class PythonValidator(ast.NodeVisitor):
                                 severity = 1
                             ))
                             elif not inherited_models:
+                                model_syms = model.get_main_symbols()
+                                models = []
+                                for model_sym in model_syms:
+                                    models.append(model_sym.get_module_sym())
+                                models = ", ".join([model.name for model in models])
+                                models = " or ".join(models.rsplit(", ", 1))
                                 self.diagnostics.append(Diagnostic(
                                     range = Range(
                                         start=Position(line=position[0][0]-1, character=position[0][1]),
                                         end=Position(line=position[0][0]-1, character=1) if sys.version_info < (3, 8) else \
                                             Position(line=position[0][0]-1, character=position[1][0])
                                     ),
-                                    message = inherit + " does not exist",
+                                    message = inherit + " is not in your dependencies. Please review the dependencies of your module to add " + models + " in it",
                                     source = EXTENSION_NAME,
                                     severity = 1
                                 ))
