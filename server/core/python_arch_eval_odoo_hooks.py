@@ -1,8 +1,11 @@
+import ast
 from ..constants import *
 from .evaluation import Evaluation
 from .odoo import Odoo
 from .symbol import Symbol
 from ..references import RegisteredRef
+from .import_resolver import *
+from ..odoo_language_server import OdooLanguageServer
 
 
 class EvaluationTestCursor(Evaluation):
@@ -49,6 +52,9 @@ class PythonArchEvalOdooHooks:
             if envClass:
                 PythonArchEvalOdooHooks.on_env_eval(envClass)
         elif symbol.get_tree() == (["odoo", "tests", "common"], []):
+            form_sym = symbol.get_symbol([], ["Form"])
+            if form_sym:
+                PythonArchEvalOdooHooks.on_form_eval(form_sym)
             transactionClass = symbol.get_symbol([], ["TransactionCase"])
             if transactionClass:
                 PythonArchEvalOdooHooks.on_transactionCase_eval(transactionClass)
@@ -117,3 +123,10 @@ class PythonArchEvalOdooHooks:
             env_var.eval.context["test_mode"] = True # used to define the Cursor type
             env_var.add_dependency(envModel, BuildSteps.ARCH_EVAL, BuildSteps.ARCH)
             env_var.doc = ""
+
+    @staticmethod
+    def on_form_eval(symbol):
+        if not Odoo.get().full_version >= "16.3":
+            return
+        fileSymbol = symbol.get_in_parents([SymType.FILE])
+        symbols = resolve_import_stmt(OdooLanguageServer.get(), fileSymbol, fileSymbol, "form", [ast.alias("Form", "")], 1, symbol.start_pos, symbol.end_pos)

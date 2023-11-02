@@ -35,6 +35,7 @@ class Odoo():
         self.version_major = 0
         self.version_minor = 0
         self.version_micro = 0
+        self.full_version = ""
         self.stop_init = False
 
         self.refreshMode = "afterDelay"
@@ -215,6 +216,7 @@ class Odoo():
                             self.version_major = int(res[0].split("saas~")[-1].replace("'", "").replace('"', ''))
                             self.version_minor = int(res[1])
                             self.version_micro = int(res[2])
+                            self.full_version = ".".join(str(x) for x in [self.version_major, self.version_minor, self.version_micro])
                         else:
                             self.version_major, self.version_minor, self.version_micro = 14, 0, 0
                             ls.show_message("Unable to detect the Odoo version. Running the tool for the version 14", MessageType.Error)
