@@ -327,36 +327,40 @@ function deleteOldFiles(context: ExtensionContext, outputChannel: OutputChannel)
 async function checkAddons(context: ExtensionContext, odooOutputChannel: OutputChannel) {
     let files = await workspace.findFiles('**/__manifest__.py')
     let currentConfig = getCurrentConfig(context)
-    let missingFiles = files.filter(file => {
-        return !currentConfig.addons.some((addon) => file.fsPath.startsWith(addon))
-    })
-    let missingPaths = [...new Set(missingFiles.map(file => {
-        let filePath = file.fsPath.split(path.sep)
-        return filePath.slice(0, filePath.length - 2).join(path.sep)
-    }))]
-    odooOutputChannel.appendLine("Missing addon paths : " + missingPaths.length)
-    if (missingPaths.length > 0) {
-        odooOutputChannel.appendLine("Missing addon paths : " + JSON.stringify(missingPaths))
-        const selection = await window.showWarningMessage(
-            `We detected addon paths that weren't added in the current configuration. Would you like to add them?`,
-            "Update current configuration",
-            "View Paths",
-            "Ignore"
-        );
-        switch (selection) {
-            case ("Update current configuration"):
-                ConfigurationWebView.render(context, currentConfig.id);
-                break
-            case ("View Paths"):
-                odooOutputChannel.show();
-                break
+    if (currentConfig) {
+        let missingFiles = files.filter(file => {
+            return (
+                !currentConfig.addons.some((addon) => file.fsPath.startsWith(addon)) ||
+                !file.fsPath.startsWith(currentConfig.odooPath)
+            )
+        })
+        let missingPaths = [...new Set(missingFiles.map(file => {
+            let filePath = file.fsPath.split(path.sep)
+            return filePath.slice(0, filePath.length - 2).join(path.sep)
+        }))]
+        if (missingPaths.length > 0) {
+            odooOutputChannel.appendLine("Missing addon paths : " + JSON.stringify(missingPaths))
+            const selection = await window.showWarningMessage(
+                `We detected addon paths that weren't added in the current configuration. Would you like to add them?`,
+                "Update current configuration",
+                "View Paths",
+                "Ignore"
+            );
+            switch (selection) {
+                case ("Update current configuration"):
+                    ConfigurationWebView.render(context, currentConfig.id);
+                    break
+                case ("View Paths"):
+                    odooOutputChannel.show();
+                    break
+            }
         }
     }
 }
 
 async function checkOdooPath(context: ExtensionContext) {
     let currentConfig = getCurrentConfig(context)
-    let odooFound = workspace.getWorkspaceFolder(Uri.parse(currentConfig.odooPath))
+    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.parse(currentConfig.odooPath)) : true
     if (!odooFound) {
         let invalidPath = false
         for (const f of workspace.workspaceFolders) {
