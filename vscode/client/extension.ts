@@ -407,9 +407,6 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                         console.error(e);
                     }
                 }
-                if (context.extensionMode === ExtensionMode.Development) {
-                    context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", odooOutputChannel); }));
-                }
                 initializeSubscriptions(context, client, odooOutputChannel)
                 if (checkPythonVersion(pythonPath)) {
                     client.start();
@@ -600,6 +597,10 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
         ChangelogWebview.render(context);
     }));
 
+    if (context.extensionMode === ExtensionMode.Development) {
+        context.subscriptions.push(commands.registerCommand("odoo.testCrashMessage", () => { displayCrashMessage(context, "Test crash message", odooOutputChannel); }));
+    }
+
     context.subscriptions.push(
         client.onNotification("Odoo/loadingStatusUpdate", (state: String) => {
             switch (state) {
@@ -621,6 +622,7 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
         displayCrashMessage(context, params["crashInfo"], odooOutputChannel);
     }));
 }
+
 export function activate(context: ExtensionContext): void {
     const odooOutputChannel: OutputChannel = window.createOutputChannel('Odoo', 'python');
     try {
