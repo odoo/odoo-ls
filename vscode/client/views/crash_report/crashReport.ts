@@ -1,10 +1,12 @@
 import { Disposable, Webview, WebviewPanel, window, Uri } from "vscode";
-import { getUri, getNonce, getPythonVersion, getCurrentConfig } from "../../utils/utils";
+import { getUri, getNonce, getCurrentConfig } from "../../common/utils";
+import { getPythonVersion } from "../../common/python";
 import axios from 'axios';
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+
 
 export class CrashReportWebView {
     public static panels: Map<String, CrashReportWebView> | undefined;
@@ -127,12 +129,13 @@ export class CrashReportWebView {
      * @param context A reference to the extension context
      */
     private _setWebviewMessageListener(webview: Webview) {
-        webview.onDidReceiveMessage((message: any) => {
+        webview.onDidReceiveMessage(async (message: any) => {
             const command = message.command;
 
             switch (command) {
                 case "send_report":
-                    const config = getCurrentConfig(this._context);
+                    const config = await getCurrentConfig(this._context);
+                    const version = await getPythonVersion();
                     let configString = "";
                     if (config) {
                         configString += `Path: ${config.odooPath}\n`;
@@ -149,7 +152,7 @@ export class CrashReportWebView {
                             error: this._error,
                             additional_info: message.additional_info,
                             version: this._context.extension.packageJSON.version,
-                            python_version: getPythonVersion(this._context),
+                            python_version: `${version.major}.${version.minor}.${version.micro}`,
                             configuration: configString,
                             command: this._command, 
                         }
