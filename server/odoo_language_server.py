@@ -41,3 +41,4 @@ class OdooLanguageServer(LanguageServer):
         OdooLanguageServer.instance.set(instance)
 
 odoo_server = OdooLanguageServer()
+OdooLanguageServer.set(odoo_server)

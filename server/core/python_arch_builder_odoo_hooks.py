@@ -37,9 +37,22 @@ class PythonArchBuilderOdooHooks:
                     )
 
     @staticmethod
+    def on_file_declaration(symbol):
+        from .odoo import Odoo
+        if symbol.name == "common":
+            if symbol.get_tree() == (["odoo", "tests", "common"], []):
+                if Odoo.get().full_version >= "16.3":
+                    form_var = Symbol("Form", SymType.VARIABLE)
+                    getattr_sym = symbol.get_symbol([], ["__getattr__"])
+                    if not getattr_sym:
+                        return #TODO should never happen
+                    form_var.start_pos = getattr_sym.start_pos
+                    form_var.end_pos = getattr_sym.end_pos
+                    symbol.add_symbol(form_var)
+
+    @staticmethod
     def on_class_declaration(symbol):
         """ called when ArchBuilder create a new class Symbol """
-        from .odoo import Odoo
         if symbol.name == "BaseModel": #fast, basic check
             if symbol.get_tree() == (["odoo", "models"], ["BaseModel"]): #slower but more precise verification
                 # ---------- env ----------

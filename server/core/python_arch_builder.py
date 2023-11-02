@@ -103,6 +103,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 fileInfo.publish_diagnostics(self.ls)
         if self.filePath.endswith("__init__.py"):
             PythonArchBuilderOdooHooks.on_package_declaration(self.symStack[-1])
+        if self.symStack[-1].type == SymType.FILE:
+            PythonArchBuilderOdooHooks.on_file_declaration(self.symStack[-1])
         #print("END arch: " + self.filePath + " " + (str(type(self.ast_node)) if self.ast_node else "") )
         self.symStack[-1].archStatus = 2
         return self.symStack[-1]
