@@ -15,3 +15,4 @@ vscode/__pycache__
 vscode/requirements.txt
 vscode/server
 vscode/CHANGELOG.md
+package-lock.json
