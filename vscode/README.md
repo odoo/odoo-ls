@@ -18,9 +18,20 @@ This extension integrates the Odoo Language Server, that will help you in the de
 ## Features
 
 - Autocompletion
+
+![Autocompletion picture](images/autocomplete.png?raw=true "Autocompletion")
+
 - Show definition on hover
+
+![hover picture](images/hover.png?raw=true "Hover")
+
 - Go to definition
+
+![gotodefinition picture](images/goto.gif?raw=true "Go to definition")
+
 - Diagnostics
+
+![diagnostics picture](images/diagnostics.png?raw=true "Diagnostics")
 
 ## Installation
 
