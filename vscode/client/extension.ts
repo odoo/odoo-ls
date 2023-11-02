@@ -329,9 +329,9 @@ async function checkAddons(context: ExtensionContext, odooOutputChannel: OutputC
     let currentConfig = getCurrentConfig(context)
     if (currentConfig) {
         let missingFiles = files.filter(file => {
-            return (
-                !currentConfig.addons.some((addon) => file.fsPath.startsWith(addon)) ||
-                !file.fsPath.startsWith(currentConfig.odooPath)
+            return !(
+                currentConfig.addons.some((addon) => file.fsPath.startsWith(addon)) ||
+                file.fsPath.startsWith(currentConfig.odooPath)
             )
         })
         let missingPaths = [...new Set(missingFiles.map(file => {
