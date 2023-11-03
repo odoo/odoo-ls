@@ -46,7 +46,7 @@ class Symbol(RegisterableObject):
     __slots__ = ("name", "type", "eval", "ast_node", "value", "symbols", "moduleSymbols",
         "localSymbols",  "dependencies", "dependents", "parent",
         "modelData", "external", "start_pos", "end_pos", "archStatus", "odooStatus", "validationStatus",
-        "not_found_paths", "i_ext", "doc")
+        "not_found_paths", "i_ext", "doc", "deprecated_reason")
 
     def __init__(self, name, type):
         super().__init__()
@@ -112,6 +112,7 @@ class Symbol(RegisterableObject):
         self.odooStatus = 0 #0: not loaded, 1: building, 2: loaded
         self.validationStatus = 0 #0: not validated, 1: in validation, 2: validated
         self.not_found_paths = []
+        self.deprecated_reason: str = None #if not None, the symbol is deprecated and the reason is given
         self.doc = None
 
     def __str__(self):
