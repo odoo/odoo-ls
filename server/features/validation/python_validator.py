@@ -7,7 +7,7 @@ from ...core.symbol import Symbol
 from ...python_utils import PythonUtils
 from ...core.file_mgr import FileMgr
 from ...core.import_resolver import resolve_import_stmt
-from lsprotocol.types import (Diagnostic,Position, Range)
+from lsprotocol.types import (Diagnostic,DiagnosticTag,Position, Range)
 
 class ClassContentCacheValidator():
 
@@ -275,6 +275,19 @@ class PythonValidator(ast.NodeVisitor):
 
     def validate_structure(self):
         for symbol in self.symStack[0].get_ordered_symbols():
+            if symbol.eval and symbol.eval.get_symbol() and symbol.eval.get_symbol().deprecated_reason: #not follow_ref because we only want to raise on first ref
+                position = (symbol.start_pos, symbol.end_pos)
+                self.diagnostics.append(Diagnostic(
+                    range = Range(
+                        start=Position(line=position[0][0]-1, character=position[0][1]),
+                        end=Position(line=position[0][0]-1, character=1) if sys.version_info < (3, 8) else \
+                            Position(line=position[0][0]-1, character=position[1][0])
+                    ),
+                    message = symbol.eval.get_symbol().name + " is deprecated: " + symbol.eval.get_symbol().deprecated_reason,
+                    source = EXTENSION_NAME,
+                    tags=[DiagnosticTag.Deprecated],
+                    severity = 3
+                ))
             if symbol.type == SymType.CLASS:
                 if symbol.modelData:
                     position = (symbol.start_pos, symbol.end_pos)
