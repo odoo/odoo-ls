@@ -48,6 +48,7 @@ class PythonArchBuilderOdooHooks:
                         return #TODO should never happen
                     form_var.start_pos = getattr_sym.start_pos
                     form_var.end_pos = getattr_sym.end_pos
+                    form_var.deprecated_reason = "Use odoo.tests.Form instead of odoo.tests.common.Form"
                     symbol.add_symbol(form_var)
 
     @staticmethod
