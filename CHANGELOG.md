@@ -1,9 +1,8 @@
 # Changelog
 
-## 0.2.0
+## 0.2.0 - 2023/11/07
 
-Update to version numbers: "0.x.0"
-If x is even, it will be a beta (or pre-release) version, odd numbers will be release version.
+Update to version numbers: "0.x.0" if x is even, it will be a beta (or pre-release) version, odd numbers will be release version.
 There will be no more tag to version (-beta or -alpha)
 
 ### VsCode
@@ -14,12 +13,22 @@ There will be no more tag to version (-beta or -alpha)
 - Separate log for each vscode instance and implement a cleanup of old files
 - Add a warning if detected odoo in the workspace that's different than the one in the selected configuration
 - Add a warning if detected addons paths in the workspace that were not added in the configuration
+- New readme and repository refactoring
+
+### Server
+
+- An inheritance that is not in the dependecies of the module will now raised a "not in dependency" error instead of a "not found" one.
+- Odoo 16.3+ : raise a DeprecationWarning on all "odoo.tests.common.Form" imports and manually resolve the new symbol
 
 ### Fixs
 
 - Autocompletion can no longer propose parameters as items
 - Support venv on windows
 - Fix odoo version detection for intermediate version (saas)
+- Module detection behaviour: empty directory canno't be selected anymore as valid module while searching for a dependency, and non-module files are not added to the tree if not needed.
+- New symbols are not built anymore if nothing is importing them
+- Python 3.10+: IndentationError is using -1 character index (despite the documentation indicating [1-MAX_INT]), so a special case has been added to handle it.
+- The server will not try to release a non-acquired lock anymore
 
 ## 0.1.1-alpha.1 - 2023/09/27
 
