@@ -230,10 +230,13 @@ class Odoo():
             self.process_rebuilds(ls)
             addonsSymbol = self.symbols.get_symbol(["odoo", 'addons'])
             if Odoo.import_odoo_addons:
-                addonsSymbol.paths += [
-                    os.path.join(self.odooPath, "addons"),
-                    #"/home/odoo/Documents/odoo-servers/test_odoo/enterprise",
+                if os.path.exists(os.path.join(self.odooPath, "addons")):
+                    addonsSymbol.paths += [
+                        os.path.join(self.odooPath, "addons")
                     ]
+                else:
+                    ls.show_message_log("Odoo addons not found at " + os.path.join(self.odooPath, "addons"), MessageType.Error)
+                    return False
             addonsSymbol.paths += used_config.addons
             return True
         else:
@@ -365,12 +368,13 @@ class Odoo():
         addonsSymbol = self.symbols.get_symbol(["odoo", "addons"])
         addonsPaths = self.symbols.get_symbol(["odoo", "addons"]).paths
         for path in addonsPaths:
-            dirs = os.listdir(path)
-            for dir in dirs:
-                if os.path.isdir(os.path.join(path, dir)):
-                    PythonArchBuilder(ls, addonsSymbol, os.path.join(path, dir)).load_arch(require_module=True)
-            if self.stop_init:
-                break
+            if os.path.exists(path):
+                dirs = os.listdir(path)
+                for dir in dirs:
+                    if os.path.isdir(os.path.join(path, dir)):
+                        PythonArchBuilder(ls, addonsSymbol, os.path.join(path, dir)).load_arch(require_module=True)
+                if self.stop_init:
+                    break
         if self.stop_init:
             return
         #needed?
