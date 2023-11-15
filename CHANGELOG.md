@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1 - 2023/11/15
+
+This version contains various fixs based on the reports we got. No new features here.
+
+### Server
+- Fix log file hell. No more log file that will fill up your hard disk.
+- Fix a crash that can occur if a model is declared ouside of a module (really?)
+- Fix crash that can occur if the configuration is wrong. Handle it properly
+- Allow creation of full path instead of only a new file. if you have a directory test, you can create test/dummy/file.py in on command instead of 2 (directory + file) without having the extension crashing
+- Fix crash on some file edit due to the thread queue that was missing some context
+- Fix character index on Hover and Definition feature that created a crash if you hover the last character of the file
+
 ## 0.2.0 - 2023/11/07
 
 Update to version numbers: "0.x.0" if x is even, it will be a beta (or pre-release) version, odd numbers will be release version.
