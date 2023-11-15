@@ -11,7 +11,7 @@ class ParsoUtils:
         "return the Symbols at the given position in a file, the range of the selected symbol and the context"
         range = None
         scope_symbol = fileSymbol.get_scope_symbol(line)
-        element = parsoTree.get_leaf_for_position((line, character), include_prefixes=True)
+        element = parsoTree.get_leaf_for_position((line, character-1), include_prefixes=True)
         range = Range(
             start=Position(line=element.start_pos[0]-1, character=element.start_pos[1]),
             end=Position(line=element.end_pos[0]-1, character=element.end_pos[1])
