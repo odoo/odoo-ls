@@ -9,6 +9,12 @@ from .constants import *
 from .update_event_queue import UpdateEventQueue
 
 
+def _prepare_ctxt_thread(odoo_server, target, args):
+    OdooLanguageServer.instance.set(odoo_server)
+    OdooLanguageServer.access_mode.set("none")
+    target(*args)
+
+
 class OdooLanguageServer(LanguageServer):
 
     instance = contextvars.ContextVar('instance', default=None)
@@ -26,11 +32,14 @@ class OdooLanguageServer(LanguageServer):
         odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
 
     def launch_thread(self, target, args):
-        def prepare_ctxt_thread(odoo_server, target, args):
-            OdooLanguageServer.instance.set(odoo_server)
-            OdooLanguageServer.access_mode.set("none")
-            target(*args)
-        threading.Thread(target=prepare_ctxt_thread, args=(self, target, args)).start()
+        thread = threading.Thread(target=_prepare_ctxt_thread, args=(self, target, args))
+        thread.start()
+        return thread
+
+    def launch_thread_timer(self, target, args, delay):
+        thread = threading.Timer(delay, function=_prepare_ctxt_thread, args=(self, target, args))
+        thread.start()
+        return thread
 
     @staticmethod
     def get():

@@ -59,20 +59,20 @@ class UpdateEventQueue:
         self.delay = delay / 1000.0
 
     def push(self, event:UpdateEvent):
+        from .odoo_language_server import OdooLanguageServer
         with self.lock:
             if self.panic_mode:
                 #do no add anything, but update time of the last event
                 if self.queue:
                     self.queue[-1].time = time.time()
                 return
-            self.queue = [e for e in self.queue if e.path != event.path]
+            self.queue = [e for e in self.queue if e.path != event.path] #TODO write this with a set
             if len(self.queue) > 10:
                 self.panic_mode = True
             event.time = time.time()
             self.queue.append(event)
             if self.thread is None:
-                self.thread = threading.Timer(self.delay, self.process)
-                self.thread.start()
+                self.thread = OdooLanguageServer.get().launch_thread_timer(target=self.process, args=(), delay = self.delay)
 
     def clear(self):
         with self.lock:
@@ -85,8 +85,7 @@ class UpdateEventQueue:
             self.thread = None
             if self.queue:
                 if self.queue[-1].time + self.delay > time.time():
-                    self.thread = threading.Timer(self.queue[-1].time + self.delay - time.time(), self.process)
-                    self.thread.start()
+                    self.thread = odoo_server.launch_thread_timer(target=self.process, args=(), delay = self.queue[-1].time + self.delay - time.time())
                     return
                 if self.panic_mode:
                     Odoo.reload_database(odoo_server)
@@ -100,5 +99,4 @@ class UpdateEventQueue:
                 if acquired:
                     Odoo.get().process_rebuilds(odoo_server)
                 else:
-                    self.thread = threading.Timer(1.0, self.process)
-                    self.thread.start()
+                    self.thread = odoo_server.launch_thread_timer(target=self.process, args=(self,), delay = 1.0)
