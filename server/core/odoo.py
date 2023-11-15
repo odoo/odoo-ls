@@ -388,6 +388,28 @@ class Odoo():
             pass
         ls.show_message_log(str(len(Odoo.get().modules)) + " modules found")
 
+    def get_loaded_part_tree(self, path):
+        #given a path, return the deepest loaded symbol that match it and the remaining path.
+        # Ex: if odoo/addons/test/models is loaded, the path odoo/addons/test/models/test.py will return
+        # (odoo/addons/test/models, "test.py"). the first element is a symbol. return None, None if not in the project
+        addonSymbol = self.symbols.get_symbol(["odoo", "addons"])
+        if not addonSymbol:
+            return ()
+        symbol = addonSymbol
+        for dir_path in [self.instance.odooPath] + addonSymbol.paths:
+            if path.startswith(dir_path):
+                remains = path.replace(dir_path, "", 1).replace("\\", "/").split("/")
+                remains.pop(0)
+                el = remains.pop(0)
+                while el:
+                    next_symbol = symbol.get_symbol([el])
+                    if not next_symbol:
+                        return symbol, [el] + remains
+                    symbol = next_symbol
+                    el = remains.pop(0)
+                return symbol, []
+        return None, None
+
     def get_file_symbol(self, path):
         addonSymbol = self.symbols.get_symbol(["odoo", "addons"])
         if not addonSymbol:
@@ -430,7 +452,7 @@ class Odoo():
         pp = PythonArchBuilder(ls, parent, path)
         new_symbol = pp.load_arch()
         new_symbol_tree = new_symbol.get_tree()
-        return new_symbol_tree
+        return new_symbol, new_symbol_tree
 
     def file_change(self, ls, path, text, version):
         #snapshot1 = tracemalloc.take_snapshot()
@@ -446,7 +468,7 @@ class Odoo():
                 if not parent:
                     return
                 #build new
-                new_symbol_tree = self._build_new_symbol(ls, path, parent)
+                _, new_symbol_tree = self._build_new_symbol(ls, path, parent)
                 #rebuild validations
                 if new_symbol_tree:
                     self._search_symbols_to_rebuild(new_symbol_tree)
@@ -460,14 +482,21 @@ class Odoo():
 
     def file_create(self, ls, path):
         with Odoo.get().acquire_write(ls):
-            new_parent = self.get_file_symbol(os.sep.join(path.split(os.sep)[:-1]))
-            new_tree = new_parent.get_tree()
-            new_tree[1].append(path.split(os.sep)[-1].replace(".py", ""))
-            rebuilt_needed = self._search_symbols_to_rebuild(new_tree)
-            if rebuilt_needed or new_parent.get_tree() == (["odoo", "addons"], []):
-                #if there is something that is trying to import the new file, build it.
-                #Else, don't add it to the architecture to not add useless symbols (and overrides)
-                new_tree = self._build_new_symbol(ls, path, new_parent)
+            parent, remains = self.get_loaded_part_tree(path)
+            if not parent or not remains:
+                return
+            current_path = parent.get_paths()[0]
+            new_tree = parent.get_tree()
+            for new_el in remains:
+                new_tree[0].append(new_el.replace(".py", ""))
+                rebuilt_needed = self._search_symbols_to_rebuild(new_tree)
+                if rebuilt_needed or parent.get_tree() == (["odoo", "addons"], []):
+                    #if there is something that is trying to import the new file, build it.
+                    #Else, don't add it to the architecture to not add useless symbols (and overrides)
+                    current_path = os.path.join(current_path, new_el)
+                    parent, new_tree = self._build_new_symbol(ls, current_path, parent)
+                else:
+                    return
 
     def add_to_rebuilds(self, symbols):
         """add a dictionnary of symbols to the rebuild list. The dict must have the format
@@ -533,8 +562,8 @@ class Odoo():
         found_symbols = RegisteredRefSet()
         for s in self.not_found_symbols:
             for index in range(len(s.not_found_paths)):
-                step, tree = s.not_found_paths[index]
-                if flat_tree[:len(tree)] == tree[:len(flat_tree)]:
+                step, not_found_tree = s.not_found_paths[index]
+                if flat_tree[:len(not_found_tree)] == not_found_tree[:len(flat_tree)]:
                     new_dict_to_revalidate[step].add(s)
                     del s.not_found_paths[index]
             if not s.not_found_paths:
