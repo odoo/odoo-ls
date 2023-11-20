@@ -6,15 +6,8 @@ from .file_mgr import FileMgr
 from .python_arch_builder import PythonArchBuilder
 from ..references import RegisteredRef
 from .symbol import ConcreteSymbol
-from lsprotocol.types import (CompletionItem, CompletionList, CompletionOptions,
-                             CompletionParams, ConfigurationItem,
-                             ConfigurationParams, Diagnostic, DiagnosticTag,
-                             DidChangeTextDocumentParams,
-                             DidCloseTextDocumentParams,
-                             DidOpenTextDocumentParams, MessageType, Position,
-                             Range, Registration, RegistrationParams,
-                             SemanticTokens, SemanticTokensLegend, SemanticTokensParams,
-                             Unregistration, UnregistrationParams)
+from lsprotocol.types import (Diagnostic, DiagnosticTag, Position,
+                             Range, DiagnosticSeverity)
 
 class ModuleSymbol(ConcreteSymbol):
 
@@ -71,7 +64,7 @@ class ModuleSymbol(ConcreteSymbol):
                 ),
                 message = "A manifest should only contains one dictionnary",
                 source = EXTENSION_NAME,
-                severity= 1,
+                severity= DiagnosticSeverity.Error,
             )]
         dic = ast_body[0].value
         self.module_name = ""
@@ -116,7 +109,7 @@ class ModuleSymbol(ConcreteSymbol):
                     message = "'active' is deprecated and has been replaced by 'auto_install'",
                     source = EXTENSION_NAME,
                     tags=[DiagnosticTag.Deprecated],
-                    severity= 1,
+                    severity= DiagnosticSeverity.Error,
                 ))
             else:
                 if key.value not in ["version", "description", "author", "website", "license",
@@ -129,7 +122,7 @@ class ModuleSymbol(ConcreteSymbol):
             self.depends.append("base")
         return diags
 
-    def _create_diag(self, node, message, severity=1):
+    def _create_diag(self, node, message, severity=DiagnosticSeverity.Error):
         return Diagnostic(
             range = Range(
                 start=Position(line=node.lineno-1, character=node.col_offset+1),

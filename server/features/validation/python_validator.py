@@ -7,7 +7,7 @@ from ...core.symbol import Symbol
 from ...python_utils import PythonUtils
 from ...core.file_mgr import FileMgr
 from ...core.import_resolver import resolve_import_stmt
-from lsprotocol.types import (Diagnostic,DiagnosticTag,Position, Range)
+from lsprotocol.types import (Diagnostic,DiagnosticTag,Position, Range, DiagnosticSeverity)
 
 class ClassContentCacheValidator():
 
@@ -99,7 +99,7 @@ class PythonValidator(ast.NodeVisitor):
                         ),
                         message = module.dir_name + " is not in the dependencies of the module",
                         source = EXTENSION_NAME,
-                        severity = 2
+                        severity = DiagnosticSeverity.Warning
                     ))
 
     def visit_Assign(self, node):
@@ -286,7 +286,7 @@ class PythonValidator(ast.NodeVisitor):
                     message = symbol.eval.get_symbol().name + " is deprecated: " + symbol.eval.get_symbol().deprecated_reason,
                     source = EXTENSION_NAME,
                     tags=[DiagnosticTag.Deprecated],
-                    severity = 3
+                    severity = DiagnosticSeverity.Information
                 ))
             if symbol.type == SymType.CLASS:
                 if symbol.modelData:
@@ -307,7 +307,7 @@ class PythonValidator(ast.NodeVisitor):
                                 ),
                                 message = inherit + " does not exist",
                                 source = EXTENSION_NAME,
-                                severity = 1
+                                severity = DiagnosticSeverity.Error
                             ))
                         else:
                             inherited_models = model.get_main_symbols(self.currentModule)
@@ -320,7 +320,7 @@ class PythonValidator(ast.NodeVisitor):
                                 ),
                                 message = "This model is ambiguous. Please fix your dependencies or avoid using same model name in different modules",
                                 source = EXTENSION_NAME,
-                                severity = 1
+                                severity = DiagnosticSeverity.Error
                             ))
                             elif not inherited_models:
                                 model_syms = model.get_main_symbols()
@@ -337,5 +337,5 @@ class PythonValidator(ast.NodeVisitor):
                                     ),
                                     message = inherit + " is not in your dependencies. Please review the dependencies of your module to add " + models + " in it",
                                     source = EXTENSION_NAME,
-                                    severity = 1
+                                    severity = DiagnosticSeverity.Error
                                 ))
