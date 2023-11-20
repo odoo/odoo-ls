@@ -11,7 +11,7 @@ from .file_mgr import FileMgr
 from ..python_utils import PythonUtils
 from ..references import *
 from .import_resolver import *
-from lsprotocol.types import (Diagnostic,MessageType,Position, Range)
+from lsprotocol.types import (Diagnostic,MessageType,Position, Range, DiagnosticSeverity)
 
 
 class PythonArchEval(ast.NodeVisitor):
@@ -106,7 +106,7 @@ class PythonArchEval(ast.NodeVisitor):
                         ),
                         message = ".".join(file_tree + [node_alias.name]) + " not found",
                         source = EXTENSION_NAME,
-                        severity = 2
+                        severity = DiagnosticSeverity.Warning
                     ))
             else:
                 if (file_tree + node_alias.name.split("."))[0] in BUILT_IN_LIBS:
@@ -122,7 +122,7 @@ class PythonArchEval(ast.NodeVisitor):
                         ),
                         message = ".".join(file_tree + [node_alias.name]) + " not found",
                         source = EXTENSION_NAME,
-                        severity = 2
+                        severity = DiagnosticSeverity.Warning
                     ))
 
     def visit_Try(self, node):
@@ -180,7 +180,7 @@ class PythonArchEval(ast.NodeVisitor):
                 ),
                 message = "Base class " + full_name + " not found",
                 source = EXTENSION_NAME,
-                severity= 2,
+                severity= DiagnosticSeverity.Warning,
             )
         )
 
@@ -226,7 +226,7 @@ class PythonArchEval(ast.NodeVisitor):
                             ),
                             message = "Base class " + full_base + " is not a class",
                             source = EXTENSION_NAME,
-                            severity= 2,
+                            severity= DiagnosticSeverity.Warning,
                         )
                     )
                     continue
