@@ -16,9 +16,6 @@
     "Linters"
   ],
   "icon": "images/odoo_logo.png",
-  "galleryBanner": {
-    "color": "#8F8F8F"
-  },
   "activationEvents": [
     "onView:explorer",
     "workspaceContains:**/__manifest__.py"
