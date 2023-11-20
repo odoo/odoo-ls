@@ -19,7 +19,7 @@ class Model():
         res = []
         for sym in self.impl_sym:
             if sym.modelData.name not in sym.modelData.inherit:
-                if not from_module or not sym.get_module_symbol() or \
+                if not from_module or not sym.get_module_sym() or \
                 (module_acc and sym.get_module_sym().dir_name in module_acc) or \
                 from_module.is_in_deps(sym.get_module_sym().dir_name, module_acc):
                     res.append(sym)
