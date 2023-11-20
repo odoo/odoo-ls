@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 - 2023/11/20
+
+### VsCode
+
+- Fix broken image links in readme files.
+
+### Server
+- Fix typo in the last patch
+- update code to work with cattrs==23.2.1
+- Fix diagnostic crash in non-module addon
+
 ## 0.2.1 - 2023/11/15
 
 This version contains various fixs based on the reports we got. No new features here.
