@@ -27,7 +27,7 @@ add -s if you want to see the logs from OdooLS
 
 # SETUP CONSTANTS
 
-ODOO_COMMUNITY_PATH = os.getenv("COMUNITY_PATH") 
+ODOO_COMMUNITY_PATH = os.getenv("COMMUNITY_PATH") 
 
 # Prepare DATA
 
