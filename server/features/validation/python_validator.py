@@ -88,7 +88,7 @@ class PythonValidator(ast.NodeVisitor):
 
         for node_alias, symbol, file_tree in symbols:
             name = node_alias.name
-            if symbol:
+            if symbol and self.currentModule: # We test dependencies only if we are already in a module (saas-worker example)
                 module = symbol.get_module_sym()
                 if module and not self.currentModule.is_in_deps(module.dir_name) and not self.safeImport[-1]:
                     self.diagnostics.append(Diagnostic(
