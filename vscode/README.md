@@ -19,19 +19,19 @@ This extension integrates the Odoo Language Server, that will help you in the de
 
 - Autocompletion
 
-![Autocompletion picture](images/autocomplete.png?raw=true "Autocompletion")
+![Autocompletion picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocomplete.png "Autocompletion")
 
 - Show definition on hover
 
-![hover picture](images/hover.png?raw=true "Hover")
+![hover picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/hover.png "Hover")
 
 - Go to definition
 
-![gotodefinition picture](images/goto.gif?raw=true "Go to definition")
+![gotodefinition picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/goto.gif "Go to definition")
 
 - Diagnostics
 
-![diagnostics picture](images/diagnostics.png?raw=true "Diagnostics")
+![diagnostics picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/diagnostics.png "Diagnostics")
 
 ## Installation
 
@@ -43,8 +43,8 @@ This extension integrates the Odoo Language Server, that will help you in the de
 ### Automatic installation
 
 Install the extension from the marketplace
-- VsCode: [link]()
-- VsCodium: [link]()
+- VsCode: [link](https://marketplace.visualstudio.com/items?itemName=Odoo.odoo)
+- VsCodium: [link](https://open-vsx.org/extension/Odoo/odoo)
 
 ### Manually build the .vsix package
 
