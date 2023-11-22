@@ -73,30 +73,30 @@ class ModuleSymbol(ConcreteSymbol):
         diags = []
         for key, value in zip(dic.keys, dic.values):
             if not isinstance(key, ast.Constant):
-                diags.append(self._create_diag(key, "Manifest keys should be strings", 1))
+                diags.append(self._create_diag(key, "Manifest keys should be strings", DiagnosticSeverity.Error))
             if key.value == "name":
                 if not isinstance(value, ast.Constant):
-                    diags.append(self._create_diag(key, "Name value should be a string", 1))
+                    diags.append(self._create_diag(key, "Name value should be a string", DiagnosticSeverity.Error))
                 self.module_name = value.value
             elif key.value == "depends":
                 if not isinstance(value, ast.List):
-                    diags.append(self._create_diag(key, "depends value should be a list of string", 1))
+                    diags.append(self._create_diag(key, "depends value should be a list of string", DiagnosticSeverity.Error))
                     continue
                 l = []
                 for el in value.elts:
                     if not isinstance(el, ast.Constant):
-                        diags.append(self._create_diag(key, "dependency should be expressed with a string", 1))
+                        diags.append(self._create_diag(key, "dependency should be expressed with a string", DiagnosticSeverity.Error))
                         continue
                     l.append(el.value)
                 self.depends = l
             elif key.value == "data":
                 if not isinstance(value, ast.List):
-                    diags.append(self._create_diag(key, "data value should be a list of string", 1))
+                    diags.append(self._create_diag(key, "data value should be a list of string", DiagnosticSeverity.Error))
                     continue
                 l = []
                 for el in value.elts:
                     if not isinstance(el, ast.Constant):
-                        diags.append(self._create_diag(key, "data file should be expressed with a string", 1))
+                        diags.append(self._create_diag(key, "data file should be expressed with a string", DiagnosticSeverity.Error))
                         continue
                     l.append(el.value)
                 self.data = l
@@ -117,7 +117,7 @@ class ModuleSymbol(ConcreteSymbol):
                                      "application", "assets", "installable", "maintainer",
                                      "pre_init_hook", "post_init_hook", "uninstall_hook", "sequence",
                                      "summary", "icon", "url"]:
-                    pass #diags.append(self._create_diag(key, "Unkown key value", 1))
+                    pass #diags.append(self._create_diag(key, "Unkown key value", DiagnosticSeverity.Error))
         if self.dir_name != 'base':
             self.depends.append("base")
         return diags
