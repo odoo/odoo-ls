@@ -130,8 +130,9 @@ class PythonArchEvalOdooHooks:
             return
         fileSymbol = symbol.get_in_parents([SymType.FILE])
         symbols = resolve_import_stmt(OdooLanguageServer.get(), fileSymbol, fileSymbol, "form", [ast.alias("Form", "")], 1, symbol.start_pos, symbol.end_pos)
-        _, form_symbol, _ = symbols[0]
-        symbol.eval = Evaluation(
-            symbol = RegisteredRef(form_symbol),
-            instance=True
-        )
+        _, found, form_symbol, _ = symbols[0]
+        if found:
+            symbol.eval = Evaluation(
+                symbol = RegisteredRef(form_symbol),
+                instance=True
+            )

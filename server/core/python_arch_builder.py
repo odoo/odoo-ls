@@ -136,8 +136,8 @@ class PythonArchBuilder(ast.NodeVisitor):
                 if len(self.symStack) != 2: # only at top level. we can't follow the import at arch level
                     continue
                 symbols = resolve_import_stmt(self.ls, self.symStack[-1], self.symStack[-1], from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
-                _, symbol, tree = symbols[0] #unpack
-                if not symbol:
+                _, found, symbol, tree = symbols[0] #unpack
+                if not found:
                     Odoo.get().not_found_symbols.add(self.symStack[1])
                     self.symStack[1].not_found_paths.append((BuildSteps.ARCH, tree))
                     continue

@@ -69,18 +69,30 @@ class PythonArchEval(ast.NodeVisitor):
         self.eval_symbols_from_import_stmt(node.module,
                     node.names, node.level, node)
 
+    def _match_diag_config(self, symbol):
+        import_diag_level = Odoo.get().config.diag_missing_imports
+        if import_diag_level == "none":
+            return False
+        if import_diag_level == "all":
+            return True
+        if import_diag_level == "only_odoo" and symbol:
+            tree = symbol.get_tree()
+            if tree and tree[0] and tree[0][0] == "odoo":
+                return True
+        return False
+
     def eval_symbols_from_import_stmt(self, from_stmt, name_aliases, level, node):
         if len(name_aliases) == 1 and name_aliases[0].name == "*":
             return
         symbols = resolve_import_stmt(self.ls, self.fileSymbol, self.symbol, from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
 
-        for node_alias, symbol, file_tree in symbols:
+        for node_alias, found, symbol, file_tree in symbols:
             if not hasattr(node_alias, "symbol"): #If no symbol, the import is probably not at the top level of the file. TODO: check it?
                 continue
             variable = node_alias.symbol
             if not variable:
                 continue
-            if symbol:
+            if found:
                 #resolve the symbol and build necessary evaluations
                 ref = symbol.follow_ref()[0]
                 old_ref = None
@@ -98,32 +110,34 @@ class PythonArchEval(ast.NodeVisitor):
                 else:
                     self.symbol.not_found_paths.append((BuildSteps.ARCH_EVAL, file_tree + node_alias.name.split(".")))
                     Odoo.get().not_found_symbols.add(self.symbol)
-                    self.diagnostics.append(Diagnostic(
-                        range = Range(
-                            start=Position(line=node.lineno-1, character=node.col_offset),
-                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                Position(line=node.lineno-1, character=node.end_col_offset)
-                        ),
-                        message = ".".join(file_tree + [node_alias.name]) + " not found",
-                        source = EXTENSION_NAME,
-                        severity = DiagnosticSeverity.Warning
-                    ))
+                    if self._match_diag_config(symbol):
+                        self.diagnostics.append(Diagnostic(
+                            range = Range(
+                                start=Position(line=node.lineno-1, character=node.col_offset),
+                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                    Position(line=node.lineno-1, character=node.end_col_offset)
+                            ),
+                            message = ".".join(file_tree + [node_alias.name]) + " not found",
+                            source = EXTENSION_NAME,
+                            severity = DiagnosticSeverity.Warning
+                        ))
             else:
                 if (file_tree + node_alias.name.split("."))[0] in BUILT_IN_LIBS:
                     continue
                 if not self.safeImport[-1]:
                     self.symbol.not_found_paths.append((BuildSteps.ARCH_EVAL, file_tree + node_alias.name.split(".")))
                     Odoo.get().not_found_symbols.add(self.symbol)
-                    self.diagnostics.append(Diagnostic(
-                        range = Range(
-                            start=Position(line=node.lineno-1, character=node.col_offset),
-                            end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
-                                Position(line=node.lineno-1, character=node.end_col_offset)
-                        ),
-                        message = ".".join(file_tree + [node_alias.name]) + " not found",
-                        source = EXTENSION_NAME,
-                        severity = DiagnosticSeverity.Warning
-                    ))
+                    if self._match_diag_config(symbol):
+                        self.diagnostics.append(Diagnostic(
+                            range = Range(
+                                start=Position(line=node.lineno-1, character=node.col_offset),
+                                end=Position(line=node.lineno-1, character=1) if sys.version_info < (3, 8) else \
+                                    Position(line=node.lineno-1, character=node.end_col_offset)
+                            ),
+                            message = ".".join(file_tree + [node_alias.name]) + " not found",
+                            source = EXTENSION_NAME,
+                            severity = DiagnosticSeverity.Warning
+                        ))
 
     def visit_Try(self, node):
         return

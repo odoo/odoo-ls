@@ -122,7 +122,7 @@ def did_change(ls, params: DidChangeTextDocumentParams):
     """Text document did change notification."""
     if not Odoo.get():
         return
-    if Odoo.get().refreshMode != "afterDelay":
+    if Odoo.get().config.refresh_mode != "afterDelay":
         return
     text_doc = ls.workspace.get_document(params.text_document.uri)
     source = text_doc.source
@@ -229,9 +229,11 @@ def document_signature(ls, params: SignatureHelpParams):
 def did_change_configuration(ls, params: DidChangeConfigurationParams):
 
     def on_change_config(config):
-        Odoo.get().refreshMode = config[0]["autoRefresh"]
-        Odoo.get().autoSaveDelay = config[0]["autoRefreshDelay"]
-        ls.file_change_event_queue.set_delay(Odoo.instance.autoSaveDelay)
+        old_diag_missing_imports = Odoo.get().config.diag_missing_imports
+        Odoo.get().config.update(config)
+        ls.file_change_event_queue.set_delay(Odoo.instance.config.auto_save_delay)
+        if old_diag_missing_imports != Odoo.get().config.diag_missing_imports:
+            Odoo.get().refresh_evaluations(ls)
 
     ls.get_configuration(WorkspaceConfigurationParams(items=[
         ConfigurationItem(

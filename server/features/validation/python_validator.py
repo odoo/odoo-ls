@@ -86,9 +86,9 @@ class PythonValidator(ast.NodeVisitor):
     def _resolve_import(self, from_stmt, name_aliases, level, node):
         symbols = resolve_import_stmt(self.ls, self.symStack[0], self.symStack[-1], from_stmt, name_aliases, level, (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset))
 
-        for node_alias, symbol, file_tree in symbols:
+        for node_alias, found, symbol, file_tree in symbols:
             name = node_alias.name
-            if symbol and self.currentModule: # We test dependencies only if we are already in a module (saas-worker example)
+            if found and self.currentModule: # We test dependencies only if we are already in a module (saas-worker example)
                 module = symbol.get_module_sym()
                 if module and not self.currentModule.is_in_deps(module.dir_name) and not self.safeImport[-1]:
                     self.diagnostics.append(Diagnostic(
