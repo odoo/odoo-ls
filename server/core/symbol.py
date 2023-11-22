@@ -1,6 +1,7 @@
 import gc
 import os
 import sys
+from .symbol_depends import Dependencies, Dependents
 from ..references import RegisterableObject, RegisteredRef, RegisteredRefSet, RegisteredRefList
 from ..odoo_language_server import OdooLanguageServer
 from ..constants import *
@@ -66,41 +67,8 @@ class Symbol(RegisterableObject):
         # but the other can be used locally)
         self.localSymbols = RegisteredRefList()
         if self.type in (SymType.PACKAGE, SymType.FILE):
-            self.dependencies = { #symbol that are needed to build this symbol
-                BuildSteps.ARCH: { #symbols needed to build arch of this symbol
-                    BuildSteps.ARCH: RegisteredRefSet(),
-                },
-                BuildSteps.ARCH_EVAL: {
-                    BuildSteps.ARCH: RegisteredRefSet(),
-                },
-                BuildSteps.ODOO:{
-                    BuildSteps.ARCH: RegisteredRefSet(),
-                    BuildSteps.ARCH_EVAL: RegisteredRefSet(),
-                    BuildSteps.ODOO: RegisteredRefSet()
-                },
-                BuildSteps.VALIDATION: {
-                    BuildSteps.ARCH: RegisteredRefSet(),
-                    BuildSteps.ARCH_EVAL: RegisteredRefSet(),
-                    BuildSteps.ODOO: RegisteredRefSet(),
-                }
-            }
-            self.dependents = {
-                BuildSteps.ARCH: {
-                    BuildSteps.ARCH: RegisteredRefSet(),
-                    BuildSteps.ARCH_EVAL: RegisteredRefSet(),
-                    BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet() #set of symbol that need to be rebuilt when this symbol is modified at arch level
-                },
-                BuildSteps.ARCH_EVAL: { #set of symbol that need to be rebuilt when this symbol is re-evaluated
-                    #BuildSteps.ARCH_EVAL: RegisteredRefSet(), #should not occur? if yes, check that rebuild order is not sometimes broken
-                    BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet()
-                },
-                BuildSteps.ODOO: { #set of symbol that need to be rebuilt when this symbol is modified at Odoo level
-                    BuildSteps.ODOO: RegisteredRefSet(),
-                    BuildSteps.VALIDATION: RegisteredRefSet()
-                }
-            }
+            self.dependencies = Dependencies() #symbols that are needed to build this symbol
+            self.dependents = Dependents()
         self.parent = None
         self.modelData = None
         self.external = False #use is_external()

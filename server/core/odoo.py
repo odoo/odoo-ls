@@ -249,7 +249,7 @@ class Odoo():
         selected_count = 1000000
         for sym in sym_set:
             current_count = 0
-            for dep_level, sym_dep_set in sym.dependencies[BuildSteps.ARCH].items():
+            for dep_level, sym_dep_set in sym.dependencies[BuildSteps.ARCH].existing_items():
                 if dep_level == BuildSteps.ARCH:
                     for dep in sym_dep_set:
                         if dep in self.rebuild_arch:
