@@ -24,6 +24,19 @@ import time
 import tracemalloc
 
 
+class Config():
+
+    def __init__(self):
+        self.refresh_mode = "afterDelay"
+        self.auto_save_delay = 1000
+        self.diag_missing_imports = "all"
+
+    def update(self, config):
+        if config:
+            self.refresh_mode = config[0].get("autoRefresh", "afterDelay")
+            self.auto_save_delay = config[0].get("autoRefreshDelay", 1000)
+            self.diag_missing_imports = config[0].get("diagMissingImportLevel", "all")
+
 class Odoo():
 
     instance = None
@@ -38,8 +51,7 @@ class Odoo():
         self.full_version = ""
         self.stop_init = False
 
-        self.refreshMode = "afterDelay"
-        self.autoSaveDelay = 1000
+        self.config = Config()
 
         self.grammar = None
 
@@ -136,9 +148,8 @@ class Odoo():
                         scope_uri='window',
                         section="Odoo")
                 ])).result()
-                Odoo.instance.refreshMode = config[0]["autoRefresh"]
-                Odoo.instance.autoSaveDelay = config[0]["autoRefreshDelay"]
-                ls.file_change_event_queue.set_delay(Odoo.instance.autoSaveDelay)
+                Odoo.instance.config.update(config)
+                ls.file_change_event_queue.set_delay(Odoo.instance.config.auto_save_delay)
                 with Odoo.instance.acquire_write(ls):
                     Odoo.instance.symbols.paths = []
                     Odoo.instance.symbols.paths.append(Odoo.instance.stubs_dir)
@@ -585,3 +596,14 @@ class Odoo():
                 else:
                     res += [model]
         return res
+
+    def refresh_evaluations(self, ls):
+        with self.acquire_write(ls):
+            syms = [self.symbols]
+            while syms:
+                s = syms.pop()
+                if s.in_workspace and s.type in [SymType.FILE, SymType.PACKAGE]:
+                    self.add_to_arch_eval(s)
+                if s.type != SymType.FILE:
+                    syms.extend(s.all_symbols())
+            Odoo.get().process_rebuilds(ls)

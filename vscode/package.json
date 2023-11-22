@@ -103,6 +103,22 @@
           "default": 1000,
           "markdownDescription": "Define the delay the server has to wait before refreshing data after an update."
         },
+        "Odoo.diagMissingImportLevel": {
+          "scope": "window",
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "all",
+            "only_odoo",
+            "none"
+          ],
+          "enumDescriptions": [
+            "All missing imports will be reported",
+            "Only missing imports from Odoo will be reported, not from external packages",
+            "No missing imports will be reported"
+          ],
+          "description": "Define for which missing import a diagnostic should be raised"
+        },
         "odooServer.trace.server": {
           "scope": "window",
           "type": "string",
