@@ -217,7 +217,7 @@ def send_error_on_traceback(func):
             try:
                 odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
                 odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
-            except Exception:
+            except BrokenPipeError:
                 #it was the last chance... We prefer to close the server here as it seems there is an issue with the communication
                 exit(1)
     return wrapper_func
