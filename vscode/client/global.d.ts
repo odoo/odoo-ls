@@ -11,4 +11,5 @@ declare global {
    var DEBUG_FILE: string;
    var CLIENT_IS_STOPPING: boolean;
    var CAN_QUEUE_CONFIG_CHANGE: boolean;
+   var IS_PYTHON_EXTENSION_READY: boolean;
 }

@@ -13,6 +13,11 @@ window.addEventListener("message", event => {
       pathField.focus();
       pathField.setAttribute("value", message.path);
       break
+    case "update_python_path":
+      const pythonPathField = document.getElementById('config-python-path-textfield');
+      pythonPathField.focus();
+      pythonPathField.setAttribute("value", message.pythonPath);
+      break
     case "update_config_folder_validity":
       const pathHelper = document.getElementById('config-path-helper');
       if (message.version) {
@@ -28,12 +33,14 @@ function main() {
   const addFolderButton = document.getElementById('add-folder-button');
   const pathTextfield = document.getElementById('config-path-textfield');
   const pathButton = document.getElementById('config-path-button');
+  const pythonPathButton = document.getElementById('config-python-path-button');
   const saveButton = document.getElementById('save-button');
   const deleteButton = document.getElementById('delete-button');
 
   addFolderButton.addEventListener("click", addFolderClick);
   pathTextfield.addEventListener("vsc-change", updateVersion);
   pathButton.addEventListener('vsc-click', openOdooFolder);
+  pythonPathButton.addEventListener('vsc-click', openPythonPath);
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
 
@@ -50,6 +57,13 @@ function saveConfig() {
       name: document.getElementById("config-name-textfield").value,
       odooPath: document.getElementById("config-path-textfield").value,
       addons: getAddons(),
+      pythonPath: document.getElementById("config-python-path-textfield").value,
+  });
+}
+
+function openPythonPath() {
+  vscode.postMessage({
+    command: "open_python_path"
   });
 }
 

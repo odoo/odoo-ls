@@ -129,7 +129,8 @@ export class ConfigurationWebView {
             config: config,
             cspSource: webview.cspSource,
             nonce: nonce,
-            odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null
+            odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null,
+            pythonExtensionMode: global.IS_PYTHON_EXTENSION_READY,  
         };
         return ejs.render(htmlFile, data);
     }
@@ -138,7 +139,7 @@ export class ConfigurationWebView {
         panel.title = `Odoo: ${title}`
     }
 
-    private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>): void {
+    private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
 
@@ -148,6 +149,10 @@ export class ConfigurationWebView {
         
         if (configs[this.configId]["name"] != name) {
             changes.push("name");
+        }
+
+        if (configs[this.configId]["pythonPath"] != pythonPath) {
+            changes.push("pythonPath");
         }
 
         if (oldAddons.length != addons.length) {
@@ -168,6 +173,7 @@ export class ConfigurationWebView {
             "name": name,
             "odooPath": untildify(odooPath),
             "addons": addons,
+            "pythonPath": untildify(pythonPath),
         };
         this._context.globalState.update("Odoo.configurations", configs);
         if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
@@ -202,7 +208,8 @@ export class ConfigurationWebView {
                     const odooPath = message.odooPath;
                     const name = message.name;
                     const addons = message.addons;
-                    this._saveConfig(configs, odooPath, name, addons);
+                    const pythonPath = message.pythonPath;
+                    this._saveConfig(configs, odooPath, name, addons, pythonPath);
                     break;
                 case "view_ready":
                     webview.postMessage({
@@ -256,6 +263,25 @@ export class ConfigurationWebView {
                     break;
                 case "update_version":
                     this._getOdooVersion(message.odooPath, webview);
+                    break;
+                case "open_python_path":
+                    const pythonPathOptions: vscode.OpenDialogOptions = {
+                        title: "Add Python path",
+                        openLabel: 'Add path',
+                        canSelectMany: false,
+                        canSelectFiles: false,
+                        canSelectFolders: false,
+                    };
+                    window.showOpenDialog(pythonPathOptions).then(fileUri => {
+                        if (fileUri && fileUri[0]) {
+                            let config = configs[this.configId];
+                            const odooPythonPath = fileUri[0].fsPath;
+                            webview.postMessage({
+                                command: "update_python_path",
+                                pythonPath: odooPythonPath
+                            });
+                        }
+                    });
                     break;
             }
         },
