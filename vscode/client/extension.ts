@@ -33,9 +33,16 @@ import {
     ConfigurationsChange,
     clientStopped
 } from './common/events'
-import { IInterpreterDetails, getInterpreterDetails, initializePython, onDidChangePythonInterpreter } from "./common/python";
+import { 
+    IInterpreterDetails, 
+    getInterpreterDetails, 
+    initializePython, 
+    onDidChangePythonInterpreter, 
+    onDidChangePythonInterpreterEvent 
+} from "./common/python";
 import { getCurrentConfig } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
+import { execSync } from "child_process";
 
 
 function getClientOptions(): LanguageClientOptions {
@@ -221,8 +228,9 @@ async function addNewConfiguration(context: ExtensionContext) {
 }
 
 async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
+    const oldConfig = await getCurrentConfig(context)
     await context.workspaceState.update("Odoo.selectedConfiguration", configId);
-    selectedConfigurationChange.fire(null);
+    selectedConfigurationChange.fire(oldConfig);
 }
 
 async function displayCrashMessage(context: ExtensionContext, crashInfo: string, command: string = null, outputChannel = global.LSCLIENT.outputChannel) {
@@ -253,8 +261,23 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
     let client = global.LSCLIENT;
     try {
-        const interpreter = await getInterpreterDetails();
-        const pythonPath = interpreter.path[0];
+        let pythonPath: string;
+
+        try{
+            //trying to use the VScode python extension
+            const interpreter = await getInterpreterDetails();
+            pythonPath = interpreter.path[0];
+            global.IS_PYTHON_EXTENSION_READY = true;
+
+        }catch{
+            global.IS_PYTHON_EXTENSION_READY = false;
+            //python extension is not available switch to standalone mode
+            pythonPath =  await getStandalonePythonPath(context);
+            await checkStandalonePythonVersion(context)
+        }
+        outputChannel.appendLine("[INFO] Python VS code extension is ".concat(global.IS_PYTHON_EXTENSION_READY ? "ready" : "not ready"));
+
+        
 
         if (context.extensionMode === ExtensionMode.Development) {
             // Development - Run the server manually
@@ -394,14 +417,21 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
     // Listen to changes to Configurations
     context.subscriptions.push(
-        ConfigurationsChange.event(async (changes: Array<String> | null) => {
+        ConfigurationsChange.event(async (changes: Array<string> | null) => {
             try {
                 let client = global.LSCLIENT;
                 await setStatusConfig(context);
-                if (changes && (changes.includes('odooPath') || changes.includes('addons'))) {
+                const RELOAD_ON_CHANGE = ["odooPath","addons","pythonPath"];
+                if (changes && (changes.some(r=> RELOAD_ON_CHANGE.includes(r)))) {
                     await checkOdooPath(context);
                     await checkAddons(context);
                     if (client.diagnostics) client.diagnostics.clear();
+
+                    if (changes.includes('pythonPath')){
+                        await checkStandalonePythonVersion(context);
+                        onDidChangePythonInterpreterEvent.fire(changes["pythonPath"]);
+                        return
+                    }
                     await client.sendNotification("Odoo/configurationChanged");
                 }
             }
@@ -414,7 +444,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
-        selectedConfigurationChange.event(async () => {
+        selectedConfigurationChange.event(async (oldConfig) => {
             try {
                 if (!global.CAN_QUEUE_CONFIG_CHANGE) return;
 
@@ -425,9 +455,18 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 }
 
                 let client = global.LSCLIENT;
-                if (await getCurrentConfig(context)) {
+                const config = await getCurrentConfig(context)
+                if (config) {
                     await checkOdooPath(context);
                     await checkAddons(context);
+                    if (!global.IS_PYTHON_EXTENSION_READY){
+                        await checkStandalonePythonVersion(context);
+                        if (!oldConfig || config["pythonPath"] != oldConfig["pythonPath"]){
+                            onDidChangePythonInterpreterEvent.fire(config["pythonPath"]);
+                            await setStatusConfig(context);
+                            return
+                        }
+                    }
                     if (!client) {
                         global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
                         client = global.LSCLIENT;
@@ -606,6 +645,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
     }
 }
 
+
 export async function activate(context: ExtensionContext): Promise<void> {
     try {
         global.CAN_QUEUE_CONFIG_CHANGE = true;
@@ -616,7 +656,9 @@ export async function activate(context: ExtensionContext): Promise<void> {
         setMissingStateVariables(context);
         validateState(context);
 
-        await initializePython(context.subscriptions);
+        if (global.IS_PYTHON_EXTENSION_READY){
+            await initializePython(context.subscriptions);
+        }
         await initStatusBar(context);
         await initializeSubscriptions(context);
 
@@ -680,4 +722,40 @@ export async function deactivate(): Promise<void> {
     if (global.LSCLIENT) {
         return global.LSCLIENT.dispose();
     }
+}
+
+async function getStandalonePythonPath(context: ExtensionContext) {
+    const config = await getCurrentConfig(context);
+    const pythonPath = config && config["pythonPath"] ? config["pythonPath"] : "python3";
+    return pythonPath
+}
+
+async function checkStandalonePythonVersion(context: ExtensionContext): Promise<boolean>{
+    const currentConfig = await getCurrentConfig(context);
+    if (!currentConfig){
+        return
+    }
+    
+    const pythonPath = currentConfig["pythonPath"]
+    if (!pythonPath) {
+        OUTPUT_CHANNEL.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
+    }
+
+    const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
+    const pythonVersion = semver.parse(versionString)
+    if (semver.lt(pythonVersion, "3.8.0")) {
+        window.showErrorMessage(
+            `You must use python 3.8 or newer. Would you like to change it?`,
+            "Update current configuration",
+            "Ignore"
+        ).then(selection => {
+            switch (selection) {
+                case ("Update current configuration"):
+                    ConfigurationWebView.render(context, currentConfig.id);
+                    break
+            }
+        });
+        return false
+    }
+    return true
 }

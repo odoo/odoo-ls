@@ -10,7 +10,7 @@ export interface IInterpreterDetails {
     resource?: Uri;
 }
 
-const onDidChangePythonInterpreterEvent = new EventEmitter<IInterpreterDetails>();
+export const onDidChangePythonInterpreterEvent = new EventEmitter<IInterpreterDetails>();
 export const onDidChangePythonInterpreter: Event<IInterpreterDetails> = onDidChangePythonInterpreterEvent.event;
 
 let _api: PythonExtension | undefined;
