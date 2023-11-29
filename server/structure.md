@@ -277,7 +277,7 @@ The language server, with its database and notifications, can provide the follow
 
 ## G - Evaluation requests
 
-In order to respond to autocompletion queries, hovers and goto definitions, parsoUtils.evaluate_type is a function capable of evaluating the type of a piece of code given as a parameter.
+In order to respond to autocompletion queries, hovers and goto definitions, parsoUtils.evaluate_expr is a function capable of evaluating the type of a piece of code given as a parameter.
 This is the main interface for interacting with the knowledge base.
 
 This function uses a context to transfer important information from step to step. This context contains three keys: args, parent and module.

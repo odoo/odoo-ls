@@ -3,6 +3,7 @@ import os
 from ..features.parso_utils import ParsoUtils
 from ..constants import *
 from ..core.file_mgr import FileMgr
+from ..core.symbol import ImportSymbol
 from lsprotocol.types import (Hover, MarkupContent, MarkupKind)
 
 class HoverFeature:
@@ -34,33 +35,38 @@ class HoverFeature:
             if infered_type and type != "module":
                 if symbol.type == SymType.FUNCTION and not symbol.is_property:
                     value += " -> " + infered_type
-                elif symbol.name != infered_type:
-                    value += ": " + infered_type
+                elif symbol.name != infered_type and symbol.type != SymType.CLASS:
+                    if type == "type alias":
+                        value += ": type[" + infered_type + "]"
+                    else:
+                        value += ": " + infered_type
             value += "  \n```"
             return value
 
-        type_ref = symbol.follow_ref(context)
+        type_ref = symbol.next_ref(context)[0] or symbol
         infered_type = "Any"
-        if type_ref[0] != symbol:
-            infered_type = type_ref[0].name
+        if type_ref != symbol:
+            type_ref = type_ref.follow_ref(stop_on_type=True)[0]
+            infered_type = type_ref.name
         type = str(symbol.type).lower()
+        if symbol.eval and not symbol.eval.instance and not isinstance(symbol, ImportSymbol):
+            type = "type alias"
         if symbol.type == SymType.FUNCTION:
             if symbol.is_property:
                 type = "property"
             else:
                 type = "method"
-        #class_doc = type_ref[0].doc and type_ref[0].doc.value if type_ref[1] else ""
         #BLOCK 1: (type) **name** -> infered_type
         value = build_block_1(symbol, type, infered_type)
         #BLOCK 2: useful links:
         if infered_type not in ["Any", "constant"]:
-            paths = type_ref[0].get_paths()
+            paths = type_ref.get_paths()
             if paths:
                 path = FileMgr.pathname2uri(paths[0])
-                if type_ref[0].type == SymType.PACKAGE:
+                if type_ref.type == SymType.PACKAGE:
                     path = os.path.join(path, "__init__.py")
                 value += "  \n***  \n"
-                value += "useful links: " + "[" + type_ref[0].name + "](" + path + "#" + str(type_ref[0].start_pos[0]) + ")" + "  \n"
+                value += "useful links: " + "[" + type_ref.name + "](" + path + "#" + str(type_ref.start_pos[0]) + ")" + "  \n"
         #BLOCK 3: doc
         if symbol.doc:
             value += "  \n***  \n" + symbol.doc.value

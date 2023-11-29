@@ -24,7 +24,7 @@ class AutoCompleteFeature:
         return text
 
     @staticmethod
-    def build_symbol_completion_item(sym_to_complete, symbol, module):
+    def build_symbol_completion_item(sym_to_complete, symbol):
         if isinstance(sym_to_complete, Symbol):
             cl_to_complete = sym_to_complete.get_in_parents([SymType.CLASS])
             cl = symbol.get_in_parents([SymType.CLASS])
@@ -123,11 +123,12 @@ class AutoCompleteFeature:
                 return []
             module = file_symbol.get_module_sym()
             scope_symbol = file_symbol.get_scope_symbol(line)
-            symbol_ancestors, context = ParsoUtils.evaluate_type(expr, scope_symbol)
+            symbol_ancestors, context = ParsoUtils.evaluate_expr(expr, scope_symbol)
             if not symbol_ancestors:
                 return []
             if isinstance(symbol_ancestors, list):
                 symbol_ancestors = symbol_ancestors[0] #take the first override
+            symbol_ancestors, _ = symbol_ancestors.follow_ref(context)
             symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
             return CompletionList(
                 is_incomplete=False,
@@ -145,7 +146,7 @@ class AutoCompleteFeature:
                 scope_symbol = file_symbol.get_scope_symbol(line)
                 return CompletionList(
                     is_incomplete=False,
-                    items=[AutoCompleteFeature.build_symbol_completion_item(scope_symbol, symbol, module)
+                    items=[AutoCompleteFeature.build_symbol_completion_item(scope_symbol, symbol)
                            for symbol in AutoCompleteFeature._get_symbols_from_obj(scope_symbol, module, {}, line, element.value)]
                 )
         elif element and element.type == 'string':
@@ -173,13 +174,12 @@ class AutoCompleteFeature:
         """
         seen = set()
         if isinstance(obj, Symbol):
-            def_obj = obj.follow_ref(context)[0]
-            for s in def_obj.all_symbols(line=line, include_inherits=True):
+            for s in obj.all_symbols(line=line, include_inherits=True):
                 if s.name.startswith(starts_with):
                     if s not in seen:
                         seen.add(s)
                         yield s
-            if "comodel_name" in context and def_obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
+            if "comodel_name" in context and obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
                 model = Odoo.get().models.get(context["comodel_name"], None)
                 if model:
                     models_syms = model.get_symbols(module)
