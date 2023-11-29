@@ -109,14 +109,16 @@ class Evaluation():
             if not base_ref or not base_ref.ref:
                 return (None, False, {})
             base = base_ref.ref
-            if base.type == SymType.CLASS and inst == False:
-                return base_ref, True, base.get_context(node.args, node.keywords)
-            elif base.type == SymType.CLASS and inst == True:
+            base = base.follow_ref(stop_on_type=True)[0]
+            type_ref, _ = base.follow_ref(ctxt)
+            if type_ref.type == SymType.CLASS and inst == False:
+                return RegisteredRef(base), True, type_ref.get_context(node.args, node.keywords)
+            elif type_ref.type == SymType.CLASS and inst == True:
                 call_func = base.symbols.get("__call__", None)
                 if not call_func or not call_func.eval:
                     return (None, False, {})
                 return call_func.eval.get_symbol_rr(), call_func.eval.instance, {}
-            elif base.type == SymType.FUNCTION and base.eval:
+            elif type_ref.type == SymType.FUNCTION and base.eval:
                 return base.eval.get_symbol_rr(), base.eval.instance, {}
             #TODO other types are errors?
         elif isinstance(node, ast.Attribute):
@@ -124,8 +126,8 @@ class Evaluation():
             if not v:
                 return (None, False, {})
             v = v.ref
-            base, instance = v.follow_ref()
-            attribute = v.symbols.get(node.attr, None)
+            base, _ = v.follow_ref()
+            attribute = base.symbols.get(node.attr, None)
             if not attribute:
                 return (None, False, {})
             return RegisteredRef(attribute), attribute.type == SymType.VARIABLE, {}
@@ -133,6 +135,8 @@ class Evaluation():
             infered_sym = parentSymbol.infer_name(node.id, node.lineno)
             if not infered_sym:
                 return (None, False, {})
-            symbol, instance = infered_sym.follow_ref()
-            symbol = RegisteredRef(symbol)
+            instance = infered_sym.type != SymType.CLASS
+            if infered_sym.eval:
+                instance = infered_sym.eval.instance
+            symbol = RegisteredRef(infered_sym)
         return (symbol, instance, {})

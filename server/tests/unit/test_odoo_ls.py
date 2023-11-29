@@ -126,8 +126,8 @@ def test_evaluation():
     evaluation = base_test_file.get_symbol([], ["baseInstance2"]).eval
     assert evaluation._symbol
     assert evaluation.get_symbol()
-    assert evaluation.get_symbol().type == SymType.CLASS
-    assert evaluation.get_symbol().name == "BaseTestModel"
+    assert evaluation.get_symbol().type == SymType.VARIABLE
+    assert evaluation.get_symbol().name == "BaseOtherName"
     assert evaluation.instance == True
 
     evaluation = base_test_file.get_symbol([], ["ref_funcBase1"]).eval
@@ -150,6 +150,54 @@ def test_evaluation():
         assert evaluation.get_symbol().type != SymType.FUNCTION
         assert evaluation.get_symbol().name != "get_test_int"
 
+
+def test_evaluation_type_alias():
+    to_complete_file = Odoo.get().symbols.get_symbol(["odoo", "addons", "module_1", "models", "to_complete"])
+    test_model_sym = to_complete_file.get_symbol([], ["TestModel"])
+    assert test_model_sym
+    assert test_model_sym.type == SymType.CLASS
+    extra_test_model_sym = to_complete_file.get_symbol([], ["ExtraTestModel"])
+    assert extra_test_model_sym
+    assert extra_test_model_sym.type == SymType.VARIABLE
+    assert extra_test_model_sym.eval
+    assert extra_test_model_sym.eval.get_symbol()
+    assert extra_test_model_sym.eval.get_symbol().type == SymType.CLASS
+    assert extra_test_model_sym.eval.get_symbol().name == "TestModel"
+    assert extra_test_model_sym.eval.instance == False
+    assert extra_test_model_sym.follow_ref()[0] == test_model_sym
+    assert extra_test_model_sym.follow_ref(stop_on_type=True)[0] == extra_test_model_sym
+    super_extra_test_model_sym = to_complete_file.get_symbol([], ["SuperExtraTestModel"])
+    assert super_extra_test_model_sym
+    assert super_extra_test_model_sym.type == SymType.VARIABLE
+    assert super_extra_test_model_sym.eval
+    assert super_extra_test_model_sym.eval.get_symbol()
+    assert super_extra_test_model_sym.eval.get_symbol().type == SymType.VARIABLE
+    assert super_extra_test_model_sym.eval.get_symbol().name == "ExtraTestModel"
+    assert super_extra_test_model_sym.eval.instance == False
+    assert super_extra_test_model_sym.follow_ref()[0] == test_model_sym
+    assert super_extra_test_model_sym.follow_ref(stop_on_type=True)[0] == super_extra_test_model_sym
+    test_model_var = to_complete_file.get_symbol([], ["testModel"])
+    assert test_model_var
+    assert test_model_var.type == SymType.VARIABLE
+    assert test_model_var.eval
+    assert test_model_var.eval.get_symbol()
+    assert test_model_var.eval.get_symbol() == test_model_sym
+    extra_test_model_var = to_complete_file.get_symbol([], ["extraTestModel"])
+    assert extra_test_model_var
+    assert extra_test_model_var.type == SymType.VARIABLE
+    assert extra_test_model_var.eval
+    assert extra_test_model_var.eval.get_symbol()
+    assert extra_test_model_var.eval.get_symbol() == extra_test_model_sym
+    assert extra_test_model_var.follow_ref()[0] == test_model_sym
+    assert extra_test_model_var.follow_ref(stop_on_type=True)[0] == extra_test_model_sym
+    super_extra_test_model_var = to_complete_file.get_symbol([], ["superExtraTestModel"])
+    assert super_extra_test_model_var
+    assert super_extra_test_model_var.type == SymType.VARIABLE
+    assert super_extra_test_model_var.eval
+    assert super_extra_test_model_var.eval.get_symbol()
+    assert super_extra_test_model_var.eval.get_symbol() == super_extra_test_model_sym
+    assert super_extra_test_model_var.follow_ref()[0] == test_model_sym
+    assert super_extra_test_model_var.follow_ref(stop_on_type=True)[0] == super_extra_test_model_sym
 
 def test_for_stmt():
     #TODO do not pass, waiting for feature rewrite

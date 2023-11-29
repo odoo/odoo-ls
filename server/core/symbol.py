@@ -139,26 +139,44 @@ class Symbol(RegisterableObject):
     def _all_symbols_from_class(self, line=-1):
         return []
 
-    def follow_ref(self, context=None):
+    def next_ref(self, context=None):
+        if self.type == SymType.VARIABLE and self.eval and self.eval.get_symbol_rr(context):
+            return self.eval.get_symbol(context), context
+        return None, context
+
+    def follow_ref(self, context=None, stop_on_type=False):
         from .python_arch_eval import PythonArchEval
         from .odoo import Odoo
-        #follow the reference to the real symbol and returns it (not a RegisteredRef)
+        """ Return the real symbol (not a RegisteredRef) to which this symbol is pointing. Pass through type alias, except if stop_on_type is True
+        Ex:
+        class A():
+            pass
+        B = A
+        b = B()
+        'b'.follow_ref(stop_on_type=False) will return A
+        'b'.follow_ref(stop_on_type=True) will return B
+        """
         sym = self
         can_eval_external = not self.is_external()
         instance = self.type in [SymType.VARIABLE]
+        #ensure that symbol is not in queue for evaluation
         file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
         if sym.eval == None and (not sym.is_external() or can_eval_external) and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval: #TODO shouldn't we launch arch builder in case of not in rebuild_arch_eval?
             ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
             ev.eval_arch()
-        while sym and sym.type == SymType.VARIABLE and sym.eval and sym.eval.get_symbol_rr(context):
+        next_ref, context = sym.next_ref(context)
+        while next_ref:
             instance = sym.eval.instance
             if sym.eval.context and context:
                 context.update(sym.eval.context)
-            sym = sym.eval.get_symbol(context)
+            if stop_on_type and not instance and not isinstance(sym, ImportSymbol):
+                return sym, instance
+            sym = next_ref
             file = sym.get_in_parents([SymType.FILE, SymType.PACKAGE])
             if sym.eval == None and (not sym.is_external() or can_eval_external)  and file and file.evalStatus == 0 and file in Odoo.get().rebuild_arch_eval:
                 ev = PythonArchEval(OdooLanguageServer.get(), sym.get_in_parents([SymType.FILE, SymType.PACKAGE]))
                 ev.eval_arch()
+            next_ref, context = sym.next_ref(context)
         return sym, instance
 
     def add_dependency(self, other_symbol, on_step, dep_level):
