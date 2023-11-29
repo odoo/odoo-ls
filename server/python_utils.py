@@ -4,6 +4,7 @@ from functools import wraps
 from .constants import *
 from pathlib import Path
 import ast
+import os
 
 class PythonUtils():
 
@@ -24,7 +25,7 @@ class PythonUtils():
         if PythonUtils.case_preserving_fs:
             while p.parent != p:
                 # If string representation of path is not in parent directory, return False
-                if str(p) not in map(str, p.parent.iterdir()):
+                if str(p) not in [f.path for f in os.scandir(str(p.parent)) if f.is_dir()]:
                     return False
                 p = p.parent
 
