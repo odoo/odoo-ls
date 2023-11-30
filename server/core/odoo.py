@@ -22,6 +22,57 @@ from pygls.server import LanguageServer, MessageType
 import time
 
 import tracemalloc
+import logging
+
+log = logging.getLogger(__name__)
+
+
+class Postgres():
+    def __init__(self, db='postgres', autocommit=True, user=None, password=None,
+                 host=None, port=None, as_dict=True, app=None, timeout=None):
+        self.conn = None
+        self.cr = None
+
+        import psycopg2
+        import psycopg2.extras
+
+        connstring = "dbname=%s" % db
+        if host or port or user:
+            connstring += " host=%s" % (host or 'localhost')
+            if user:
+                connstring += " user=%s" % user
+            if port:
+                connstring += " port=%s" % port
+        if password:
+            connstring += " password=%s" % password
+        try:
+            self.conn = psycopg2.connect(connstring, application_name=app)
+        except TypeError:
+            # We still have to deal with old psycopg2 versions (eg: saas master)
+            self.conn = psycopg2.connect(connstring)
+        self.conn.autocommit = autocommit
+        if as_dict:
+            self.cr = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        else:
+            # kept as it's slightly better for performance
+            self.cr = self.conn.cursor()
+        if timeout:
+            self.cr.execute("SET statement_timeout TO %s", (timeout, ))
+
+    def __enter__(self):
+        return self.cr
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        if self.cr:
+            self.cr.close()
+        if self.conn:
+            self.conn.close()
 
 
 class Odoo():
@@ -93,7 +144,7 @@ class Odoo():
             return
         OdooLanguageServer.access_mode.set("read")
         yield Odoo.get() == self # to be sure Odoo.instance is still bound to the same instance
-        
+
         self.thread_access_condition.release()
         OdooLanguageServer.access_mode.set("none")
 
@@ -150,6 +201,15 @@ class Odoo():
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
                     Odoo.instance.odooPath = odooConfig.odooPath
+                    if hasattr(odooConfig, 'database') and os.environ.get('PGDATABASE'):
+                        Odoo.instance.database = os.environ.get('PGDATABASE')
+                    else:
+                        Odoo.instance.database = False
+                    if Odoo.instance.database:
+                        with Postgres(Odoo.instance.database) as cr:
+                            cr.execute("SELECT name FROM ir_module_module WHERE state = 'installed';")
+                            Odoo.instance.installed_modules = [mod[0] for mod in cr.fetchall()]
+
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.load_builtins(ls)
@@ -372,6 +432,9 @@ class Odoo():
                 dirs = os.listdir(path)
                 for dir in dirs:
                     if os.path.isdir(os.path.join(path, dir)):
+                        if Odoo.instance.database and dir not in Odoo.instance.installed_modules:
+                            log.info('Module %s not installed, skipped', dir)
+                            continue
                         PythonArchBuilder(ls, addonsSymbol, os.path.join(path, dir)).load_arch(require_module=True)
                 if self.stop_init:
                     break

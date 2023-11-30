@@ -47,6 +47,9 @@ def init(ls, params):
             ),
         ]
     ))
+    # TODO: launch_thread here only in the case of jupyterlab
+    odoo_server.launch_thread(target=Odoo.initialize, args=(ls,))
+
 
 @odoo_server.feature(SHUTDOWN)
 @send_error_on_traceback
