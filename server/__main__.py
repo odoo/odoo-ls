@@ -1,10 +1,10 @@
 import argparse
 import logging
 
-from .controller import odoo_server
-from .constants import *
+from server.controller import odoo_server
+from server.constants import *
 
-FORMAT = '(%(process)d) [%(levelname)s] %(message)s'
+FORMAT = '%(asctime)s %(levelname)s: %(message)s'
 
 def add_arguments(parser):
     parser.description = "simple odoo server example"
@@ -39,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser()
     add_arguments(parser)
     args = parser.parse_args()
-    logging.basicConfig(format=FORMAT, filename=args.log, level=logging.WARNING, filemode="w")
+    logging.basicConfig(format=FORMAT, datefmt='%Y-%m-%d %I:%M:%S', filename=args.log, level=logging.DEBUG, filemode="w")
 
     if "alpha" in EXTENSION_VERSION:
         logging.getLogger().setLevel(logging.DEBUG)
