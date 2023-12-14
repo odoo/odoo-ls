@@ -10,7 +10,7 @@ class DefinitionFeature:
     @staticmethod
     def get_location(fileSymbol, parsoTree,line, character):
 
-        symbol, range, context = ParsoUtils.get_symbols(fileSymbol, parsoTree, line, character)
+        symbol, _, _, range, _ = ParsoUtils.get_symbols(fileSymbol, parsoTree, line, character)
 
         if not symbol:
             return []

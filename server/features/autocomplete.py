@@ -56,7 +56,7 @@ class AutoCompleteFeature:
                 description=description,
             ),
             sort_text = AutoCompleteFeature.get_sort_text(symbol, cl, cl_to_complete),
-            documentation=HoverFeature.build_markdown_description(symbol, None),
+            documentation=HoverFeature.build_markdown_description(symbol, symbol, None, None),
             kind = AutoCompleteFeature._get_completion_item_kind(symbol),
         )
 
@@ -123,7 +123,7 @@ class AutoCompleteFeature:
                 return []
             module = file_symbol.get_module_sym()
             scope_symbol = file_symbol.get_scope_symbol(line)
-            symbol_ancestors, context = ParsoUtils.evaluate_expr(expr, scope_symbol)
+            _, symbol_ancestors, _, context = ParsoUtils.evaluate_expr(expr, scope_symbol)
             if not symbol_ancestors:
                 return []
             if isinstance(symbol_ancestors, list):
@@ -132,7 +132,7 @@ class AutoCompleteFeature:
             symbol_ancestors = symbol_ancestors.get_model() or symbol_ancestors
             return CompletionList(
                 is_incomplete=False,
-                items=[AutoCompleteFeature.build_symbol_completion_item(symbol_ancestors, symbol, module)
+                items=[AutoCompleteFeature.build_symbol_completion_item(symbol_ancestors, symbol)
                        for symbol in AutoCompleteFeature._get_symbols_from_obj(symbol_ancestors, module, context, -1)]
             )
         elif element and element.type == 'name':
