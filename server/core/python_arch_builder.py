@@ -229,8 +229,7 @@ class PythonArchBuilder(ast.NodeVisitor):
                 self_name = node.args.args[0].arg
                 self_sym = Symbol(self_name, SymType.VARIABLE)
                 self_sym.start_pos, self_sym.end_pos = (node.lineno, node.col_offset), (node.end_lineno, node.end_col_offset)
-                self_sym.eval = Evaluation()
-                self_sym.eval.symbol = RegisteredRef(class_sym) #no dep required here
+                self_sym.eval = Evaluation(RegisteredRef(class_sym), True)
                 symbol.add_symbol(self_sym)
         self.symStack[-1].add_symbol(symbol)
 

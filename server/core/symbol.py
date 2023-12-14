@@ -140,7 +140,7 @@ class Symbol(RegisterableObject):
         return []
 
     def next_ref(self, context=None):
-        if self.type == SymType.VARIABLE and self.eval and self.eval.get_symbol_rr(context):
+        if self.type in [SymType.VARIABLE, SymType.PRIMITIVE] and self.eval and self.eval.get_symbol_rr(context):
             return self.eval.get_symbol(context), context
         return None, context
 

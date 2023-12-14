@@ -83,6 +83,19 @@
             }
         },
         {
+            "name": "Launch Test OdooLS Odoo Framework",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["test_odoo_framework.py", "-s", "--disable-warnings"],
+            "justMyCode": false,
+            "python": "${command:python.interpreterPath}",
+            "cwd": "${workspaceFolder}/../server/tests/unit",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
             "name": "Launch Test References",
             "type": "python",
             "request": "launch",

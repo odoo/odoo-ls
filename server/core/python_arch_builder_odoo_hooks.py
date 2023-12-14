@@ -1,6 +1,6 @@
 import ast
 from ..references import RegisteredRefSet, RegisteredRef
-from ..core.symbol import Symbol
+from ..core.symbol import Symbol, FunctionSymbol
 from ..constants import SymType
 from .evaluation import Evaluation
 
@@ -99,8 +99,16 @@ class PythonArchBuilderOdooHooks:
                 attr_var.doc = Symbol("str", SymType.PRIMITIVE)
                 attr_var.doc.value = "whether in superuser mode"
                 symbol.add_symbol(attr_var)
-        elif symbol.name in ["Many2one", "Many2many", "One2many"]:
-            if symbol.get_tree() in [(["odoo", "fields"], ["Many2one"]),
-                                     (["odoo", "fields"], ["Many2many"]),
-                                     (["odoo", "fields"], ["One2many"]),]:
-                symbol.get_context = Relational_get_context.__get__(symbol, symbol.__class__)
+        elif symbol.name in ["Boolean", "Integer", "Float", "Monetary", "Char", "Text", "Html", "Date", "Datetime",
+                             "Binary", "Image", "Selection", "Reference", "Many2one", "Many2oneReference", "Json",
+                             "Properties", "PropertiesDefinition", "One2many", "Many2many", "Id"]:
+            if symbol.get_tree()[0] == ["odoo", "fields"]:
+                if symbol.name in ["Many2one", "Many2many", "One2many"]:
+                    symbol.get_context = Relational_get_context.__get__(symbol, symbol.__class__)
+                # ---------- __get__ ----------
+                get_sym = symbol.get_symbol([], ["__get__"])
+                if not get_sym:
+                    get_sym = FunctionSymbol("__get__", SymType.FUNCTION)
+                    get_sym.start_pos = symbol.start_pos
+                    get_sym.end_pos = symbol.end_pos
+                    symbol.add_symbol(get_sym)

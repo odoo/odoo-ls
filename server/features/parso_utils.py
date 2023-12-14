@@ -18,16 +18,16 @@ class ParsoUtils:
         )
         expr = ParsoUtils.get_previous_leafs_expr(element)
         expr.append(element)
-        symbol, context = ParsoUtils.evaluate_expr(expr, scope_symbol)
+        symbol, effective_sym, factory, context = ParsoUtils.evaluate_expr(expr, scope_symbol)
         if isinstance(symbol, Model):
             module = fileSymbol.get_module_sym()
             if not module:
-                return "Can't evaluate the current module. Are you in a valid Odoo module?", None, None
+                return "Can't evaluate the current module. Are you in a valid Odoo module?", None, None, None, None
             symbol = symbol.get_main_symbols(module)
             if len(symbol) == 1:
                 symbol = symbol[0]
             else:
-                return "Can't find the definition: 'Multiple models with the same name exists.'", None, None
+                return "Can't find the definition: 'Multiple models with the same name exists.'", None, None, None, None
         elif isinstance(symbol, str):
             module = fileSymbol.get_module_sym()
             if module:
@@ -35,12 +35,10 @@ class ParsoUtils:
                 if model:
                     symbol = model.get_main_symbols(module)
                     if len(symbol) == 1:
-                        return symbol[0], range, context
+                        return symbol[0], None, None, range, context
                     else:
-                        return "Can't find the definition: 'Multiple models with the same name exists.'", None, None
-        elif isinstance(symbol, list):
-            return symbol, range, context
-        return symbol, range, context
+                        return "Can't find the definition: 'Multiple models with the same name exists.'", None, None, None, None
+        return symbol, effective_sym, factory, range, context
 
     @staticmethod
     def get_previous_leafs_expr(leaf):
@@ -88,10 +86,39 @@ class ParsoUtils:
     def evaluate_expr(node_list, scope_symbol):
         """return the symbol of the type of the expr.
         Can return a list of symbols to represent all overrides. In this case the first symbol of the list is the symbol overriding others.
+        the return value is a triplet: (symbol, effective_sym, factory, context)
+        symbol: the symbol
+        effective_sym: the symbol that will be effectively returned when executed. None if Symbol is a list
+        factory: the symbol that was used to build the effective_sym
+        context: the context used to get of the symbol
+        all except context are Symbol instances
         Ex:
-        self.env["ir.model"].search([]).id will return the symbol if "id" in the "ir.model" model
+        --------
+        context
+        --------
+        A| class Char():
+        B|     def __get__(self, instance, owner=None):
+        C|         return ""
+        D| MyChar = Char
+        E| class Test():
+        G|     a = MyChar()
+        H| test = Test()
+        --------
+        result of evaluate_expr("test.a") (with adapted parameters)
+        --------
+        symbol: a (at G)
+        effective_sym: str
+        factory: Char (#TODO not MyChar?)
+        context: {}
+
+        Hover -> effective_sym (will follow it to display type)
+            -> factory (to show how it has been built)
+        Definition -> symbol
+        Autocompletion -> effective_sym
         """
         obj = None #symbol or model
+        next_obj = None
+        factory = None
         node_iter = 0
         module = scope_symbol.get_module_sym()
         context = {
@@ -101,82 +128,79 @@ class ParsoUtils:
         }
 
         def prepare_evaluation():
-            nonlocal obj, context
-            # sym = self.symbols[name]
-            # if sym.symbols["__get__"]:
-            #     sym = sym.symbols["__get__"].eval and sym.symbols["__get__"].eval.get_symbol() or sym
-            # if isinstance(obj, Symbol) and "comodel_name" in context and \
-            # obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
-            #     model = Odoo.get().models.get(context["comodel_name"], None)
-            #     if model:
-            #         main_sym = model.get_main_symbols(module)
-            #         if main_sym and len(main_sym) == 1:
-            #             objs = main_sym[0].get_member_symbol(next_element.value, all=True)
+            nonlocal obj, next_obj, factory, context
+            if not obj:
+                return
+            next_obj = obj
             if isinstance(obj, list):
-                obj = obj[0] #take the most relevant symbol if multiple overrides exist
-            if not isinstance(obj, Model):
-                obj, _ = obj.follow_ref(context)
+                next_obj = obj[0] #take the most relevant symbol if multiple overrides exist
+            if not isinstance(next_obj, Model):
+                next_obj, instance = next_obj.follow_ref(context)
+                if next_obj.symbols.get("__get__", None):
+                    effective_sym = next_obj.symbols["__get__"].eval and next_obj.symbols["__get__"].eval.get_symbol(context)
+                    if effective_sym:
+                        factory = next_obj
+                        next_obj, instance = effective_sym.follow_ref()
+                context["parent"] = next_obj
+                context["parent_instance"] = instance
+                # if isinstance(obj, Symbol) and "comodel_name" in context and \
+                # obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
+                #     model = Odoo.get().models.get(context["comodel_name"], None)
+                #     if model:
+                #         main_sym = model.get_main_symbols(module)
+                #         if main_sym and len(main_sym) == 1:
+                #             objs = main_sym[0].get_member_symbol(next_element.value, all=True)
 
         while node_iter != len(node_list):
             node = node_list[node_iter]
+            obj = next_obj
+            factory = None
             if not obj:
                 obj = scope_symbol.infer_name(node.value, node.line +1) #+1 to be able to take itself if needed
                 if not obj:
                     if node.type == "string":
-                        return node.value[1:-1], context
-                    return None, context
+                        return node.value[1:-1], None, None, context
+                    return None, next_obj, factory, context
             else:
-                prepare_evaluation()
                 if node.type == "operator":
                     if node.value == "." and len(node_list) > node_iter+1:
                         if obj.type == SymType.VARIABLE:
-                            return None, context
+                            return None, None, None, context
                         node_iter += 1
                         next_element = node_list[node_iter]
-                        context["parent"] = obj
                         obj = obj.get_member_symbol(next_element.value, all=True)
                         if not obj:
-                            return None, context
-                        #evaluate __get__ if it exists
-                        # for index in range(len(obj)):
-                        #     o = obj[index]
-                        #     if o.type != SymType.VARIABLE:
-                        #         continue
-                        #     get_func = o.get_symbol([], "__get__")
-                        #     if not get_func or not get_func.eval or not get_func.eval.get_symbol(context):
-                        #         continue
-                        #     obj[index] = get_func.eval.get_symbol(context)
+                            return None, None, None, context
                     elif node.value == "[" and len(node_list) > node_iter+1:
                         if obj.type == SymType.VARIABLE:
-                            return None, context
+                            return None, None, None, context
                         inner_part = []
                         node_iter += 1
                         while node_iter < len(node_list) and (node_list[node_iter].value != "]" or node_list[node_iter].parent != node.parent):
                             inner_part.append(node_list[node_iter])
                             node_iter += 1
                         if node_iter >= len(node_list) or node_list[node_iter].value != "]" or node_list[node_iter].parent != node.parent:
-                            return None, context
+                            return None, None, None, context
                         content = ParsoUtils.evaluate_expr(inner_part, scope_symbol)[0]
                         get_item_sym = obj.get_member_symbol("__getitem__", module)
                         if not get_item_sym:
-                            return None, context
+                            return None, None, None, context
                         get_item_sym = get_item_sym.follow_ref(context)[0]
-                        context["parent"] = obj
                         context["args"] = content
                         obj = get_item_sym.eval.get_symbol(context)
                         context["args"] = None
                     elif node.value == "(" and len(node_list) > node_iter+1:
                         if obj.type != SymType.FUNCTION:
-                            return None, context
+                            return None, None, None, context
                         if not obj.eval:
-                            return None, context
+                            return None, None, None, context
                         inner_part = []
                         node_iter += 1
                         while node_iter < len(node_list) and (node_list[node_iter].value != ")" or node_list[node_iter].parent != node.parent):
                             inner_part.append(node_list[node_iter])
                             node_iter += 1
                         if node_iter >= len(node_list) or node_list[node_iter].value != ")" or node_list[node_iter].parent != node.parent:
-                            return None, context
+                            return None, None, None, context
                         args = []
                         if inner_part:
                             i = 0
@@ -192,5 +216,6 @@ class ParsoUtils:
                         context["args"] = args
                         obj = obj.eval.get_symbol(context)
                         context["args"] = None
+            prepare_evaluation()
             node_iter += 1
-        return obj, context
+        return obj, next_obj, factory, context

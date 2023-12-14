@@ -1,4 +1,5 @@
 import ast
+from typing import Any
 from ..constants import *
 from .evaluation import Evaluation
 from .odoo import Odoo
@@ -39,6 +40,17 @@ class EvaluationTakeParent(Evaluation):
         return RegisteredRef(class_sym)
 
 
+class EvaluationRelational(Evaluation):
+
+    def _get_symbol_hook(self, rr_symbol, context):
+        model = Odoo.get().models.get(context["comodel_name"], None)
+        if model:
+            main_sym = model.get_main_symbols() #module) #TODO use module in context
+            if main_sym and len(main_sym) == 1:
+                return RegisteredRef(main_sym[0])
+        return None
+
+
 class PythonArchEvalOdooHooks:
 
     @staticmethod
@@ -58,8 +70,69 @@ class PythonArchEvalOdooHooks:
             transactionClass = symbol.get_symbol([], ["TransactionCase"])
             if transactionClass:
                 PythonArchEvalOdooHooks.on_transactionCase_eval(transactionClass)
+        elif symbol.get_tree() == (["odoo", "fields"], []):
+            booleanClass = symbol.get_symbol([], ["Boolean"])
+            if booleanClass:
+                PythonArchEvalOdooHooks._update_get_eval(booleanClass, (["builtins"], ["bool"]))
+            intClass = symbol.get_symbol([], ["Integer"])
+            if intClass:
+                PythonArchEvalOdooHooks._update_get_eval(intClass, (["builtins"], ["int"]))
+            floatClass = symbol.get_symbol([], ["Float"])
+            if floatClass:
+                PythonArchEvalOdooHooks._update_get_eval(floatClass, (["builtins"], ["float"]))
+            monetaryClass = symbol.get_symbol([], ["Monetary"])
+            if monetaryClass:
+                PythonArchEvalOdooHooks._update_get_eval(monetaryClass, (["builtins"], ["float"]))
+            charClass = symbol.get_symbol([], ["Char"])
+            if charClass:
+                PythonArchEvalOdooHooks._update_get_eval(charClass, (["builtins"], ["str"]))
+            textClass = symbol.get_symbol([], ["Text"])
+            if textClass:
+                PythonArchEvalOdooHooks._update_get_eval(textClass, (["builtins"], ["str"]))
+            htmlClass = symbol.get_symbol([], ["Html"])
+            if htmlClass:
+                PythonArchEvalOdooHooks._update_get_eval(htmlClass, (["markupsafe"], ["Markup"]))
+            dateClass = symbol.get_symbol([], ["Date"])
+            if dateClass:
+                PythonArchEvalOdooHooks._update_get_eval(dateClass, (["datetime"], ["date"]))
+            datetimeClass = symbol.get_symbol([], ["Datetime"])
+            if datetimeClass:
+                PythonArchEvalOdooHooks._update_get_eval(datetimeClass, (["datetime"], ["datetime"]))
+            binaryClass = symbol.get_symbol([], ["Binary"])
+            if binaryClass:
+                PythonArchEvalOdooHooks._update_get_eval(binaryClass, (["builtins"], ["bytes"]))
+            imageClass = symbol.get_symbol([], ["Image"])
+            if imageClass:
+                PythonArchEvalOdooHooks._update_get_eval(imageClass, (["builtins"], ["bytes"]))
+            selectionClass = symbol.get_symbol([], ["Selection"])
+            if selectionClass:
+                PythonArchEvalOdooHooks._update_get_eval(selectionClass, (["builtins"], ["str"]))
+            referenceClass = symbol.get_symbol([], ["Reference"])
+            if referenceClass:
+                PythonArchEvalOdooHooks._update_get_eval(referenceClass, (["builtins"], ["str"]))
+            jsonClass = symbol.get_symbol([], ["Json"])
+            if jsonClass:
+                PythonArchEvalOdooHooks._update_get_eval(jsonClass, (["builtins"], ["object"]))
+            propertiesClass = symbol.get_symbol([], ["Properties"])
+            if propertiesClass:
+                PythonArchEvalOdooHooks._update_get_eval(propertiesClass, (["builtins"], ["object"]))
+            propertiesDefinitionClass = symbol.get_symbol([], ["PropertiesDefinition"])
+            if propertiesDefinitionClass:
+                PythonArchEvalOdooHooks._update_get_eval(propertiesDefinitionClass, (["builtins"], ["object"]))
+            idClass = symbol.get_symbol([], ["Id"])
+            if idClass:
+                PythonArchEvalOdooHooks._update_get_eval(idClass, (["builtins"], ["int"]))
+            many2oneClass = symbol.get_symbol([], ["Many2one"])
+            if many2oneClass:
+                PythonArchEvalOdooHooks._update_get_eval_relational(many2oneClass)
+            one2manyClass = symbol.get_symbol([], ["One2many"])
+            if one2manyClass:
+                PythonArchEvalOdooHooks._update_get_eval_relational(one2manyClass)
+            many2manyClass = symbol.get_symbol([], ["Many2many"])
+            if many2manyClass:
+                PythonArchEvalOdooHooks._update_get_eval_relational(many2manyClass)
 
-    staticmethod
+    @staticmethod
     def on_baseModel_eval(symbol):
         iter = symbol.get_symbol([], ["__iter__"])
         iter.eval = EvaluationTakeParent()
@@ -136,3 +209,35 @@ class PythonArchEvalOdooHooks:
                 symbol = RegisteredRef(form_symbol),
                 instance=True
             )
+
+    @staticmethod
+    def _update_get_eval(symbol, return_tree):
+        get_sym = symbol.get_symbol([], ["__get__"])
+        if not get_sym:
+            return
+        return_sym = Odoo.get().get_symbol(return_tree[0], return_tree[1])
+        if not return_sym:
+            symbol.not_found_paths.append((BuildSteps.ARCH_EVAL, return_tree[0] + return_tree[1]))
+            Odoo.get().not_found_symbols.add(symbol)
+            return
+        var_sym = Symbol("returned_value", SymType.PRIMITIVE)
+        var_sym.eval = Evaluation(
+            symbol=RegisteredRef(return_sym),
+            instance = True
+        )
+        get_sym.eval = Evaluation(
+            symbol=RegisteredRef(var_sym),
+            instance = True
+        )
+        get_sym.eval._symbol_main = var_sym
+        get_sym.eval.value = ""
+
+    def _update_get_eval_relational(symbol):
+        get_sym = symbol.get_symbol([], ["__get__"])
+        if not get_sym:
+            return
+        get_sym.eval = EvaluationRelational(
+            symbol=None,
+            instance = True
+        )
+        get_sym.eval.value = ""

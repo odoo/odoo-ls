@@ -11,7 +11,7 @@ class HoverFeature:
     @staticmethod
     def get_Hover(fileSymbol, parsoTree, line, character):
 
-        symbol, range, context = ParsoUtils.get_symbols(fileSymbol, parsoTree, line, character)
+        symbol, effective_sym, factory, range, context = ParsoUtils.get_symbols(fileSymbol, parsoTree, line, character)
 
         if not symbol:
             return None
@@ -19,10 +19,10 @@ class HoverFeature:
             return Hover(symbol)
         if isinstance(symbol, list):
             symbol = symbol[0]
-        return HoverFeature._build_hover(symbol, range, context)
+        return HoverFeature._build_hover(symbol, effective_sym, factory, range, context)
 
     @staticmethod
-    def build_markdown_description(symbol, context):
+    def build_markdown_description(symbol, effective_sym, factory, context):
 
         def build_block_1(symbol, type, infered_type):
             value =  "```python  \n"
@@ -43,11 +43,15 @@ class HoverFeature:
             value += "  \n```"
             return value
 
-        type_ref = symbol.next_ref(context)[0] or symbol
+        type_ref, next_context = symbol.next_ref(context)
         infered_type = "Any"
-        if type_ref != symbol:
-            type_ref = type_ref.follow_ref(stop_on_type=True)[0]
-            infered_type = type_ref.name
+        if type_ref:
+            type_ref.follow_ref(next_context, stop_on_type=True)[0]
+            if type_ref != symbol:
+                infered_type = type_ref.name
+        #override infered_type if the effective_sym is built by a __get__
+        if factory and effective_sym:
+            infered_type = effective_sym.follow_ref(context, stop_on_type=True)[0].name
         type = str(symbol.type).lower()
         if symbol.eval and not symbol.eval.instance and not isinstance(symbol, ImportSymbol):
             type = "type alias"
@@ -58,7 +62,7 @@ class HoverFeature:
                 type = "method"
         #BLOCK 1: (type) **name** -> infered_type
         value = build_block_1(symbol, type, infered_type)
-        #BLOCK 2: useful links:
+        #BLOCK 3: useful links:
         if infered_type not in ["Any", "constant"]:
             paths = type_ref.get_paths()
             if paths:
@@ -66,8 +70,8 @@ class HoverFeature:
                 if type_ref.type == SymType.PACKAGE:
                     path = os.path.join(path, "__init__.py")
                 value += "  \n***  \n"
-                value += "useful links: " + "[" + type_ref.name + "](" + path + "#" + str(type_ref.start_pos[0]) + ")" + "  \n"
-        #BLOCK 3: doc
+                value += "See also: " + "[" + type_ref.name + "](" + path + "#" + str(type_ref.start_pos[0]) + ")" + "  \n"
+        #BLOCK 4: doc
         if symbol.doc:
             value += "  \n***  \n" + symbol.doc.value
         #if infered_type:
@@ -80,8 +84,8 @@ class HoverFeature:
         )
 
     @staticmethod
-    def _build_hover(symbol, range, context):
+    def _build_hover(symbol, effective_sym, factory, range, context):
         return Hover(
-            contents=HoverFeature.build_markdown_description(symbol, context),
+            contents=HoverFeature.build_markdown_description(symbol, effective_sym, factory, context),
             range=range
         )
