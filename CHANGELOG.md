@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.3 - 2023/12/19
+
+Last update of 2023 ! We wish you all an happy new year !
+
+### VsCode
+
+The rework of the client to work with the Python Extension is delayed to 0.2.4
+
+- New option to choose which missing import should be diagnosed. 3 options are available: none, only odoo imports, all
+
+### Server
+
+- Support a new configuration option to choose which missing import should be diagnosed. The option is called "diagMissingImportLevel" and can take 3 values: "all", "only_odoo" or "none".
+- The server can now identify a 'type alias' as it should be. It should now be correctly displayed where it is relevant. Best example of type alias is "AbstractModel", that is a type alias of "BaseModel".
+- Server is now able to override `__get__` functions behaviour in its core, and the odoo implementation define all return values for all fields. It means that from now:
+`self.name` will be displayed as an str, but `MyModel.name` will be displayed as a fields.Char.
+This value is used to for the autocompletion, and so you won't have suggestions from fields class after using a field in a function (like `self.name.???`)
+
+### Fixs
+
+- Prevent BrokenPipeError to log indefinitely if the server is disconnected from client. This fix improve the one of the last version to handle last (hopefully) not catched situation.
+- Update int to proper enums in module.py for the 'severity' option of diagnostics
+
+
 ## 0.2.2 - 2023/11/20
 
 ### VsCode
