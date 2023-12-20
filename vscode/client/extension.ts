@@ -742,8 +742,9 @@ async function checkStandalonePythonVersion(context: ExtensionContext): Promise<
     }
 
     const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
-    const pythonVersion = semver.parse(versionString)
-    if (semver.lt(pythonVersion, "3.8.0")) {
+
+    const pythonVersion = semver.parse(versionString)  
+    if (!pythonVersion || semver.lt(pythonVersion, "3.8.0")) {
         window.showErrorMessage(
             `You must use python 3.8 or newer. Would you like to change it?`,
             "Update current configuration",
