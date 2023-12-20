@@ -45,7 +45,7 @@
             <% if (!pythonExtensionMode) { %>
                 <vscode-form-group variant="vertical">
                     <vscode-label for="config-python-path-textfield">
-                    Python path
+                    Path to the Python binary the Language Server will run on
                     </vscode-label>
                     <vscode-textfield id="config-python-path-textfield" value="<%= config.pythonPath %>" placeholder="Path to the python executable">
                     <vscode-icon
@@ -59,7 +59,6 @@
                     </vscode-icon>
                     </vscode-textfield>
                     <vscode-form-helper id="config-path-helper">
-                    <p>Path to the Python binary the Language Server will run on.</p>
                     </vscode-form-helper>
                 </vscode-form-group>
             <% } %>
