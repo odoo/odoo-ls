@@ -40,6 +40,15 @@ class EvaluationTakeParent(Evaluation):
         return RegisteredRef(class_sym)
 
 
+class EvaluationGet(Evaluation):
+
+    def _get_symbol_hook(self, rr_symbol, context):
+        parent_instance = context and context.get("parent_instance", False)
+        if not parent_instance:
+            return None
+        return super()._get_symbol_hook(rr_symbol, context)
+
+
 class EvaluationRelational(Evaluation):
 
     def _get_symbol_hook(self, rr_symbol, context):
@@ -225,7 +234,7 @@ class PythonArchEvalOdooHooks:
             symbol=RegisteredRef(return_sym),
             instance = True
         )
-        get_sym.eval = Evaluation(
+        get_sym.eval = EvaluationGet(
             symbol=RegisteredRef(var_sym),
             instance = True
         )
