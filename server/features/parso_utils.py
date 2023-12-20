@@ -143,13 +143,9 @@ class ParsoUtils:
                         next_obj, instance = effective_sym.follow_ref()
                 context["parent"] = next_obj
                 context["parent_instance"] = instance
-                # if isinstance(obj, Symbol) and "comodel_name" in context and \
-                # obj.is_inheriting_from((["odoo", "fields"], ["_Relational"])): #TODO better way to handle this hack
-                #     model = Odoo.get().models.get(context["comodel_name"], None)
-                #     if model:
-                #         main_sym = model.get_main_symbols(module)
-                #         if main_sym and len(main_sym) == 1:
-                #             objs = main_sym[0].get_member_symbol(next_element.value, all=True)
+            else:
+                context.pop("parent", None)
+                context.pop("parent_instance", None)
 
         while node_iter != len(node_list):
             node = node_list[node_iter]
