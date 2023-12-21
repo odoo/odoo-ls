@@ -534,6 +534,9 @@ class Symbol(RegisterableObject):
             return self.parent.get_paths()
         return []
 
+    def is_type_alias(self):
+        return self.eval and not self.eval.instance and not isinstance(self, ImportSymbol)
+
 class RootSymbol(Symbol):
 
     def add_symbol(self, symbol):
