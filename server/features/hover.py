@@ -45,16 +45,17 @@ class HoverFeature:
 
         type_ref, _ = symbol.follow_ref(context, stop_on_type=True)
         type_str = "Any"
-        if type_ref != symbol: #if the symbol is evaluated to something else than itself
+        if type_ref != symbol and (type_ref.type != SymType.VARIABLE or type_ref.is_type_alias()): #if the symbol is evaluated to something else than itself
             type_str = type_ref.name
         #override type_str if the effective_sym is built by a __get__ and our symbol is an instance
         if factory and effective_sym: #take factory value only on instance symbols
             type_str = effective_sym.follow_ref({}, stop_on_type=True)[0].name
         type = str(symbol.type).lower()
-        if symbol.eval and not symbol.eval.instance and not isinstance(symbol, ImportSymbol):
+        if symbol.is_type_alias():
             type = "type alias"
             type_alias_ref = type_ref.next_ref()[0]
-            if type_alias_ref != type_ref:
+            if type_alias_ref and type_alias_ref != type_ref:
+                type_alias_ref = type_alias_ref.follow_ref({}, stop_on_type=True)[0]
                 type_str = type_alias_ref.name
         if symbol.type == SymType.FUNCTION:
             if symbol.is_property:
