@@ -55,6 +55,9 @@ class HoverFeature:
         type = str(symbol.type).lower()
         if symbol.eval and not symbol.eval.instance and not isinstance(symbol, ImportSymbol):
             type = "type alias"
+            type_alias_ref = type_ref.next_ref()[0]
+            if type_alias_ref != type_ref:
+                type_str = type_alias_ref.name
         if symbol.type == SymType.FUNCTION:
             if symbol.is_property:
                 type = "property"
