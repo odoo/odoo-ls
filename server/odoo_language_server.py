@@ -28,6 +28,8 @@ class OdooLanguageServer(LanguageServer):
         super().__init__(name=EXTENSION_NAME, version=EXTENSION_VERSION)
 
     def report_server_error(self, error: Exception, source):
+        if isinstance(error, BrokenPipeError):
+            exit(1)
         try:
             odoo_server.show_message_log(traceback.format_exc(), MessageType.Error)
             odoo_server.send_notification("Odoo/displayCrashNotification", {"crashInfo": traceback.format_exc()})
