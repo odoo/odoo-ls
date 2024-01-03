@@ -52,6 +52,8 @@ class EvaluationGet(Evaluation):
 class EvaluationRelational(Evaluation):
 
     def _get_symbol_hook(self, rr_symbol, context):
+        if "comodel_name" not in context:
+            return rr_symbol
         model = Odoo.get().models.get(context["comodel_name"], None)
         if model:
             main_sym = model.get_main_symbols() #module) #TODO use module in context
