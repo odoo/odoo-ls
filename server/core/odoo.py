@@ -572,11 +572,14 @@ class Odoo():
         new_dict_to_revalidate = defaultdict(lambda: RegisteredRefSet())
         found_symbols = RegisteredRefSet()
         for s in self.not_found_symbols:
-            for index in range(len(s.not_found_paths)):
+            index = 0
+            while index < len(s.not_found_paths):
                 step, not_found_tree = s.not_found_paths[index]
                 if flat_tree[:len(not_found_tree)] == not_found_tree[:len(flat_tree)]:
                     new_dict_to_revalidate[step].add(s)
                     del s.not_found_paths[index]
+                    index -= 1
+                index += 1
             if not s.not_found_paths:
                 found_symbols.add(s)
         self.not_found_symbols -= found_symbols
