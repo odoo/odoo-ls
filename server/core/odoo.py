@@ -160,7 +160,7 @@ class Odoo():
                     # add stubs for not installed packages
                     Odoo.instance.grammar = parso.load_grammar()
                     Odoo.instance.start_build_time = time.time()
-                    Odoo.instance.odooPath = odooConfig.odooPath
+                    Odoo.instance.odooPath = odooConfig.odooPath.rstrip('/')
                     if os.name == "nt":
                         Odoo.instance.odooPath = Odoo.instance.odooPath[0].capitalize() + Odoo.instance.odooPath[1:]
                     Odoo.instance.load_builtins(ls)
@@ -248,7 +248,8 @@ class Odoo():
                 else:
                     ls.show_message_log("Odoo addons not found at " + os.path.join(self.odooPath, "addons"), MessageType.Error)
                     return False
-            addonsSymbol.paths += used_config.addons
+            for addon in used_config.addons:
+                addonsSymbol.paths.append(addon.rstrip('/'))
             return True
         else:
             ls.show_message_log("Odoo not found at " + self.odooPath, MessageType.Error)
