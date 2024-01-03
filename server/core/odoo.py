@@ -405,7 +405,7 @@ class Odoo():
         # (odoo/addons/test/models, "test.py"). the first element is a symbol. return None, None if not in the project
         addonSymbol = self.symbols.get_symbol(["odoo", "addons"])
         if not addonSymbol:
-            return ()
+            return None, None
         symbol = addonSymbol
         for dir_path in [self.instance.odooPath] + addonSymbol.paths:
             if path.startswith(dir_path):
