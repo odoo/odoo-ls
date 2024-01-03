@@ -101,6 +101,8 @@ class AutoCompleteFeature:
                     return []
                 before = before[1:]
                 file_symbol = Odoo.get().get_file_symbol(path)
+                if not file_symbol:
+                    return []
                 module = file_symbol.get_module_sym()
                 if not module:
                     return []
@@ -157,6 +159,8 @@ class AutoCompleteFeature:
                 s = s[:-1]
             before = s
             file_symbol = Odoo.get().get_file_symbol(path)
+            if not file_symbol:
+                return []
             module = file_symbol.get_module_sym()
             models = Odoo.get().get_models(module, before)
             if not models:
