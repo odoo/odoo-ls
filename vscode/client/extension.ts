@@ -715,9 +715,10 @@ async function getStandalonePythonPath(context: ExtensionContext) {
 
 async function checkStandalonePythonVersion(context: ExtensionContext): Promise<boolean>{
     const currentConfig = await getCurrentConfig(context);
-    const pythonPath = currentConfig["pythonPath"]
+    let pythonPath = currentConfig["pythonPath"]
     if (!pythonPath) {
         OUTPUT_CHANNEL.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
+        pythonPath = "python3"
     }
 
     const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
@@ -742,14 +743,19 @@ async function checkStandalonePythonVersion(context: ExtensionContext): Promise<
 
 async function getPythonPath(context): Promise<string>{
     let pythonPath: string;
+    let interpreter: IInterpreterDetails;
     const config = await getCurrentConfig(context)
-    try{
-        //trying to use the VScode python extension
-        const interpreter = await getInterpreterDetails();
+    try {
+        interpreter = await getInterpreterDetails();
+    } catch {
+        interpreter = null;
+    }
+
+    //trying to use the VScode python extension
+    if (interpreter && global.IS_PYTHON_EXTENSION_READY !== false) {
         config ? pythonPath = interpreter.path[0] : pythonPath = null;
         global.IS_PYTHON_EXTENSION_READY = true;
-
-    }catch{
+    } else {
         global.IS_PYTHON_EXTENSION_READY = false;
         //python extension is not available switch to standalone mode
         if (config){
@@ -757,6 +763,9 @@ async function getPythonPath(context): Promise<string>{
             await checkStandalonePythonVersion(context);
         }
     }
+
     global.OUTPUT_CHANNEL.appendLine("[INFO] Python VS code extension is ".concat(global.IS_PYTHON_EXTENSION_READY ? "ready" : "not ready"));
+    global.OUTPUT_CHANNEL.appendLine("[INFO] Using Python at : ".concat(pythonPath));
+
     return pythonPath
 }
