@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.4 - 2023/01/10
+
+### Fixs
+
+- Fix crash on get_loaded_part_tree if addon path has not been found
+- Fix crash on autocompletion if opened file is not found (out of workspace for example)
+- Allow path to Odoo community to end with a /
+- Fix crash when hovering Relational field declaration
+- Fix crash when creating a symbol that was previously missing
+- Fix infinite log generation on BrokenPipeError
+
 ## 0.2.3 - 2023/12/19
 
 Last update of 2023 ! We wish you all an happy new year !
