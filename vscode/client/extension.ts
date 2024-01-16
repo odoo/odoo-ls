@@ -639,9 +639,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         setMissingStateVariables(context);
         validateState(context);
 
-        if (global.IS_PYTHON_EXTENSION_READY){
-            await initializePython(context.subscriptions);
-        }
+        
         await initStatusBar(context);
         await initializeSubscriptions(context);
 
@@ -753,7 +751,8 @@ async function getPythonPath(context): Promise<string>{
 
     //trying to use the VScode python extension
     if (interpreter && global.IS_PYTHON_EXTENSION_READY !== false) {
-        config ? pythonPath = interpreter.path[0] : pythonPath = null;
+        pythonPath = interpreter.path[0]
+        await initializePython(context.subscriptions);
         global.IS_PYTHON_EXTENSION_READY = true;
     } else {
         global.IS_PYTHON_EXTENSION_READY = false;
