@@ -4,6 +4,7 @@ import * as net from "net";
 import * as path from "path";
 import * as fs from "fs";
 import * as semver from "semver";
+import {homedir} from "os"
 import {
     commands,
     ExtensionContext,
@@ -292,6 +293,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                 await displayCrashMessage(context, params["crashInfo"]);
             })
         );
+        global.PATH_VARIABLES = {"userHome" : homedir()};
         if (autoStart) {
             await client.start();
             await client.sendNotification("Odoo/clientReady");
@@ -359,6 +361,7 @@ async function checkOdooPath(context: ExtensionContext) {
         for (const f of workspace.workspaceFolders) {
             if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath) ||
                 fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
+                global.OUTPUT_CHANNEL.appendLine("invalid Path ".concat(f.uri.toString()))
                 invalidPath = true;
                 break;
             }
@@ -406,6 +409,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 await setStatusConfig(context);
                 const RELOAD_ON_CHANGE = ["odooPath","addons","pythonPath"];
                 if (changes && (changes.some(r=> RELOAD_ON_CHANGE.includes(r)))) {
+                    
                     await checkOdooPath(context);
                     await checkAddons(context);
                     if (client.diagnostics) client.diagnostics.clear();
