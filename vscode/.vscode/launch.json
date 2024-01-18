@@ -19,16 +19,11 @@
         },
         {
             "name": "Launch Server",
-            "type": "python",
+            "type": "lldb",
             "request": "launch",
-            "module": "server",
-            "args": ["--tcp"],
-            "justMyCode": false,
-            "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}/..",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            }
+            "program": "${workspaceRoot}/../server/target/debug/server",
+            "args": [],
+            "cwd": "${workspaceFolder}"
         },
         {
             "name": "Launch Server [WebSockets]",
