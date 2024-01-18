@@ -12,4 +12,5 @@ declare global {
    var CLIENT_IS_STOPPING: boolean;
    var CAN_QUEUE_CONFIG_CHANGE: boolean;
    var IS_PYTHON_EXTENSION_READY: boolean;
+   var PATH_VARIABLES: {[id: string] : string};
 }
