@@ -41,7 +41,7 @@ impl LanguageServer for Backend {
             Err(e) => self.client.log_message(MessageType::ERROR, format!("Error registering capabilities: {:?}", e)).await,
         }
         self.client.log_message(MessageType::INFO, "server initialized!").await;
-        self.init();
+        //self.init();
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -54,7 +54,7 @@ impl Backend {
         
     }
 
-    pub async fn client_ready(&self) {
+    pub async fn client_ready(&self, value: serde_json::Value) {
         self.client.log_message(MessageType::INFO, format!("Client ready !")).await
     }
 

@@ -19,11 +19,12 @@
         },
         {
             "name": "Launch Server",
-            "type": "lldb",
+            "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/../server/target/debug/server",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
         },
         {
             "name": "Launch Server [WebSockets]",
