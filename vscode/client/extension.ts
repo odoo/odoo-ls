@@ -380,7 +380,7 @@ async function checkOdooPath(context: ExtensionContext) {
     }
     
 
-    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.parse(odoo.path)) : true
+    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.file(odoo.path)) : true
     if (!odooFound) {
         let invalidPath = false
         for (const f of workspace.workspaceFolders) {
