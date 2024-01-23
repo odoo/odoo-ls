@@ -544,7 +544,10 @@ function initializeSubscriptions(context: ExtensionContext, client: LanguageClie
                     if (!client.isRunning()) {
                         client.start().then(() => {
                             client.sendNotification(
-                                "Odoo/clientReady"
+                                "Odoo/clientReady",
+                                {
+                                    "value1": 5
+                                }
                             );
                         });
                     } else {
@@ -665,7 +668,10 @@ export function activate(context: ExtensionContext): void {
             if (checkPythonVersion(pythonPath)) {
                 client.start()
                 client.sendNotification(
-                    "Odoo/clientReady"
+                    "Odoo/clientReady",
+                    {
+                        "value1": 5
+                    }
                 );
             } else {
                 displayInvalidPythonError(context)

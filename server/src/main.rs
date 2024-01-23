@@ -1,7 +1,11 @@
 mod backend;
-mod odoo;
+mod constants;
+mod core;
 
 use backend::Backend;
+use core::odoo::Odoo;
+use tokio::sync::Mutex;
+use std::sync::Arc;
 use tower_lsp::{LspService, Server};
 
 #[tokio::main]
@@ -14,7 +18,7 @@ async fn main() {
         //loop {
         let (stream, _) = listener.accept().await.unwrap();
         let (reader, writer) = tokio::io::split(stream);
-        let (service, messages) = LspService::build(|client| Backend { client, odoo:None })
+        let (service, messages) = LspService::build(|client| Backend { client, odoo:Arc::new(Mutex::new(Odoo::new())) })
             .custom_method("Odoo/configurationChanged", Backend::client_config_changed)
             .custom_method("Odoo/clientReady", Backend::client_ready)
             .finish();
@@ -28,7 +32,7 @@ async fn main() {
         let stdin = tokio::io::stdin();
         let stdout = tokio::io::stdout();
 
-        let (service, socket) = LspService::new(|client| Backend { client, odoo:None });
+        let (service, socket) = LspService::new(|client| Backend { client, odoo:Arc::new(Mutex::new(Odoo::new())) });
         Server::new(stdin, stdout, socket).serve(service).await;
     }
 }

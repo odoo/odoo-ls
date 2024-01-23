@@ -2,12 +2,15 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use serde_json::to_value;
-use crate::odoo::Odoo;
+use crate::core::odoo::Odoo;
+use serde;
+use tokio::sync::Mutex;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct Backend {
     pub client: Client,
-    pub odoo: Option<Odoo>,
+    pub odoo: Arc<Mutex<Odoo>>,
 }
 
 #[tower_lsp::async_trait]
@@ -41,7 +44,6 @@ impl LanguageServer for Backend {
             Err(e) => self.client.log_message(MessageType::ERROR, format!("Error registering capabilities: {:?}", e)).await,
         }
         self.client.log_message(MessageType::INFO, "server initialized!").await;
-        //self.init();
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -49,17 +51,19 @@ impl LanguageServer for Backend {
     }
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct ReadyParams {
+    value1: u32,
+}
+
 impl Backend {
     pub async fn client_config_changed(&self) {
         
     }
 
-    pub async fn client_ready(&self, value: serde_json::Value) {
-        self.client.log_message(MessageType::INFO, format!("Client ready !")).await
-    }
-
-    async fn init(&mut self) {
-        self.client.log_message(MessageType::INFO, "Building new Odoo knowledge database").await;
-        self.odoo = Some(Odoo::new());
+    pub async fn client_ready(&self, params: ReadyParams) {
+        self.client.log_message(MessageType::INFO, format!("Client ready !")).await;
+        let mut odoo = self.odoo.lock().await;
+        odoo.init(&self.client).await;
     }
 }
