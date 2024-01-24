@@ -10,7 +10,7 @@ const DEBUG_VALIDATION: bool = false;
 const DEBUG_MEMORY: bool = false;
 const DEBUG_REBUILD: bool = false;
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 pub enum SymType{
     DIRTY,
     ROOT,
@@ -24,13 +24,13 @@ pub enum SymType{
     PRIMITIVE,
 }
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub enum BuildSteps {
-    SYNTAX,
-    ARCH,
-    ARCH_EVAL,
-    ODOO,
-    VALIDATION,
+    SYNTAX     = -1, //can't be 0, because others should be able to be used as vec index
+    ARCH       = 0,
+    ARCH_EVAL  = 1,
+    ODOO       = 2,
+    VALIDATION = 3,
 }
 
 const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",

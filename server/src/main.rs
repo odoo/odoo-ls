@@ -1,6 +1,7 @@
 mod backend;
 mod constants;
 mod core;
+mod my_weak;
 
 use backend::Backend;
 use core::odoo::Odoo;

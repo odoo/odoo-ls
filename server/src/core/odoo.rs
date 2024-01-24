@@ -2,12 +2,15 @@ use crate::core::config::{Config, ConfigRequest};
 use tower_lsp::lsp_types::*;
 use tower_lsp::Client;
 
+use std::collections::HashSet;
+use std::sync::{Arc, Weak, Mutex};
 use std::str::FromStr;
 use std::fs;
 use std::path::PathBuf;
 use super::config::{RefreshMode, DiagMissingImportsMode};
 use super::symbol::Symbol;
-use super::python_arch_builder::PythonArchBuilder;
+use crate::my_weak::MyWeak;
+//use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
 pub struct Odoo {
@@ -16,8 +19,9 @@ pub struct Odoo {
     pub version_micro: u32,
     pub full_version: String,
     pub config: Config,
-    pub symbols: Box<Symbol>, //TODO: Pin ?
-    pub builtins: Box<Symbol>,
+    pub symbols: Option<Arc<Mutex<Symbol>>>,
+    pub builtins: Option<Arc<Mutex<Symbol>>>,
+    rebuild_arch: HashSet<MyWeak<Mutex<Symbol>>>,
 }
 
 impl Odoo {
@@ -28,8 +32,9 @@ impl Odoo {
             version_micro: 0,
             full_version: "0.0.0".to_string(),
             config: Config::new(),
-            symbols: Box::new(Symbol::new()),
-            builtins: Box::new(Symbol::new()),
+            symbols: None,
+            builtins: None,
+            rebuild_arch: HashSet::new(),
         }
     }
 
@@ -91,19 +96,25 @@ impl Odoo {
         self.load_builtins(client).await;
     }
 
-    async fn load_builtins(&self, client: &Client) {
+    async fn load_builtins(&mut self, client: &Client) {
         let builtins_path = fs::canonicalize(PathBuf::from("./typeshed/stdlib/builtins.pyi"));
-        if builtins_path.is_err() {
+        let Ok(builtins_path) = builtins_path else {
             client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
             return;
-        }
-        let builtins_path = builtins_path.unwrap();
-        let builder = PythonArchBuilder::new();
-        builder.load_arch();
+        };
+        let symbol = Arc::new(Mutex::new(Symbol::create_from_path(builtins_path.to_str().unwrap()).unwrap()));
+        self.builtins = Some(symbol.clone());
+        self.add_to_rebuild_arch(Arc::downgrade(&symbol));
         self.process_rebuilds(client).await;
     }
 
     async fn process_rebuilds(&self, client: &Client) {
-        
+        while !self.rebuild_arch.is_empty() {
+            
+        }
+    }
+
+    fn add_to_rebuild_arch(&mut self, symbol: Weak<Mutex<Symbol>>) {
+        self.rebuild_arch.insert(MyWeak::new(symbol));
     }
 }
