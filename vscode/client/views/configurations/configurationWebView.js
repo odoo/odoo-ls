@@ -40,9 +40,11 @@ function main() {
   addFolderButton.addEventListener("click", addFolderClick);
   pathTextfield.addEventListener("vsc-change", updateVersion);
   pathButton.addEventListener('vsc-click', openOdooFolder);
+  if (pythonPathButton){
+    pythonPathButton.addEventListener('vsc-click', openPythonPath);
+  }
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
-  pythonPathButton.addEventListener('vsc-click', openPythonPath);
 
   // Send a message to notify the extension 
   // that the DOM is loaded and ready.
@@ -52,12 +54,25 @@ function main() {
 }
 
 function saveConfig() {
+  let pythonPath = document.getElementById("config-python-path-textfield");
+  if (!pythonPath){
+    pythonPath=undefined
+  }else{
+    pythonPath=pythonPath.value
+  }
+
   vscode.postMessage({
       command: "save_config",
       name: document.getElementById("config-name-textfield").value,
       odooPath: document.getElementById("config-path-textfield").value,
       addons: getAddons(),
-      pythonPath: document.getElementById("config-python-path-textfield").value,
+      pythonPath: pythonPath,
+  });
+}
+
+function openPythonPath() {
+  vscode.postMessage({
+    command: "open_python_path"
   });
 }
 
@@ -77,12 +92,6 @@ function deleteAddon(addons){
 function openOdooFolder() {
   vscode.postMessage({
     command: "open_odoo_folder"
-  });
-}
-
-function openPythonPath() {
-  vscode.postMessage({
-    command: "open_python_path"
   });
 }
 

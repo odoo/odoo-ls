@@ -193,7 +193,6 @@ class Odoo():
             Odoo.get().reset(ls)
         FileMgr.files = {}
         ls.show_message_log("Building new database", MessageType.Log)
-        ls.show_message("Reloading Odoo database", MessageType.Info)
         ls.launch_thread(target=Odoo.initialize, args=(ls,))
 
 

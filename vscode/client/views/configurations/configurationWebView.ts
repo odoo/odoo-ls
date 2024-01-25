@@ -1,6 +1,6 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
-import { getUri, getNonce } from "../../utils/utils";
-import {ConfigurationsChange} from "../../utils/events"
+import { getUri, getNonce } from "../../common/utils";
+import {ConfigurationsChange} from "../../common/events"
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -129,7 +129,8 @@ export class ConfigurationWebView {
             config: config,
             cspSource: webview.cspSource,
             nonce: nonce,
-            odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null
+            odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null,
+            pythonExtensionMode: global.IS_PYTHON_EXTENSION_READY,  
         };
         return ejs.render(htmlFile, data);
     }
@@ -260,6 +261,9 @@ export class ConfigurationWebView {
                 case "delete_config":
                     this._deleteConfig(configs);
                     break;
+                case "update_version":
+                    this._getOdooVersion(message.odooPath, webview);
+                    break;
                 case "open_python_path":
                     const pythonPathOptions: vscode.OpenDialogOptions = {
                         title: "Add Python path",
@@ -278,9 +282,6 @@ export class ConfigurationWebView {
                             });
                         }
                     });
-                    break;
-                case "update_version":
-                    this._getOdooVersion(message.odooPath, webview);
                     break;
             }
         },

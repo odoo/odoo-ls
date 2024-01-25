@@ -1,4 +1,3 @@
-import { execSync } from "child_process";
 import { ExtensionContext, Uri, Webview } from "vscode";
 
 /**
@@ -25,17 +24,9 @@ export function getNonce() {
 	return text;
 }
 
-export function getPythonVersion(context: ExtensionContext, pythonPath: String = "python3") {
-	try {
-		return execSync(`${pythonPath} --version`, {encoding: 'utf8'})
-	} catch {
-		return null;
-	}
-}
-
 // Config related utils
 
-export function getCurrentConfig(context: ExtensionContext) {
+export async function getCurrentConfig(context: ExtensionContext) {
     const configs: any = context.globalState.get("Odoo.configurations");
     const activeConfig: number = Number(context.workspaceState.get('Odoo.selectedConfiguration'));
     return (configs && activeConfig > -1 ? configs[activeConfig] : null);
