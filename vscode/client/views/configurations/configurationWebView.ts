@@ -362,5 +362,3 @@ export class ConfigurationWebView {
         }
     }
 }
-
-//TODO cant save config (odooPath)
