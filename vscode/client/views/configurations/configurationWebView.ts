@@ -168,6 +168,8 @@ export class ConfigurationWebView {
             }
         }
 
+        global.OUTPUT_CHANNEL.appendLine("saving ".concat(changes.toString()))
+
         configs[this.configId] = {
             "id": this.configId,
             "name": name,

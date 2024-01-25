@@ -64,3 +64,42 @@
 #path-helper-invalid {
   color: var(--vscode-errorForeground);
 }
+
+.inline-element{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+}
+
+.helper {
+  cursor: pointer;
+  transition: all 200ms;
+  height: 100%;
+  aspect-ratio: 1;
+  font-size: 18px !important;
+  display: flex !important;
+  border-radius: 2px;
+  justify-content: center;
+  align-items: center;
+}
+
+.helper:hover {
+  background: var(--vscode-checkbox-background);
+}
+
+.helper .tooltip{
+  font-family: "Droid Sans Mono", "monospace", monospace;
+  visibility: hidden;
+  position: absolute;
+  font-size: var(--vscode-font-size, 13px);
+  transform: translateY(calc(50% + 18px));
+  background: var(--vscode-panel-background);
+  box-shadow: 0 0 8px 2px var(--vscode-widget-shadow) !important;
+  padding: 6px 4px;
+  z-index: 100;
+}
+
+.helper:hover .tooltip{
+  visibility: visible;
+}
