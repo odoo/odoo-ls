@@ -1,4 +1,4 @@
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 use std::hash::{Hash, Hasher};
 
 //my_weak is a structure that hold a value as Weak, but can be used in a HashSet
@@ -12,6 +12,10 @@ impl <T> MyWeak<T> {
         Self {
             weak: weak,
         }
+    }
+
+    pub fn upgrade(&self) -> Option<Arc<T>> {
+        self.weak.upgrade()
     }
 }
 

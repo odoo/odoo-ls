@@ -2,6 +2,7 @@ use crate::constants::*;
 use crate::my_weak::MyWeak;
 use core::panic;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::sync::{Arc, Weak, Mutex};
 
 
@@ -18,10 +19,10 @@ pub struct Symbol {
     symbols: Vec<Arc<Mutex<Symbol>>>,
     module_symbols: Vec<Arc<Mutex<Symbol>>>,
     local_symbols: Vec<Arc<Mutex<Symbol>>>,
-    parent: Option<Weak<Symbol>>,
-    weak_self: Option<Weak<Symbol>>,
-    dependencies: Vec<Vec<HashSet<MyWeak<Symbol>>>>,
-    dependents: Vec<Vec<HashSet<MyWeak<Symbol>>>>,
+    parent: Option<Weak<Mutex<Symbol>>>,
+    weak_self: Option<Weak<Mutex<Symbol>>>,
+    dependencies: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
+    dependents: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
 }
 
 impl Symbol {
@@ -71,7 +72,7 @@ impl Symbol {
     }
 
     //Return a HashSet of all symbols (constructed until 'level') that are dependencies for the 'step' of this symbol
-    pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> &HashSet<MyWeak<Symbol>> {
+    pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> &HashSet<MyWeak<Mutex<Symbol>>> {
         if step == BuildSteps::SYNTAX || level == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
@@ -86,8 +87,15 @@ impl Symbol {
         &self.dependencies[step as usize][level as usize]
     }
 
+    pub fn get_all_dependencies(&self, step: &BuildSteps) -> &Vec<HashSet<MyWeak<Mutex<Symbol>>>> {
+        if *step == BuildSteps::SYNTAX {
+            panic!("Can't get dependencies for syntax step")
+        }
+        &self.dependencies[*step as usize]
+    }
+
     //Return a HashSet of all 'step' of symbols that require that this symbol is built until 'level';
-    pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> &HashSet<MyWeak<Symbol>> {
+    pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> &HashSet<MyWeak<Mutex<Symbol>>> {
         if level == BuildSteps::SYNTAX || step == BuildSteps::SYNTAX {
             panic!("Can't get dependents for syntax step")
         }
@@ -122,18 +130,19 @@ impl Symbol {
         symbol.dependents[level_i][step_i].insert(MyWeak::new(Arc::downgrade(self.get_arc().unwrap())));
     }
 
-    pub fn get_arc(&self) -> Option<&Arc<Symbol>> {
+    pub fn get_arc(&self) -> Option<&Arc<Mutex<Symbol>>> {
         if self.weak_self.is_none() {
             return None;
         }
         Some(&self.weak_self.unwrap().upgrade().unwrap())
     }
 
-    pub fn create_from_path(path: &str) -> Result<Self, &'static str> {
+    pub fn create_from_path(path: &str, parent: &mut Arc<Mutex<Symbol>>) -> Result<Self, &'static str> {
         if ! path.ends_with(".py") && ! path.ends_with(".pyi") {
             return Err("Path must be a python file");
         }
         let mut symbol = Symbol::new(path.to_string(), SymType::FILE);
+        symbol.parent = Some(Arc::downgrade(parent));
         Ok(symbol)
     }
 }

@@ -3,10 +3,13 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::Client;
 
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::sync::{Arc, Weak, Mutex};
 use std::str::FromStr;
 use std::fs;
 use std::path::PathBuf;
+use std::thread::current;
+use crate::constants::*;
 use super::config::{RefreshMode, DiagMissingImportsMode};
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
@@ -22,6 +25,9 @@ pub struct Odoo {
     pub symbols: Option<Arc<Mutex<Symbol>>>,
     pub builtins: Option<Arc<Mutex<Symbol>>>,
     rebuild_arch: HashSet<MyWeak<Mutex<Symbol>>>,
+    rebuild_arch_eval: HashSet<MyWeak<Mutex<Symbol>>>,
+    rebuild_odoo: HashSet<MyWeak<Mutex<Symbol>>>,
+    rebuild_validation: HashSet<MyWeak<Mutex<Symbol>>>,
 }
 
 impl Odoo {
@@ -32,9 +38,12 @@ impl Odoo {
             version_micro: 0,
             full_version: "0.0.0".to_string(),
             config: Config::new(),
-            symbols: None,
-            builtins: None,
+            symbols: Some(Arc::new(Mutex::new(Symbol::new("root".to_string(), SymType::ROOT)))),
+            builtins: Some(Arc::new(Mutex::new(Symbol::new("builtins".to_string(), SymType::ROOT)))),
             rebuild_arch: HashSet::new(),
+            rebuild_arch_eval: HashSet::new(),
+            rebuild_odoo: HashSet::new(),
+            rebuild_validation: HashSet::new(),
         }
     }
 
@@ -102,15 +111,99 @@ impl Odoo {
             client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
             return;
         };
-        let symbol = Arc::new(Mutex::new(Symbol::create_from_path(builtins_path.to_str().unwrap()).unwrap()));
-        self.builtins = Some(symbol.clone());
-        self.add_to_rebuild_arch(Arc::downgrade(&symbol));
+        let arc_symbol = Arc::new(Mutex::new(Symbol::create_from_path(builtins_path.to_str().unwrap(), self.builtins.unwrap()).unwrap()));
+        self.add_to_rebuild_arch(Arc::downgrade(&arc_symbol));
         self.process_rebuilds(client).await;
     }
 
-    async fn process_rebuilds(&self, client: &Client) {
+    async fn pop_item(&mut self, step: BuildSteps) -> Option<Arc<Mutex<Symbol>>> {
+        let mut arc_sym: Option<Arc<Mutex<Symbol>>> = None;
+        //Part 1: Find the symbol with a unmutable set
+        {
+            let set =  if step == BuildSteps::ARCH_EVAL {
+                &self.rebuild_arch_eval
+            } else if step == BuildSteps::ODOO {
+                &self.rebuild_odoo
+            } else if step == BuildSteps::VALIDATION {
+                &self.rebuild_validation
+            } else {
+                &self.rebuild_arch
+            };
+            let mut selected_sym: Option<&MyWeak<Mutex<Symbol>>> = None;
+            let mut selected_count: u32 = 999999999;
+            let mut current_count: u32;
+            for sym in &*set {
+                current_count = 0;
+                let myt_symbol = sym.upgrade().unwrap();
+                let symbol = myt_symbol.lock().unwrap();
+                for (index, dep_set) in symbol.get_all_dependencies(&step).iter().enumerate() {
+                    if index == BuildSteps::ARCH as usize {
+                        for dep in dep_set.iter() {
+                            if self.rebuild_arch.contains(dep) {
+                                current_count += 1;
+                            }
+                        }
+                    }
+                    if index == BuildSteps::ARCH_EVAL as usize {
+                        for dep in dep_set.iter() {
+                            if self.rebuild_arch_eval.contains(dep) {
+                                current_count += 1;
+                            }
+                        }
+                    }
+                    if index == BuildSteps::ODOO as usize {
+                        for dep in dep_set.iter() {
+                            if self.rebuild_odoo.contains(dep) {
+                                current_count += 1;
+                            }
+                        }
+                    }
+                    if index == BuildSteps::VALIDATION as usize {
+                        for dep in dep_set.iter() {
+                            if self.rebuild_validation.contains(dep) {
+                                current_count += 1;
+                            }
+                        }
+                    }
+                }
+                if current_count < selected_count {
+                    selected_sym = Some(&sym);
+                    selected_count = current_count;
+                    if current_count == 0 {
+                        break;
+                    }
+                }
+            }
+            if selected_sym.is_none() {
+                return None;
+            }
+            arc_sym = selected_sym.unwrap().upgrade()
+        }
+        {
+            let set =  if step == BuildSteps::ARCH_EVAL {
+                &mut self.rebuild_arch_eval
+            } else if step == BuildSteps::ODOO {
+                &mut self.rebuild_odoo
+            } else if step == BuildSteps::VALIDATION {
+                &mut self.rebuild_validation
+            } else {
+                &mut self.rebuild_arch
+            };
+            let arc_sym_unwrapped = arc_sym.unwrap();
+            if !set.remove(&MyWeak::new(Arc::downgrade(&arc_sym_unwrapped))) {
+                panic!("Unable to remove selected symbol from rebuild set")
+            }
+            return Some(arc_sym_unwrapped);
+        }
+    }
+
+    async fn process_rebuilds(&mut self, client: &Client) {
+        //already_rebuilt: HashSet<tree>;// TODO track already rebuilt to avoid cycles
         while !self.rebuild_arch.is_empty() {
-            
+            let sym = self.pop_item(BuildSteps::ARCH).await;
+            if sym.is_none() {
+                break;
+            }
         }
     }
 
