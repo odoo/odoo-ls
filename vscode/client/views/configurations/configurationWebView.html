@@ -23,17 +23,22 @@
                 <vscode-label for="config-path-textfield">
                     Odoo folder path
                 </vscode-label>
-                <vscode-textfield id="config-path-textfield" value="<%= config.odooPath %>" placeholder="Path to the configuration's Odoo folder">
-                    <vscode-icon
-                        label="Open Odoo folder"
-                        title="Open Odoo folder"
-                        slot="content-after"
-                        name="folder-opened"
-                        id="config-path-button"
-                        action-icon
-                    >
-                    </vscode-icon>
-                </vscode-textfield>
+                <div class="inline-element">
+                    <vscode-textfield id="config-path-textfield" value="<%= config.odooPath %>" placeholder="Path to the configuration's Odoo folder">
+                        <vscode-icon
+                            label="Open Odoo folder"
+                            title="Open Odoo folder"
+                            slot="content-after"
+                            name="folder-opened"
+                            id="config-path-button"
+                            action-icon
+                        >
+                        </vscode-icon>
+                    </vscode-textfield>
+                    <span class="codicon codicon-question helper">
+                        <span class="tooltip">Use ${workspaceFolder} and ${userHome} to make a dynamic configuration</span>
+                    </span>
+                </div>
                 <vscode-form-helper id="config-path-helper">
                     <% if (odooVersion) { %>
                         <p>Version <%= odooVersion %></p>
