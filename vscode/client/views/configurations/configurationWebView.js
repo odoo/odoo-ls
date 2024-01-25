@@ -40,7 +40,9 @@ function main() {
   addFolderButton.addEventListener("click", addFolderClick);
   pathTextfield.addEventListener("vsc-change", updateVersion);
   pathButton.addEventListener('vsc-click', openOdooFolder);
-  pythonPathButton.addEventListener('vsc-click', openPythonPath);
+  if (pythonPathButton){
+    pythonPathButton.addEventListener('vsc-click', openPythonPath);
+  }
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
 
@@ -52,12 +54,19 @@ function main() {
 }
 
 function saveConfig() {
+  let pythonPath = document.getElementById("config-python-path-textfield");
+  if (!pythonPath){
+    pythonPath=undefined
+  }else{
+    pythonPath=pythonPath.value
+  }
+
   vscode.postMessage({
       command: "save_config",
       name: document.getElementById("config-name-textfield").value,
       odooPath: document.getElementById("config-path-textfield").value,
       addons: getAddons(),
-      pythonPath: document.getElementById("config-python-path-textfield").value,
+      pythonPath: pythonPath,
   });
 }
 
