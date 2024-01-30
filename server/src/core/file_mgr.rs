@@ -5,10 +5,10 @@ use tower_lsp::Client;
 use url::Url;
 use crate::constants::*;
 
-struct FileInfo {
-    ast: Option<Vec<ast::Stmt>>,
+pub struct FileInfo {
+    pub ast: Option<Vec<ast::Stmt>>,
     version: i32,
-    uri: String,
+    pub uri: String,
     need_push: bool,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
 }
@@ -24,7 +24,7 @@ impl FileInfo {
         }
     }
 
-    fn build_ast(&mut self, path: &str, content: &str) {
+    pub fn build_ast(&mut self, path: &str, content: &str) -> &mut Self{
         if ! content.is_empty() {
             self.ast = Some(ast::Suite::parse(content, "<embedded>").unwrap()) //TODO handle errors
         } else {
@@ -33,6 +33,7 @@ impl FileInfo {
         }
         self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
         //TODO handle valueError, permissionError
+        self
     }
 
     fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
@@ -50,11 +51,22 @@ impl FileInfo {
 }
 
 
-struct FileMgr {
+pub struct FileMgr {
     pub files: HashMap<String, FileInfo>
 }
 
 impl FileMgr {
+
+    pub fn new() -> Self {
+        Self {
+            files: HashMap::new()
+        }
+    }
+
+    pub fn get_file_info(&mut self, uri: &str) -> &mut FileInfo {
+        self.files.entry(uri.to_string()).or_insert_with(|| FileInfo::new(uri.to_string()))
+    }
+
     // fn pathname2uri(s: &str) -> String {
     //     let mut path = s.replace("\\", "/");
     //     path = percent_encode(path.as_bytes(), PATH_SEGMENT_ENCODE_SET).to_string();
@@ -65,6 +77,4 @@ impl FileMgr {
     //     }
     //     path
     // }
-
-    // Implémentez les autres méthodes de la structure FileMgr ici.
 }

@@ -2,7 +2,6 @@ use crate::constants::*;
 use crate::my_weak::MyWeak;
 use core::panic;
 use std::collections::HashSet;
-use std::hash::Hash;
 use std::sync::{Arc, Weak, Mutex};
 
 
@@ -14,6 +13,7 @@ pub trait SymbolTrait {
 pub struct Symbol {
     name: String,
     sym_type: SymType,
+    pub paths: Vec<String>,
     //eval: Option<Evaluation>,
     i_ext: String,
     symbols: Vec<Arc<Mutex<Symbol>>>,
@@ -30,6 +30,7 @@ impl Symbol {
         Symbol{
             name: name.clone(),
             sym_type: sym_type,
+            paths: vec![],
             i_ext: String::new(),
             symbols: Vec::new(),
             module_symbols: Vec::new(),
@@ -87,11 +88,11 @@ impl Symbol {
         &self.dependencies[step as usize][level as usize]
     }
 
-    pub fn get_all_dependencies(&self, step: &BuildSteps) -> &Vec<HashSet<MyWeak<Mutex<Symbol>>>> {
-        if *step == BuildSteps::SYNTAX {
+    pub fn get_all_dependencies(&self, step: BuildSteps) -> &Vec<HashSet<MyWeak<Mutex<Symbol>>>> {
+        if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
-        &self.dependencies[*step as usize]
+        &self.dependencies[step as usize]
     }
 
     //Return a HashSet of all 'step' of symbols that require that this symbol is built until 'level';
@@ -126,23 +127,29 @@ impl Symbol {
         }
         let step_i = step as usize;
         let level_i = dep_level as usize;
-        self.dependencies[step_i][level_i].insert(MyWeak::new(Arc::downgrade(symbol.get_arc().unwrap())));
-        symbol.dependents[level_i][step_i].insert(MyWeak::new(Arc::downgrade(self.get_arc().unwrap())));
+        self.dependencies[step_i][level_i].insert(MyWeak::new(Arc::downgrade(&symbol.get_arc().unwrap())));
+        symbol.dependents[level_i][step_i].insert(MyWeak::new(Arc::downgrade(&self.get_arc().unwrap())));
     }
 
-    pub fn get_arc(&self) -> Option<&Arc<Mutex<Symbol>>> {
+    pub fn get_arc(&self) -> Option<Arc<Mutex<Symbol>>> {
         if self.weak_self.is_none() {
             return None;
         }
-        Some(&self.weak_self.unwrap().upgrade().unwrap())
+        if let Some(v) = &self.weak_self {
+            return Some(v.upgrade().unwrap());
+        }
+        None
     }
 
-    pub fn create_from_path(path: &str, parent: &mut Arc<Mutex<Symbol>>) -> Result<Self, &'static str> {
+    pub async fn create_from_path(path: &str, parent: &Option<Arc<Mutex<Symbol>>>) -> Result<Self, &'static str> {
         if ! path.ends_with(".py") && ! path.ends_with(".pyi") {
             return Err("Path must be a python file");
         }
         let mut symbol = Symbol::new(path.to_string(), SymType::FILE);
-        symbol.parent = Some(Arc::downgrade(parent));
+        symbol.paths = vec![path.to_string()];
+        if let(Some(p)) = &parent {
+            symbol.parent = Some(Arc::downgrade(&p));
+        }
         Ok(symbol)
     }
 }

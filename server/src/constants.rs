@@ -10,7 +10,7 @@ const DEBUG_VALIDATION: bool = false;
 const DEBUG_MEMORY: bool = false;
 const DEBUG_REBUILD: bool = false;
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
     DIRTY,
     ROOT,
@@ -24,7 +24,7 @@ pub enum SymType{
     PRIMITIVE,
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub enum BuildSteps {
     SYNTAX     = -1, //can't be 0, because others should be able to be used as vec index
     ARCH       = 0,

@@ -1,13 +1,19 @@
 mod backend;
 mod constants;
 mod core;
+use lazy_static::lazy_static;
 mod my_weak;
 
 use backend::Backend;
 use core::odoo::Odoo;
+use core::file_mgr::FileMgr;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use tower_lsp::{LspService, Server};
+
+lazy_static! {
+    static ref FILE_MGR: Mutex<FileMgr> = Mutex::new(FileMgr::new());
+}
 
 #[tokio::main]
 async fn main() {

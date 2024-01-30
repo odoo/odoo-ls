@@ -3,16 +3,16 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::Client;
 
 use std::collections::HashSet;
-use std::ops::Deref;
+use std::future::Future;
 use std::sync::{Arc, Weak, Mutex};
 use std::str::FromStr;
 use std::fs;
 use std::path::PathBuf;
-use std::thread::current;
 use crate::constants::*;
 use super::config::{RefreshMode, DiagMissingImportsMode};
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
+use crate::core::python_arch_builder::PythonArchBuilder;
 //use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
@@ -97,23 +97,24 @@ impl Odoo {
                         }
                     },
                     _ => {
-                        client.log_message(MessageType::ERROR, "Unknown config key: {key}").await;
+                        client.log_message(MessageType::ERROR, format!("Unknown config key: {}", key)).await;
                     },
                 }
             }
         }
-        self.load_builtins(client).await;
+        self.load_builtins(&client).await;
     }
 
     async fn load_builtins(&mut self, client: &Client) {
-        let builtins_path = fs::canonicalize(PathBuf::from("./typeshed/stdlib/builtins.pyi"));
+        let path = PathBuf::from("./../server/typeshed/stdlib/builtins.pyi");
+        let builtins_path = fs::canonicalize(path);
         let Ok(builtins_path) = builtins_path else {
             client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
             return;
         };
-        let arc_symbol = Arc::new(Mutex::new(Symbol::create_from_path(builtins_path.to_str().unwrap(), self.builtins.unwrap()).unwrap()));
+        let arc_symbol = Arc::new(Mutex::new(Symbol::create_from_path(builtins_path.to_str().unwrap(),  &self.builtins).await.unwrap()));
         self.add_to_rebuild_arch(Arc::downgrade(&arc_symbol));
-        self.process_rebuilds(client).await;
+        self.process_rebuilds(&client).await;
     }
 
     async fn pop_item(&mut self, step: BuildSteps) -> Option<Arc<Mutex<Symbol>>> {
@@ -136,7 +137,7 @@ impl Odoo {
                 current_count = 0;
                 let myt_symbol = sym.upgrade().unwrap();
                 let symbol = myt_symbol.lock().unwrap();
-                for (index, dep_set) in symbol.get_all_dependencies(&step).iter().enumerate() {
+                for (index, dep_set) in symbol.get_all_dependencies(step).iter().enumerate() {
                     if index == BuildSteps::ARCH as usize {
                         for dep in dep_set.iter() {
                             if self.rebuild_arch.contains(dep) {
@@ -204,6 +205,8 @@ impl Odoo {
             if sym.is_none() {
                 break;
             }
+            let mut builder = PythonArchBuilder::new(sym.unwrap());
+            builder.load_arch(self).await;
         }
     }
 
