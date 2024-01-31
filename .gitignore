@@ -9,6 +9,7 @@ env
 *.pyc
 *.log
 *.vsix
+*.lock
 vscode/package-lock.json
 venv
 vscode/.nox
