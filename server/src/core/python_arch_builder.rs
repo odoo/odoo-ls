@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use rustpython_parser::ast::Stmt;
+use rustpython_parser::text_size::TextRange;
+use rustpython_parser::ast::{Identifier, Stmt, Alias, Int};
 
 use crate::FILE_MGR;
+use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::Odoo;
 use crate::core::symbol::Symbol;
 
@@ -36,9 +38,27 @@ impl PythonArchBuilder {
         for stmt in file_info.ast.as_ref().unwrap() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    println!("import stmt");
+                    println!("{:?}", import_stmt);
+                    self.create_local_symbols_from_import_stmt(None, &import_stmt.names, None)
+                },
+                Stmt::ImportFrom(import_from_stmt) => {
+                    println!("{:?}", import_from_stmt);
+                    self.create_local_symbols_from_import_stmt(import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref())
                 },
                 _ => {}
+            }
+        }
+    }
+
+    fn create_local_symbols_from_import_stmt(&self, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>) {
+        for import_name in name_aliases {
+            if import_name.name.as_str() == "*" {
+                if self.sym_stack.len() != 1 { //only at top level for now.
+                    continue;
+                }
+                symbols = resolve_import_stmt(self.sym_stack[-1])
+            } else {
+
             }
         }
     }

@@ -1,8 +1,12 @@
+use tower::util::error::optional::None;
+
 use crate::constants::*;
 use crate::my_weak::MyWeak;
 use core::panic;
-use std::collections::HashSet;
-use std::sync::{Arc, Weak, Mutex};
+use std::collections::{HashSet, HashMap};
+use std::ops::Deref;
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::vec;
 
 
 pub trait SymbolTrait {
@@ -12,12 +16,12 @@ pub trait SymbolTrait {
 #[derive(Debug)]
 pub struct Symbol {
     name: String,
-    sym_type: SymType,
+    pub sym_type: SymType,
     pub paths: Vec<String>,
     //eval: Option<Evaluation>,
     i_ext: String,
-    symbols: Vec<Arc<Mutex<Symbol>>>,
-    module_symbols: Vec<Arc<Mutex<Symbol>>>,
+    symbols: HashMap<String, Arc<Mutex<Symbol>>>,
+    module_symbols: HashMap<String, Arc<Mutex<Symbol>>>,
     local_symbols: Vec<Arc<Mutex<Symbol>>>,
     parent: Option<Weak<Mutex<Symbol>>>,
     weak_self: Option<Weak<Mutex<Symbol>>>,
@@ -32,8 +36,8 @@ impl Symbol {
             sym_type: sym_type,
             paths: vec![],
             i_ext: String::new(),
-            symbols: Vec::new(),
-            module_symbols: Vec::new(),
+            symbols: HashMap::new(),
+            module_symbols: HashMap::new(),
             local_symbols: Vec::new(),
             parent: None,
             weak_self: None,
@@ -70,6 +74,46 @@ impl Symbol {
                     HashSet::new()  //VALIDATION
                 ]],
         }
+    }
+
+    pub fn get_symbol(&self, mut symbol_tree_files: Vec<String>, mut symbol_tree_content: Vec<String>) -> Option<Arc<Mutex<Symbol>>> {
+        let mut stf = symbol_tree_files.into_iter();
+        let mut content = if let Some(fk) = stf.next() {
+            Some(stf.try_fold(
+                self.module_symbols.get(&fk)?.clone(),
+                |c, f| Some(c.lock().unwrap().module_symbols.get(&f)?.clone())
+            )?)
+        } else {
+            return None
+        };
+        let mut stc = symbol_tree_content.into_iter();
+        content = if let Some(fk) = stc.next() {
+            Some(stf.try_fold(
+                content.unwrap().lock().unwrap().module_symbols.get(&fk)?.clone(),
+                |c, f| Some(c.lock().unwrap().module_symbols.get(&f)?.clone())
+            )?)
+        } else {
+            return None
+        };
+        content
+    }
+
+    pub fn get_tree(&self) -> Vec<Vec<String>> {
+        let mut res = vec![vec![]];
+        let mut current = self;
+        while current.sym_type != SymType::ROOT && current.parent.is_some() {
+            if current.is_file_content() {
+                res[1].insert(0, current.name.clone());
+            } else {
+                res[0].insert(0, current.name.clone());
+            }
+            current = current.parent.unwrap().upgrade().unwrap().lock().unwrap().deref();
+        }
+        res
+    }
+
+    pub fn is_file_content(&self) -> bool{
+        return [SymType::NAMESPACE, SymType::PACKAGE, SymType::FILE, SymType::COMPILED].contains(&self.sym_type)
     }
 
     //Return a HashSet of all symbols (constructed until 'level') that are dependencies for the 'step' of this symbol
