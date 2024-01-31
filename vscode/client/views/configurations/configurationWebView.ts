@@ -1,11 +1,10 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, workspace } from "vscode";
-import { getUri, getNonce } from "../../common/utils";
+import { getUri, getNonce, evaluateOdooPath } from "../../common/utils";
 import {ConfigurationsChange} from "../../common/events"
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { URI } from "vscode-languageclient";
-import * as readline from 'readline';
 import untildify from 'untildify';
 
 /**
@@ -201,7 +200,7 @@ export class ConfigurationWebView {
      * @param context A reference to the extension context
      */
     private _setWebviewMessageListener(webview: Webview) {
-        webview.onDidReceiveMessage((message: any) => {
+        webview.onDidReceiveMessage(async (message: any) => {
             const command = message.command;
             const configs: any = this._context.globalState.get("Odoo.configurations");
 
@@ -227,7 +226,7 @@ export class ConfigurationWebView {
                         canSelectFiles: false,
                         canSelectFolders: true
                     };
-                    window.showOpenDialog(odooFolderOptions).then(fileUri => {
+                    window.showOpenDialog(odooFolderOptions).then(async (fileUri) => {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooFolderPath = fileUri[0].fsPath;
@@ -235,7 +234,7 @@ export class ConfigurationWebView {
                                 command: "update_path",
                                 path: odooFolderPath
                             });
-                            this._verifyPath(odooFolderPath,webview);
+                            await this._verifyPath(odooFolderPath,webview);
                         }
                     });
                     break;
@@ -264,7 +263,7 @@ export class ConfigurationWebView {
                     this._deleteConfig(configs);
                     break;
                 case "update_version":
-                    this._verifyPath(message.odooPath, webview);
+                    await this._verifyPath(message.odooPath, webview);
                     break;
                 case "open_python_path":
                     const pythonPathOptions: vscode.OpenDialogOptions = {
@@ -292,75 +291,26 @@ export class ConfigurationWebView {
         );
     }
 
-    private _verifyPath(odooPath: URI, webview: Webview){
-        const workspaceFolders = workspace.workspaceFolders;
-        const fillTemplate = (template, vars = {}) => {
-            const handler = new Function('vars', [
-              'const tagged = ( ' + Object.keys(vars).join(', ') + ' ) =>',
-                '`' + template + '`',
-              'return tagged(...Object.values(vars))'
-            ].join('\n'));
-            const res = handler(vars)
-            return res;
-        };
-
+    private async _verifyPath(odooPath: URI, webview: Webview){
+        //TODO do something simmilar for each use of odooPath
         const displayOdooVersion = (version)=>{
             webview.postMessage({
                 command: "update_config_folder_validity",
                 version: version
             });
         };
-
-        workspaceFolders.forEach(async (folder)=>{
-            let PATH_VAR_LOCAL = global.PATH_VARIABLES;
-            PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.path;
-            odooPath = fillTemplate(odooPath,PATH_VAR_LOCAL);
-            const version = await this._getOdooVersion(odooPath, webview);
-            if (version){
-                global.PATH_VARIABLES["workspaceFolder"] = folder.uri.path;
-                displayOdooVersion(version);
-                return;
-            }
-        });
-        displayOdooVersion(null);
-    }
-
-    private async _getOdooVersion(odooPath: URI, webview: Webview) {
-        let versionString = null;
-        const releasePath = untildify(odooPath) + '/odoo/release.py';
-        if (fs.existsSync(releasePath)) {
-            const rl = readline.createInterface({
-                input: fs.createReadStream(releasePath),
-                crlfDelay: Infinity,
-            });
-
-            for await (const line of rl) {
-                if (line.startsWith('version_info')) {
-                    versionString = line;
-                    // Folder is invalid if we don't find any version info
-                    if (!versionString) {
-                        let versions = this._context.globalState.get('Odoo.configsVersion', {});
-                        versions[`${this.configId}`] = null;
-                        this._context.globalState.update('Odoo.configsVersion', versions);
-                        return null;
-                    } else {
-                        // Folder is valid if a version was found
-                        const versionRegEx = /\(([^)]+)\)/; // Regex to obtain the info in the parentheses
-                        const versionArray = versionRegEx.exec(versionString)[1].split(', ');
-                        const version = `${versionArray[0]}.${versionArray[1]}.${versionArray[2]}` + (versionArray[3] == 'FINAL' ? '' : ` ${versionArray[3]}${versionArray[4]}`);
-                        let versions = this._context.globalState.get('Odoo.configsVersion', {});
-                        versions[`${this.configId}`] = version;
-                        this._context.globalState.update('Odoo.configsVersion', versions);
-                        return version;
-                    }
-                }
-            }
-        } else {
-            // Folder is invalid if odoo/release.py was never found
-            let versions = this._context.globalState.get('Odoo.configsVersion', {});
-            versions[`${this.configId}`] = null;
+        
+        let versions = this._context.globalState.get('Odoo.configsVersion', {});
+        const odoo = await evaluateOdooPath(odooPath);
+        if (odoo){
+            versions[`${this.configId}`] = odoo.version;
             this._context.globalState.update('Odoo.configsVersion', versions);
-            return null;
+            displayOdooVersion(odoo.version);
+        }else{
+            // no valid odoo found, setting the odoo version to null
+            versions[`${this.configId}`] = null;
+	        this._context.globalState.update('Odoo.configsVersion', versions);
+            displayOdooVersion(null);
         }
     }
 }
