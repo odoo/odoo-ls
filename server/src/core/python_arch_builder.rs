@@ -50,13 +50,13 @@ impl PythonArchBuilder {
         }
     }
 
-    fn create_local_symbols_from_import_stmt(&self, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>) {
+    fn create_local_symbols_from_import_stmt(&self, odoo: &Odoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>) {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
                     continue;
                 }
-                symbols = resolve_import_stmt(self.sym_stack[-1])
+                symbols = resolve_import_stmt(odoo, self.sym_stack[-1]);
             } else {
 
             }

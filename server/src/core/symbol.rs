@@ -1,4 +1,4 @@
-use tower::util::error::optional::None;
+use tower_lsp::lsp_types::Range;
 
 use crate::constants::*;
 use crate::my_weak::MyWeak;
@@ -27,6 +27,7 @@ pub struct Symbol {
     weak_self: Option<Weak<Mutex<Symbol>>>,
     dependencies: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     dependents: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
+    range: Option<Range>,
 }
 
 impl Symbol {
@@ -73,6 +74,7 @@ impl Symbol {
                     HashSet::new(), //ODOO
                     HashSet::new()  //VALIDATION
                 ]],
+            range: None,
         }
     }
 
@@ -185,15 +187,38 @@ impl Symbol {
         None
     }
 
+    pub fn invalidate(&mut self, step: &BuildSteps) {
+        //TODO
+    }
+
+    pub fn add_symbol(&mut self, symbol: &Arc<Mutex<Symbol>>) {
+        let mut sym = &symbol.lock().unwrap();
+        if sym.is_file_content() {
+            if self.symbols.contains_key(&sym.name) {
+                let range: &Option<Range> = &sym.range;
+                if range.is_some() && range.unwrap().start.line < self.symbols[&sym.name].lock().unwrap().range.unwrap().start.line {
+                    self.local_symbols.push(symbol.clone());
+                } else {
+                    self.symbols[&sym.name].lock().unwrap().invalidate(&BuildSteps::ARCH);
+                    self.local_symbols.push(self.symbols[&sym.name].clone());
+                    self.symbols.insert(sym.name.clone(), symbol.clone());
+                }
+            } else {
+                self.symbols.insert(sym.name.clone(), symbol.clone());
+            }
+        } else {
+            self.module_symbols.insert(sym.name.clone(), symbol.clone());
+        }
+        sym.weak_self = Some(Arc::downgrade(&symbol));
+        sym.parent = Some(self.weak_self.unwrap().clone());
+    }
+
     pub async fn create_from_path(path: &str, parent: &Option<Arc<Mutex<Symbol>>>) -> Result<Self, &'static str> {
         if ! path.ends_with(".py") && ! path.ends_with(".pyi") {
             return Err("Path must be a python file");
         }
         let mut symbol = Symbol::new(path.to_string(), SymType::FILE);
         symbol.paths = vec![path.to_string()];
-        if let(Some(p)) = &parent {
-            symbol.parent = Some(Arc::downgrade(&p));
-        }
         Ok(symbol)
     }
 }
