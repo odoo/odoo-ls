@@ -64,7 +64,7 @@ function saveConfig() {
   vscode.postMessage({
       command: "save_config",
       name: document.getElementById("config-name-textfield").value,
-      odooPath: document.getElementById("config-path-textfield").value,
+      rawOdooPath: document.getElementById("config-path-textfield").value,
       addons: getAddons(),
       pythonPath: pythonPath,
   });
@@ -104,7 +104,7 @@ function deleteConfig() {
 function updateVersion(){
   vscode.postMessage({
     command: "update_version",
-    odooPath: document.getElementById("config-path-textfield").value,
+    rawOdooPath: document.getElementById("config-path-textfield").value,
   })
 }
 function renderAddonsTree(addons) {

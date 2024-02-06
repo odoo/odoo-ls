@@ -138,12 +138,12 @@ export class ConfigurationWebView {
         panel.title = `Odoo: ${title}`
     }
 
-    private _saveConfig(configs: any, odooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
+    private _saveConfig(configs: any, rawOdooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
 
-        if (configs[this.configId]["odooPath"] != odooPath) {
-            changes.push("odooPath");
+        if (configs[this.configId]["rawOdooPath"] != rawOdooPath) {
+            changes.push("rawOdooPath");
         }
         
         if (configs[this.configId]["name"] != name) {
@@ -172,7 +172,8 @@ export class ConfigurationWebView {
         configs[this.configId] = {
             "id": this.configId,
             "name": name,
-            "odooPath": untildify(odooPath),
+            "odooPath":  untildify(rawOdooPath),
+            "rawOdooPath": untildify(rawOdooPath),
             "addons": addons,
             "pythonPath": untildify(pythonPath),
         };
@@ -206,11 +207,11 @@ export class ConfigurationWebView {
 
             switch (command) {
                 case "save_config":
-                    const odooPath = message.odooPath;
+                    const rawOdooPath = message.rawOdooPath;
                     const name = message.name;
                     const addons = message.addons;
                     const pythonPath = message.pythonPath;
-                    this._saveConfig(configs, odooPath, name, addons, pythonPath);
+                    this._saveConfig(configs, rawOdooPath, name, addons, pythonPath);
                     break;
                 case "view_ready":
                     webview.postMessage({
@@ -263,7 +264,7 @@ export class ConfigurationWebView {
                     this._deleteConfig(configs);
                     break;
                 case "update_version":
-                    await this._verifyPath(message.odooPath, webview);
+                    await this._verifyPath(message.rawOdooPath, webview);
                     break;
                 case "open_python_path":
                     const pythonPathOptions: vscode.OpenDialogOptions = {
@@ -291,8 +292,7 @@ export class ConfigurationWebView {
         );
     }
 
-    private async _verifyPath(odooPath: URI, webview: Webview){
-        //TODO do something simmilar for each use of odooPath
+    private async _verifyPath(rawOdooPath: URI, webview: Webview){
         const displayOdooVersion = (version)=>{
             webview.postMessage({
                 command: "update_config_folder_validity",
@@ -301,10 +301,13 @@ export class ConfigurationWebView {
         };
         
         let versions = this._context.globalState.get('Odoo.configsVersion', {});
-        const odoo = await evaluateOdooPath(odooPath);
+        const odoo = await evaluateOdooPath(rawOdooPath);
         if (odoo){
             versions[`${this.configId}`] = odoo.version;
             this._context.globalState.update('Odoo.configsVersion', versions);
+            let configs: any = this._context.globalState.get("Odoo.configurations");
+            configs[this.configId]["odooPath"] = odoo.path;
+            this._context.globalState.update('Odoo.configurations', configs);
             displayOdooVersion(odoo.version);
         }else{
             // no valid odoo found, setting the odoo version to null
