@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+glob = "0.3.1"
 lazy_static = "1.4.0"
 rustpython-parser = "0.3.0"
 serde = "1.0.195"

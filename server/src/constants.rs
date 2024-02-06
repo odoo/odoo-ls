@@ -10,6 +10,8 @@ const DEBUG_VALIDATION: bool = false;
 const DEBUG_MEMORY: bool = false;
 const DEBUG_REBUILD: bool = false;
 
+pub type Tree = (Vec<String>, Vec<String>);
+
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
     DIRTY,

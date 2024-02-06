@@ -116,9 +116,17 @@ impl Odoo {
             client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
             return;
         };
-        let arc_symbol = Arc::new(Mutex::new(Symbol::create_from_path(builtins_path.to_str().unwrap(),  &self.builtins).await.unwrap()));
-        self.add_to_rebuild_arch(Arc::downgrade(&arc_symbol));
+        let _builtins_symbol = Symbol::create_from_path(builtins_path.to_str().unwrap());
+        let _builtins_arc_symbol = match self.builtins {
+            Some(ref builtins) => builtins.lock().unwrap().add_symbol(_builtins_symbol),
+            None => panic!("Builtins symbol not found")
+        };
+        self.add_to_rebuild_arch(Arc::downgrade(&_builtins_arc_symbol));
         self.process_rebuilds(&client).await;
+    }
+
+    pub fn get_symbol(treee: Tree) {
+        //TODO
     }
 
     async fn pop_item(&mut self, step: BuildSteps) -> Option<Arc<Mutex<Symbol>>> {
@@ -214,7 +222,7 @@ impl Odoo {
         }
     }
 
-    fn add_to_rebuild_arch(&mut self, symbol: Weak<Mutex<Symbol>>) {
+    pub fn add_to_rebuild_arch(&mut self, symbol: Weak<Mutex<Symbol>>) {
         self.rebuild_arch.insert(MyWeak::new(symbol));
     }
 }

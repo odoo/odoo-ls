@@ -3,6 +3,7 @@ mod constants;
 mod core;
 use lazy_static::lazy_static;
 mod my_weak;
+mod utils;
 
 use backend::Backend;
 use core::odoo::Odoo;

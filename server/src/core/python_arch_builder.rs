@@ -39,24 +39,31 @@ impl PythonArchBuilder {
             match stmt {
                 Stmt::Import(import_stmt) => {
                     println!("{:?}", import_stmt);
-                    self.create_local_symbols_from_import_stmt(None, &import_stmt.names, None)
+                    self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
                     println!("{:?}", import_from_stmt);
-                    self.create_local_symbols_from_import_stmt(import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref())
+                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
                 },
                 _ => {}
             }
         }
     }
 
-    fn create_local_symbols_from_import_stmt(&self, odoo: &Odoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>) {
+    fn create_local_symbols_from_import_stmt(&self, odoo: &Odoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
                     continue;
                 }
-                symbols = resolve_import_stmt(odoo, self.sym_stack[-1]);
+                let symbols = resolve_import_stmt(
+                    odoo,
+                    self.sym_stack.last().unwrap(),
+                    self.sym_stack.last().unwrap(),
+                    from_stmt,
+                    name_aliases,
+                    level,
+                    range);
             } else {
 
             }
