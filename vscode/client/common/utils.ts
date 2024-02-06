@@ -54,7 +54,6 @@ export async function evaluateOdooPath(odooPath){
 	for (const i in workspaceFolders){
 		const folder = workspaceFolders[i];
 		let PATH_VAR_LOCAL = global.PATH_VARIABLES;
-		// TODO we should reevaluate path variables each time
 		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.path;
 		odooPath = fillTemplate(odooPath,PATH_VAR_LOCAL);
 		const version = await getOdooVersion(odooPath);
