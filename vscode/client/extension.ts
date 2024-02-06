@@ -41,7 +41,7 @@ import {
     onDidChangePythonInterpreter, 
     onDidChangePythonInterpreterEvent 
 } from "./common/python";
-import { getCurrentConfig } from "./common/utils";
+import { evaluateOdooPath, getCurrentConfig } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
 
@@ -325,7 +325,7 @@ async function checkAddons(context: ExtensionContext) {
         let missingFiles = files.filter(file => {
             return !(
                 currentConfig.addons.some((addon) => file.fsPath.startsWith(addon)) ||
-                file.fsPath.startsWith(currentConfig.odooPath)
+                file.fsPath.startsWith(currentConfig.processedOdooPath)
             )
         })
         let missingPaths = [...new Set(missingFiles.map(file => {
@@ -355,7 +355,29 @@ async function checkAddons(context: ExtensionContext) {
 
 async function checkOdooPath(context: ExtensionContext) {
     let currentConfig = await getCurrentConfig(context);
-    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.parse(currentConfig.odooPath)) : true
+    global.OUTPUT_CHANNEL.appendLine("check odoo path")
+    const odoo = await evaluateOdooPath(currentConfig.rawOdooPath);
+    if (odoo){
+        let configs: any = context.globalState.get("Odoo.configurations");
+        configs[currentConfig.id]["odooPath"] = odoo.path;
+        context.globalState.update('Odoo.configurations', configs);
+    }else{
+        window.showWarningMessage(
+            `The odoo path set in this configuration seems invalid. Would you like to change it?`,
+            "Update current configuration",
+            "Ignore"
+        ).then(selection => {
+        switch (selection) {
+            case ("Update current configuration"):
+                ConfigurationWebView.render(context, currentConfig.id);
+                break
+            }
+        })
+        return
+    }
+    
+
+    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.parse(odoo.path)) : true
     if (!odooFound) {
         let invalidPath = false
         for (const f of workspace.workspaceFolders) {
@@ -407,7 +429,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             try {
                 let client = global.LSCLIENT;
                 await setStatusConfig(context);
-                const RELOAD_ON_CHANGE = ["odooPath","addons","pythonPath"];
+                const RELOAD_ON_CHANGE = ["rawOdooPath","addons","pythonPath"];
                 if (changes && (changes.some(r=> RELOAD_ON_CHANGE.includes(r)))) {
                     
                     await checkOdooPath(context);
@@ -667,7 +689,6 @@ export async function activate(context: ExtensionContext): Promise<void> {
         if (config) {
             deleteOldFiles(context)
             global.LSCLIENT.info('Starting the extension.');
-
             await checkOdooPath(context);
             await checkAddons(context);
 
