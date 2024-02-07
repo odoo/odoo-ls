@@ -4,8 +4,8 @@ use crate::constants::*;
 use crate::my_weak::MyWeak;
 use core::panic;
 use std::collections::{HashSet, HashMap};
-use std::ops::Deref;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, Weak};
 use std::vec;
 
 
@@ -15,16 +15,16 @@ pub trait SymbolTrait {
 
 #[derive(Debug)]
 pub struct Symbol {
-    name: String,
+    pub name: String,
     pub sym_type: SymType,
     pub paths: Vec<String>,
     //eval: Option<Evaluation>,
     i_ext: String,
-    symbols: HashMap<String, Arc<Mutex<Symbol>>>,
-    module_symbols: HashMap<String, Arc<Mutex<Symbol>>>,
-    local_symbols: Vec<Arc<Mutex<Symbol>>>,
+    pub symbols: HashMap<String, Arc<Mutex<Symbol>>>,
+    pub module_symbols: HashMap<String, Arc<Mutex<Symbol>>>,
+    pub local_symbols: Vec<Arc<Mutex<Symbol>>>,
     parent: Option<Weak<Mutex<Symbol>>>,
-    weak_self: Option<Weak<Mutex<Symbol>>>,
+    pub weak_self: Option<Weak<Mutex<Symbol>>>,
     dependencies: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     dependents: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     pub range: Option<TextRange>,
@@ -78,12 +78,12 @@ impl Symbol {
         }
     }
 
-    pub fn get_symbol(&self, mut symbol_tree_files: Vec<String>, mut symbol_tree_content: Vec<String>) -> Option<Arc<Mutex<Symbol>>> {
-        let mut stf = symbol_tree_files.into_iter();
+    pub fn get_symbol(&self, symbol_tree_files: Vec<String>, symbol_tree_content: &Vec<String>) -> Option<Arc<Mutex<Symbol>>> {
+        let mut stf = symbol_tree_files.iter();
         let mut content = if let Some(fk) = stf.next() {
             Some(stf.try_fold(
-                self.module_symbols.get(&fk)?.clone(),
-                |c, f| Some(c.lock().unwrap().module_symbols.get(&f)?.clone())
+                self.module_symbols.get(fk.as_str())?.clone(),
+                |c, f| Some(c.lock().unwrap().module_symbols.get(f.as_str())?.clone())
             )?)
         } else {
             return None
@@ -91,8 +91,8 @@ impl Symbol {
         let mut stc = symbol_tree_content.into_iter();
         content = if let Some(fk) = stc.next() {
             Some(stf.try_fold(
-                content.unwrap().lock().unwrap().module_symbols.get(&fk)?.clone(),
-                |c, f| Some(c.lock().unwrap().module_symbols.get(&f)?.clone())
+                content.unwrap().lock().unwrap().module_symbols.get(fk.as_str())?.clone(),
+                |c, f| Some(c.lock().unwrap().module_symbols.get(f.as_str())?.clone())
             )?)
         } else {
             return None
@@ -102,14 +102,18 @@ impl Symbol {
 
     pub fn get_tree(&self) -> Tree {
         let mut res = (vec![], vec![]);
-        let mut current = self;
+        let mut current_arc = self.weak_self.as_ref().unwrap().upgrade().unwrap();
+        let mut current = current_arc.lock().unwrap();
         while current.sym_type != SymType::ROOT && current.parent.is_some() {
             if current.is_file_content() {
                 res.1.insert(0, current.name.clone());
             } else {
                 res.0.insert(0, current.name.clone());
             }
-            current = current.parent.unwrap().upgrade().unwrap().lock().unwrap().deref();
+            let parent = current.parent.clone();
+            drop(current);
+            current_arc = parent.as_ref().unwrap().upgrade().unwrap();
+            current = current_arc.lock().unwrap();
         }
         res
     }
@@ -195,12 +199,13 @@ impl Symbol {
         let symbol_name = symbol.name.clone();
         let symbol_range = symbol.range.clone();
         let arc = Arc::new(Mutex::new(symbol));
-        symbol.weak_self = Some(Arc::downgrade(&arc));
-        symbol.parent = match self.weak_self {
+        let mut locked_symbol = arc.lock().unwrap();
+        locked_symbol.weak_self = Some(Arc::downgrade(&arc));
+        locked_symbol.parent = match self.weak_self {
             Some(ref weak_self) => Some(weak_self.clone()),
             None => panic!("no weak_self set")
         };
-        if symbol.is_file_content() {
+        if locked_symbol.is_file_content() {
             if self.symbols.contains_key(&symbol_name) {
                 let range: &Option<TextRange> = &symbol_range;
                 if range.is_some() && range.unwrap().start() < self.symbols[&symbol_name].lock().unwrap().range.unwrap().start() {
@@ -216,12 +221,32 @@ impl Symbol {
         } else {
             self.module_symbols.insert(symbol_name.clone(), arc.clone());
         }
-        arc
+        arc.clone()
     }
 
-    pub fn create_from_path(path: &str) -> Symbol {
-        let mut symbol = Symbol::new(path.to_string(), SymType::FILE);
-        symbol.paths = vec![path.to_string()];
+    pub fn create_from_path(path: &PathBuf) -> Symbol {
+        let name = path.components().last().unwrap().as_os_str().to_str().unwrap().to_string();
+        let mut symbol = Symbol::new(name, SymType::FILE);
+        symbol.paths = vec![path.as_os_str().to_str().unwrap().to_string()];
         symbol
+    }
+
+    pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Arc<Mutex<Symbol>>> {
+        if let Some(symbol) = self.symbols.get(name) {
+            if symbol.lock().unwrap().range.unwrap().start() == range.start() {
+                return Some(symbol.clone());
+            }
+        }
+        if let Some(symbol) = self.module_symbols.get(name) {
+            if symbol.lock().unwrap().range.unwrap().start() == range.start() {
+                return Some(symbol.clone());
+            }
+        }
+        for local_symbol in self.local_symbols.iter() {
+            if local_symbol.lock().unwrap().range.unwrap().start() == range.start() {
+                return Some(local_symbol.clone());
+            }
+        }
+        None
     }
 }

@@ -19,7 +19,7 @@
         },
         {
             "name": "Launch Server",
-            "type": "cppvsdbg",
+            "type": "lldb",
             "request": "launch",
             "program": "${workspaceRoot}/../server/target/debug/server",
             "args": [],

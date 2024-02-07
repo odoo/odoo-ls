@@ -3,7 +3,6 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::Client;
 
 use std::collections::HashSet;
-use std::future::Future;
 use std::sync::{Arc, Weak, Mutex};
 use std::str::FromStr;
 use std::fs;
@@ -13,6 +12,7 @@ use super::config::{RefreshMode, DiagMissingImportsMode};
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
 use crate::core::python_arch_builder::PythonArchBuilder;
+use crate::core::python_arch_eval::PythonArchEval;
 //use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
@@ -34,21 +34,26 @@ pub struct Odoo {
 
 impl Odoo {
     pub fn new() -> Self {
-        Self {
+        let symbols = Arc::new(Mutex::new(Symbol::new("root".to_string(), SymType::ROOT)));
+        let builtins = Arc::new(Mutex::new(Symbol::new("builtins".to_string(), SymType::ROOT)));
+        builtins.lock().unwrap().weak_self = Some(Arc::downgrade(&builtins)); // manually set weakself for root symbols
+        symbols.lock().unwrap().weak_self = Some(Arc::downgrade(&symbols)); // manually set weakself for root symbols
+        let odoo = Self {
             version_major: 0,
             version_minor: 0,
             version_micro: 0,
             full_version: "0.0.0".to_string(),
             config: Config::new(),
-            symbols: Some(Arc::new(Mutex::new(Symbol::new("root".to_string(), SymType::ROOT)))),
-            builtins: Some(Arc::new(Mutex::new(Symbol::new("builtins".to_string(), SymType::ROOT)))),
+            symbols: Some(symbols),
+            builtins: Some(builtins),
             stubs_dir: PathBuf::from("./../server/typeshed/stubs").to_str().unwrap().to_string(),
             stdlib_dir: PathBuf::from("./../server/typeshed/stdlib").to_str().unwrap().to_string(),
             rebuild_arch: HashSet::new(),
             rebuild_arch_eval: HashSet::new(),
             rebuild_odoo: HashSet::new(),
             rebuild_validation: HashSet::new(),
-        }
+        };
+        odoo
     }
 
     pub async fn init(&mut self, client: &Client) {
@@ -116,7 +121,7 @@ impl Odoo {
             client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
             return;
         };
-        let _builtins_symbol = Symbol::create_from_path(builtins_path.to_str().unwrap());
+        let _builtins_symbol = Symbol::create_from_path(&builtins_path);
         let _builtins_arc_symbol = match self.builtins {
             Some(ref builtins) => builtins.lock().unwrap().add_symbol(_builtins_symbol),
             None => panic!("Builtins symbol not found")
@@ -211,18 +216,45 @@ impl Odoo {
     }
 
     async fn process_rebuilds(&mut self, client: &Client) {
-        //already_rebuilt: HashSet<tree>;// TODO track already rebuilt to avoid cycles
-        while !self.rebuild_arch.is_empty() {
+        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
+        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
+        while !self.rebuild_arch.is_empty() && !self.rebuild_arch_eval.is_empty() {
             let sym = self.pop_item(BuildSteps::ARCH).await;
-            if sym.is_none() {
-                break;
+            if sym.is_some() {
+                let sym_arc = sym.as_ref().unwrap().clone();
+                let tree = sym_arc.lock().unwrap().get_tree().clone();
+                if already_arch_rebuilt.contains(&tree) {
+                    println!("Already arch rebuilt, skipping");
+                    continue;
+                }
+                already_arch_rebuilt.insert(tree);
+                //TODO should delete previous first
+                let mut builder = PythonArchBuilder::new(sym_arc);
+                builder.load_arch(self).await;
+                continue;
             }
-            let mut builder = PythonArchBuilder::new(sym.unwrap());
-            builder.load_arch(self).await;
+            let sym = self.pop_item(BuildSteps::ARCH).await;
+            if sym.is_some() {
+                let sym_arc = sym.as_ref().unwrap().clone();
+                let tree = sym_arc.lock().unwrap().get_tree().clone();
+                if already_arch_eval_rebuilt.contains(&tree) {
+                    println!("Already arch eval rebuilt, skipping");
+                    continue;
+                }
+                already_arch_eval_rebuilt.insert(tree);
+                //TODO should delete previous first
+                let mut builder = PythonArchEval::new(sym_arc);
+                builder.eval_arch(self).await;
+                continue;
+            }
         }
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Weak<Mutex<Symbol>>) {
         self.rebuild_arch.insert(MyWeak::new(symbol));
+    }
+
+    pub fn add_to_rebuild_arch_eval(&mut self, symbol: Weak<Mutex<Symbol>>) {
+        self.rebuild_arch_eval.insert(MyWeak::new(symbol));
     }
 }

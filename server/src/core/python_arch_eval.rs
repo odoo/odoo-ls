@@ -13,19 +13,19 @@ use super::import_resolver::ImportResult;
 
 
 #[derive(Debug, Clone)]
-pub struct PythonArchBuilder {
+pub struct PythonArchEval {
     sym_stack: Vec<Arc<Mutex<Symbol>>>,
 }
 
-impl PythonArchBuilder {
-    pub fn new(symbol: Arc<Mutex<Symbol>>) -> PythonArchBuilder {
-        PythonArchBuilder {
+impl PythonArchEval {
+    pub fn new(symbol: Arc<Mutex<Symbol>>) -> PythonArchEval {
+        PythonArchEval {
             sym_stack: vec![symbol]
         }
     }
 
-    pub async fn load_arch(&mut self, odoo: &mut Odoo) {
-        println!("load arch");
+    pub async fn eval_arch(&mut self, odoo: &mut Odoo) {
+        println!("eval arch");
         let mut temp = FILE_MGR.lock().await;
         let symbol = self.sym_stack[0].lock().unwrap();
         if symbol.paths.len() != 1 {
@@ -43,19 +43,42 @@ impl PythonArchBuilder {
             match stmt {
                 Stmt::Import(import_stmt) => {
                     println!("{:?}", import_stmt);
-                    self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
+                    self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
                     println!("{:?}", import_from_stmt);
-                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
+                    self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
                 },
                 _ => {}
             }
         }
-        odoo.add_to_rebuild_arch_eval(Arc::downgrade(&self.sym_stack[0]));
+        //TODO odoo.add_to_rebuild_arch_eval(Arc::downgrade(&self.sym_stack[0]));
     }
 
-    fn create_local_symbols_from_import_stmt(&self, odoo: &mut Odoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
+    fn eval_local_symbols_from_import_stmt(&self, odoo: &mut Odoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
+        if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
+            return;
+        }
+        let import_results: Vec<ImportResult> = resolve_import_stmt(
+            odoo,
+            self.sym_stack.last().unwrap(),
+            self.sym_stack.last().unwrap(),
+            from_stmt,
+            name_aliases,
+            level,
+            range);
+        
+        for _import_result in import_results.iter() {
+            let variable = self.sym_stack.last().unwrap().lock().unwrap().get_positioned_symbol(&_import_result.name, &_import_result.range);
+            if variable.is_none() {
+                continue;
+            }
+            if _import_result.found {
+
+            } else {
+                
+            }
+        }
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
