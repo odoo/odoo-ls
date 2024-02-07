@@ -5,7 +5,7 @@ use crate::my_weak::MyWeak;
 use core::panic;
 use std::collections::{HashSet, HashMap};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, Weak, MutexGuard};
 use std::vec;
 
 
@@ -102,7 +102,13 @@ impl Symbol {
 
     pub fn get_tree(&self) -> Tree {
         let mut res = (vec![], vec![]);
-        let mut current_arc = self.weak_self.as_ref().unwrap().upgrade().unwrap();
+        if self.is_file_content() {
+            res.1.insert(0, self.name.clone());
+        } else {
+            res.0.insert(0, self.name.clone());
+        }
+        let parent = self.parent.clone();
+        let mut current_arc = parent.as_ref().unwrap().upgrade().unwrap();
         let mut current = current_arc.lock().unwrap();
         while current.sym_type != SymType::ROOT && current.parent.is_some() {
             if current.is_file_content() {

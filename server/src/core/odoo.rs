@@ -218,7 +218,7 @@ impl Odoo {
     async fn process_rebuilds(&mut self, client: &Client) {
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
-        while !self.rebuild_arch.is_empty() && !self.rebuild_arch_eval.is_empty() {
+        while !self.rebuild_arch.is_empty() || !self.rebuild_arch_eval.is_empty() {
             let sym = self.pop_item(BuildSteps::ARCH).await;
             if sym.is_some() {
                 let sym_arc = sym.as_ref().unwrap().clone();
@@ -233,7 +233,7 @@ impl Odoo {
                 builder.load_arch(self).await;
                 continue;
             }
-            let sym = self.pop_item(BuildSteps::ARCH).await;
+            let sym = self.pop_item(BuildSteps::ARCH_EVAL).await;
             if sym.is_some() {
                 let sym_arc = sym.as_ref().unwrap().clone();
                 let tree = sym_arc.lock().unwrap().get_tree().clone();

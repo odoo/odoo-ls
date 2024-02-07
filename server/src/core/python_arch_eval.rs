@@ -32,6 +32,7 @@ impl PythonArchEval {
             panic!()
         }
         let path = symbol.paths[0].clone();
+        drop(symbol);
         let mut file_info = temp.get_file_info(path.as_str()); //create ast
         match file_info.ast {
             Some(_) => {},
@@ -74,50 +75,11 @@ impl PythonArchEval {
                 continue;
             }
             if _import_result.found {
-
+                //resolve the symbol and build necessary evaluations
+                //let ref = symbol.follow_ref()[0];
+                //rebuild if necessary (WARNING: check dependencies before build eval?)
             } else {
-                
-            }
-        }
-        for import_name in name_aliases {
-            if import_name.name.as_str() == "*" {
-                if self.sym_stack.len() != 1 { //only at top level for now.
-                    continue;
-                }
-                let import_result: ImportResult = resolve_import_stmt(
-                    odoo,
-                    self.sym_stack.last().unwrap(),
-                    self.sym_stack.last().unwrap(),
-                    from_stmt,
-                    name_aliases,
-                    level,
-                    range).remove(0); //we don't need the vector with this call as there will be 1 result.
-                if !import_result.found {
-                    //TODO add to not found symbols
-                    continue;
-                }
-                let allowed_names = true;
-                if import_result.symbol.lock().unwrap().symbols.contains_key("__all__") {
-                    // TODO implement __all__ imports
-                }
-                for s in import_result.symbol.lock().unwrap().symbols.values() {
-                    let sub_symbol = s.lock().unwrap();
-                    let mut variable = Symbol::new(sub_symbol.name.clone(), SymType::VARIABLE); //TODO mark as import
-                    variable.range = Some(import_name.range.clone());
-                    //TODO variable.eval = Evaluation(sub_symbol);
-                    //TODO add dependency
-                    self.sym_stack.last().unwrap().lock().unwrap().add_symbol(variable);
-                }
-
-            } else {
-                let var_name = if import_name.asname.is_none() {
-                    import_name.name.clone()
-                } else {
-                    import_name.asname.as_ref().unwrap().clone()
-                };
-                let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE); //TODO mark as import
-                variable.range = Some(import_name.range.clone());
-                self.sym_stack.last().unwrap().lock().unwrap().add_symbol(variable);
+                //TODO add to not found symbols
             }
         }
     }

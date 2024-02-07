@@ -32,6 +32,7 @@ impl PythonArchBuilder {
             panic!()
         }
         let path = symbol.paths[0].clone();
+        drop(symbol);
         let mut file_info = temp.get_file_info(path.as_str()); //create ast
         match file_info.ast {
             Some(_) => {},

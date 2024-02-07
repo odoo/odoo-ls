@@ -139,7 +139,12 @@ fn _resolve_packages(file_symbol: &MutexGuard<Symbol>, level: Option<&Int>, from
             file_tree = file_symbol.get_tree().0.clone();
         } else {
             let tree = file_symbol.get_tree();
-            file_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());
+            if lvl > tree.0.len() as u32 {
+                println!("Level is too high and going out of scope");
+                file_tree = vec![];
+            } else {
+                file_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());
+            }
         }
     }
     match from_stmt {
