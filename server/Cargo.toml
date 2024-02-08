@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 glob = "0.3.1"
 lazy_static = "1.4.0"
+regex = "1.10.3"
 rustpython-parser = "0.3.0"
 serde = "1.0.195"
 serde_json = "1.0.111"

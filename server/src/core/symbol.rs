@@ -110,6 +110,9 @@ impl Symbol {
         } else {
             res.0.insert(0, self.name.clone());
         }
+        if self.sym_type == SymType::ROOT || self.parent.is_none() {
+            return res
+        }
         let parent = self.parent.clone();
         let mut current_arc = parent.as_ref().unwrap().upgrade().unwrap();
         let mut current = current_arc.lock().unwrap();
@@ -233,11 +236,39 @@ impl Symbol {
         arc.clone()
     }
 
-    pub fn create_from_path(path: &PathBuf) -> Symbol {
+    pub fn create_from_path(path: &PathBuf, parent: &MutexGuard<Symbol>, require_module: bool) -> Option<Symbol> {
         let name = path.components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-        let mut symbol = Symbol::new(name, SymType::FILE);
-        symbol.paths = vec![path.as_os_str().to_str().unwrap().to_string()];
-        symbol
+        let path_str = path.to_str().unwrap().to_string();
+        if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
+            let mut symbol = Symbol::new(name, SymType::FILE);
+            symbol.paths = vec![path_str.clone()];
+            return Some(symbol);
+        } else {
+            if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+                let mut symbol = Symbol::new(name, SymType::PACKAGE);
+                if parent.get_tree() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+                    //TODO adapt to MODULE, not PACKAGE
+                    symbol.paths = vec![path_str.clone()];
+                    //TODO symbol.load_module_info
+                } else if !require_module {
+                    //Nothing to do
+                } else {
+                    return None;
+                }
+                if path.join("__init__.py").exists() {
+                    //?
+                } else {
+                    symbol.i_ext = "i".to_string();
+                }
+                return Some(symbol);
+            } else if !require_module{
+                let mut symbol = Symbol::new(name, SymType::NAMESPACE);
+                symbol.paths = vec![path_str.clone()];
+                return Some(symbol);
+            } else {
+                return None
+            }
+        }
     }
 
     pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Arc<Mutex<Symbol>>> {

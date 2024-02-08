@@ -3,16 +3,19 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::Client;
 
 use std::collections::HashSet;
+use std::process::Command;
 use std::sync::{Arc, Weak, Mutex};
 use std::str::FromStr;
 use std::fs;
 use std::path::PathBuf;
+use regex::Regex;
 use crate::constants::*;
 use super::config::{RefreshMode, DiagMissingImportsMode};
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
+use crate::utils::is_dir_cs;
 //use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
@@ -61,6 +64,7 @@ impl Odoo {
         let response = client.send_request::<ConfigRequest>(()).await.unwrap();
         self.config.addons = response.addons.clone();
         self.config.odoo_path = response.odoo_path.clone();
+        self.config.python_path = response.python_path.clone();
         let configuration_item = ConfigurationItem{
             scope_uri: None,
             section: Some("Odoo".to_string()),
@@ -111,7 +115,36 @@ impl Odoo {
                 }
             }
         }
+        {
+            let mut root_symbol = self.symbols.as_ref().unwrap().lock().unwrap();
+            root_symbol.paths.push(self.stdlib_dir.clone());
+            root_symbol.paths.push(self.stubs_dir.clone());
+            //TODO add sys.path
+            let output = Command::new(self.config.python_path.clone()).args(&["-c", "import sys; print(sys.path)"]).output().expect("Can't exec python3");
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                println!("Detected sys.path: {}", stdout);
+                // extract vec of string from output
+                if stdout.len() > 5 {
+                    let values = String::from((stdout[2..stdout.len()-3]).to_string());
+                    for value in values.split("', '") {
+                        let value = value.to_string();
+                        if value.len() > 0 {
+                            let pathbuf = PathBuf::from(value.clone());
+                            if pathbuf.is_dir() {
+                                println!("Adding sys.path: {}", value);
+                                root_symbol.paths.push(value.clone());
+                            }
+                        }
+                    }
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("{}", stderr);
+            }
+        }
         self.load_builtins(&client).await;
+        self.build_database(&client).await;
     }
 
     async fn load_builtins(&mut self, client: &Client) {
@@ -121,17 +154,127 @@ impl Odoo {
             client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
             return;
         };
-        let _builtins_symbol = Symbol::create_from_path(&builtins_path);
         let _builtins_arc_symbol = match self.builtins {
-            Some(ref builtins) => builtins.lock().unwrap().add_symbol(_builtins_symbol),
+            Some(ref builtins) => {
+                let mut b = builtins.lock().unwrap();
+                let _builtins_symbol = Symbol::create_from_path(&builtins_path, &b, false);
+                b.add_symbol(_builtins_symbol.unwrap())
+            },
             None => panic!("Builtins symbol not found")
         };
         self.add_to_rebuild_arch(Arc::downgrade(&_builtins_arc_symbol));
         self.process_rebuilds(&client).await;
     }
 
-    pub fn get_symbol(treee: Tree) {
-        //TODO
+    async fn build_database(&mut self, client: &Client) {
+        client.log_message(MessageType::INFO, "Building Database").await;
+        let result = self.build_base(client).await;
+        if result {
+            self.build_modules(client).await;
+        }
+    }
+
+    async fn build_base(&mut self, client: &Client) -> bool {
+        let release_path = PathBuf::from(self.config.odoo_path.clone()).join("odoo/release.py");
+        if !release_path.exists() {
+            client.log_message(MessageType::ERROR, "Unable to find release.py - Aborting").await;
+            return false;
+        }
+        // open release.py and get version
+        let release_file = fs::read_to_string(release_path);
+        let release_file = match release_file {
+            Ok(release_file) => release_file,
+            Err(_) => {
+                client.log_message(MessageType::ERROR, "Unable to read release.py - Aborting").await;
+                return false;
+            }
+        };
+        for line in release_file.lines() {
+            if line.starts_with("version_info = (") {
+                let re = Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap();
+                let result = re.captures(line);
+                match result {
+                    Some(result) => {
+                        let version_info = result.get(1).unwrap().as_str();
+                        let version_info = version_info.split(", ").collect::<Vec<&str>>();
+                        let version_major = version_info[0].replace("saas~", "").replace("'", "").replace(r#"""#, "");
+                        self.version_major = version_major.parse().unwrap();
+                        self.version_minor = version_info[1].parse().unwrap();
+                        self.version_micro = version_info[2].parse().unwrap();
+                        self.full_version = format!("{}.{}.{}", self.version_major, self.version_minor, self.version_micro);
+                        break;
+                    },
+                    None => {
+                        self.version_major = 14;
+                        self.version_minor = 0;
+                        self.version_micro = 0;
+                        client.log_message(MessageType::ERROR, "Unable to detect the Odoo version. Running the tool for the version 14").await;
+                        return false;
+                    }
+                }
+            }
+        }
+        client.log_message(MessageType::INFO, format!("Odoo version: {}", self.full_version)).await;
+        if self.version_major < 14 {
+            client.log_message(MessageType::ERROR, "Odoo version is less than 14. The tool only supports version 14 and above. Aborting...").await;
+            return false;
+        }
+        //build base
+        self.symbols.as_ref().unwrap().lock().unwrap().paths.push(self.config.odoo_path.clone());
+        let _odoo_arc_symbol = match self.symbols {
+            Some(ref symbols) => {
+                let mut s = symbols.lock().unwrap();
+                let _odoo_symbol = Symbol::create_from_path(&PathBuf::from(self.config.odoo_path.clone()).join("odoo"), &s, false);
+                s.add_symbol(_odoo_symbol.unwrap())
+            },
+            None => panic!("Odoo root symbol not found")
+        };
+        self.add_to_rebuild_arch(Arc::downgrade(&_odoo_arc_symbol));
+        self.process_rebuilds(&client).await;
+        //search common odoo addons path
+        let addon_symbol = self.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
+        let odoo_addon_path = PathBuf::from(self.config.odoo_path.clone()).join("addons");
+        if odoo_addon_path.exists() {
+            addon_symbol.as_ref().unwrap().lock().unwrap().paths.push(
+                odoo_addon_path.to_str().unwrap().to_string()
+            );
+        } else {
+            client.log_message(MessageType::ERROR, format!("Unable to find odoo addons path at {}", odoo_addon_path.to_str().unwrap().to_string())).await;
+            return false;
+        }
+        return true
+    }
+
+    async fn build_modules(&mut self, client: &Client) {
+        {
+            let addons_symbol = self.get_symbol(&tree(vec!["odoo", "addons"], vec![])).expect("Unable to find odoo addons symbol");
+            let addons_path = &addons_symbol.lock().unwrap().paths;
+            for addon_path in addons_path.iter() {
+                if PathBuf::from(addon_path).exists() {
+                    //browse all dir in path
+                    for item in PathBuf::from(addon_path).read_dir().expect("Unable to find odoo addons path") {
+                        match item {
+                            Ok(item) => {
+                                if item.file_type().unwrap().is_dir() {
+                                    let mut a_m = addons_symbol.lock().unwrap();
+                                    let module_symbol = Symbol::create_from_path(&item.path(), &a_m, true);
+                                    let _odoo_arc_symbol = a_m.add_symbol(module_symbol.unwrap());
+                                    self.add_to_rebuild_arch(Arc::downgrade(&_odoo_arc_symbol));
+                                }
+                            },
+                            Err(_) => {}
+                        }
+                    }
+
+                }
+            }
+        }
+        self.process_rebuilds(client).await;
+        client.log_message(MessageType::INFO, "End building modules.").await;
+    }
+
+    pub fn get_symbol(&self, tree: &Tree) -> Option<Arc<Mutex<Symbol>>> {
+        self.symbols.as_ref().unwrap().lock().unwrap().get_symbol(&tree)
     }
 
     async fn pop_item(&mut self, step: BuildSteps) -> Option<Arc<Mutex<Symbol>>> {
