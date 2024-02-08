@@ -70,7 +70,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
                 &alias.range);
             if name_symbol.is_none() {
                 if !name.contains(".") {
-                    name_symbol = from_symbol.as_ref().unwrap().lock().unwrap().get_symbol(vec![], &name.split(".").map(str::to_string).collect());
+                    name_symbol = from_symbol.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![], name.split(".").map(str::to_string).collect()));
                 }
                 if name_symbol.is_none() {
                     result[name_index as usize].symbol = fallback_sym.clone();
@@ -105,7 +105,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
             None,
             &alias.range);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
-            name_symbol = next_symbol.as_ref().unwrap().lock().unwrap().get_symbol(vec![], &name_last_name);
+            name_symbol = next_symbol.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![], name_last_name));
             if name_symbol.is_none() {
                 result[name_index as usize].symbol = fallback_sym.clone();
                 continue;
@@ -164,7 +164,7 @@ fn _get_or_create_symbol(odoo: &mut Odoo, symbol: Arc<Mutex<Symbol>>, names: &Ve
     let mut sym: Option<Arc<Mutex<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names {
-        let mut next_symbol = symbol.lock().unwrap().get_symbol(vec![branch.clone()], &vec![]);
+        let mut next_symbol = symbol.lock().unwrap().get_symbol(&(vec![branch.clone()], vec![]));
         if next_symbol.is_none() {
             next_symbol = match _resolve_new_symbol(odoo, symbol.clone(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),

@@ -12,6 +12,10 @@ const DEBUG_REBUILD: bool = false;
 
 pub type Tree = (Vec<String>, Vec<String>);
 
+pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
+    (a.iter().map(|x| x.to_string()).collect(), b.iter().map(|x| x.to_string()).collect())
+}
+
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
     DIRTY,

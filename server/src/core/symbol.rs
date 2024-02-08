@@ -4,6 +4,7 @@ use crate::constants::*;
 use crate::my_weak::MyWeak;
 use core::panic;
 use std::collections::{HashSet, HashMap};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 use std::vec;
@@ -78,12 +79,14 @@ impl Symbol {
         }
     }
 
-    pub fn get_symbol(&self, symbol_tree_files: Vec<String>, symbol_tree_content: &Vec<String>) -> Option<Arc<Mutex<Symbol>>> {
+    pub fn get_symbol(&self, tree: &Tree) -> Option<Arc<Mutex<Symbol>>> {
+        let symbol_tree_files: &Vec<String> = &tree.0;
+        let symbol_tree_content: &Vec<String> = &tree.1;
         let mut stf = symbol_tree_files.iter();
         let mut content = if let Some(fk) = stf.next() {
             Some(stf.try_fold(
-                self.module_symbols.get(fk.as_str())?.clone(),
-                |c, f| Some(c.lock().unwrap().module_symbols.get(f.as_str())?.clone())
+                self.module_symbols.get(fk)?.clone(),
+                |c, f| Some(c.lock().unwrap().module_symbols.get(f)?.clone())
             )?)
         } else {
             return None
@@ -91,8 +94,8 @@ impl Symbol {
         let mut stc = symbol_tree_content.into_iter();
         content = if let Some(fk) = stc.next() {
             Some(stf.try_fold(
-                content.unwrap().lock().unwrap().module_symbols.get(fk.as_str())?.clone(),
-                |c, f| Some(c.lock().unwrap().module_symbols.get(f.as_str())?.clone())
+                content.unwrap().lock().unwrap().module_symbols.get(fk)?.clone(),
+                |c, f| Some(c.lock().unwrap().module_symbols.get(f)?.clone())
             )?)
         } else {
             return None

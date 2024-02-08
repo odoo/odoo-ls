@@ -43,11 +43,9 @@ impl PythonArchBuilder {
         for stmt in file_info.ast.as_ref().unwrap() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    println!("{:?}", import_stmt);
                     self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    println!("{:?}", import_from_stmt);
                     self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
                 },
                 _ => {}
