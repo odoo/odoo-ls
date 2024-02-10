@@ -23,17 +23,22 @@
                 <vscode-label for="config-path-textfield">
                     Odoo folder path
                 </vscode-label>
-                <vscode-textfield id="config-path-textfield" value="<%= config.odooPath %>" placeholder="Path to the configuration's Odoo folder">
-                    <vscode-icon
-                        label="Open Odoo folder"
-                        title="Open Odoo folder"
-                        slot="content-after"
-                        name="folder-opened"
-                        id="config-path-button"
-                        action-icon
-                    >
-                    </vscode-icon>
-                </vscode-textfield>
+                <div class="inline-element">
+                    <vscode-textfield id="config-path-textfield" value="<%= config.odooPath %>" placeholder="Path to the configuration's Odoo folder">
+                        <vscode-icon
+                            label="Open Odoo folder"
+                            title="Open Odoo folder"
+                            slot="content-after"
+                            name="folder-opened"
+                            id="config-path-button"
+                            action-icon
+                        >
+                        </vscode-icon>
+                    </vscode-textfield>
+                    <span class="codicon codicon-question helper">
+                        <span class="tooltip">Use ${workspaceFolder} and ${userHome} to make a dynamic configuration</span>
+                    </span>
+                </div>
                 <vscode-form-helper id="config-path-helper">
                     <% if (odooVersion) { %>
                         <p>Version <%= odooVersion %></p>
@@ -42,11 +47,12 @@
                     <% } %>
                 </vscode-form-helper>
             </vscode-form-group>
-            <vscode-form-group variant="vertical">
-                <vscode-label for="config-python-path-textfield">
-                   Python path
-                </vscode-label>
-                <vscode-textfield id="config-python-path-textfield" value="<%= config.pythonPath %>" placeholder="Path to the python executable">
+            <% if (!pythonExtensionMode) { %>
+                <vscode-form-group variant="vertical">
+                    <vscode-label for="config-python-path-textfield">
+                    Path to the Python binary the Language Server will run on
+                    </vscode-label>
+                    <vscode-textfield id="config-python-path-textfield" value="<%= config.pythonPath %>" placeholder="Path to the python executable">
                     <vscode-icon
                         label="Open Python path"
                         title="Open Python path"
@@ -56,11 +62,11 @@
                         action-icon
                     >
                     </vscode-icon>
-                </vscode-textfield>
-                <vscode-form-helper id="config-path-helper">
-                    <p>Path to the Python binary the Language Server will run on.</p>
-                </vscode-form-helper>
-            </vscode-form-group>
+                    </vscode-textfield>
+                    <vscode-form-helper id="config-path-helper">
+                    </vscode-form-helper>
+                </vscode-form-group>
+            <% } %>
             <vscode-form-group id="config-addons" variant="vertical">
                 <vscode-label for="addons-scrollable" side-aligned="end">Additional addons</vscode-label>
                 <vscode-scrollable id="addons-scrollable">

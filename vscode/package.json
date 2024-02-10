@@ -49,19 +49,26 @@
         "category": "Odoo"
       },
       {
-        "command": "odoo.testCrashMessage",
-        "title": "Open the crash notification",
-        "category": "Odoo",
-        "when": "inDebugMode"
-      },
-      {
         "command": "odoo.clearState",
         "title": "Wipe the extension's state storage (!!!THIS ACTION IS IRREVERSIBLE!!!)",
+        "category": "Odoo"
+      },
+      {
+        "command": "odoo.testCrashMessage",
+        "title": "Open the crash notification",
         "category": "Odoo"
       }
     ],
     "views": {},
     "menus": {
+      "commandPalette": [
+        {
+          "command": "odoo.testCrashMessage",
+          "title": "Open the crash notification",
+          "category": "Odoo",
+          "when": "odoo.showCrashNotificationCommand"
+        }
+      ],
       "view/title": [
         {
           "command": "odoo.addConfiguration",
@@ -146,9 +153,9 @@
     "@types/ejs": "^3.1.2",
     "@types/markdown-it": "^13.0.1",
     "@types/node": "^16.11.6",
+    "@types/semver": "^7.5.2",
     "@types/vscode": "^1.78.0",
     "@types/vscode-webview": "^1.57.0",
-    "@types/semver": "^7.5.2",
     "@typescript-eslint/eslint-plugin": "^5.3.0",
     "@typescript-eslint/parser": "^5.3.0",
     "esbuild": "^0.19.2",
@@ -158,6 +165,7 @@
   "dependencies": {
     "@bendera/vscode-webview-elements": "^0.14.0",
     "@vscode/codicons": "^0.0.33",
+    "@vscode/python-extension": "^1.0.5",
     "@vscode/webview-ui-toolkit": "^1.2.2",
     "axios": "^1.4.0",
     "ejs": "^3.1.9",
