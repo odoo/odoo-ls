@@ -8,6 +8,7 @@ use crate::FILE_MGR;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::Odoo;
 use crate::core::symbol::Symbol;
+use crate::core::evaluation::Evaluation;
 
 use super::import_resolver::ImportResult;
 
@@ -77,10 +78,9 @@ impl PythonArchBuilder {
                     // TODO implement __all__ imports
                 }
                 for s in import_result.symbol.lock().unwrap().symbols.values() {
-                    let sub_symbol = s.lock().unwrap();
-                    let mut variable = Symbol::new(sub_symbol.name.clone(), SymType::VARIABLE); //TODO mark as import
+                    let mut variable = Symbol::new(s.lock().unwrap().name.clone(), SymType::VARIABLE); //TODO mark as import
                     variable.range = Some(import_name.range.clone());
-                    //TODO variable.eval = Evaluation(sub_symbol);
+                    variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
                     //TODO add dependency
                     self.sym_stack.last().unwrap().lock().unwrap().add_symbol(variable);
                 }

@@ -2,6 +2,7 @@ use rustpython_parser::text_size::TextRange;
 
 use crate::constants::*;
 use crate::my_weak::MyWeak;
+use crate::core::evaluation::Evaluation;
 use core::panic;
 use std::collections::{HashSet, HashMap};
 use std::ops::Deref;
@@ -26,6 +27,7 @@ pub struct Symbol {
     pub local_symbols: Vec<Arc<Mutex<Symbol>>>,
     parent: Option<Weak<Mutex<Symbol>>>,
     pub weak_self: Option<Weak<Mutex<Symbol>>>,
+    pub evaluation: Option<Evaluation>,
     dependencies: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     dependents: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     pub range: Option<TextRange>,
@@ -43,6 +45,7 @@ impl Symbol {
             local_symbols: Vec::new(),
             parent: None,
             weak_self: None,
+            evaluation: None,
             dependencies: vec![
                 vec![ //ARCH
                     HashSet::new() //ARCH
