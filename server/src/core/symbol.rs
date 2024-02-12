@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 use std::vec;
 
+use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::root_symbol::RootSymbol;
 
 
@@ -37,6 +38,7 @@ pub struct Symbol {
     pub range: Option<TextRange>,
 
     pub _root: Option<RootSymbol>,
+    pub _function: Option<FunctionSymbol>,
 }
 
 impl Symbol {
@@ -88,12 +90,19 @@ impl Symbol {
             range: None,
 
             _root: None,
+            _function: None,
         }
     }
 
     pub fn new_root(name: String, sym_type: SymType) -> Self {
         let mut new_sym = Symbol::new(name, sym_type);
         new_sym._root = Some(RootSymbol{sys_path: vec![]});
+        new_sym
+    }
+
+    pub fn new_function(name: String, sym_type: SymType, is_property: bool) -> Self {
+        let mut new_sym = Symbol::new(name, sym_type);
+        new_sym._function = Some(FunctionSymbol{is_property: is_property});
         new_sym
     }
 
