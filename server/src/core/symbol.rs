@@ -3,12 +3,15 @@ use rustpython_parser::text_size::TextRange;
 use crate::constants::*;
 use crate::my_weak::MyWeak;
 use crate::core::evaluation::Evaluation;
+use crate::core::odoo::Odoo;
 use core::panic;
 use std::collections::{HashSet, HashMap};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 use std::vec;
+
+use super::symbols::root_symbol::RootSymbol;
 
 
 pub trait SymbolTrait {
@@ -22,6 +25,7 @@ pub struct Symbol {
     pub paths: Vec<String>,
     //eval: Option<Evaluation>,
     i_ext: String,
+    pub is_external: bool,
     pub symbols: HashMap<String, Arc<Mutex<Symbol>>>,
     pub module_symbols: HashMap<String, Arc<Mutex<Symbol>>>,
     pub local_symbols: Vec<Arc<Mutex<Symbol>>>,
@@ -31,6 +35,8 @@ pub struct Symbol {
     dependencies: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     dependents: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     pub range: Option<TextRange>,
+
+    pub _root: Option<RootSymbol>,
 }
 
 impl Symbol {
@@ -40,6 +46,7 @@ impl Symbol {
             sym_type: sym_type,
             paths: vec![],
             i_ext: String::new(),
+            is_external: false,
             symbols: HashMap::new(),
             module_symbols: HashMap::new(),
             local_symbols: Vec::new(),
@@ -79,6 +86,8 @@ impl Symbol {
                     HashSet::new()  //VALIDATION
                 ]],
             range: None,
+
+            _root: None,
         }
     }
 
@@ -210,7 +219,7 @@ impl Symbol {
         //TODO
     }
 
-    pub fn add_symbol(&mut self, mut symbol: Symbol) -> Arc<Mutex<Symbol>> {
+    pub fn add_symbol(&mut self, odoo: &Odoo, mut symbol: Symbol) -> Arc<Mutex<Symbol>> {
         let symbol_name = symbol.name.clone();
         let symbol_range = symbol.range.clone();
         let arc = Arc::new(Mutex::new(symbol));
@@ -236,11 +245,14 @@ impl Symbol {
         } else {
             self.module_symbols.insert(symbol_name.clone(), arc.clone());
         }
+        if self._root.is_some() {
+            self._root.as_ref().unwrap().add_symbol(odoo, &self, &mut locked_symbol);
+        }
         arc.clone()
     }
 
     pub fn create_from_path(path: &PathBuf, parent: &MutexGuard<Symbol>, require_module: bool) -> Option<Symbol> {
-        let name = path.components().last().unwrap().as_os_str().to_str().unwrap().to_string();
+        let name: String = path.components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             let mut symbol = Symbol::new(name, SymType::FILE);
@@ -254,7 +266,7 @@ impl Symbol {
                     symbol.paths = vec![path_str.clone()];
                     //TODO symbol.load_module_info
                 } else if !require_module {
-                    //Nothing to do
+                    symbol.paths = vec![path_str.clone()];
                 } else {
                     return None;
                 }

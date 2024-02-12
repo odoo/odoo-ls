@@ -158,7 +158,7 @@ impl Odoo {
             Some(ref builtins) => {
                 let mut b = builtins.lock().unwrap();
                 let _builtins_symbol = Symbol::create_from_path(&builtins_path, &b, false);
-                b.add_symbol(_builtins_symbol.unwrap())
+                b.add_symbol(self, _builtins_symbol.unwrap())
             },
             None => panic!("Builtins symbol not found")
         };
@@ -225,7 +225,7 @@ impl Odoo {
             Some(ref symbols) => {
                 let mut s = symbols.lock().unwrap();
                 let _odoo_symbol = Symbol::create_from_path(&PathBuf::from(self.config.odoo_path.clone()).join("odoo"), &s, false);
-                s.add_symbol(_odoo_symbol.unwrap())
+                s.add_symbol(self, _odoo_symbol.unwrap())
             },
             None => panic!("Odoo root symbol not found")
         };
@@ -258,7 +258,7 @@ impl Odoo {
                                 if item.file_type().unwrap().is_dir() {
                                     let mut a_m = addons_symbol.lock().unwrap();
                                     let module_symbol = Symbol::create_from_path(&item.path(), &a_m, true);
-                                    let _odoo_arc_symbol = a_m.add_symbol(module_symbol.unwrap());
+                                    let _odoo_arc_symbol = a_m.add_symbol(self, module_symbol.unwrap());
                                     self.add_to_rebuild_arch(Arc::downgrade(&_odoo_arc_symbol));
                                 }
                             },

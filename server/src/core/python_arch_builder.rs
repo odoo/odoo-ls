@@ -82,7 +82,7 @@ impl PythonArchBuilder {
                     variable.range = Some(import_name.range.clone());
                     variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
                     //TODO add dependency
-                    self.sym_stack.last().unwrap().lock().unwrap().add_symbol(variable);
+                    self.sym_stack.last().unwrap().lock().unwrap().add_symbol(odoo, variable);
                 }
 
             } else {
@@ -93,7 +93,7 @@ impl PythonArchBuilder {
                 };
                 let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE); //TODO mark as import
                 variable.range = Some(import_name.range.clone());
-                self.sym_stack.last().unwrap().lock().unwrap().add_symbol(variable);
+                self.sym_stack.last().unwrap().lock().unwrap().add_symbol(odoo, variable);
             }
         }
     }

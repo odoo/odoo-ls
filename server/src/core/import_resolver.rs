@@ -188,7 +188,7 @@ fn _resolve_new_symbol(odoo: &mut Odoo, parent: &mut MutexGuard<Symbol>, name: &
     if parent.sym_type == SymType::COMPILED {
         let mut compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
         compiled_sym.range = Some(range.clone());
-        return Ok(parent.add_symbol(compiled_sym));
+        return Ok(parent.add_symbol(odoo, compiled_sym));
     }
     for path in parent.paths.iter() {
         let mut full_path = Path::new(path.as_str()).join(name);
@@ -198,21 +198,21 @@ fn _resolve_new_symbol(odoo: &mut Odoo, parent: &mut MutexGuard<Symbol>, name: &
         if is_dir_cs(full_path.to_str().unwrap().to_string()) {
             let symbol = Symbol::create_from_path(&full_path, parent, false);
             if symbol.is_some() {
-                let _arc_symbol = parent.add_symbol(symbol.unwrap());
+                let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
                 odoo.add_to_rebuild_arch(Arc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.join(".py").to_str().unwrap().to_string()) {
             let symbol = Symbol::create_from_path(&full_path.join(".py"), parent, false);
             if symbol.is_some() {
-                let _arc_symbol = parent.add_symbol(symbol.unwrap());
+                let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
                 odoo.add_to_rebuild_arch(Arc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.join(".pyi").to_str().unwrap().to_string()) {
             let symbol = Symbol::create_from_path(&full_path.join(".pyi"), parent, false);
             if symbol.is_some() {
-                let _arc_symbol = parent.add_symbol(symbol.unwrap());
+                let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
                 odoo.add_to_rebuild_arch(Arc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
@@ -222,7 +222,7 @@ fn _resolve_new_symbol(odoo: &mut Odoo, parent: &mut MutexGuard<Symbol>, name: &
                     match entry {
                         Ok(path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok(parent.add_symbol(compiled_sym));
+                            return Ok(parent.add_symbol(odoo, compiled_sym));
                         }
                         Err(e) => {},
                     }
@@ -232,7 +232,7 @@ fn _resolve_new_symbol(odoo: &mut Odoo, parent: &mut MutexGuard<Symbol>, name: &
                     match entry {
                         Ok(path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok(parent.add_symbol(compiled_sym));
+                            return Ok(parent.add_symbol(odoo, compiled_sym));
                         }
                         Err(e) => {},
                     }
