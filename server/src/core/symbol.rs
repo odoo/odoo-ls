@@ -91,6 +91,12 @@ impl Symbol {
         }
     }
 
+    pub fn new_root(name: String, sym_type: SymType) -> Self {
+        let mut new_sym = Symbol::new(name, sym_type);
+        new_sym._root = Some(RootSymbol{sys_path: vec![]});
+        new_sym
+    }
+
     pub fn get_symbol(&self, tree: &Tree) -> Option<Arc<Mutex<Symbol>>> {
         let symbol_tree_files: &Vec<String> = &tree.0;
         let symbol_tree_content: &Vec<String> = &tree.1;

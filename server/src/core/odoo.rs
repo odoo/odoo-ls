@@ -37,8 +37,8 @@ pub struct Odoo {
 
 impl Odoo {
     pub fn new() -> Self {
-        let symbols = Arc::new(Mutex::new(Symbol::new("root".to_string(), SymType::ROOT)));
-        let builtins = Arc::new(Mutex::new(Symbol::new("builtins".to_string(), SymType::ROOT)));
+        let symbols = Arc::new(Mutex::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
+        let builtins = Arc::new(Mutex::new(Symbol::new_root("builtins".to_string(), SymType::ROOT)));
         builtins.lock().unwrap().weak_self = Some(Arc::downgrade(&builtins)); // manually set weakself for root symbols
         symbols.lock().unwrap().weak_self = Some(Arc::downgrade(&symbols)); // manually set weakself for root symbols
         let odoo = Self {
