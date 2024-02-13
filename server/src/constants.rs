@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 
 const EXTENSION_NAME: &str = "Odoo";
 const EXTENSION_VERSION: &str = "0.2.4";
@@ -28,6 +29,15 @@ pub enum SymType{
     FUNCTION,
     VARIABLE,
     PRIMITIVE,
+}
+
+impl SymType {
+    pub fn is_instance(sym_type: &SymType) -> bool {
+        match sym_type {
+            SymType::VARIABLE | SymType::PRIMITIVE => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]

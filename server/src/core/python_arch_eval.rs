@@ -40,15 +40,17 @@ impl PythonArchEval {
                 file_info.build_ast(path.as_str(), "");
             }
         }
-        for stmt in file_info.ast.as_ref().unwrap() {
-            match stmt {
-                Stmt::Import(import_stmt) => {
-                    self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
-                },
-                Stmt::ImportFrom(import_from_stmt) => {
-                    self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
-                },
-                _ => {}
+        if file_info.ast.is_some() {
+            for stmt in file_info.ast.as_ref().unwrap() {
+                match stmt {
+                    Stmt::Import(import_stmt) => {
+                        self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
+                    },
+                    Stmt::ImportFrom(import_from_stmt) => {
+                        self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
+                    },
+                    _ => {}
+                }
             }
         }
         //TODO odoo.add_to_rebuild_arch_eval(Arc::downgrade(&self.sym_stack[0]));

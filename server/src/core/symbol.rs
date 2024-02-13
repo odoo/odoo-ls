@@ -4,6 +4,7 @@ use crate::constants::*;
 use crate::my_weak::MyWeak;
 use crate::core::evaluation::Evaluation;
 use crate::core::odoo::Odoo;
+use crate::core::python_arch_eval::PythonArchEval;
 use core::panic;
 use std::collections::{HashSet, HashMap};
 use std::ops::Deref;
@@ -12,7 +13,9 @@ use std::sync::{Arc, Mutex, Weak, MutexGuard};
 use std::vec;
 
 use super::symbols::function_symbol::FunctionSymbol;
+use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;
+use super::symbols::class_symbol::ClassSymbol;
 
 
 pub trait SymbolTrait {
@@ -25,7 +28,7 @@ pub struct Symbol {
     pub sym_type: SymType,
     pub paths: Vec<String>,
     //eval: Option<Evaluation>,
-    i_ext: String,
+    pub i_ext: String,
     pub is_external: bool,
     pub symbols: HashMap<String, Arc<Mutex<Symbol>>>,
     pub module_symbols: HashMap<String, Arc<Mutex<Symbol>>>,
@@ -36,9 +39,17 @@ pub struct Symbol {
     dependencies: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     dependents: Vec<Vec<HashSet<MyWeak<Mutex<Symbol>>>>>,
     pub range: Option<TextRange>,
+    pub not_found_paths: HashMap<BuildSteps, String>,
+    pub arch_status: bool,
+    pub arch_eval_status: bool,
+    pub odoo_status: bool,
+    pub validation_status: bool,
+    pub is_import_variable: bool,
 
     pub _root: Option<RootSymbol>,
     pub _function: Option<FunctionSymbol>,
+    pub _class: Option<ClassSymbol>,
+    pub _module: Option<ModuleSymbol>,
 }
 
 impl Symbol {
@@ -88,9 +99,17 @@ impl Symbol {
                     HashSet::new()  //VALIDATION
                 ]],
             range: None,
+            not_found_paths: HashMap::new(),
+            arch_status: false,
+            arch_eval_status: false,
+            odoo_status: false,
+            validation_status: false,
+            is_import_variable: false,
 
             _root: None,
             _function: None,
+            _class: None,
+            _module: None,
         }
     }
 
@@ -103,6 +122,18 @@ impl Symbol {
     pub fn new_function(name: String, sym_type: SymType, is_property: bool) -> Self {
         let mut new_sym = Symbol::new(name, sym_type);
         new_sym._function = Some(FunctionSymbol{is_property: is_property});
+        new_sym
+    }
+
+    pub fn new_class(name: String, sym_type: SymType) -> Self {
+        let mut new_sym = Symbol::new(name, sym_type);
+        new_sym._class = Some(ClassSymbol{bases: HashSet::new()});
+        new_sym
+    }
+
+    pub fn new_module(name: String, sym_type: SymType) -> Self {
+        let mut new_sym = Symbol::new(name, sym_type);
+        new_sym._module = Some(ModuleSymbol::new());
         new_sym
     }
 
@@ -158,7 +189,7 @@ impl Symbol {
     }
 
     pub fn is_file_content(&self) -> bool{
-        return [SymType::NAMESPACE, SymType::PACKAGE, SymType::FILE, SymType::COMPILED].contains(&self.sym_type)
+        return ! [SymType::NAMESPACE, SymType::PACKAGE, SymType::FILE, SymType::COMPILED].contains(&self.sym_type)
     }
 
     //Return a HashSet of all symbols (constructed until 'level') that are dependencies for the 'step' of this symbol
@@ -232,6 +263,67 @@ impl Symbol {
 
     pub fn invalidate(&mut self, step: &BuildSteps) {
         //TODO
+    }
+
+    pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<Mutex<Symbol>>> {
+        if sym_types.contains(&self.sym_type) {
+            return self.weak_self.clone();
+        }
+        if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.sym_type) {
+            return None;
+        }
+        if self.parent.is_some() {
+            return self.parent.as_ref().unwrap().upgrade().unwrap().lock().unwrap().get_in_parents(sym_types, stop_same_file);
+        }
+        return None;
+    }
+
+    pub fn next_ref(&self) -> Option<Weak<Mutex<Symbol>>> {
+        if SymType::is_instance(&self.sym_type) && self.evaluation.is_some() && self.evaluation.as_ref().unwrap().get_symbol().upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().get_symbol());
+        }
+        return None;
+    }
+
+    pub async fn follow_ref(&mut self, odoo: &mut Odoo, stop_on_type: bool) -> (Weak<Mutex<Symbol>>, bool) {
+        let can_eval_external = !self.is_external;
+        let mut instance = SymType::is_instance(&self.sym_type);
+        // Ensure that symbol is not in queue for evaluation
+        let file_symbol = self.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+        if self.evaluation.is_none() &&
+            (!self.is_external || can_eval_external) &&
+            file_symbol.is_some() &&
+            !file_symbol.as_ref().unwrap().upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
+            odoo.is_in_rebuild(&file_symbol.as_ref().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                let mut builder = PythonArchEval::new(file_symbol.as_ref().unwrap().upgrade().unwrap());
+                builder.eval_arch(odoo).await;
+            }
+        let mut sym = self.weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
+        let mut _sym_upgraded = sym.upgrade().unwrap();
+        let mut _sym = _sym_upgraded.lock().unwrap();
+        let mut next_ref = self.next_ref();
+        while next_ref.is_some() {
+            instance = _sym.evaluation.as_ref().unwrap().instance;
+            //TODO update context
+            if stop_on_type && ! instance && !_sym.is_import_variable {
+                return (sym, instance)
+            }
+            sym = next_ref.as_ref().unwrap().clone();
+            drop(_sym);
+            _sym_upgraded = sym.upgrade().unwrap();
+            _sym = _sym_upgraded.lock().unwrap();
+            let file_symbol = sym.upgrade().unwrap().lock().unwrap().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+            if self.evaluation.is_none() &&
+                (!self.is_external || can_eval_external) &&
+                file_symbol.is_some() &&
+                !file_symbol.as_ref().unwrap().upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
+                odoo.is_in_rebuild(&file_symbol.as_ref().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                    let mut builder = PythonArchEval::new(file_symbol.as_ref().unwrap().upgrade().unwrap());
+                    builder.eval_arch(odoo).await;
+                }
+            next_ref = _sym.next_ref();
+        }
+        return (sym, instance)
     }
 
     pub fn add_symbol(&mut self, odoo: &Odoo, mut symbol: Symbol) -> Arc<Mutex<Symbol>> {

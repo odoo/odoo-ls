@@ -5,7 +5,7 @@ use crate::core::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct Evaluation {
-    pub symbol: Weak<Mutex<Symbol>>,
+    symbol: Weak<Mutex<Symbol>>,
     pub instance: bool,
     pub context: HashMap<String, bool>,
     pub value: Option<String>,
@@ -26,6 +26,10 @@ impl Evaluation {
             value: None,
             _internal_hold_symbol: None,
         }
+    }
+
+    pub fn get_symbol(&self) -> Weak<Mutex<Symbol>> { //TODO evaluate context
+        self.symbol.clone()
     }
 
 }

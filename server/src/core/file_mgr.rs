@@ -28,8 +28,13 @@ impl FileInfo {
         if ! content.is_empty() {
             self.ast = Some(ast::Suite::parse(content, "<embedded>").unwrap()) //TODO handle errors
         } else {
-            let python_code = fs::read_to_string(path).expect(format!("Something went wrong reading the file - {}", path).as_str());
-            self.ast = Some(ast::Suite::parse(&python_code, path).unwrap()) //TODO handle errors
+            let python_code = match fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(_) => String::new(),
+            };
+            if ! python_code.is_empty() {
+                self.ast = Some(ast::Suite::parse(&python_code, path).unwrap()) //TODO handle errors
+            }
         }
         self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
         //TODO handle valueError, permissionError

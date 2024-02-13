@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Identifier, Stmt, Alias, Int};
+use std::path::PathBuf;
 
 use crate::constants::SymType;
 use crate::FILE_MGR;
@@ -32,7 +33,10 @@ impl PythonArchBuilder {
         if symbol.paths.len() != 1 {
             panic!()
         }
-        let path = symbol.paths[0].clone();
+        let mut path = symbol.paths[0].clone();
+        if symbol.sym_type == SymType::PACKAGE {
+            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
+        }
         drop(symbol);
         let mut file_info = temp.get_file_info(path.as_str()); //create ast
         match file_info.ast {
@@ -41,18 +45,20 @@ impl PythonArchBuilder {
                 file_info.build_ast(path.as_str(), "");
             }
         }
-        for stmt in file_info.ast.as_ref().unwrap() {
-            match stmt {
-                Stmt::Import(import_stmt) => {
-                    self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
-                },
-                Stmt::ImportFrom(import_from_stmt) => {
-                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
-                },
-                _ => {}
+        if file_info.ast.is_some() {
+            for stmt in file_info.ast.as_ref().unwrap() {
+                match stmt {
+                    Stmt::Import(import_stmt) => {
+                        self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
+                    },
+                    Stmt::ImportFrom(import_from_stmt) => {
+                        self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
+                    },
+                    _ => {}
+                }
             }
+            odoo.add_to_rebuild_arch_eval(Arc::downgrade(&self.sym_stack[0]));
         }
-        odoo.add_to_rebuild_arch_eval(Arc::downgrade(&self.sym_stack[0]));
     }
 
     fn create_local_symbols_from_import_stmt(&self, odoo: &mut Odoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {

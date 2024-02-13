@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use regex::Regex;
 use crate::constants::*;
 use super::config::{RefreshMode, DiagMissingImportsMode};
+use super::symbol;
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
 use crate::core::python_arch_builder::PythonArchBuilder;
@@ -33,6 +34,7 @@ pub struct Odoo {
     rebuild_arch_eval: HashSet<MyWeak<Mutex<Symbol>>>,
     rebuild_odoo: HashSet<MyWeak<Mutex<Symbol>>>,
     rebuild_validation: HashSet<MyWeak<Mutex<Symbol>>>,
+    pub not_found_symbols: HashSet<MyWeak<Mutex<Symbol>>>,
 }
 
 impl Odoo {
@@ -55,6 +57,7 @@ impl Odoo {
             rebuild_arch_eval: HashSet::new(),
             rebuild_odoo: HashSet::new(),
             rebuild_validation: HashSet::new(),
+            not_found_symbols: HashSet::new(),
         };
         odoo
     }
@@ -399,5 +402,21 @@ impl Odoo {
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Weak<Mutex<Symbol>>) {
         self.rebuild_arch_eval.insert(MyWeak::new(symbol));
+    }
+
+    pub fn is_in_rebuild(&self, symbol: &Weak<Mutex<Symbol>>, step: BuildSteps) -> bool {
+        if step == BuildSteps::ARCH {
+            return self.rebuild_arch.contains(&MyWeak::new(symbol.clone()));
+        }
+        if step == BuildSteps::ARCH_EVAL {
+            return self.rebuild_arch_eval.contains(&MyWeak::new(symbol.clone()));
+        }
+        if step == BuildSteps::ODOO {
+            return self.rebuild_odoo.contains(&MyWeak::new(symbol.clone()));
+        }
+        if step == BuildSteps::VALIDATION {
+            return self.rebuild_validation.contains(&MyWeak::new(symbol.clone()));
+        }
+        false
     }
 }
