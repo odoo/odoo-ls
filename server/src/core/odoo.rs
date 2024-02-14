@@ -376,7 +376,7 @@ impl Odoo {
                 already_arch_rebuilt.insert(tree);
                 //TODO should delete previous first
                 let mut builder = PythonArchBuilder::new(sym_arc);
-                builder.load_arch(self).await;
+                builder.load_arch(self);
                 continue;
             }
             let sym = self.pop_item(BuildSteps::ARCH_EVAL).await;
@@ -390,7 +390,7 @@ impl Odoo {
                 already_arch_eval_rebuilt.insert(tree);
                 //TODO should delete previous first
                 let mut builder = PythonArchEval::new(sym_arc);
-                builder.eval_arch(self).await;
+                builder.eval_arch(self);
                 continue;
             }
         }

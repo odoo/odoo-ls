@@ -1,13 +1,15 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Identifier, Stmt, Alias, Int};
+use std::path::PathBuf;
 
-use crate::constants::SymType;
+use crate::constants::*;
 use crate::FILE_MGR;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::Odoo;
 use crate::core::symbol::Symbol;
+use crate::core::evaluation::Evaluation;
 
 use super::import_resolver::ImportResult;
 
@@ -24,16 +26,19 @@ impl PythonArchEval {
         }
     }
 
-    pub async fn eval_arch(&mut self, odoo: &mut Odoo) {
+    pub fn eval_arch(&mut self, odoo: &mut Odoo) {
         println!("eval arch");
-        let mut temp = FILE_MGR.lock().await;
+        let mut file_mgr = FILE_MGR.lock().unwrap();
         let symbol = self.sym_stack[0].lock().unwrap();
         if symbol.paths.len() != 1 {
             panic!()
         }
-        let path = symbol.paths[0].clone();
+        let mut path = symbol.paths[0].clone();
+        if symbol.sym_type == SymType::PACKAGE {
+            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
+        }
         drop(symbol);
-        let mut file_info = temp.get_file_info(path.as_str()); //create ast
+        let mut file_info = file_mgr.get_file_info(path.as_str()); //create ast
         match file_info.ast {
             Some(_) => {},
             None => {
@@ -76,8 +81,33 @@ impl PythonArchEval {
             }
             if _import_result.found {
                 //resolve the symbol and build necessary evaluations
-                //let ref = symbol.follow_ref()[0];
-                //rebuild if necessary (WARNING: check dependencies before build eval?)
+                let (mut _sym, mut instance): (Weak<Mutex<Symbol>>, bool) = _import_result.symbol.lock().unwrap().follow_ref(odoo, false);
+                let mut old_ref: Option<Weak<Mutex<Symbol>>> = None;
+                let mut arc_sym = _sym.upgrade().unwrap();
+                let mut sym = arc_sym.lock().unwrap();
+                while sym.evaluation.is_none() && (old_ref.is_none() || Arc::ptr_eq(&arc_sym, &old_ref.as_ref().unwrap().upgrade().unwrap())) {
+                    old_ref = Some(_sym.clone());
+                    let file_sym = sym.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+                    if file_sym.is_some() {
+                        let arc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
+                        if arc_file_sym.lock().unwrap().arch_eval_status == false && odoo.is_in_rebuild(file_sym.as_ref().unwrap(), BuildSteps::ARCH_EVAL) {
+                            let mut builder = PythonArchEval::new(arc_file_sym);
+                            builder.eval_arch(odoo);
+                            //TODO remove from list?
+                            (_sym, instance) = _import_result.symbol.lock().unwrap().follow_ref(odoo, false);
+                            drop(sym);
+                            arc_sym = _sym.upgrade().unwrap();
+                            sym = arc_sym.lock().unwrap();
+                        }
+                    }
+                }
+                if !Arc::ptr_eq(&arc_sym, &variable.as_ref().unwrap()) { //anti-loop
+                    variable.unwrap().lock().unwrap().evaluation = Some(Evaluation::eval_from_symbol(&_import_result.symbol));
+                    //TODO add dependency
+                } else {
+                    //TODO diagnostic
+                }
+
             } else {
                 //TODO add to not found symbols
             }

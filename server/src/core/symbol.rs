@@ -140,25 +140,49 @@ impl Symbol {
     pub fn get_symbol(&self, tree: &Tree) -> Option<Arc<Mutex<Symbol>>> {
         let symbol_tree_files: &Vec<String> = &tree.0;
         let symbol_tree_content: &Vec<String> = &tree.1;
-        let mut stf = symbol_tree_files.iter();
-        let mut content = if let Some(fk) = stf.next() {
-            Some(stf.try_fold(
-                self.module_symbols.get(fk)?.clone(),
-                |c, f| Some(c.lock().unwrap().module_symbols.get(f)?.clone())
-            )?)
+        let mut iter_sym: Option<Arc<Mutex<Symbol>>> = None;
+        if symbol_tree_files.len() != 0 {
+            iter_sym = self.module_symbols.get(&symbol_tree_files[0]).cloned();
+            if iter_sym.is_none() {
+                return None;
+            }
+            if symbol_tree_files.len() > 1 {
+                for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
+                    if let Some(s) = iter_sym.unwrap().lock().unwrap().module_symbols.get(fk) {
+                        iter_sym = Some(s.clone());
+                    } else {
+                        return None;
+                    }
+                }
+            }
+            if symbol_tree_content.len() != 0 {
+                for fk in symbol_tree_content.iter() {
+                    if let Some(s) = iter_sym.unwrap().lock().unwrap().symbols.get(fk) {
+                        iter_sym = Some(s.clone());
+                    } else {
+                        return None;
+                    }
+                }
+            }
         } else {
-            return None
-        };
-        let mut stc = symbol_tree_content.into_iter();
-        content = if let Some(fk) = stc.next() {
-            Some(stf.try_fold(
-                content.unwrap().lock().unwrap().module_symbols.get(fk)?.clone(),
-                |c, f| Some(c.lock().unwrap().module_symbols.get(f)?.clone())
-            )?)
-        } else {
-            return None
-        };
-        content
+            if symbol_tree_content.len() == 0 {
+                return None;
+            }
+            iter_sym = self.symbols.get(&symbol_tree_content[0]).cloned();
+            if iter_sym.is_none() {
+                return None;
+            }
+            if symbol_tree_content.len() >1 {
+                for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
+                    if let Some(s) = iter_sym.unwrap().lock().unwrap().symbols.get(fk) {
+                        iter_sym = Some(s.clone());
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+        iter_sym
     }
 
     pub fn get_tree(&self) -> Tree {
@@ -285,7 +309,7 @@ impl Symbol {
         return None;
     }
 
-    pub async fn follow_ref(&mut self, odoo: &mut Odoo, stop_on_type: bool) -> (Weak<Mutex<Symbol>>, bool) {
+    pub fn follow_ref(&mut self, odoo: &mut Odoo, stop_on_type: bool) -> (Weak<Mutex<Symbol>>, bool) {
         let can_eval_external = !self.is_external;
         let mut instance = SymType::is_instance(&self.sym_type);
         // Ensure that symbol is not in queue for evaluation
@@ -296,7 +320,7 @@ impl Symbol {
             !file_symbol.as_ref().unwrap().upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
             odoo.is_in_rebuild(&file_symbol.as_ref().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                 let mut builder = PythonArchEval::new(file_symbol.as_ref().unwrap().upgrade().unwrap());
-                builder.eval_arch(odoo).await;
+                builder.eval_arch(odoo);
             }
         let mut sym = self.weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
         let mut _sym_upgraded = sym.upgrade().unwrap();
@@ -319,7 +343,7 @@ impl Symbol {
                 !file_symbol.as_ref().unwrap().upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
                 odoo.is_in_rebuild(&file_symbol.as_ref().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                     let mut builder = PythonArchEval::new(file_symbol.as_ref().unwrap().upgrade().unwrap());
-                    builder.eval_arch(odoo).await;
+                    builder.eval_arch(odoo);
                 }
             next_ref = _sym.next_ref();
         }

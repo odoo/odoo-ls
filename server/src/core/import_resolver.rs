@@ -164,7 +164,7 @@ fn _get_or_create_symbol(odoo: &mut Odoo, symbol: Arc<Mutex<Symbol>>, names: &Ve
     let mut sym: Option<Arc<Mutex<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names {
-        let mut next_symbol = symbol.lock().unwrap().get_symbol(&(vec![branch.clone()], vec![]));
+        let mut next_symbol = sym.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![branch.clone()], vec![]));
         if next_symbol.is_none() {
             next_symbol = match _resolve_new_symbol(odoo, file_symbol, &branch, asname.clone(), range) {
                 Ok(v) => Some(v),

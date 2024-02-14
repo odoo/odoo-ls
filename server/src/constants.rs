@@ -1,5 +1,3 @@
-use bitflags::bitflags;
-
 const EXTENSION_NAME: &str = "Odoo";
 const EXTENSION_VERSION: &str = "0.2.4";
 
