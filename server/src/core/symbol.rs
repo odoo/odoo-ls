@@ -309,23 +309,13 @@ impl Symbol {
         return None;
     }
 
-    pub fn follow_ref(&mut self, odoo: &mut Odoo, stop_on_type: bool) -> (Weak<Mutex<Symbol>>, bool) {
-        let can_eval_external = !self.is_external;
-        let mut instance = SymType::is_instance(&self.sym_type);
-        // Ensure that symbol is not in queue for evaluation
-        let file_symbol = self.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
-        if self.evaluation.is_none() &&
-            (!self.is_external || can_eval_external) &&
-            file_symbol.is_some() &&
-            !file_symbol.as_ref().unwrap().upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
-            odoo.is_in_rebuild(&file_symbol.as_ref().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                let mut builder = PythonArchEval::new(file_symbol.as_ref().unwrap().upgrade().unwrap());
-                builder.eval_arch(odoo);
-            }
-        let mut sym = self.weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
+    pub fn follow_ref(symbol: Arc<Mutex<Symbol>>, odoo: &mut Odoo, stop_on_type: bool) -> (Weak<Mutex<Symbol>>, bool) {
+        let mut sym = symbol.lock().unwrap().weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
         let mut _sym_upgraded = sym.upgrade().unwrap();
-        let mut _sym = _sym_upgraded.lock().unwrap();
-        let mut next_ref = self.next_ref();
+        let mut _sym = symbol.lock().unwrap();
+        let mut next_ref = _sym.next_ref();
+        let can_eval_external = !_sym.is_external;
+        let mut instance = SymType::is_instance(&_sym.sym_type);
         while next_ref.is_some() {
             instance = _sym.evaluation.as_ref().unwrap().instance;
             //TODO update context
@@ -336,15 +326,21 @@ impl Symbol {
             drop(_sym);
             _sym_upgraded = sym.upgrade().unwrap();
             _sym = _sym_upgraded.lock().unwrap();
-            let file_symbol = sym.upgrade().unwrap().lock().unwrap().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
-            if self.evaluation.is_none() &&
-                (!self.is_external || can_eval_external) &&
-                file_symbol.is_some() &&
-                !file_symbol.as_ref().unwrap().upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
-                odoo.is_in_rebuild(&file_symbol.as_ref().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                    let mut builder = PythonArchEval::new(file_symbol.as_ref().unwrap().upgrade().unwrap());
-                    builder.eval_arch(odoo);
+            if _sym.evaluation.is_none() && (!_sym.is_external || can_eval_external) {
+                let file_symbol = sym.upgrade().unwrap().lock().unwrap().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+                match file_symbol {
+                    Some(file_symbol) => {
+                        drop(_sym);
+                        if !file_symbol.upgrade().expect("invalid weak value").lock().unwrap().arch_eval_status &&
+                        odoo.is_in_rebuild(&file_symbol, BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                            let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
+                            builder.eval_arch(odoo);
+                        }
+                        _sym = _sym_upgraded.lock().unwrap();
+                    },
+                    None => {}
                 }
+            }
             next_ref = _sym.next_ref();
         }
         return (sym, instance)

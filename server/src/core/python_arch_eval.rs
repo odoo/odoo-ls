@@ -81,7 +81,7 @@ impl PythonArchEval {
             }
             if _import_result.found {
                 //resolve the symbol and build necessary evaluations
-                let (mut _sym, mut instance): (Weak<Mutex<Symbol>>, bool) = _import_result.symbol.lock().unwrap().follow_ref(odoo, false);
+                let (mut _sym, mut instance): (Weak<Mutex<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, false);
                 let mut old_ref: Option<Weak<Mutex<Symbol>>> = None;
                 let mut arc_sym = _sym.upgrade().unwrap();
                 let mut sym = arc_sym.lock().unwrap();
@@ -94,7 +94,7 @@ impl PythonArchEval {
                             let mut builder = PythonArchEval::new(arc_file_sym);
                             builder.eval_arch(odoo);
                             //TODO remove from list?
-                            (_sym, instance) = _import_result.symbol.lock().unwrap().follow_ref(odoo, false);
+                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, false);
                             drop(sym);
                             arc_sym = _sym.upgrade().unwrap();
                             sym = arc_sym.lock().unwrap();

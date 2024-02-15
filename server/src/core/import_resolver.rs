@@ -21,15 +21,19 @@ pub struct ImportResult {
 
 pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbol>>, parent_symbol: &Arc<Mutex<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, from_range: &TextRange) -> Vec<ImportResult> {
     //A: search base of different imports
+    let _source_file_symbol_lock = source_file_symbol.lock().unwrap();
     let file_tree = _resolve_packages(
-        &source_file_symbol.lock().unwrap(),
+        &_source_file_symbol_lock.paths[0].clone(),
+        &_source_file_symbol_lock.get_tree(),
+        &_source_file_symbol_lock.sym_type,
         level,
         from_stmt);
+    drop(_source_file_symbol_lock);
     let (mut from_symbol, mut fallback_sym) = _get_or_create_symbol(
         odoo,
         odoo.symbols.as_ref().unwrap().clone(),
         &file_tree,
-        &mut source_file_symbol.lock().unwrap(),
+        source_file_symbol.clone(),
         None,
         from_range);
     let mut result = vec![];
@@ -65,7 +69,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
                 odoo,
                 from_symbol.as_ref().unwrap().clone(),
                 &name.split(".").map(str::to_string).collect(),
-                &mut source_file_symbol.lock().unwrap(),
+                source_file_symbol.clone(),
                 None,
                 &alias.range);
             if name_symbol.is_none() {
@@ -89,7 +93,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
             odoo,
             from_symbol.as_ref().unwrap().clone(),
             &name_first_part,
-            &mut source_file_symbol.lock().unwrap(),
+            source_file_symbol.clone(),
             None,
             &alias.range);
         if next_symbol.is_none() {
@@ -101,7 +105,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
             odoo,
             next_symbol.as_ref().unwrap().clone(),
             &name_last_name,
-            &mut source_file_symbol.lock().unwrap(),
+            source_file_symbol.clone(),
             None,
             &alias.range);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
@@ -125,25 +129,25 @@ fn _find_module(odoo: &Odoo, name: String) -> Arc<Mutex<Symbol>> {
     todo!()
 }
 
-fn _resolve_packages(file_symbol: &MutexGuard<Symbol>, level: Option<&Int>, from_stmt: Option<&Identifier>) -> Vec<String> {
-    let mut file_tree: Vec<String> = vec![];
+fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<&Int>, from_stmt: Option<&Identifier>) -> Vec<String> {
+    let mut first_part_tree: Vec<String> = vec![];
     if level.is_some() && level.unwrap().to_u32() > 0 {
         let mut lvl = level.unwrap().to_u32();
-        if lvl > Path::new(file_symbol.paths[0].as_str()).components().count() as u32 {
+        if lvl > Path::new(file_path).components().count() as u32 {
             panic!("Level is too high!")
         }
-        if file_symbol.sym_type == SymType::PACKAGE {
+        if *file_sym_type == SymType::PACKAGE {
             lvl -= 1;
         }
         if lvl == 0 {
-            file_tree = file_symbol.get_tree().0.clone();
+            first_part_tree = file_tree.0.clone();
         } else {
-            let tree = file_symbol.get_tree();
+            let tree = file_tree;
             if lvl > tree.0.len() as u32 {
                 println!("Level is too high and going out of scope");
-                file_tree = vec![];
+                first_part_tree = vec![];
             } else {
-                file_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());
+                first_part_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());
             }
         }
     }
@@ -151,28 +155,28 @@ fn _resolve_packages(file_symbol: &MutexGuard<Symbol>, level: Option<&Int>, from
         Some(from_stmt_inner) => {
             let split = from_stmt_inner.as_str().split(".");
             for i in split {
-                file_tree.push(i.to_string());
+                first_part_tree.push(i.to_string());
             }
         },
         None => ()
     }
-    file_tree
+    first_part_tree
 }
 
-fn _get_or_create_symbol(odoo: &mut Odoo, symbol: Arc<Mutex<Symbol>>, names: &Vec<String>, file_symbol: &mut MutexGuard<Symbol>, asname: Option<String>, range: &TextRange) -> (Option<Arc<Mutex<Symbol>>>, Arc<Mutex<Symbol>>) {
+fn _get_or_create_symbol(odoo: &mut Odoo, symbol: Arc<Mutex<Symbol>>, names: &Vec<String>, file_symbol: Arc<Mutex<Symbol>>, asname: Option<String>, range: &TextRange) -> (Option<Arc<Mutex<Symbol>>>, Arc<Mutex<Symbol>>) {
     //TODO get arc from parent
     let mut sym: Option<Arc<Mutex<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
-    for branch in names {
+    for branch in names.iter() {
         let mut next_symbol = sym.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![branch.clone()], vec![]));
         if next_symbol.is_none() {
-            next_symbol = match _resolve_new_symbol(odoo, file_symbol, &branch, asname.clone(), range) {
+            next_symbol = match _resolve_new_symbol(odoo, &mut file_symbol.lock().unwrap(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),
                 Err(e) => None
             }
         }
+        sym = next_symbol.clone();
         if next_symbol.is_none() {
-            sym = None;
             break;
         }
         last_symbol = next_symbol.unwrap().clone();
