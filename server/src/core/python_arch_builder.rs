@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context, Error};
+use anyhow::{Error};
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Identifier, Stmt, Alias, Int};
 use std::path::PathBuf;

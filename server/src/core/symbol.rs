@@ -7,7 +7,6 @@ use crate::core::odoo::Odoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use core::panic;
 use std::collections::{HashSet, HashMap};
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 use std::vec;

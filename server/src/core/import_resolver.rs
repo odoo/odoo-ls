@@ -1,7 +1,6 @@
 use glob::glob;
 use std::sync::{Arc, Mutex};
 use std::path::Path;
-use tower_lsp::lsp_types::Range;
 use std::sync::MutexGuard;
 
 use rustpython_parser::text_size::TextRange;

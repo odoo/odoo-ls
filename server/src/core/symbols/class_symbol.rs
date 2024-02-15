@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Mutex, MutexGuard, Weak};
 use std::collections::HashSet;
 use crate::core::symbol::Symbol;
 

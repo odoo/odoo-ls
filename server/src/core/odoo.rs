@@ -11,12 +11,10 @@ use std::path::PathBuf;
 use regex::Regex;
 use crate::constants::*;
 use super::config::{RefreshMode, DiagMissingImportsMode};
-use super::symbol;
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
-use crate::utils::is_dir_cs;
 //use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
