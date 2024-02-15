@@ -85,9 +85,10 @@ impl PythonArchEval {
                 let mut old_ref: Option<Weak<Mutex<Symbol>>> = None;
                 let mut arc_sym = _sym.upgrade().unwrap();
                 let mut sym = arc_sym.lock().unwrap();
-                while sym.evaluation.is_none() && (old_ref.is_none() || Arc::ptr_eq(&arc_sym, &old_ref.as_ref().unwrap().upgrade().unwrap())) {
+                while sym.evaluation.is_none() && (old_ref.is_none() || !Arc::ptr_eq(&arc_sym, &old_ref.as_ref().unwrap().upgrade().unwrap())) {
                     old_ref = Some(_sym.clone());
                     let file_sym = sym.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+                    drop(sym);
                     if file_sym.is_some() {
                         let arc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
                         if arc_file_sym.lock().unwrap().arch_eval_status == false && odoo.is_in_rebuild(file_sym.as_ref().unwrap(), BuildSteps::ARCH_EVAL) {
@@ -95,13 +96,17 @@ impl PythonArchEval {
                             builder.eval_arch(odoo);
                             //TODO remove from list?
                             (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, false);
-                            drop(sym);
                             arc_sym = _sym.upgrade().unwrap();
                             sym = arc_sym.lock().unwrap();
+                        } else {
+                            sym = arc_sym.lock().unwrap();
                         }
+                    } else {
+                        sym = arc_sym.lock().unwrap();
                     }
                 }
-                if !Arc::ptr_eq(&arc_sym, &variable.as_ref().unwrap()) { //anti-loop
+                drop(sym);
+                if !Arc::ptr_eq(&arc_sym, &variable.as_ref().unwrap()) { //anti-loop. We want to be sure we are not evaluating to the same sym
                     variable.unwrap().lock().unwrap().evaluation = Some(Evaluation::eval_from_symbol(&_import_result.symbol));
                     //TODO add dependency
                 } else {

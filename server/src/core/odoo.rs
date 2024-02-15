@@ -251,7 +251,7 @@ impl Odoo {
     async fn build_modules(&mut self, client: &Client) {
         {
             let addons_symbol = self.get_symbol(&tree(vec!["odoo", "addons"], vec![])).expect("Unable to find odoo addons symbol");
-            let addons_path = &addons_symbol.lock().unwrap().paths;
+            let addons_path = addons_symbol.lock().unwrap().paths.clone();
             for addon_path in addons_path.iter() {
                 if PathBuf::from(addon_path).exists() {
                     //browse all dir in path
@@ -261,8 +261,10 @@ impl Odoo {
                                 if item.file_type().unwrap().is_dir() {
                                     let mut a_m = addons_symbol.lock().unwrap();
                                     let module_symbol = Symbol::create_from_path(&item.path(), &a_m, true);
-                                    let _odoo_arc_symbol = a_m.add_symbol(self, module_symbol.unwrap());
-                                    self.add_to_rebuild_arch(Arc::downgrade(&_odoo_arc_symbol));
+                                    if module_symbol.is_some() {
+                                        let _odoo_arc_symbol = a_m.add_symbol(self, module_symbol.unwrap());
+                                        self.add_to_rebuild_arch(Arc::downgrade(&_odoo_arc_symbol));
+                                    }
                                 }
                             },
                             Err(_) => {}

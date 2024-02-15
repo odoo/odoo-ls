@@ -403,7 +403,7 @@ impl Symbol {
                     symbol.i_ext = "i".to_string();
                 }
                 return Some(symbol);
-            } else if !require_module{
+            } else if !require_module{ //TODO should handle module with only __manifest__.py (see odoo/addons/test_data-module)
                 let mut symbol = Symbol::new(name, SymType::NAMESPACE);
                 symbol.paths = vec![path_str.clone()];
                 return Some(symbol);
