@@ -1,11 +1,13 @@
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use anyhow::{Error};
+use rustpython_parser::ast::located::StmtAnnAssign;
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Identifier, Stmt, Alias, Int};
 use std::path::PathBuf;
 
 use crate::constants::SymType;
+use crate::core::python_utils;
 use crate::FILE_MGR;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -54,6 +56,27 @@ impl PythonArchBuilder {
                     },
                     Stmt::ImportFrom(import_from_stmt) => {
                         self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)?
+                    },
+                    Stmt::AnnAssign(ann_assign_stmt) => {
+                        let values = match ann_assign_stmt.value.as_ref() {
+                            Some(value) => python_utils::unpack_assign(vec![&*ann_assign_stmt.target], Some(vec![&*value])),
+                            None => python_utils::unpack_assign(vec![&*ann_assign_stmt.target], None)
+                        };
+                        for (target, value) in values.iter() {
+                            let mut variable = Symbol::new(target.to_string(), SymType::VARIABLE);
+                            variable.range = Some(ann_assign_stmt.range.clone());
+                            variable.evaluation = Some(Evaluation::eval_from_symbol(&value));
+                            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+                        }
+                    },
+                    Stmt::Assign(assign_stmt) => {
+
+                    },
+                    Stmt::FunctionDef(function_def_stmt) => {
+
+                    },
+                    Stmt::ClassDef(class_def_stmt) => {
+
                     },
                     _ => {}
                 }
