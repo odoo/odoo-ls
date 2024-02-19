@@ -1,6 +1,6 @@
 use crate::{constants::SymType, core::symbol::Symbol};
-use crate::core::odoo::Odoo;
-use std::sync::MutexGuard;
+use crate::core::odoo::SyncOdoo;
+use std::cell::RefMut;
 
 #[derive(Debug)]
 pub struct RootSymbol {
@@ -9,7 +9,7 @@ pub struct RootSymbol {
 
 impl RootSymbol {
 
-    pub fn add_symbol(&self, odoo: &Odoo, self_symbol: &Symbol, symbol: &mut MutexGuard<Symbol>) {
+    pub fn add_symbol(&self, odoo: &SyncOdoo, self_symbol: &Symbol, symbol: &mut RefMut<Symbol>) {
         match symbol.sym_type {
             SymType::FILE | SymType::PACKAGE => {
                 for path in symbol.paths.iter() {

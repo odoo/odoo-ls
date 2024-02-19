@@ -1,16 +1,18 @@
-use std::sync::{Mutex, MutexGuard, Weak};
+
+use std::rc::{Rc, Weak};
+use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use crate::core::symbol::Symbol;
 
 
 #[derive(Debug)]
 pub struct ClassSymbol {
-    pub bases: HashSet<Weak<Mutex<Symbol>>>,
+    pub bases: HashSet<Weak<RefCell<Symbol>>>,
 }
 
 impl ClassSymbol {
     
-    pub fn inherits(&self, symbol: MutexGuard<Symbol>, checked: &mut HashSet<Weak<Mutex<Symbol>>>) -> bool {
+    pub fn inherits(&self, symbol: RefMut<Symbol>, checked: &mut HashSet<Weak<RefCell<Symbol>>>) -> bool {
         // for base in self.bases.iter() {
         //     match base.upgrade() {
         //         Some(base) => {

@@ -1,11 +1,12 @@
 use glob::glob;
-use std::sync::{Arc, Mutex};
+use std::rc::{Rc, Weak};
+use std::cell::{RefCell, RefMut};
 use std::path::Path;
 use std::sync::MutexGuard;
 
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Identifier, Alias, Int};
-use crate::core::odoo::Odoo;
+use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::utils::{is_dir_cs, is_file_cs};
@@ -13,14 +14,14 @@ use crate::utils::{is_dir_cs, is_file_cs};
 pub struct ImportResult {
     pub name: String,
     pub found: bool,
-    pub symbol: Arc<Mutex<Symbol>>,
+    pub symbol: Rc<RefCell<Symbol>>,
     pub file_tree: Tree,
     pub range: TextRange,
 }
 
-pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbol>>, parent_symbol: &Arc<Mutex<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, from_range: &TextRange) -> Vec<ImportResult> {
+pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<Symbol>>, parent_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, from_range: &TextRange) -> Vec<ImportResult> {
     //A: search base of different imports
-    let _source_file_symbol_lock = source_file_symbol.lock().unwrap();
+    let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
         &_source_file_symbol_lock.paths[0].clone(),
         &_source_file_symbol_lock.get_tree(),
@@ -73,7 +74,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
                 &alias.range);
             if name_symbol.is_none() {
                 if !name.contains(".") {
-                    name_symbol = from_symbol.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![], name.split(".").map(str::to_string).collect()));
+                    name_symbol = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name.split(".").map(str::to_string).collect()));
                 }
                 if name_symbol.is_none() {
                     result[name_index as usize].symbol = fallback_sym.clone();
@@ -108,7 +109,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
             None,
             &alias.range);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
-            name_symbol = next_symbol.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![], name_last_name));
+            name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name));
             if name_symbol.is_none() {
                 result[name_index as usize].symbol = fallback_sym.clone();
                 continue;
@@ -124,7 +125,7 @@ pub fn resolve_import_stmt(odoo: &mut Odoo, source_file_symbol: &Arc<Mutex<Symbo
     return result;
 }
 
-fn _find_module(odoo: &Odoo, name: String) -> Arc<Mutex<Symbol>> {
+fn _find_module(odoo: &SyncOdoo, name: String) -> Rc<RefCell<Symbol>> {
     todo!()
 }
 
@@ -162,14 +163,14 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
     first_part_tree
 }
 
-fn _get_or_create_symbol(odoo: &mut Odoo, symbol: Arc<Mutex<Symbol>>, names: &Vec<String>, file_symbol: Arc<Mutex<Symbol>>, asname: Option<String>, range: &TextRange) -> (Option<Arc<Mutex<Symbol>>>, Arc<Mutex<Symbol>>) {
+fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names: &Vec<String>, file_symbol: Rc<RefCell<Symbol>>, asname: Option<String>, range: &TextRange) -> (Option<Rc<RefCell<Symbol>>>, Rc<RefCell<Symbol>>) {
     //TODO get arc from parent
-    let mut sym: Option<Arc<Mutex<Symbol>>> = Some(symbol.clone());
+    let mut sym: Option<Rc<RefCell<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {
-        let mut next_symbol = sym.as_ref().unwrap().lock().unwrap().get_symbol(&(vec![branch.clone()], vec![]));
+        let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]));
         if next_symbol.is_none() {
-            next_symbol = match _resolve_new_symbol(odoo, &mut file_symbol.lock().unwrap(), &branch, asname.clone(), range) {
+            next_symbol = match _resolve_new_symbol(odoo, &mut file_symbol.borrow_mut(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),
                 Err(e) => None
             }
@@ -183,7 +184,7 @@ fn _get_or_create_symbol(odoo: &mut Odoo, symbol: Arc<Mutex<Symbol>>, names: &Ve
     return (sym, last_symbol)
 }
 
-fn _resolve_new_symbol(odoo: &mut Odoo, parent: &mut MutexGuard<Symbol>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Arc<Mutex<Symbol>>, String> {
+fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: &mut RefMut<Symbol>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Rc<RefCell<Symbol>>, String> {
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
         None => name.clone()
@@ -202,21 +203,21 @@ fn _resolve_new_symbol(odoo: &mut Odoo, parent: &mut MutexGuard<Symbol>, name: &
             let symbol = Symbol::create_from_path(&full_path, parent, false);
             if symbol.is_some() {
                 let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
-                odoo.add_to_rebuild_arch(Arc::downgrade(&_arc_symbol));
+                odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.join(".py").to_str().unwrap().to_string()) {
             let symbol = Symbol::create_from_path(&full_path.join(".py"), parent, false);
             if symbol.is_some() {
                 let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
-                odoo.add_to_rebuild_arch(Arc::downgrade(&_arc_symbol));
+                odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.join(".pyi").to_str().unwrap().to_string()) {
             let symbol = Symbol::create_from_path(&full_path.join(".pyi"), parent, false);
             if symbol.is_some() {
                 let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
-                odoo.add_to_rebuild_arch(Arc::downgrade(&_arc_symbol));
+                odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if !parent.get_tree().0.is_empty() {
