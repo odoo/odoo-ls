@@ -71,20 +71,20 @@ impl PythonArchBuilder {
                         }
                     },
                     Stmt::Assign(assign_stmt) => {
-                        let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
-                        for assign in assigns.iter() {
-                            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
-                            variable.range = Some(assign.target.range.clone());
-                            variable.evaluation = None;
-                            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
-                            if variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
-                                let parent = variable.parent.unwrap().upgrade();
-                                if parent.is_some() {
-                                    let mut parent = parent.unwrap();
-                                    variable.evaluation = Some(Evaluation::eval_from_ast(&assign.value.unwrap(), parent));
-                                }
-                            }
-                        }
+                        // let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
+                        // for assign in assigns.iter() {
+                        //     let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
+                        //     variable.range = Some(assign.target.range.clone());
+                        //     variable.evaluation = None;
+                        //     self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+                        //     if variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
+                        //         let parent = variable.parent.unwrap().upgrade();
+                        //         if parent.is_some() {
+                        //             let mut parent = parent.unwrap();
+                        //             variable.evaluation = Some(Evaluation::eval_from_ast(&assign.value.unwrap(), parent));
+                        //         }
+                        //     }
+                        // }
                     },
                     Stmt::FunctionDef(function_def_stmt) => {
 

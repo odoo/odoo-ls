@@ -33,7 +33,7 @@ pub struct Symbol {
     pub symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub local_symbols: Vec<Rc<RefCell<Symbol>>>,
-    parent: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<Weak<RefCell<Symbol>>>,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub evaluation: Option<Evaluation>,
     dependencies: Vec<Vec<HashSet<MyWeak<RefCell<Symbol>>>>>,
@@ -430,5 +430,45 @@ impl Symbol {
             }
         }
         None
+    }
+
+    fn _debug_print_graph_node(&self, acc: &mut String, level: u32) {
+        for _ in 0..level {
+            acc.push_str(" ");
+        }
+        acc.push_str(format!("{:?} {:?}\n", self.sym_type, self.name).as_str());
+        if self.module_symbols.len() > 0 {
+            for _ in 0..level {
+                acc.push_str(" ");
+            }
+            acc.push_str("MODULES:\n");
+            for (_, module) in self.module_symbols.iter() {
+                module.borrow_mut()._debug_print_graph_node(acc, level + 1);
+            }
+        }
+        if self.symbols.len() > 0 {
+            for _ in 0..level {
+                acc.push_str(" ");
+            }
+            acc.push_str("SYMBOLS:\n");
+            for (_, module) in self.symbols.iter() {
+                module.borrow_mut()._debug_print_graph_node(acc, level + 1);
+            }
+        }
+        if self.module_symbols.len() > 0 {
+            for _ in 0..level {
+                acc.push_str(" ");
+            }
+            acc.push_str("LOCALS:\n");
+            for symbol in self.local_symbols.iter() {
+                symbol.borrow_mut()._debug_print_graph_node(acc, level + 1);
+            }
+        }
+    }
+
+    pub fn debug_print_graph(&self) -> String {
+        let mut res: String = String::new();
+        self._debug_print_graph_node(&mut res, 0);
+        res
     }
 }

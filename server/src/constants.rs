@@ -26,13 +26,13 @@ pub enum SymType{
     CLASS,
     FUNCTION,
     VARIABLE,
-    PRIMITIVE,
+    CONSTANT,
 }
 
 impl SymType {
     pub fn is_instance(sym_type: &SymType) -> bool {
         match sym_type {
-            SymType::VARIABLE | SymType::PRIMITIVE => true,
+            SymType::VARIABLE | SymType::CONSTANT => true,
             _ => false,
         }
     }

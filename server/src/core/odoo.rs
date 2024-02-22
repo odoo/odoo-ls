@@ -466,6 +466,7 @@ impl Odoo {
                 }
             }
             sync_odoo.process_rebuilds();
+            println!("{}", sync_odoo.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
         }).await.unwrap();
         client.log_message(MessageType::INFO, "End building modules.").await;
     }

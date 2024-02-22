@@ -16,7 +16,17 @@ pub struct Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
-        Ok(InitializeResult::default())
+        Ok(InitializeResult {
+            server_info: Some(ServerInfo {
+                name: "Odoo Language Server".to_string(),
+                version: Some("0.2.0".to_string())
+            }),
+            capabilities: ServerCapabilities {
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                ..ServerCapabilities::default()
+            },
+            ..Default::default()
+        })
     }
 
     async fn initialized(&self, _: InitializedParams) {
@@ -44,6 +54,15 @@ impl LanguageServer for Backend {
             Err(e) => self.client.log_message(MessageType::ERROR, format!("Error registering capabilities: {:?}", e)).await,
         }
         self.client.log_message(MessageType::INFO, "server initialized!").await;
+    }
+
+    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
+        Ok(Some(Hover {
+            contents: HoverContents::Scalar(
+                MarkedString::String("You're hovering!".to_string())
+            ),
+            range: None
+        }))
     }
 
     async fn shutdown(&self) -> Result<()> {
