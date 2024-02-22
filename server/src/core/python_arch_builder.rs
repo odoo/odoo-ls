@@ -37,6 +37,7 @@ impl PythonArchBuilder {
             panic!()
         }
         let mut path = symbol.paths[0].clone();
+        println!("path: {}", path);
         if symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
@@ -58,19 +59,32 @@ impl PythonArchBuilder {
                         self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)?
                     },
                     Stmt::AnnAssign(ann_assign_stmt) => {
-                        let values = match ann_assign_stmt.value.as_ref() {
-                            Some(value) => python_utils::unpack_assign(vec![&*ann_assign_stmt.target], Some(vec![&*value])),
-                            None => python_utils::unpack_assign(vec![&*ann_assign_stmt.target], None)
+                        let assigns = match ann_assign_stmt.value.as_ref() {
+                            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
+                            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
                         };
-                        for (target, value) in values.iter() {
-                            let mut variable = Symbol::new(target.to_string(), SymType::VARIABLE);
-                            variable.range = Some(ann_assign_stmt.range.clone());
-                            variable.evaluation = Some(Evaluation::eval_from_symbol(&value));
+                        for assign in assigns.iter() { //should only be one
+                            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
+                            variable.range = Some(assign.target.range.clone());
+                            variable.evaluation = None;
                             self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
                         }
                     },
                     Stmt::Assign(assign_stmt) => {
-
+                        let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
+                        for assign in assigns.iter() {
+                            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
+                            variable.range = Some(assign.target.range.clone());
+                            variable.evaluation = None;
+                            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+                            if variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
+                                let parent = variable.parent.unwrap().upgrade();
+                                if parent.is_some() {
+                                    let mut parent = parent.unwrap();
+                                    variable.evaluation = Some(Evaluation::eval_from_ast(&assign.value.unwrap(), parent));
+                                }
+                            }
+                        }
                     },
                     Stmt::FunctionDef(function_def_stmt) => {
 
