@@ -32,7 +32,7 @@ export function getNonce() {
 // Config related utils
 
 export async function getCurrentConfig(context: ExtensionContext) {
-    const configs: any = context.globalState.get("Odoo.configurations");
+	const configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
     const activeConfig: number = Number(context.workspaceState.get('Odoo.selectedConfiguration'));
     return (configs && activeConfig > -1 ? configs[activeConfig] : null);
 }
