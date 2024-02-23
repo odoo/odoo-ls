@@ -1,4 +1,4 @@
-import { Disposable, Webview, WebviewPanel, window, Uri, workspace } from "vscode";
+import { Disposable, Webview, WebviewPanel, window, Uri, workspace, ConfigurationTarget } from "vscode";
 import { getUri, getNonce, evaluateOdooPath } from "../../common/utils";
 import {ConfigurationsChange} from "../../common/events"
 import * as ejs from "ejs";
@@ -36,7 +36,8 @@ export class ConfigurationWebView {
         this._panel = panel;
         this._context = context;
         this.configId = configId;
-        this.addons = context.globalState.get("Odoo.configurations")[configId]["addons"];
+
+        this.addons = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[configId]["addons"];
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
@@ -64,7 +65,7 @@ export class ConfigurationWebView {
             ConfigurationWebView.panels.get(configId)._panel.reveal(vscode.ViewColumn.One);
         } else {
             // If a webview panel does not already exist create and show a new one
-            const configName = context.globalState.get("Odoo.configurations")[configId]["name"];
+            const configName = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[configId]["name"];
             const panel = window.createWebviewPanel(
                 // Panel view type
                 "showConfigurationPanel",
@@ -115,7 +116,7 @@ export class ConfigurationWebView {
         const styleUri = getUri(webview, extensionUri, ["client", "views", "configurations", "style.css"]);
         const codiconStyleUri = getUri(webview, extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"]);
         const mainUri = getUri(webview, extensionUri, ["client", "views", "configurations", "configurationWebView.js"]);
-        const config = this._context.globalState.get("Odoo.configurations")[this.configId];
+        const config = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[this.configId];
         const htmlFile = fs.readFileSync(htmlPath.fsPath, 'utf-8');
         const nonce = getNonce();
         const configsVersion: Map<String, String> = this._context.globalState.get("Odoo.configsVersion", null);
@@ -177,7 +178,7 @@ export class ConfigurationWebView {
             "addons": addons,
             "pythonPath": untildify(pythonPath),
         };
-        this._context.globalState.update("Odoo.configurations", configs);
+        workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
         if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
             ConfigurationsChange.fire(changes);
         }
@@ -189,7 +190,7 @@ export class ConfigurationWebView {
 
     private _deleteConfig(configs: any): void {
         delete configs[this.configId]
-        this._context.globalState.update("Odoo.configurations", configs);
+        workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
         this.dispose()
         ConfigurationsChange.fire(null);
     }
@@ -203,7 +204,7 @@ export class ConfigurationWebView {
     private _setWebviewMessageListener(webview: Webview) {
         webview.onDidReceiveMessage(async (message: any) => {
             const command = message.command;
-            const configs: any = this._context.globalState.get("Odoo.configurations");
+            const configs: any = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
 
             switch (command) {
                 case "save_config":
@@ -305,9 +306,9 @@ export class ConfigurationWebView {
         if (odoo){
             versions[`${this.configId}`] = odoo.version;
             this._context.globalState.update('Odoo.configsVersion', versions);
-            let configs: any = this._context.globalState.get("Odoo.configurations");
+            let configs: any = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
             configs[this.configId]["odooPath"] = odoo.path;
-            this._context.globalState.update('Odoo.configurations', configs);
+            workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
             displayOdooVersion(odoo.version);
         }else{
             // no valid odoo found, setting the odoo version to null

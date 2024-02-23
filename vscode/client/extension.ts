@@ -18,6 +18,7 @@ import {
     TextDocument,
     OutputChannel,
     Uri,
+    ConfigurationTarget,
 } from "vscode";
 import {
     LanguageClient,
@@ -215,14 +216,15 @@ function IncrementLastConfigId(context: ExtensionContext) {
 
 async function addNewConfiguration(context: ExtensionContext) {
     const configId = getLastConfigId(context);
-    let configs: Map<number, object> = context.globalState.get("Odoo.configurations");
-    await context.globalState.update(
-        "Odoo.configurations",
-        {
-            ...configs,
-            [configId]: getConfigurationStructure(configId),
-        }
-    );
+    let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
+
+    workspace.getConfiguration().update("Odoo.configurations",
+    {
+        ...configs,
+        [configId]: getConfigurationStructure(configId),
+    },
+    ConfigurationTarget.Global);
+
     IncrementLastConfigId(context);
     ConfigurationWebView.render(context, configId);
 }
@@ -358,9 +360,10 @@ async function checkOdooPath(context: ExtensionContext) {
     global.OUTPUT_CHANNEL.appendLine("check odoo path")
     const odoo = await evaluateOdooPath(currentConfig.rawOdooPath);
     if (odoo){
-        let configs: any = context.globalState.get("Odoo.configurations");
+        let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
         configs[currentConfig.id]["odooPath"] = odoo.path;
-        context.globalState.update('Odoo.configurations', configs);
+        workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
+
     }else{
         window.showWarningMessage(
             `The odoo path set in this configuration seems invalid. Would you like to change it?`,
@@ -565,7 +568,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
         commands.registerCommand('odoo.clickStatusBar', async () => {
             try {
                 const qpick = window.createQuickPick();
-                const configs: Map<integer, object> = context.globalState.get("Odoo.configurations");
+                const configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
                 let selectedConfiguration = null;
                 const currentConfig = await getCurrentConfig(context);
                 let currentConfigItem: QuickPickItem;
