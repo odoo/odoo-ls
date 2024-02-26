@@ -310,6 +310,7 @@ impl Symbol {
     }
 
     pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, stop_on_type: bool) -> (Weak<RefCell<Symbol>>, bool) {
+        //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut sym = symbol.borrow_mut().weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
         let mut _sym_upgraded = sym.upgrade().unwrap();
         let mut _sym = symbol.borrow_mut();
@@ -470,5 +471,50 @@ impl Symbol {
         let mut res: String = String::new();
         self._debug_print_graph_node(&mut res, 0);
         res
+    }
+
+    pub fn all_symbols<'a>(&'a self, position:Option<TextRange>, include_inherits:bool) -> impl Iterator<Item= &'a Rc<RefCell<Symbol>>> + 'a {
+        let mut iter: Vec<Box<dyn Iterator<Item = &Rc<RefCell<Symbol>>>>> = Vec::new();
+        if position.is_some() {
+            let pos = position.as_ref().unwrap().clone();
+            let iter = self.local_symbols.iter().filter(move |&x| (**x).borrow().range.unwrap().start() < pos.start());
+        }
+        if include_inherits {
+            //TODO inherits
+        }
+        if position.is_some() {
+            let pos = position.as_ref().unwrap().clone();
+            iter.push(Box::new(self.symbols.values().filter(move |&x| (**x).borrow().range.unwrap().start() < pos.start())));
+        } else {
+            iter.push(Box::new(self.symbols.values()));
+        }
+        iter.push(Box::new(self.module_symbols.values()));
+        iter.into_iter().flatten()
+    }
+
+    pub fn infer_name(&self, odoo: &mut SyncOdoo, name: String, position: TextRange) -> Option<Rc<RefCell<Symbol>>> {
+        let mut selected: Option<Rc<RefCell<Symbol>>> = None;
+        if name == "__doc__" {
+            //return self.doc; //TODO
+        }
+        for symbol in self.all_symbols(Some(position), false) {
+            let deref_symbol = (**symbol).borrow();
+            let selected_range = selected.as_ref().unwrap();
+            let selected_range = (**selected_range).borrow().range;
+            if deref_symbol.name == name && (selected.is_none() || deref_symbol.range.unwrap().start() > selected_range.unwrap().start()) {
+                selected = Some(symbol.clone());
+            }
+        }
+        if selected.is_none() && !vec![SymType::FILE, SymType::PACKAGE].contains(&self.sym_type) {
+            let parent = self.parent.as_ref().unwrap().upgrade().unwrap();
+            let parent = (*parent).borrow();
+            return parent.infer_name(odoo, name, position);
+        }
+        if selected.is_none() && (self.name != "builtins" || self.sym_type != SymType::FILE) {
+            let builtins = odoo.builtins.as_ref().unwrap().clone(); // clone rc to drop odoo borrow
+            let builtins = (*builtins).borrow();
+            return builtins.infer_name(odoo, name, position);
+        }
+        selected
     }
 }
