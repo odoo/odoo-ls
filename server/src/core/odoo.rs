@@ -68,7 +68,7 @@ impl SyncOdoo {
     pub fn get_symbol(&self, tree: &Tree) -> Option<Rc<RefCell<Symbol>>> {
         self.symbols.as_ref().unwrap().borrow_mut().get_symbol(&tree)
     }
-    
+
     fn pop_item(&mut self, step: BuildSteps) -> Option<Rc<RefCell<Symbol>>> {
         let mut arc_sym: Option<Rc<RefCell<Symbol>>> = None;
         //Part 1: Find the symbol with a unmutable set
