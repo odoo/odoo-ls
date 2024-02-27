@@ -304,7 +304,7 @@ impl Symbol {
 
     pub fn next_ref(&self) -> Option<Weak<RefCell<Symbol>>> {
         if SymType::is_instance(&self.sym_type) && self.evaluation.is_some() && self.evaluation.as_ref().unwrap().get_symbol().upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().get_symbol());
+            return Some(self.evaluation.as_ref().unwrap().get_symbol().clone());
         }
         return None;
     }
@@ -349,6 +349,9 @@ impl Symbol {
 
     pub fn add_symbol(&mut self, odoo: &SyncOdoo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
         let symbol_name = symbol.name.clone();
+        if self.is_external {
+            symbol.is_external = true;
+        }
         let symbol_range = symbol.range.clone();
         let rc = Rc::new(RefCell::new(symbol));
         let mut locked_symbol = rc.borrow_mut();

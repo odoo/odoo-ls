@@ -47,7 +47,7 @@ impl Evaluation {
         let mut res = Evaluation::default();
         match ast {
             Expr::Constant(expr) => {
-                res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT))));
+                res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT)))); //TODO check to not hold a dummy symbol for constants
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
                 res.value = Some(EvaluationValue::CONSTANT(expr.value.clone()));
@@ -171,8 +171,8 @@ impl Evaluation {
         Some(res)
     }
 
-    pub fn get_symbol(&self) -> Weak<RefCell<Symbol>> { //TODO evaluate context
-        self.symbol.clone()
+    pub fn get_symbol(&self) -> &Weak<RefCell<Symbol>> { //TODO evaluate context
+        &self.symbol
     }
 
 }
