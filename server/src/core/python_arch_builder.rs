@@ -31,27 +31,28 @@ impl PythonArchBuilder {
     }
 
     pub fn load_arch(&mut self, odoo: &mut SyncOdoo) -> Result<(), Error> {
-        println!("load arch");
+        //println!("load arch");
         let mut temp = FILE_MGR.lock().unwrap();
         let symbol = self.sym_stack[0].borrow_mut();
         if symbol.paths.len() != 1 {
             panic!()
         }
         let mut path = symbol.paths[0].clone();
-        println!("path: {}", path);
+        //println!("path: {}", path);
         if symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
         let mut file_info = temp.get_file_info(path.as_str()); //create ast
-        match file_info.ast {
+        let mut locked_file_info = file_info.try_lock().expect("Detected deadlock. Can't access to the same cache file twice");
+        match locked_file_info.ast {
             Some(_) => {},
             None => {
-                file_info.build_ast(path.as_str(), "");
+                locked_file_info.build_ast(path.as_str(), "");
             }
         }
-        if file_info.ast.is_some() {
-            for stmt in file_info.ast.as_ref().unwrap() {
+        if locked_file_info.ast.is_some() {
+            for stmt in locked_file_info.ast.as_ref().unwrap() {
                 match stmt {
                     Stmt::Import(import_stmt) => {
                         self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
@@ -77,6 +78,8 @@ impl PythonArchBuilder {
             self._resolve_all_symbols(odoo);
             odoo.add_to_rebuild_arch_eval(Rc::downgrade(&self.sym_stack[0]));
         }
+        let mut symbol = self.sym_stack[0].borrow_mut();
+        symbol.arch_status = false;
         Ok(())
     }
 

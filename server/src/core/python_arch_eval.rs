@@ -2,7 +2,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 
 use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Identifier, Stmt, Alias, Int};
+use rustpython_parser::ast::{Identifier, Stmt, Alias, Int, StmtAnnAssign, StmtAssign};
 use std::path::PathBuf;
 
 use crate::constants::*;
@@ -11,6 +11,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
+use crate::core::python_utils;
 
 use super::import_resolver::ImportResult;
 
@@ -28,27 +29,31 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, odoo: &mut SyncOdoo) {
-        println!("eval arch");
+        //println!("eval arch");
         let mut file_mgr = FILE_MGR.lock().unwrap();
         let symbol = self.sym_stack[0].borrow_mut();
         if symbol.paths.len() != 1 {
             panic!()
         }
         let mut path = symbol.paths[0].clone();
+        //println!("path: {}", path);
         if symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let mut file_info = file_mgr.get_file_info(path.as_str()); //create ast
-        match file_info.ast {
+        let file_info = file_mgr.get_file_info(path.as_str()); //create ast
+        let mut locked_file_info = file_info.try_lock().expect("Detected deadlock. Can't access to the same cache file twice");
+        match locked_file_info.ast {
             Some(_) => {},
             None => {
-                file_info.build_ast(path.as_str(), "");
+                locked_file_info.build_ast(path.as_str(), "");
             }
         }
-        if file_info.ast.is_some() {
-            for stmt in file_info.ast.as_ref().unwrap() {
+        drop(file_mgr); //release lock
+        if locked_file_info.ast.is_some() {
+            for stmt in locked_file_info.ast.as_ref().unwrap() {
                 match stmt {
+                    //TODO move import logic from ast visiting to symbol analyzing
                     Stmt::Import(import_stmt) => {
                         self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
                     },
@@ -59,7 +64,9 @@ impl PythonArchEval {
                 }
             }
         }
-        //TODO odoo.add_to_rebuild_arch_eval(Arc::downgrade(&self.sym_stack[0]));
+        let mut symbol = self.sym_stack[0].borrow_mut();
+        symbol.arch_eval_status = false;
+        //TODO odoo.add_to_rebuild_odoo(Arc::downgrade(&self.sym_stack[0]));
     }
 
     fn eval_local_symbols_from_import_stmt(&self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
@@ -118,5 +125,22 @@ impl PythonArchEval {
                 //TODO add to not found symbols
             }
         }
+    }
+
+    fn _visit_ann_assign(&self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
+        let assigns = match ann_assign_stmt.value.as_ref() {
+            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
+            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
+        };
+        for assign in assigns.iter() { //should only be one
+            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
+            variable.range = Some(assign.target.range.clone());
+            variable.evaluation = None;
+            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+        }
+    }
+
+    fn _visit_assign(&self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
+        //TODO
     }
 }

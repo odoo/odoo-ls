@@ -3,6 +3,7 @@ use tower_lsp::lsp_types::Diagnostic;
 use std::{collections::HashMap, fs};
 use tower_lsp::Client;
 use url::Url;
+use std::sync::{Arc, Mutex};
 use crate::constants::*;
 
 pub struct FileInfo {
@@ -57,7 +58,7 @@ impl FileInfo {
 
 
 pub struct FileMgr {
-    pub files: HashMap<String, FileInfo>
+    pub files: HashMap<String, Arc<Mutex<FileInfo>>>
 }
 
 impl FileMgr {
@@ -68,8 +69,8 @@ impl FileMgr {
         }
     }
 
-    pub fn get_file_info(&mut self, uri: &str) -> &mut FileInfo {
-        self.files.entry(uri.to_string()).or_insert_with(|| FileInfo::new(uri.to_string()))
+    pub fn get_file_info(&mut self, uri: &str) -> Arc<Mutex<FileInfo>> {
+        self.files.entry(uri.to_string()).or_insert_with(|| Arc::new(Mutex::new(FileInfo::new(uri.to_string())))).clone()
     }
 
     // fn pathname2uri(s: &str) -> String {

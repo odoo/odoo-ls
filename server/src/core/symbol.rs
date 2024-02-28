@@ -1,4 +1,5 @@
 use rustpython_parser::text_size::TextRange;
+use rustpython_parser::ast::Expr;
 
 use crate::constants::*;
 use crate::my_weak::MyWeak;
@@ -16,11 +17,6 @@ use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;
 use super::symbols::class_symbol::ClassSymbol;
-
-
-pub trait SymbolTrait {
-    
-}
 
 #[derive(Debug)]
 pub struct Symbol {
@@ -45,6 +41,7 @@ pub struct Symbol {
     pub odoo_status: bool,
     pub validation_status: bool,
     pub is_import_variable: bool,
+    pub ast: Option<Expr<TextRange>>,
 
     pub _root: Option<RootSymbol>,
     pub _function: Option<FunctionSymbol>,
@@ -105,6 +102,7 @@ impl Symbol {
             odoo_status: false,
             validation_status: false,
             is_import_variable: false,
+            ast: None,
 
             _root: None,
             _function: None,
@@ -311,9 +309,9 @@ impl Symbol {
 
     pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, stop_on_type: bool) -> (Weak<RefCell<Symbol>>, bool) {
         //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut sym = symbol.borrow_mut().weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
+        let mut sym = symbol.borrow().weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
         let mut _sym_upgraded = sym.upgrade().unwrap();
-        let mut _sym = symbol.borrow_mut();
+        let mut _sym = symbol.borrow();
         let mut next_ref = _sym.next_ref();
         let can_eval_external = !_sym.is_external;
         let mut instance = SymType::is_instance(&_sym.sym_type);
@@ -326,18 +324,18 @@ impl Symbol {
             sym = next_ref.as_ref().unwrap().clone();
             drop(_sym);
             _sym_upgraded = sym.upgrade().unwrap();
-            _sym = _sym_upgraded.borrow_mut();
+            _sym = _sym_upgraded.borrow();
             if _sym.evaluation.is_none() && (!_sym.is_external || can_eval_external) {
-                let file_symbol = sym.upgrade().unwrap().borrow_mut().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+                let file_symbol = sym.upgrade().unwrap().borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
                 match file_symbol {
                     Some(file_symbol) => {
                         drop(_sym);
-                        if !file_symbol.upgrade().expect("invalid weak value").borrow_mut().arch_eval_status &&
+                        if !file_symbol.upgrade().expect("invalid weak value").borrow().arch_eval_status &&
                         odoo.is_in_rebuild(&file_symbol, BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                             let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
                             builder.eval_arch(odoo);
                         }
-                        _sym = _sym_upgraded.borrow_mut();
+                        _sym = _sym_upgraded.borrow();
                     },
                     None => {}
                 }
@@ -383,7 +381,7 @@ impl Symbol {
     }
 
     pub fn create_from_path(path: &PathBuf, parent: &RefMut<Symbol>, require_module: bool) -> Option<Symbol> {
-        let name: String = path.components().last().unwrap().as_os_str().to_str().unwrap().to_string();
+        let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             let mut symbol = Symbol::new(name, SymType::FILE);

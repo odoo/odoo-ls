@@ -87,8 +87,13 @@ impl SyncOdoo {
             let mut current_count: u32;
             for sym in &*set {
                 current_count = 0;
-                let myt_symbol = sym.upgrade().unwrap();
-                let symbol = myt_symbol.borrow_mut();
+                let mut_symbol = sym.upgrade();
+                if mut_symbol.is_none() {
+                    //println!("missing symbol ! ");
+                    continue;
+                }
+                let mut_symbol = mut_symbol.unwrap();
+                let symbol = mut_symbol.borrow_mut();
                 for (index, dep_set) in symbol.get_all_dependencies(step).iter().enumerate() {
                     if index == BuildSteps::ARCH as usize {
                         for dep in dep_set.iter() {
@@ -127,10 +132,9 @@ impl SyncOdoo {
                     }
                 }
             }
-            if selected_sym.is_none() {
-                return None;
+            if selected_sym.is_some() {
+                arc_sym = selected_sym.unwrap().upgrade()
             }
-            arc_sym = selected_sym.unwrap().upgrade()
         }
         {
             let set =  if step == BuildSteps::ARCH_EVAL {
@@ -142,6 +146,10 @@ impl SyncOdoo {
             } else {
                 &mut self.rebuild_arch
             };
+            if arc_sym.is_none() {
+                set.clear(); //remove any potential dead weak ref
+                return None;
+            }
             let arc_sym_unwrapped = arc_sym.unwrap();
             if !set.remove(&MyWeak::new(Rc::downgrade(&arc_sym_unwrapped))) {
                 panic!("Unable to remove selected symbol from rebuild set")
