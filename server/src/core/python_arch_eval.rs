@@ -6,7 +6,6 @@ use rustpython_parser::ast::{Identifier, Stmt, Alias, Int, StmtAnnAssign, StmtAs
 use std::path::PathBuf;
 
 use crate::constants::*;
-use crate::FILE_MGR;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
@@ -30,8 +29,8 @@ impl PythonArchEval {
 
     pub fn eval_arch(&mut self, odoo: &mut SyncOdoo) {
         //println!("eval arch");
-        let mut file_mgr = FILE_MGR.lock().unwrap();
-        let symbol = self.sym_stack[0].borrow_mut();
+        let mut symbol = self.sym_stack[0].borrow_mut();
+        symbol.arch_eval_status = BuildStatus::IN_PROGRESS;
         if symbol.paths.len() != 1 {
             panic!()
         }
@@ -41,17 +40,10 @@ impl PythonArchEval {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let file_info = file_mgr.get_file_info(path.as_str()); //create ast
-        let mut locked_file_info = file_info.try_lock().expect("Detected deadlock. Can't access to the same cache file twice");
-        match locked_file_info.ast {
-            Some(_) => {},
-            None => {
-                locked_file_info.build_ast(path.as_str(), "");
-            }
-        }
-        drop(file_mgr); //release lock
-        if locked_file_info.ast.is_some() {
-            for stmt in locked_file_info.ast.as_ref().unwrap() {
+        let file_info = odoo.file_mgr.get_file_info(path.as_str()); //create ast
+        let file_info = (*file_info).borrow();
+        if file_info.ast.is_some() {
+            for stmt in file_info.ast.as_ref().unwrap() {
                 match stmt {
                     //TODO move import logic from ast visiting to symbol analyzing
                     Stmt::Import(import_stmt) => {
@@ -65,7 +57,7 @@ impl PythonArchEval {
             }
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.arch_eval_status = false;
+        symbol.arch_eval_status = BuildStatus::DONE;
         //TODO odoo.add_to_rebuild_odoo(Arc::downgrade(&self.sym_stack[0]));
     }
 
@@ -99,7 +91,7 @@ impl PythonArchEval {
                     drop(sym);
                     if file_sym.is_some() {
                         let arc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if arc_file_sym.borrow_mut().arch_eval_status == false && odoo.is_in_rebuild(file_sym.as_ref().unwrap(), BuildSteps::ARCH_EVAL) {
+                        if arc_file_sym.borrow_mut().arch_eval_status == BuildStatus::PENDING && odoo.is_in_rebuild(file_sym.as_ref().unwrap(), BuildSteps::ARCH_EVAL) {
                             let mut builder = PythonArchEval::new(arc_file_sym);
                             builder.eval_arch(odoo);
                             //TODO remove from list?

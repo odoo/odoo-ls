@@ -1,11 +1,13 @@
 use rustpython_parser::{Parse, ast};
 use tower_lsp::lsp_types::Diagnostic;
-use std::{collections::HashMap, fs};
+use std::{borrow::BorrowMut, collections::HashMap, fs};
 use tower_lsp::Client;
 use url::Url;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::cell::RefCell;
 use crate::constants::*;
 
+#[derive(Debug)]
 pub struct FileInfo {
     pub ast: Option<Vec<ast::Stmt>>,
     version: i32,
@@ -56,9 +58,9 @@ impl FileInfo {
     }
 }
 
-
+#[derive(Debug)]
 pub struct FileMgr {
-    pub files: HashMap<String, Arc<Mutex<FileInfo>>>
+    pub files: HashMap<String, Rc<RefCell<FileInfo>>>
 }
 
 impl FileMgr {
@@ -69,8 +71,18 @@ impl FileMgr {
         }
     }
 
-    pub fn get_file_info(&mut self, uri: &str) -> Arc<Mutex<FileInfo>> {
-        self.files.entry(uri.to_string()).or_insert_with(|| Arc::new(Mutex::new(FileInfo::new(uri.to_string())))).clone()
+    pub fn get_file_info(&mut self, uri: &str) -> Rc<RefCell<FileInfo>> {
+        let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
+        let return_info = file_info.clone();
+        let mut file_info_mut = (*return_info).borrow_mut();
+        match file_info_mut.ast {
+            Some(_) => {},
+            None => {
+                file_info_mut.build_ast(uri, "");
+            }
+        }
+        drop(file_info_mut);
+        return_info
     }
 
     // fn pathname2uri(s: &str) -> String {

@@ -12,10 +12,6 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use tower_lsp::{LspService, Server};
 
-lazy_static! {
-    static ref FILE_MGR: Mutex<FileMgr> = Mutex::new(FileMgr::new());
-}
-
 #[tokio::main]
 async fn main() {
     println!("starting server");

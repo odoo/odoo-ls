@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use regex::Regex;
 use crate::constants::*;
 use super::config::{self, DiagMissingImportsMode, RefreshMode};
+use super::file_mgr::FileMgr;
 use super::symbol::Symbol;
 use crate::my_weak::MyWeak;
 use crate::core::python_arch_builder::PythonArchBuilder;
@@ -30,6 +31,7 @@ pub struct SyncOdoo {
     pub builtins: Option<Rc<RefCell<Symbol>>>,
     pub stubs_dir: String,
     pub stdlib_dir: String,
+    pub file_mgr: FileMgr,
     rebuild_arch: HashSet<MyWeak<RefCell<Symbol>>>,
     rebuild_arch_eval: HashSet<MyWeak<RefCell<Symbol>>>,
     rebuild_odoo: HashSet<MyWeak<RefCell<Symbol>>>,
@@ -54,6 +56,7 @@ impl SyncOdoo {
             config: Config::new(),
             symbols: Some(symbols),
             builtins: Some(builtins),
+            file_mgr: FileMgr::new(),
             stubs_dir: PathBuf::from("./../server/typeshed/stubs").to_str().unwrap().to_string(),
             stdlib_dir: PathBuf::from("./../server/typeshed/stdlib").to_str().unwrap().to_string(),
             rebuild_arch: HashSet::new(),

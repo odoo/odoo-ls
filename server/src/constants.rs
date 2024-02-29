@@ -47,6 +47,13 @@ pub enum BuildSteps {
     VALIDATION = 3,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum BuildStatus {
+    PENDING,
+    IN_PROGRESS,
+    DONE
+}
+
 const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",
 "datetime", "zoneinfo", "calendar", "collections", "heapq", "bisect", "array", "weakref", "types", "copy", "pprint",
 "reprlib", "enum", "graphlib", "numbers", "math", "cmath", "decimal", "fractions", "random", "statistics", "itertools",

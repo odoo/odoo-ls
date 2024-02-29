@@ -36,8 +36,8 @@ pub struct Symbol {
     dependents: Vec<Vec<HashSet<MyWeak<RefCell<Symbol>>>>>,
     pub range: Option<TextRange>,
     pub not_found_paths: HashMap<BuildSteps, String>,
-    pub arch_status: bool,
-    pub arch_eval_status: bool,
+    pub arch_status: BuildStatus,
+    pub arch_eval_status: BuildStatus,
     pub odoo_status: bool,
     pub validation_status: bool,
     pub is_import_variable: bool,
@@ -97,8 +97,8 @@ impl Symbol {
                 ]],
             range: None,
             not_found_paths: HashMap::new(),
-            arch_status: false,
-            arch_eval_status: false,
+            arch_status: BuildStatus::PENDING,
+            arch_eval_status: BuildStatus::PENDING,
             odoo_status: false,
             validation_status: false,
             is_import_variable: false,
@@ -330,7 +330,7 @@ impl Symbol {
                 match file_symbol {
                     Some(file_symbol) => {
                         drop(_sym);
-                        if !file_symbol.upgrade().expect("invalid weak value").borrow().arch_eval_status &&
+                        if file_symbol.upgrade().expect("invalid weak value").borrow().arch_eval_status == BuildStatus::PENDING &&
                         odoo.is_in_rebuild(&file_symbol, BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                             let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
                             builder.eval_arch(odoo);

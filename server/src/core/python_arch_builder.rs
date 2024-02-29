@@ -5,9 +5,8 @@ use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Alias, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, Constant};
 use std::path::PathBuf;
 
-use crate::constants::SymType;
+use crate::constants::{SymType, BuildStatus};
 use crate::core::python_utils;
-use crate::FILE_MGR;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
@@ -32,8 +31,8 @@ impl PythonArchBuilder {
 
     pub fn load_arch(&mut self, odoo: &mut SyncOdoo) -> Result<(), Error> {
         //println!("load arch");
-        let mut temp = FILE_MGR.lock().unwrap();
-        let symbol = self.sym_stack[0].borrow_mut();
+        let mut symbol = self.sym_stack[0].borrow_mut();
+        symbol.arch_status = BuildStatus::IN_PROGRESS;
         if symbol.paths.len() != 1 {
             panic!()
         }
@@ -43,16 +42,10 @@ impl PythonArchBuilder {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let mut file_info = temp.get_file_info(path.as_str()); //create ast
-        let mut locked_file_info = file_info.try_lock().expect("Detected deadlock. Can't access to the same cache file twice");
-        match locked_file_info.ast {
-            Some(_) => {},
-            None => {
-                locked_file_info.build_ast(path.as_str(), "");
-            }
-        }
-        if locked_file_info.ast.is_some() {
-            for stmt in locked_file_info.ast.as_ref().unwrap() {
+        let file_info = odoo.file_mgr.get_file_info(path.as_str()); //create ast
+        let file_info = (*file_info).borrow();
+        if file_info.ast.is_some() {
+            for stmt in file_info.ast.as_ref().unwrap().iter() {
                 match stmt {
                     Stmt::Import(import_stmt) => {
                         self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
@@ -79,7 +72,7 @@ impl PythonArchBuilder {
             odoo.add_to_rebuild_arch_eval(Rc::downgrade(&self.sym_stack[0]));
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.arch_status = false;
+        symbol.arch_status = BuildStatus::DONE;
         Ok(())
     }
 
