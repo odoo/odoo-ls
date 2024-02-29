@@ -129,12 +129,6 @@ impl Symbol {
         new_sym
     }
 
-    pub fn new_module(name: String, sym_type: SymType) -> Self {
-        let mut new_sym = Symbol::new(name, sym_type);
-        new_sym._module = Some(ModuleSymbol::new());
-        new_sym
-    }
-
     pub fn get_symbol(&self, tree: &Tree) -> Option<Rc<RefCell<Symbol>>> {
         let symbol_tree_files: &Vec<String> = &tree.0;
         let symbol_tree_content: &Vec<String> = &tree.1;
@@ -380,7 +374,7 @@ impl Symbol {
         rc.clone()
     }
 
-    pub fn create_from_path(path: &PathBuf, parent: &RefMut<Symbol>, require_module: bool) -> Option<Symbol> {
+    pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: &RefMut<Symbol>, require_module: bool) -> Option<Symbol> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
@@ -391,9 +385,17 @@ impl Symbol {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
                 let mut symbol = Symbol::new(name, SymType::PACKAGE);
                 if parent.get_tree() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
-                    //TODO adapt to MODULE, not PACKAGE
                     symbol.paths = vec![path_str.clone()];
-                    //TODO symbol.load_module_info
+                    let module = ModuleSymbol::new(odoo, path);
+                    symbol._module = module;
+                    match &mut symbol._module {
+                        Some(module) => {
+                            module.load_module_info();
+                        },
+                        None => {
+                            return None;
+                        }
+                    }
                 } else if !require_module {
                     symbol.paths = vec![path_str.clone()];
                 } else {
