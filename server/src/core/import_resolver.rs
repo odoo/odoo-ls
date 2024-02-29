@@ -200,21 +200,21 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: &mut RefMut<Symbol>, name: &
             full_path = full_path.join(name);
         }
         if is_dir_cs(full_path.to_str().unwrap().to_string()) {
-            let symbol = Symbol::create_from_path(&full_path, parent, false);
+            let symbol = Symbol::create_from_path(odoo, &full_path, parent, false);
             if symbol.is_some() {
                 let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").to_str().unwrap().to_string()) {
-            let symbol = Symbol::create_from_path(&full_path.with_extension("py"), parent, false);
+            let symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), parent, false);
             if symbol.is_some() {
                 let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension(".pyi").to_str().unwrap().to_string()) {
-            let symbol = Symbol::create_from_path(&full_path.with_extension("pyi"), parent, false);
+            let symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent, false);
             if symbol.is_some() {
                 let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));

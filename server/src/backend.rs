@@ -2,7 +2,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use serde_json::to_value;
-use crate::core::odoo::Odoo;
+use crate::core::odoo::{Odoo, Msg};
 use serde;
 use tokio::sync::Mutex;
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct Backend {
     pub client: Client,
     pub odoo: Arc<Mutex<Odoo>>,
+    pub msg_receiver: Arc<Mutex<tokio::sync::mpsc::Receiver<Msg>>>,
 }
 
 #[tower_lsp::async_trait]
@@ -54,6 +55,12 @@ impl LanguageServer for Backend {
             Err(e) => self.client.log_message(MessageType::ERROR, format!("Error registering capabilities: {:?}", e)).await,
         }
         self.client.log_message(MessageType::INFO, "server initialized!").await;
+        let msg_receiver = self.msg_receiver.clone();
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            let mut msg_receiver = msg_receiver.lock().await;
+            handle_msgs(&mut msg_receiver, &client).await;
+        });
     }
 
     async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
@@ -66,6 +73,8 @@ impl LanguageServer for Backend {
     }
 
     async fn shutdown(&self) -> Result<()> {
+        let odoo = self.odoo.lock().await;
+        odoo.msg_sender.send(Msg::MPSC_SHUTDOWN()).await.unwrap();
         Ok(())
     }
 }
@@ -85,4 +94,34 @@ impl Backend {
         let mut odoo = self.odoo.lock().await;
         odoo.init(&self.client).await;
     }
+}
+
+pub async fn handle_msgs(msg_receiver: &mut tokio::sync::mpsc::Receiver<Msg>, client: &Client) {
+    while let Some(msg) = msg_receiver.recv().await {
+        if !handle_msg(msg, client).await {
+            msg_receiver.close()
+        }
+    }
+}
+
+pub async fn handle_msg(msg: Msg, client: &Client) -> bool {
+    match msg {
+        Msg::LOG_INFO(msg) => {
+            client.log_message(MessageType::INFO, msg).await;
+        },
+        Msg::LOG_WARNING(msg) => {
+            client.log_message(MessageType::WARNING, msg).await;
+        },
+        Msg::LOG_ERROR(msg) => {
+            client.log_message(MessageType::ERROR, msg).await;
+        },
+        Msg::DIAGNOSTIC(msg) => {
+            client.log_message(MessageType::INFO, msg).await;
+        },
+        Msg::MPSC_SHUTDOWN() => {
+            println!("shutdown mpsc channel");
+            return false;
+        }
+    }
+    return true;
 }

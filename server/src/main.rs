@@ -22,7 +22,8 @@ async fn main() {
         //loop {
         let (stream, _) = listener.accept().await.unwrap();
         let (reader, writer) = tokio::io::split(stream);
-        let (service, messages) = LspService::build(|client| Backend { client, odoo:Arc::new(tokio::sync::Mutex::new(Odoo::new())) })
+        let (sx, rx) = tokio::sync::mpsc::channel(1000);
+        let (service, messages) = LspService::build(|client| Backend { client, odoo:Arc::new(tokio::sync::Mutex::new(Odoo::new(sx))), msg_receiver: Arc::new(tokio::sync::Mutex::new(rx)) })
             .custom_method("Odoo/configurationChanged", Backend::client_config_changed)
             .custom_method("Odoo/clientReady", Backend::client_ready)
             .finish();
@@ -36,7 +37,8 @@ async fn main() {
         let stdin = tokio::io::stdin();
         let stdout = tokio::io::stdout();
 
-        let (service, socket) = LspService::new(|client| Backend { client, odoo:Arc::new(tokio::sync::Mutex::new(Odoo::new())) });
+        let (sx, rx) = tokio::sync::mpsc::channel(1000);
+        let (service, socket) = LspService::new(|client| Backend { client, odoo:Arc::new(tokio::sync::Mutex::new(Odoo::new(sx))), msg_receiver: Arc::new(tokio::sync::Mutex::new(rx)) });
         Server::new(stdin, stdout, socket).serve(service).await;
     }
 }

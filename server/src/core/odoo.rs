@@ -37,13 +37,14 @@ pub struct SyncOdoo {
     rebuild_odoo: HashSet<MyWeak<RefCell<Symbol>>>,
     rebuild_validation: HashSet<MyWeak<RefCell<Symbol>>>,
     pub not_found_symbols: HashSet<MyWeak<RefCell<Symbol>>>,
+    pub msg_sender: tokio::sync::mpsc::Sender<Msg>,
 }
 
 unsafe impl Send for SyncOdoo {}
 
 impl SyncOdoo {
 
-    pub fn new() -> Self {
+    pub fn new(msg_sender: tokio::sync::mpsc::Sender<Msg>) -> Self {
         let symbols = Rc::new(RefCell::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
         let builtins = Rc::new(RefCell::new(Symbol::new_root("builtins".to_string(), SymType::ROOT)));
         builtins.borrow_mut().weak_self = Some(Rc::downgrade(&builtins)); // manually set weakself for root symbols
@@ -64,6 +65,7 @@ impl SyncOdoo {
             rebuild_odoo: HashSet::new(),
             rebuild_validation: HashSet::new(),
             not_found_symbols: HashSet::new(),
+            msg_sender,
         };
         sync_odoo
     }
@@ -221,20 +223,30 @@ impl SyncOdoo {
     }
 }
 
+pub enum Msg {
+    LOG_INFO(String), //send a log INFO to client
+    LOG_WARNING(String), //send a log WARNING to client
+    LOG_ERROR(String), //send a log ERROR to client
+    DIAGNOSTIC(String), //send a diagnostic to client
+    MPSC_SHUTDOWN(), //Shutdown the mpsc channel. No message can be sent afterthat
+}
+
 #[derive(Debug)]
 pub struct Odoo {
     pub odoo: Arc<Mutex<SyncOdoo>>,
+    pub msg_sender: tokio::sync::mpsc::Sender<Msg>,
 }
 
 impl Odoo {
-    pub fn new() -> Self {
+    pub fn new(sx: tokio::sync::mpsc::Sender<Msg>) -> Self {
         Self {
-            odoo: Arc::new(Mutex::new(SyncOdoo::new()))
+            odoo: Arc::new(Mutex::new(SyncOdoo::new(sx.clone()))),
+            msg_sender: sx.clone(),
         }
     }
 
     pub async fn init(&mut self, client: &Client) {
-        client.log_message(MessageType::INFO, "Building new Odoo knowledge database").await;
+        self.msg_sender.send(Msg::LOG_INFO(String::from("Building new Odoo knowledge database"))).await.expect("Unable to send message");
         let response = client.send_request::<ConfigRequest>(()).await.unwrap();
         let _odoo = self.odoo.clone();
         let configuration_item = ConfigurationItem{
@@ -244,7 +256,7 @@ impl Odoo {
         let config = client.configuration(vec![configuration_item]).await.unwrap();
         let config = config.get(0);
         if !config.is_some() {
-            client.log_message(MessageType::ERROR, "No config found for Odoo. Exiting...").await;
+            self.msg_sender.send(Msg::LOG_ERROR(String::from("No config found for Odoo. Exiting..."))).await.expect("Unable to send message");
             std::process::exit(1);
         }
         let config = config.unwrap();
@@ -260,7 +272,7 @@ impl Odoo {
                             _refresh_mode = match RefreshMode::from_str(refresh_mode) {
                                 Ok(mode) => mode,
                                 Err(_) => {
-                                    client.log_message(MessageType::ERROR, "Unable to parse RefreshMode. Setting it to onSave").await;
+                                    self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to parse RefreshMode. Setting it to onSave"))).await.expect("Unable to send message");
                                     RefreshMode::OnSave
                                 }
                             };
@@ -270,7 +282,7 @@ impl Odoo {
                         if let Some(refresh_delay) = value.as_u64() {
                             _auto_save_delay = refresh_delay;
                         } else {
-                            client.log_message(MessageType::ERROR, "Unable to parse auto_save_delay. Setting it to 2000").await;
+                            self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to parse auto_save_delay. Setting it to 2000"))).await.expect("Unable to send message");
                             _auto_save_delay = 2000
                         }
                     },
@@ -279,14 +291,14 @@ impl Odoo {
                             _diag_missing_imports = match DiagMissingImportsMode::from_str(diag_import_level) {
                                 Ok(mode) => mode,
                                 Err(_) => {
-                                    client.log_message(MessageType::ERROR, "Unable to parse diag_import_level. Setting it to all").await;
+                                    self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to parse diag_import_level. Setting it to all"))).await.expect("Unable to send message");
                                     DiagMissingImportsMode::All
                                 }
                             };
                         }
                     },
                     _ => {
-                        client.log_message(MessageType::ERROR, format!("Unknown config key: {}", key)).await;
+                        self.msg_sender.send(Msg::LOG_ERROR(format!("Unknown config key: {}", key))).await.expect("Unable to send message");
                     },
                 }
             }
@@ -307,7 +319,7 @@ impl Odoo {
                 let output = Command::new(sync_odoo.config.python_path.clone()).args(&["-c", "import sys; print(sys.path)"]).output().expect("Can't exec python3");
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
-                    println!("Detected sys.path: {}", stdout);
+                    sync_odoo.msg_sender.blocking_send(Msg::LOG_INFO(format!("Detected sys.path: {}", stdout))).expect("Unable to send message");
                     // extract vec of string from output
                     if stdout.len() > 5 {
                         let values = String::from((stdout[2..stdout.len()-3]).to_string());
@@ -316,7 +328,7 @@ impl Odoo {
                             if value.len() > 0 {
                                 let pathbuf = PathBuf::from(value.clone());
                                 if pathbuf.is_dir() {
-                                    println!("Adding sys.path: {}", value);
+                                    sync_odoo.msg_sender.blocking_send(Msg::LOG_INFO(format!("Adding sys.path: {}", stdout))).expect("Unable to send message");
                                     root_symbol.paths.push(value.clone());
                                 }
                             }
@@ -336,27 +348,27 @@ impl Odoo {
         let path = PathBuf::from("./../server/typeshed/stdlib/builtins.pyi");
         let builtins_path = fs::canonicalize(path);
         let Ok(builtins_path) = builtins_path else {
-            client.log_message(MessageType::ERROR, "Unable to find builtins.pyi").await;
+            self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to find builtins.pyi"))).await.expect("Unable to send message");
             return;
         };
         let _odoo = self.odoo.clone();
         tokio::task::spawn_blocking(move || {
             let mut sync_odoo = _odoo.lock().unwrap();
-            let _builtins_arc_symbol = match sync_odoo.builtins {
-                Some(ref builtins) => {
-                    let mut b = builtins.borrow_mut();
-                    let _builtins_symbol = Symbol::create_from_path(&builtins_path, &b, false);
-                    b.add_symbol(&sync_odoo, _builtins_symbol.unwrap())
-                },
-                None => panic!("Builtins symbol not found")
-            };
+            if sync_odoo.builtins.is_none() {
+                panic!("Builtins symbol not found")
+            }
+            let builtins = sync_odoo.builtins.as_ref().unwrap().clone();
+            let mut builtins = builtins.borrow_mut();
+            let _builtins_symbol = Symbol::create_from_path(&mut sync_odoo, &builtins_path, &builtins, false);
+            let _builtins_arc_symbol = builtins.add_symbol(&sync_odoo, _builtins_symbol.unwrap());
+            drop(builtins);
             sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_builtins_arc_symbol));
             sync_odoo.process_rebuilds();
         }).await.unwrap();
     }
 
     async fn build_database(&mut self, client: &Client) {
-        client.log_message(MessageType::INFO, "Building Database").await;
+        self.msg_sender.send(Msg::LOG_INFO(String::from("Building Database"))).await.expect("Unable to send message");
         let result = self.build_base(client).await;
         if result {
             self.build_modules(client).await;
@@ -368,7 +380,7 @@ impl Odoo {
         let release_path = PathBuf::from(odoo_path.clone()).join("odoo/release.py");
         let odoo_addon_path = PathBuf::from(odoo_path.clone()).join("addons");
         if !release_path.exists() {
-            client.log_message(MessageType::ERROR, "Unable to find release.py - Aborting").await;
+            self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to find release.py - Aborting"))).await.expect("Unable to send message");
             return false;
         }
         // open release.py and get version
@@ -376,7 +388,7 @@ impl Odoo {
         let release_file = match release_file {
             Ok(release_file) => release_file,
             Err(_) => {
-                client.log_message(MessageType::ERROR, "Unable to read release.py - Aborting").await;
+                self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to read release.py - Aborting"))).await.expect("Unable to send message");
                 return false;
             }
         };
@@ -400,15 +412,15 @@ impl Odoo {
                         break;
                     },
                     None => {
-                        client.log_message(MessageType::ERROR, "Unable to detect the Odoo version. Running the tool for the version 14").await;
+                        self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to detect the Odoo version. Running the tool for the version 14"))).await.expect("Unable to send message");
                         return false;
                     }
                 }
             }
         }
-        client.log_message(MessageType::INFO, format!("Odoo version: {}", _full_version)).await;
+        self.msg_sender.send(Msg::LOG_INFO(format!("Odoo version: {}", _full_version))).await.expect("Unable to send message");
         if _version_major < 14 {
-            client.log_message(MessageType::ERROR, "Odoo version is less than 14. The tool only supports version 14 and above. Aborting...").await;
+            self.msg_sender.send(Msg::LOG_ERROR(String::from("Odoo version is less than 14. The tool only supports version 14 and above. Aborting..."))).await.expect("Unable to send message");
             return false;
         }
         let _odoo = self.odoo.clone();
@@ -420,15 +432,16 @@ impl Odoo {
             sync_odoo.full_version = _full_version;
             //build base
             sync_odoo.symbols.as_ref().unwrap().borrow_mut().paths.push(sync_odoo.config.odoo_path.clone());
-            let _odoo_arc_symbol = match sync_odoo.symbols {
-                Some(ref symbols) => {
-                    let mut s = symbols.borrow_mut();
-                    let _odoo_symbol = Symbol::create_from_path(&PathBuf::from(sync_odoo.config.odoo_path.clone()).join("odoo"), &s, false);
-                    s.add_symbol(&sync_odoo, _odoo_symbol.unwrap())
-                },
-                None => panic!("Odoo root symbol not found")
-            };
-            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_odoo_arc_symbol));
+            if sync_odoo.symbols.is_none() {
+                panic!("Odoo root symbol not found")
+            }
+            let root_symbol = sync_odoo.symbols.as_ref().unwrap().clone();
+            let mut root_symbol = root_symbol.borrow_mut();
+            let config_odoo_path = sync_odoo.config.odoo_path.clone();
+            let _odoo_symbol = Symbol::create_from_path(&mut sync_odoo, &PathBuf::from(config_odoo_path).join("odoo"), &root_symbol, false);
+            let added_symbol = root_symbol.add_symbol(&sync_odoo, _odoo_symbol.unwrap());
+            drop(root_symbol);
+            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&added_symbol));
             sync_odoo.process_rebuilds();
             //search common odoo addons path
             let addon_symbol = sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
@@ -443,7 +456,7 @@ impl Odoo {
         }).await.unwrap();
         if !res {
             let odoo_addon_path = PathBuf::from(odoo_path.clone()).join("addons");
-            client.log_message(MessageType::ERROR, format!("Unable to find odoo addons path at {}", odoo_addon_path.to_str().unwrap().to_string())).await;
+            self.msg_sender.send(Msg::LOG_ERROR(format!("Unable to find odoo addons path at {}", odoo_addon_path.to_str().unwrap().to_string()))).await.expect("Unable to send message");
         }
         return res;
     }
@@ -463,7 +476,7 @@ impl Odoo {
                                 Ok(item) => {
                                     if item.file_type().unwrap().is_dir() {
                                         let mut a_m = addons_symbol.borrow_mut();
-                                        let module_symbol = Symbol::create_from_path(&item.path(), &a_m, true);
+                                        let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), &a_m, true);
                                         if module_symbol.is_some() {
                                             let _odoo_arc_symbol = a_m.add_symbol(&sync_odoo, module_symbol.unwrap());
                                             sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_odoo_arc_symbol));
@@ -479,7 +492,7 @@ impl Odoo {
             sync_odoo.process_rebuilds();
             println!("{}", sync_odoo.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
         }).await.unwrap();
-        client.log_message(MessageType::INFO, "End building modules.").await;
+        self.msg_sender.send(Msg::LOG_INFO(String::from("End building modules."))).await.expect("Unable to send message");
     }
 
 }
