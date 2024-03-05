@@ -2,6 +2,7 @@ pub mod config;
 pub mod evaluation;
 pub mod file_mgr;
 pub mod import_resolver;
+pub	mod messages;
 pub mod odoo;
 pub mod python_arch_builder;
 pub mod python_arch_eval;

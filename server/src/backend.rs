@@ -2,7 +2,8 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use serde_json::to_value;
-use crate::core::odoo::{Odoo, Msg};
+use crate::core::odoo::Odoo;
+use crate::core::messages::{Msg, MsgDiagnostic};
 use serde;
 use tokio::sync::Mutex;
 use std::sync::Arc;
@@ -116,7 +117,7 @@ pub async fn handle_msg(msg: Msg, client: &Client) -> bool {
             client.log_message(MessageType::ERROR, msg).await;
         },
         Msg::DIAGNOSTIC(msg) => {
-            client.log_message(MessageType::INFO, msg).await;
+            client.publish_diagnostics(msg.uri, msg.diags, msg.version).await;
         },
         Msg::MPSC_SHUTDOWN() => {
             println!("shutdown mpsc channel");

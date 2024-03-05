@@ -1,5 +1,5 @@
-use rustpython_parser::{Parse, ast};
-use tower_lsp::lsp_types::Diagnostic;
+use rustpython_parser::{Parse, ast, text_size::TextRange};
+use tower_lsp::lsp_types::{Diagnostic, Position, Range};
 use std::{borrow::BorrowMut, collections::HashMap, fs};
 use tower_lsp::Client;
 use url::Url;
@@ -10,9 +10,10 @@ use crate::constants::*;
 #[derive(Debug)]
 pub struct FileInfo {
     pub ast: Option<Vec<ast::Stmt>>,
-    version: i32,
+    pub version: i32,
     pub uri: String,
     need_push: bool,
+    text_rope: Option<ropey::Rope>,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
 }
 
@@ -23,20 +24,23 @@ impl FileInfo {
             version: 0,
             uri,
             need_push: false,
+            text_rope: None,
             diagnostics: HashMap::with_capacity(5),
         }
     }
 
     pub fn build_ast(&mut self, path: &str, content: &str) -> &mut Self{
         if ! content.is_empty() {
-            self.ast = Some(ast::Suite::parse(content, "<embedded>").unwrap()) //TODO handle errors
+            self.ast = Some(ast::Suite::parse(content, "<embedded>").unwrap()); //TODO handle errors
+            self.text_rope = Some(ropey::Rope::from(content));
         } else {
             let python_code = match fs::read_to_string(path) {
                 Ok(content) => content,
                 Err(_) => String::new(),
             };
             if ! python_code.is_empty() {
-                self.ast = Some(ast::Suite::parse(&python_code, path).unwrap()) //TODO handle errors
+                self.ast = Some(ast::Suite::parse(&python_code, path).unwrap()); //TODO handle errors
+                self.text_rope = Some(ropey::Rope::from(python_code));
             }
         }
         self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
@@ -55,6 +59,20 @@ impl FileInfo {
             all_diagnostics.extend(diagnostics.clone());
         }
         client.publish_diagnostics( Url::parse(self.uri.as_str()).unwrap(), all_diagnostics, Some(self.version)).await;
+    }
+
+    pub fn byte_position_to_position(&self, offset: usize) -> Option<Position> {
+        let rope = self.text_rope.as_ref()?;
+        let line = rope.try_char_to_line(offset).ok()?;
+        let first_char_of_line = rope.try_line_to_char(line).ok()?;
+        let column = offset - first_char_of_line;
+        Some(Position::new(line as u32, column as u32))
+    }
+
+    pub fn text_range_to_range(&self, range: &TextRange) -> Option<Range> {
+        let start = self.byte_position_to_position(range.start().to_usize())?;
+        let end = self.byte_position_to_position(range.end().to_usize())?;
+        Some(Range::new(start, end))
     }
 }
 
