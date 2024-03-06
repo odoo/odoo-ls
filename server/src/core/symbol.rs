@@ -32,8 +32,8 @@ pub struct Symbol {
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub evaluation: Option<Evaluation>,
-    dependencies: Vec<Vec<HashSet<MyWeak<RefCell<Symbol>>>>>,
-    dependents: Vec<Vec<HashSet<MyWeak<RefCell<Symbol>>>>>,
+    dependencies: [Vec<HashSet<MyWeak<RefCell<Symbol>>>>; 4],
+    dependents: [Vec<HashSet<MyWeak<RefCell<Symbol>>>>; 3],
     pub range: Option<TextRange>,
     pub not_found_paths: HashMap<BuildSteps, String>,
     pub arch_status: BuildStatus,
@@ -63,7 +63,7 @@ impl Symbol {
             parent: None,
             weak_self: None,
             evaluation: None,
-            dependencies: vec![
+            dependencies: [
                 vec![ //ARCH
                     HashSet::new() //ARCH
                 ],
@@ -80,7 +80,7 @@ impl Symbol {
                     HashSet::new(), //ARCH_EVAL
                     HashSet::new()  //ODOO
                 ]],
-            dependents: vec![
+            dependents: [
                 vec![
                     HashSet::new(), //ARCH
                     HashSet::new(), //ARCH_EVAL
@@ -339,7 +339,7 @@ impl Symbol {
         return (sym, instance)
     }
 
-    pub fn add_symbol(&mut self, odoo: &SyncOdoo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
+    pub fn add_symbol(&mut self, odoo: &mut SyncOdoo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
         let symbol_name = symbol.name.clone();
         if self.is_external {
             symbol.is_external = true;
@@ -371,16 +371,20 @@ impl Symbol {
         if self._root.is_some() {
             self._root.as_ref().unwrap().add_symbol(odoo, &self, &mut locked_symbol);
         }
+        if self._module.is_some() {
+            odoo.modules.insert(self._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&rc));
+        }
         rc.clone()
     }
 
-    pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: &RefMut<Symbol>, require_module: bool) -> Option<Symbol> {
+    pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: &mut RefMut<Symbol>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             let mut symbol = Symbol::new(name, SymType::FILE);
             symbol.paths = vec![path_str.clone()];
-            return Some(symbol);
+            let ref_sym = parent.add_symbol(odoo, symbol);
+            return Some(ref_sym);
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
                 let mut symbol = Symbol::new(name, SymType::PACKAGE);
@@ -390,7 +394,7 @@ impl Symbol {
                     symbol._module = module;
                     match &mut symbol._module {
                         Some(module) => {
-                            module.load_module_info();
+                            ModuleSymbol::load_module_info(&mut symbol, odoo);
                         },
                         None => {
                             return None;
@@ -406,11 +410,13 @@ impl Symbol {
                 } else {
                     symbol.i_ext = "i".to_string();
                 }
-                return Some(symbol);
+                let ref_sym = parent.add_symbol(odoo, symbol);
+                return Some(ref_sym);
             } else if !require_module{ //TODO should handle module with only __manifest__.py (see odoo/addons/test_data-module)
                 let mut symbol = Symbol::new(name, SymType::NAMESPACE);
                 symbol.paths = vec![path_str.clone()];
-                return Some(symbol);
+                let ref_sym = parent.add_symbol(odoo, symbol);
+                return Some(ref_sym);
             } else {
                 return None
             }

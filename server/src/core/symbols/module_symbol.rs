@@ -3,9 +3,11 @@ use rustpython_parser::ast::{Expr, Ranged, Stmt};
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::Constant::Str;
 
+use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
+use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
-use crate::core::messages::{Msg, MsgDiagnostic};
+use crate::core::symbol::Symbol;
 use crate::constants::EXTENSION_NAME;
 use std::path::PathBuf;
 
@@ -15,7 +17,7 @@ pub struct ModuleSymbol {
     root_path: String,
     loaded: bool,
     module_name: String,
-    dir_name: String,
+    pub dir_name: String,
     depends: Vec<String>,
     data: Vec<String>, // TODO
 }
@@ -37,26 +39,28 @@ impl ModuleSymbol {
             return None;
         }
         let manifest_file_info = odoo.file_mgr.get_file_info(manifest_path.as_os_str().to_str().unwrap());
-        let manifest_file_info = (*manifest_file_info).borrow();
+        let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.ast.is_none() {
             return None;
         }
         let diags = module._load_manifest(&manifest_file_info);
-        //manifest diagnostics are not tracked by file_mgr, so push every time we parse the __manifest__ file
-        let _ = odoo.msg_sender.blocking_send(Msg::DIAGNOSTIC(MsgDiagnostic{
-            uri: url::Url::parse(&format!("file://{}", manifest_file_info.uri)).expect("Failed to parse manifest uri"),
-            diags: diags,
-            version: Some(manifest_file_info.version),
-        }));
+        if odoo.modules.contains_key(&module.dir_name) {
+            //TODO: handle multiple modules with the same name
+        }
+        manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diags);
+        manifest_file_info.publish_diagnostics(odoo);
+        drop(manifest_file_info);
         Some(module)
     }
 
-    pub fn load_module_info(&mut self) {
-        if self.loaded {
+    pub fn load_module_info(symbol: &mut Symbol, odoo: &mut SyncOdoo) {
+        let module = symbol._module.as_ref().expect("Module must be set to call load_module_info");
+        if module.loaded {
             return;
         }
         //let loaded = Vec::new();
-        self._load_depends();
+        drop(module);
+        ModuleSymbol::_load_depends(symbol, odoo);
     }
 
     /* Load manifest to identify the module characteristics.
@@ -111,7 +115,12 @@ impl ModuleSymbol {
                                                 if !depend.is_constant_expr() || !depend.as_constant_expr().unwrap().value.is_str() {
                                                     res.push(self._create_diagnostic_for_manifest_key(file_info, "The depends key should be a list of strings", &depend.range()));
                                                 } else {
-                                                    self.depends.push(depend.as_constant_expr().unwrap().value.as_str().unwrap().to_string());
+                                                    let depend_value = depend.as_constant_expr().unwrap().value.as_str().unwrap().to_string();
+                                                    if depend_value == self.dir_name {
+                                                        res.push(self._create_diagnostic_for_manifest_key(file_info, "A module cannot depends on itself", &depend.range()));
+                                                    } else {
+                                                        self.depends.push(depend_value);
+                                                    }
                                                 }
                                             }
                                         }
@@ -180,8 +189,18 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(&mut self) {
-
+    fn _load_depends(symbol: &mut Symbol, odoo: &mut SyncOdoo) {
+        let module = symbol._module.as_ref().expect("Module must be set to call _load_depends");
+        let diagnostics: Vec<Diagnostic> = vec![];
+        let loaded: Vec<String> = vec![];
+        for depend in module.depends.clone().iter() {
+            //TODO: raise an error on dependency cycle
+            if !odoo.modules.contains_key(depend) {
+                let module = find_module(odoo, depend);
+            } else {
+                symbol.add_dependency(&mut odoo.modules.get(depend).unwrap().upgrade().unwrap().borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH)
+            }
+        }
     }
 
 }

@@ -1,7 +1,8 @@
 use rustpython_parser::{Parse, ast, text_size::TextRange};
 use tower_lsp::lsp_types::{Diagnostic, Position, Range};
 use std::{borrow::BorrowMut, collections::HashMap, fs};
-use tower_lsp::Client;
+use crate::core::odoo::SyncOdoo;
+use crate::core::messages::{Msg, MsgDiagnostic};
 use url::Url;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -48,17 +49,21 @@ impl FileInfo {
         self
     }
 
-    fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
+    pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
         self.diagnostics.insert(step, diagnostics);
     }
 
-    async fn publish_diagnostics(&self, client: &Client) {
+    pub fn publish_diagnostics(&self, odoo: &mut SyncOdoo) {
         let mut all_diagnostics = Vec::new();
 
         for diagnostics in self.diagnostics.values() {
             all_diagnostics.extend(diagnostics.clone());
         }
-        client.publish_diagnostics( Url::parse(self.uri.as_str()).unwrap(), all_diagnostics, Some(self.version)).await;
+        let _ = odoo.msg_sender.blocking_send(Msg::DIAGNOSTIC(MsgDiagnostic{
+            uri: url::Url::parse(&format!("file://{}", self.uri)).expect("Failed to parse manifest uri"),
+            diags: all_diagnostics,
+            version: Some(self.version),
+        }));
     }
 
     pub fn byte_position_to_position(&self, offset: usize) -> Option<Position> {

@@ -125,7 +125,14 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
     return result;
 }
 
-fn _find_module(odoo: &SyncOdoo, name: String) -> Rc<RefCell<Symbol>> {
+pub fn find_module(odoo: &SyncOdoo, name: &String) -> Rc<RefCell<Symbol>> {
+    let odoo_addons = odoo.symbols.unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![])).expect("can't find odoo.addons");
+    for path in odoo_addons.borrow().paths.iter() {
+        let full_path = Path::new(path.as_str()).join(name);
+        if is_dir_cs(full_path) {
+            
+        }
+    }
     todo!()
 }
 
@@ -194,29 +201,29 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: &mut RefMut<Symbol>, name: &
         compiled_sym.range = Some(range.clone());
         return Ok(parent.add_symbol(odoo, compiled_sym));
     }
-    for path in parent.paths.iter() {
+    for path in parent.paths.clone().iter() {
         let mut full_path = Path::new(path.as_str()).join(name);
         if full_path.to_str().unwrap().to_string() == odoo.stubs_dir {
             full_path = full_path.join(name);
         }
         if is_dir_cs(full_path.to_str().unwrap().to_string()) {
-            let symbol = Symbol::create_from_path(odoo, &full_path, parent, false);
-            if symbol.is_some() {
-                let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path, parent, false);
+            if _arc_symbol.is_some() {
+                let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").to_str().unwrap().to_string()) {
-            let symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), parent, false);
-            if symbol.is_some() {
-                let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), parent, false);
+            if _arc_symbol.is_some() {
+                let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension(".pyi").to_str().unwrap().to_string()) {
-            let symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent, false);
-            if symbol.is_some() {
-                let _arc_symbol = parent.add_symbol(odoo, symbol.unwrap());
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent, false);
+            if _arc_symbol.is_some() {
+                let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }

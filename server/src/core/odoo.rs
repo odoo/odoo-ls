@@ -1,4 +1,5 @@
 use crate::core::config::{Config, ConfigRequest};
+use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
@@ -33,6 +34,7 @@ pub struct SyncOdoo {
     pub stubs_dir: String,
     pub stdlib_dir: String,
     pub file_mgr: FileMgr,
+    pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
     rebuild_arch: HashSet<MyWeak<RefCell<Symbol>>>,
     rebuild_arch_eval: HashSet<MyWeak<RefCell<Symbol>>>,
     rebuild_odoo: HashSet<MyWeak<RefCell<Symbol>>>,
@@ -61,6 +63,7 @@ impl SyncOdoo {
             file_mgr: FileMgr::new(),
             stubs_dir: PathBuf::from("./../server/typeshed/stubs").to_str().unwrap().to_string(),
             stdlib_dir: PathBuf::from("./../server/typeshed/stdlib").to_str().unwrap().to_string(),
+            modules: HashMap::new(),
             rebuild_arch: HashSet::new(),
             rebuild_arch_eval: HashSet::new(),
             rebuild_odoo: HashSet::new(),
@@ -352,10 +355,9 @@ impl Odoo {
             }
             let builtins = sync_odoo.builtins.as_ref().unwrap().clone();
             let mut builtins = builtins.borrow_mut();
-            let _builtins_symbol = Symbol::create_from_path(&mut sync_odoo, &builtins_path, &builtins, false);
-            let _builtins_arc_symbol = builtins.add_symbol(&sync_odoo, _builtins_symbol.unwrap());
+            let _builtins_arc_symbol = Symbol::create_from_path(&mut sync_odoo, &builtins_path, &mut builtins, false);
             drop(builtins);
-            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_builtins_arc_symbol));
+            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_builtins_arc_symbol.unwrap()));
             sync_odoo.process_rebuilds();
         }).await.unwrap();
     }
@@ -431,10 +433,9 @@ impl Odoo {
             let root_symbol = sync_odoo.symbols.as_ref().unwrap().clone();
             let mut root_symbol = root_symbol.borrow_mut();
             let config_odoo_path = sync_odoo.config.odoo_path.clone();
-            let _odoo_symbol = Symbol::create_from_path(&mut sync_odoo, &PathBuf::from(config_odoo_path).join("odoo"), &root_symbol, false);
-            let added_symbol = root_symbol.add_symbol(&sync_odoo, _odoo_symbol.unwrap());
+            let added_symbol = Symbol::create_from_path(&mut sync_odoo, &PathBuf::from(config_odoo_path).join("odoo"), &mut root_symbol, false);
             drop(root_symbol);
-            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&added_symbol));
+            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&added_symbol.unwrap()));
             sync_odoo.process_rebuilds();
             //search common odoo addons path
             let addon_symbol = sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
@@ -469,10 +470,9 @@ impl Odoo {
                                 Ok(item) => {
                                     if item.file_type().unwrap().is_dir() {
                                         let mut a_m = addons_symbol.borrow_mut();
-                                        let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), &a_m, true);
+                                        let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), &mut a_m, true);
                                         if module_symbol.is_some() {
-                                            let _odoo_arc_symbol = a_m.add_symbol(&sync_odoo, module_symbol.unwrap());
-                                            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_odoo_arc_symbol));
+                                            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&module_symbol.unwrap()));
                                         }
                                     }
                                 },
