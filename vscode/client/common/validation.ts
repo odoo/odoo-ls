@@ -1,7 +1,6 @@
 export const STATE_VERSION = 100
 
 export const stateInit = {
-    "Odoo.configurations": {},
     "Odoo.nextConfigId": 0,
     "Odoo.stateVersion": STATE_VERSION,
 }

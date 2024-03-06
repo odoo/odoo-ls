@@ -45,6 +45,9 @@ import {
 import { evaluateOdooPath, getCurrentConfig } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
+import {
+    migrateConfigToSettings
+} from "./migration/migrateConfig";
 
 
 function getClientOptions(): LanguageClientOptions {
@@ -90,7 +93,9 @@ function validateState(context: ExtensionContext) {
                             }
                         }
                     }
-                    if (updates) {
+                    if (updates && key === 'Odoo.configurations') {
+                        workspace.getConfiguration().update(key, configurations, ConfigurationTarget.Global)
+                    }else if (updates) {
                         globalState.update(key, configurations)
                     }
                 }
@@ -110,7 +115,6 @@ function setMissingStateVariables(context: ExtensionContext) {
     const globalStateKeys = context.globalState.keys();
     const workspaceStateKeys = context.workspaceState.keys();
     let globalVariables = new Map<string, any>([
-        ["Odoo.configurations", stateInit["Odoo.configuration"]],
         ["Odoo.nextConfigId", stateInit["Odoo.nextConfigId"]],
         ["Odoo.stateVersion", stateInit["Odoo.stateVersion"]],
         ["Odoo.lastRecordedVersion", context.extension.packageJSON.version], 
@@ -218,15 +222,16 @@ async function addNewConfiguration(context: ExtensionContext) {
     const configId = getLastConfigId(context);
     let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
 
+    const newConf = getConfigurationStructure(configId);
     workspace.getConfiguration().update("Odoo.configurations",
     {
         ...configs,
-        [configId]: getConfigurationStructure(configId),
+        [configId]: newConf,
     },
     ConfigurationTarget.Global);
 
     IncrementLastConfigId(context);
-    ConfigurationWebView.render(context, configId);
+    ConfigurationWebView.render(context, newConf);
 }
 
 async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
@@ -344,7 +349,7 @@ async function checkAddons(context: ExtensionContext) {
             ).then(selection => {
                 switch (selection) {
                     case ("Update current configuration"):
-                        ConfigurationWebView.render(context, currentConfig.id);
+                        ConfigurationWebView.render(context, currentConfig);
                         break
                     case ("View Paths"):
                         global.LSCLIENT.outputChannel.show();
@@ -372,7 +377,7 @@ async function checkOdooPath(context: ExtensionContext) {
         ).then(selection => {
         switch (selection) {
             case ("Update current configuration"):
-                ConfigurationWebView.render(context, currentConfig.id);
+                ConfigurationWebView.render(context, currentConfig);
                 break
             }
         })
@@ -399,7 +404,7 @@ async function checkOdooPath(context: ExtensionContext) {
             ).then(selection => {
             switch (selection) {
                 case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig.id);
+                    ConfigurationWebView.render(context, currentConfig);
                     break
                 }
             })
@@ -610,6 +615,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     if (buttonEvent.button.iconPath == gearIcon) {
                         let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
                         try {
+                            //TODO 
                             ConfigurationWebView.render(context, Number(buttonConfigId));
                         } catch (error) {
                             global.LSCLIENT.error(error);
@@ -657,6 +663,9 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
     }
 }
 
+function handleMigration(context){
+    migrateConfigToSettings(context)
+}
 
 export async function activate(context: ExtensionContext): Promise<void> {
     try {
@@ -667,6 +676,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         // Initialize some settings on the extension's launch if they're missing from the state.
         setMissingStateVariables(context);
         validateState(context);
+        handleMigration(context)
 
         
         await initStatusBar(context);
@@ -758,7 +768,7 @@ async function checkStandalonePythonVersion(context: ExtensionContext): Promise<
         ).then(selection => {
             switch (selection) {
                 case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig.id);
+                    ConfigurationWebView.render(context, currentConfig);
                     break
             }
         });

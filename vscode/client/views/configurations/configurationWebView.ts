@@ -56,21 +56,21 @@ export class ConfigurationWebView {
      *
      * @param extensionUri The URI of the directory containing the extension.
      */
-    public static render(context: vscode.ExtensionContext, configId: number) {
+    public static render(context: vscode.ExtensionContext, config) {
         if (!ConfigurationWebView.panels) {
             ConfigurationWebView.panels = new Map();
         }
-        if (ConfigurationWebView.panels.has(configId)) {
+        if (ConfigurationWebView.panels.has(config.id)) {
             // If a webview panel already exists for a config ID, reveal it
-            ConfigurationWebView.panels.get(configId)._panel.reveal(vscode.ViewColumn.One);
+            ConfigurationWebView.panels.get(config.id)._panel.reveal(vscode.ViewColumn.One);
         } else {
             // If a webview panel does not already exist create and show a new one
-            const configName = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[configId]["name"];
+
             const panel = window.createWebviewPanel(
                 // Panel view type
                 "showConfigurationPanel",
                 // Panel title
-                `Odoo: ${configName}`,
+                `Odoo: ${config.name}`,
                 // The editor column the panel should be displayed in
                 vscode.ViewColumn.One,
                 // Extra panel configurations
@@ -80,7 +80,7 @@ export class ConfigurationWebView {
                     retainContextWhenHidden: true,
                 }
             );
-            ConfigurationWebView.panels.set(configId, new ConfigurationWebView(panel, configId, context));
+            ConfigurationWebView.panels.set(config.id, new ConfigurationWebView(panel, config.id, context));
         }
     }
 
