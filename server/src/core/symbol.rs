@@ -425,11 +425,6 @@ impl Symbol {
                 return Some(symbol.clone());
             }
         }
-        if let Some(symbol) = self.module_symbols.get(name) {
-            if symbol.borrow_mut().range.unwrap().start() == range.start() {
-                return Some(symbol.clone());
-            }
-        }
         for local_symbol in self.local_symbols.iter() {
             if local_symbol.borrow_mut().range.unwrap().start() == range.start() {
                 return Some(local_symbol.clone());
