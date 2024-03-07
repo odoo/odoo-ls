@@ -125,11 +125,12 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
     return result;
 }
 
-pub fn find_module(odoo: &mut SyncOdoo, odoo_addons: &mut Symbol, name: &String) -> Option<Rc<RefCell<Symbol>>> {
-    for path in odoo_addons.paths.clone().iter() {
+pub fn find_module(odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>, name: &String) -> Option<Rc<RefCell<Symbol>>> {
+    let paths = (*odoo_addons).borrow().paths.clone();
+    for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name);
         if is_dir_cs(full_path.as_os_str().to_str().unwrap().to_string()) {
-            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), odoo_addons, false);
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), odoo_addons.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
@@ -181,7 +182,7 @@ fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names
     for branch in names.iter() {
         let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]));
         if next_symbol.is_none() {
-            next_symbol = match _resolve_new_symbol(odoo, &mut file_symbol.borrow_mut(), &branch, asname.clone(), range) {
+            next_symbol = match _resolve_new_symbol(odoo, file_symbol.clone(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),
                 Err(e) => None
             }
@@ -195,49 +196,50 @@ fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names
     return (sym, last_symbol)
 }
 
-fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: &mut RefMut<Symbol>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Rc<RefCell<Symbol>>, String> {
+fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: Rc<RefCell<Symbol>>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Rc<RefCell<Symbol>>, String> {
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
         None => name.clone()
     };
-    if parent.sym_type == SymType::COMPILED {
+    if (*parent).borrow().sym_type == SymType::COMPILED {
         let mut compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
         compiled_sym.range = Some(range.clone());
-        return Ok(parent.add_symbol(odoo, compiled_sym));
+        return Ok((*parent).borrow_mut().add_symbol(odoo, compiled_sym));
     }
-    for path in parent.paths.clone().iter() {
+    let paths = (*parent).borrow().paths.clone();
+    for path in paths.iter() {
         let mut full_path = Path::new(path.as_str()).join(name);
         if full_path.to_str().unwrap().to_string() == odoo.stubs_dir {
             full_path = full_path.join(name);
         }
         if is_dir_cs(full_path.to_str().unwrap().to_string()) {
-            let _arc_symbol = Symbol::create_from_path(odoo, &full_path, parent, false);
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path, parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").to_str().unwrap().to_string()) {
-            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), parent, false);
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension(".pyi").to_str().unwrap().to_string()) {
-            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent, false);
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
                 return Ok(_arc_symbol);
             }
-        } else if !parent.get_tree().0.is_empty() {
+        } else if !(*parent).borrow().get_tree().0.is_empty() {
             if cfg!(windows) {
                 for entry in glob((full_path.as_os_str().to_str().unwrap().to_owned() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok(parent.add_symbol(odoo, compiled_sym));
+                            return Ok((*parent).borrow_mut().add_symbol(odoo, compiled_sym));
                         }
                         Err(e) => {},
                     }
@@ -247,7 +249,7 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: &mut RefMut<Symbol>, name: &
                     match entry {
                         Ok(path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok(parent.add_symbol(odoo, compiled_sym));
+                            return Ok((*parent).borrow_mut().add_symbol(odoo, compiled_sym));
                         }
                         Err(e) => {},
                     }

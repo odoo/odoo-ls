@@ -354,9 +354,7 @@ impl Odoo {
                 panic!("Builtins symbol not found")
             }
             let builtins = sync_odoo.builtins.as_ref().unwrap().clone();
-            let mut builtins = builtins.borrow_mut();
-            let _builtins_arc_symbol = Symbol::create_from_path(&mut sync_odoo, &builtins_path, &mut builtins, false);
-            drop(builtins);
+            let _builtins_arc_symbol = Symbol::create_from_path(&mut sync_odoo, &builtins_path, builtins, false);
             sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_builtins_arc_symbol.unwrap()));
             sync_odoo.process_rebuilds();
         }).await.unwrap();
@@ -431,10 +429,8 @@ impl Odoo {
                 panic!("Odoo root symbol not found")
             }
             let root_symbol = sync_odoo.symbols.as_ref().unwrap().clone();
-            let mut root_symbol = root_symbol.borrow_mut();
             let config_odoo_path = sync_odoo.config.odoo_path.clone();
-            let added_symbol = Symbol::create_from_path(&mut sync_odoo, &PathBuf::from(config_odoo_path).join("odoo"), &mut root_symbol, false);
-            drop(root_symbol);
+            let added_symbol = Symbol::create_from_path(&mut sync_odoo, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol, false);
             sync_odoo.add_to_rebuild_arch(Rc::downgrade(&added_symbol.unwrap()));
             sync_odoo.process_rebuilds();
             //search common odoo addons path
@@ -469,8 +465,7 @@ impl Odoo {
                             match item {
                                 Ok(item) => {
                                     if item.file_type().unwrap().is_dir() {
-                                        let mut a_m = addons_symbol.borrow_mut();
-                                        let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), &mut a_m, true);
+                                        let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), addons_symbol.clone(), true);
                                         if module_symbol.is_some() {
                                             sync_odoo.add_to_rebuild_arch(Rc::downgrade(&module_symbol.unwrap()));
                                         }

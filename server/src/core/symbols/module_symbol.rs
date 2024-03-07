@@ -7,12 +7,13 @@ use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbol::Symbol;
+use crate::core::symbol::{self, Symbol};
 use crate::constants::EXTENSION_NAME;
 use crate::my_weak::MyWeak;
 use crate::utils::S;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 
 #[derive(Debug)]
@@ -56,18 +57,20 @@ impl ModuleSymbol {
         Some(module)
     }
 
-    pub fn load_module_info(symbol: &mut Symbol, odoo: &mut SyncOdoo, odoo_addons: &mut Symbol) -> Vec<String> {
+    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<String> {
         {
-            let module = symbol._module.as_ref().expect("Module must be set to call load_module_info");
+            let _symbol = symbol.borrow();
+            let module = _symbol._module.as_ref().expect("Module must be set to call load_module_info");
             if module.loaded {
                 return vec![];
             }
         }
-        let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(symbol, odoo, odoo_addons);
-        diagnostics.append(&mut ModuleSymbol::_load_data(symbol, odoo));
-        diagnostics.append(&mut ModuleSymbol::_load_arch(symbol, odoo));
+        let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), odoo, odoo_addons);
+        diagnostics.append(&mut ModuleSymbol::_load_data(symbol.clone(), odoo));
+        diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), odoo));
         {
-            let module = symbol._module.as_mut().expect("Module must be set to call load_module_info");
+            let mut _symbol = symbol.borrow_mut();
+            let module = _symbol._module.as_mut().expect("Module must be set to call load_module_info");
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
@@ -205,14 +208,14 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol: &mut Symbol, odoo: &mut SyncOdoo, odoo_addons: &mut Symbol) -> (Vec<Diagnostic>, Vec<String>) {
+    fn _load_depends(symbol: &mut Symbol, odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
         let module = symbol._module.as_ref().expect("Module must be set to call _load_depends");
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<String> = vec![];
         for depend in module.depends.clone().iter() {
             //TODO: raise an error on dependency cycle
             if !odoo.modules.contains_key(depend) {
-                let module = find_module(odoo, odoo_addons, depend);
+                let module = find_module(odoo, odoo_addons.clone(), depend);
                 if module.is_none() {
                     odoo.not_found_symbols.insert(MyWeak::new(symbol.weak_self.as_ref().unwrap().clone()));
                     symbol.not_found_paths.insert(BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]);
@@ -240,12 +243,12 @@ impl ModuleSymbol {
         (diagnostics, loaded)
     }
 
-    fn _load_data(symbol: &mut Symbol, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+    fn _load_data(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
         vec![]
     }
 
-    fn _load_arch(symbol: &mut Symbol, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
-        let root_path = symbol._module.as_ref().expect("Module must be set to call _load_depends").root_path.clone();
+    fn _load_arch(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+        let root_path = (*symbol).borrow()._module.as_ref().expect("Module must be set to call _load_depends").root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
             let _arc_symbol = Symbol::create_from_path(odoo, &tests_path, symbol, false);
