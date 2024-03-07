@@ -9,7 +9,10 @@ use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::EXTENSION_NAME;
+use crate::my_weak::MyWeak;
+use crate::utils::S;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 
 #[derive(Debug)]
@@ -53,14 +56,27 @@ impl ModuleSymbol {
         Some(module)
     }
 
-    pub fn load_module_info(symbol: &mut Symbol, odoo: &mut SyncOdoo) {
-        let module = symbol._module.as_ref().expect("Module must be set to call load_module_info");
-        if module.loaded {
-            return;
+    pub fn load_module_info(symbol: &mut Symbol, odoo: &mut SyncOdoo, odoo_addons: &mut Symbol) -> Vec<String> {
+        {
+            let module = symbol._module.as_ref().expect("Module must be set to call load_module_info");
+            if module.loaded {
+                return vec![];
+            }
         }
-        //let loaded = Vec::new();
-        drop(module);
-        ModuleSymbol::_load_depends(symbol, odoo);
+        let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(symbol, odoo, odoo_addons);
+        diagnostics.append(&mut ModuleSymbol::_load_data(symbol, odoo));
+        diagnostics.append(&mut ModuleSymbol::_load_arch(symbol, odoo));
+        {
+            let module = symbol._module.as_mut().expect("Module must be set to call load_module_info");
+            module.loaded = true;
+            loaded.push(module.dir_name.clone());
+            let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
+            let manifest_file_info = odoo.file_mgr.get_file_info(manifest_path.as_os_str().to_str().unwrap());
+            let mut manifest_file_info = (*manifest_file_info).borrow_mut();
+            manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diagnostics);
+            manifest_file_info.publish_diagnostics(odoo);
+        }
+        loaded
     }
 
     /* Load manifest to identify the module characteristics.
@@ -189,18 +205,56 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol: &mut Symbol, odoo: &mut SyncOdoo) {
+    fn _load_depends(symbol: &mut Symbol, odoo: &mut SyncOdoo, odoo_addons: &mut Symbol) -> (Vec<Diagnostic>, Vec<String>) {
         let module = symbol._module.as_ref().expect("Module must be set to call _load_depends");
-        let diagnostics: Vec<Diagnostic> = vec![];
-        let loaded: Vec<String> = vec![];
+        let mut diagnostics: Vec<Diagnostic> = vec![];
+        let mut loaded: Vec<String> = vec![];
         for depend in module.depends.clone().iter() {
             //TODO: raise an error on dependency cycle
             if !odoo.modules.contains_key(depend) {
-                let module = find_module(odoo, depend);
+                let module = find_module(odoo, odoo_addons, depend);
+                if module.is_none() {
+                    odoo.not_found_symbols.insert(MyWeak::new(symbol.weak_self.as_ref().unwrap().clone()));
+                    symbol.not_found_paths.insert(BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]);
+                    diagnostics.push(Diagnostic::new(
+                        Range::new(Position::new(0, 0), Position::new(0, 1)),
+                        Some(DiagnosticSeverity::ERROR),
+                        None,
+                        Some(EXTENSION_NAME.to_string()),
+                        format!("Module {} depends on {} which is not found. Please review your addons paths", symbol.name, depend),
+                        None,
+                        None,
+                    ))
+                } else {
+                    loaded.push(depend.clone());
+                    let module = module.unwrap();
+                    let mut module = (*module).borrow_mut();
+                    symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH);
+                }
             } else {
-                symbol.add_dependency(&mut odoo.modules.get(depend).unwrap().upgrade().unwrap().borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH)
+                let module = odoo.modules.get(depend).unwrap().upgrade().unwrap();
+                let mut module = (*module).borrow_mut();
+                symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
             }
         }
+        (diagnostics, loaded)
+    }
+
+    fn _load_data(symbol: &mut Symbol, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+        vec![]
+    }
+
+    fn _load_arch(symbol: &mut Symbol, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+        let root_path = symbol._module.as_ref().expect("Module must be set to call _load_depends").root_path.clone();
+        let tests_path = PathBuf::from(root_path).join("tests");
+        if tests_path.exists() {
+            let _arc_symbol = Symbol::create_from_path(odoo, &tests_path, symbol, false);
+            if _arc_symbol.is_some() {
+                let _arc_symbol = _arc_symbol.unwrap();
+                odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
+            }
+        }
+        vec![]
     }
 
 }

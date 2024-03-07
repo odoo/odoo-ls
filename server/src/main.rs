@@ -8,12 +8,14 @@ mod utils;
 use backend::Backend;
 use core::odoo::Odoo;
 use core::file_mgr::FileMgr;
+use std::env;
 use std::sync::Mutex;
 use std::sync::Arc;
 use tower_lsp::{LspService, Server};
 
 #[tokio::main]
 async fn main() {
+    env::set_var("RUST_BACKTRACE", "full");
     println!("starting server");
     let debug = true;
     if debug {

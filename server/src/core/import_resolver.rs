@@ -125,15 +125,19 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
     return result;
 }
 
-pub fn find_module(odoo: &SyncOdoo, name: &String) -> Rc<RefCell<Symbol>> {
-    let odoo_addons = odoo.symbols.unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![])).expect("can't find odoo.addons");
-    for path in odoo_addons.borrow().paths.iter() {
+pub fn find_module(odoo: &mut SyncOdoo, odoo_addons: &mut Symbol, name: &String) -> Option<Rc<RefCell<Symbol>>> {
+    for path in odoo_addons.paths.clone().iter() {
         let full_path = Path::new(path.as_str()).join(name);
-        if is_dir_cs(full_path) {
-            
+        if is_dir_cs(full_path.as_os_str().to_str().unwrap().to_string()) {
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), odoo_addons, false);
+            if _arc_symbol.is_some() {
+                let _arc_symbol = _arc_symbol.unwrap();
+                odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
+                return Some(_arc_symbol);
+            }
         }
     }
-    todo!()
+    None
 }
 
 fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<&Int>, from_stmt: Option<&Identifier>) -> Vec<String> {

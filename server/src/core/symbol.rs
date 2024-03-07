@@ -35,7 +35,7 @@ pub struct Symbol {
     dependencies: [Vec<HashSet<MyWeak<RefCell<Symbol>>>>; 4],
     dependents: [Vec<HashSet<MyWeak<RefCell<Symbol>>>>; 3],
     pub range: Option<TextRange>,
-    pub not_found_paths: HashMap<BuildSteps, String>,
+    pub not_found_paths: HashMap<BuildSteps, Vec<String>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: bool,
@@ -377,7 +377,7 @@ impl Symbol {
         rc.clone()
     }
 
-    pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: &mut RefMut<Symbol>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: &mut Symbol, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
@@ -387,14 +387,20 @@ impl Symbol {
             return Some(ref_sym);
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                let mut symbol = Symbol::new(name, SymType::PACKAGE);
+                let ref_sym = parent.add_symbol(odoo, Symbol::new(name, SymType::PACKAGE));
+                let mut symbol = (*ref_sym).borrow_mut();
+                if path.join("__init__.py").exists() {
+                    //?
+                } else {
+                    symbol.i_ext = "i".to_string();
+                }
                 if parent.get_tree() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
                     symbol.paths = vec![path_str.clone()];
                     let module = ModuleSymbol::new(odoo, path);
                     symbol._module = module;
                     match &mut symbol._module {
                         Some(module) => {
-                            ModuleSymbol::load_module_info(&mut symbol, odoo);
+                            ModuleSymbol::load_module_info(&mut symbol, odoo, parent);
                         },
                         None => {
                             return None;
@@ -405,12 +411,7 @@ impl Symbol {
                 } else {
                     return None;
                 }
-                if path.join("__init__.py").exists() {
-                    //?
-                } else {
-                    symbol.i_ext = "i".to_string();
-                }
-                let ref_sym = parent.add_symbol(odoo, symbol);
+                drop(symbol);
                 return Some(ref_sym);
             } else if !require_module{ //TODO should handle module with only __manifest__.py (see odoo/addons/test_data-module)
                 let mut symbol = Symbol::new(name, SymType::NAMESPACE);
