@@ -7,6 +7,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::Client;
 
 use std::collections::HashSet;
+use weak_table::PtrWeakHashSet;
 use std::process::Command;
 use std::str::FromStr;
 use std::fs;
@@ -16,7 +17,6 @@ use crate::constants::*;
 use super::config::{self, DiagMissingImportsMode, RefreshMode};
 use super::file_mgr::FileMgr;
 use super::symbol::Symbol;
-use crate::my_weak::MyWeak;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::messages::Msg;
@@ -35,11 +35,11 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     pub file_mgr: FileMgr,
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
-    rebuild_arch: HashSet<MyWeak<RefCell<Symbol>>>,
-    rebuild_arch_eval: HashSet<MyWeak<RefCell<Symbol>>>,
-    rebuild_odoo: HashSet<MyWeak<RefCell<Symbol>>>,
-    rebuild_validation: HashSet<MyWeak<RefCell<Symbol>>>,
-    pub not_found_symbols: HashSet<MyWeak<RefCell<Symbol>>>,
+    rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub msg_sender: tokio::sync::mpsc::Sender<Msg>,
 }
 
@@ -64,11 +64,11 @@ impl SyncOdoo {
             stubs_dir: PathBuf::from("./../server/typeshed/stubs").to_str().unwrap().to_string(),
             stdlib_dir: PathBuf::from("./../server/typeshed/stdlib").to_str().unwrap().to_string(),
             modules: HashMap::new(),
-            rebuild_arch: HashSet::new(),
-            rebuild_arch_eval: HashSet::new(),
-            rebuild_odoo: HashSet::new(),
-            rebuild_validation: HashSet::new(),
-            not_found_symbols: HashSet::new(),
+            rebuild_arch: PtrWeakHashSet::new(),
+            rebuild_arch_eval: PtrWeakHashSet::new(),
+            rebuild_odoo: PtrWeakHashSet::new(),
+            rebuild_validation: PtrWeakHashSet::new(),
+            not_found_symbols: PtrWeakHashSet::new(),
             msg_sender,
         };
         sync_odoo
@@ -91,43 +91,37 @@ impl SyncOdoo {
             } else {
                 &self.rebuild_arch
             };
-            let mut selected_sym: Option<&MyWeak<RefCell<Symbol>>> = None;
+            let mut selected_sym: Option<&Rc<RefCell<Symbol>>> = None;
             let mut selected_count: u32 = 999999999;
             let mut current_count: u32;
             for sym in &*set {
                 current_count = 0;
-                let mut_symbol = sym.upgrade();
-                if mut_symbol.is_none() {
-                    //println!("missing symbol ! ");
-                    continue;
-                }
-                let mut_symbol = mut_symbol.unwrap();
-                let symbol = mut_symbol.borrow_mut();
+                let symbol = sym.borrow_mut();
                 for (index, dep_set) in symbol.get_all_dependencies(step).iter().enumerate() {
                     if index == BuildSteps::ARCH as usize {
                         for dep in dep_set.iter() {
-                            if self.rebuild_arch.contains(dep) {
+                            if self.rebuild_arch.contains(&dep) {
                                 current_count += 1;
                             }
                         }
                     }
                     if index == BuildSteps::ARCH_EVAL as usize {
                         for dep in dep_set.iter() {
-                            if self.rebuild_arch_eval.contains(dep) {
+                            if self.rebuild_arch_eval.contains(&dep) {
                                 current_count += 1;
                             }
                         }
                     }
                     if index == BuildSteps::ODOO as usize {
                         for dep in dep_set.iter() {
-                            if self.rebuild_odoo.contains(dep) {
+                            if self.rebuild_odoo.contains(&dep) {
                                 current_count += 1;
                             }
                         }
                     }
                     if index == BuildSteps::VALIDATION as usize {
                         for dep in dep_set.iter() {
-                            if self.rebuild_validation.contains(dep) {
+                            if self.rebuild_validation.contains(&dep) {
                                 current_count += 1;
                             }
                         }
@@ -142,7 +136,7 @@ impl SyncOdoo {
                 }
             }
             if selected_sym.is_some() {
-                arc_sym = selected_sym.unwrap().upgrade()
+                arc_sym = selected_sym.map(|x| x.clone());
             }
         }
         {
@@ -160,7 +154,7 @@ impl SyncOdoo {
                 return None;
             }
             let arc_sym_unwrapped = arc_sym.unwrap();
-            if !set.remove(&MyWeak::new(Rc::downgrade(&arc_sym_unwrapped))) {
+            if !set.remove(&arc_sym_unwrapped) {
                 panic!("Unable to remove selected symbol from rebuild set")
             }
             return Some(arc_sym_unwrapped);
@@ -202,26 +196,26 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_rebuild_arch(&mut self, symbol: Weak<RefCell<Symbol>>) {
-        self.rebuild_arch.insert(MyWeak::new(symbol));
+    pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        self.rebuild_arch.insert(symbol);
     }
 
-    pub fn add_to_rebuild_arch_eval(&mut self, symbol: Weak<RefCell<Symbol>>) {
-        self.rebuild_arch_eval.insert(MyWeak::new(symbol));
+    pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        self.rebuild_arch_eval.insert(symbol);
     }
 
-    pub fn is_in_rebuild(&self, symbol: &Weak<RefCell<Symbol>>, step: BuildSteps) -> bool {
+    pub fn is_in_rebuild(&self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
         if step == BuildSteps::ARCH {
-            return self.rebuild_arch.contains(&MyWeak::new(symbol.clone()));
+            return self.rebuild_arch.contains(symbol);
         }
         if step == BuildSteps::ARCH_EVAL {
-            return self.rebuild_arch_eval.contains(&MyWeak::new(symbol.clone()));
+            return self.rebuild_arch_eval.contains(symbol);
         }
         if step == BuildSteps::ODOO {
-            return self.rebuild_odoo.contains(&MyWeak::new(symbol.clone()));
+            return self.rebuild_odoo.contains(symbol);
         }
         if step == BuildSteps::VALIDATION {
-            return self.rebuild_validation.contains(&MyWeak::new(symbol.clone()));
+            return self.rebuild_validation.contains(symbol);
         }
         false
     }
@@ -355,7 +349,7 @@ impl Odoo {
             }
             let builtins = sync_odoo.builtins.as_ref().unwrap().clone();
             let _builtins_arc_symbol = Symbol::create_from_path(&mut sync_odoo, &builtins_path, builtins, false);
-            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&_builtins_arc_symbol.unwrap()));
+            sync_odoo.add_to_rebuild_arch(_builtins_arc_symbol.unwrap());
             sync_odoo.process_rebuilds();
         }).await.unwrap();
     }
@@ -431,7 +425,7 @@ impl Odoo {
             let root_symbol = sync_odoo.symbols.as_ref().unwrap().clone();
             let config_odoo_path = sync_odoo.config.odoo_path.clone();
             let added_symbol = Symbol::create_from_path(&mut sync_odoo, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol, false);
-            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&added_symbol.unwrap()));
+            sync_odoo.add_to_rebuild_arch(added_symbol.unwrap());
             sync_odoo.process_rebuilds();
             //search common odoo addons path
             let addon_symbol = sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
@@ -467,7 +461,7 @@ impl Odoo {
                                     if item.file_type().unwrap().is_dir() {
                                         let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), addons_symbol.clone(), true);
                                         if module_symbol.is_some() {
-                                            sync_odoo.add_to_rebuild_arch(Rc::downgrade(&module_symbol.unwrap()));
+                                            sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
                                         }
                                     }
                                 },

@@ -9,7 +9,6 @@ use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::{self, Symbol};
 use crate::constants::EXTENSION_NAME;
-use crate::my_weak::MyWeak;
 use crate::utils::S;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -217,7 +216,7 @@ impl ModuleSymbol {
             if !odoo.modules.contains_key(depend) {
                 let module = find_module(odoo, odoo_addons.clone(), depend);
                 if module.is_none() {
-                    odoo.not_found_symbols.insert(MyWeak::new(symbol.weak_self.as_ref().unwrap().clone()));
+                    odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().clone());
                     symbol.not_found_paths.insert(BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]);
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),

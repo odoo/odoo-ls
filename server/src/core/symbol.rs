@@ -1,13 +1,13 @@
 use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::Expr;
+use rustpython_parser::ast::{Expr, TextSize};
 
 use crate::constants::*;
-use crate::my_weak::MyWeak;
 use crate::core::evaluation::Evaluation;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use core::panic;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet, VecDeque};
+use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::{RefCell, RefMut};
@@ -32,8 +32,8 @@ pub struct Symbol {
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub evaluation: Option<Evaluation>,
-    dependencies: [Vec<HashSet<MyWeak<RefCell<Symbol>>>>; 4],
-    dependents: [Vec<HashSet<MyWeak<RefCell<Symbol>>>>; 3],
+    dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
+    dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
     pub range: Option<TextRange>,
     pub not_found_paths: HashMap<BuildSteps, Vec<String>>,
     pub arch_status: BuildStatus,
@@ -65,35 +65,35 @@ impl Symbol {
             evaluation: None,
             dependencies: [
                 vec![ //ARCH
-                    HashSet::new() //ARCH
+                    PtrWeakHashSet::new() //ARCH
                 ],
                 vec![ //ARCH_EVAL
-                    HashSet::new() //ARCH
+                    PtrWeakHashSet::new() //ARCH
                 ],
                 vec![
-                    HashSet::new(), // ARCH
-                    HashSet::new(), //ARCH_EVAL
-                    HashSet::new()  //ODOO
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
                 ],
                 vec![
-                    HashSet::new(), // ARCH
-                    HashSet::new(), //ARCH_EVAL
-                    HashSet::new()  //ODOO
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
                 ]],
             dependents: [
-                vec![
-                    HashSet::new(), //ARCH
-                    HashSet::new(), //ARCH_EVAL
-                    HashSet::new(), //ODOO
-                    HashSet::new(), //VALIDATION
+                vec![ //ARCH
+                    PtrWeakHashSet::new(), //ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new(), //VALIDATION
                 ],
-                vec![
-                    HashSet::new(), //ODOO
-                    HashSet::new() //VALIDATION
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new() //VALIDATION
                 ],
-                vec![
-                    HashSet::new(), //ODOO
-                    HashSet::new()  //VALIDATION
+                vec![ //ODOO
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new()  //VALIDATION
                 ]],
             range: None,
             not_found_paths: HashMap::new(),
@@ -209,7 +209,7 @@ impl Symbol {
     }
 
     //Return a HashSet of all symbols (constructed until 'level') that are dependencies for the 'step' of this symbol
-    pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> &HashSet<MyWeak<RefCell<Symbol>>> {
+    pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> &PtrWeakHashSet<Weak<RefCell<Symbol>>> {
         if step == BuildSteps::SYNTAX || level == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
@@ -224,7 +224,7 @@ impl Symbol {
         &self.dependencies[step as usize][level as usize]
     }
 
-    pub fn get_all_dependencies(&self, step: BuildSteps) -> &Vec<HashSet<MyWeak<RefCell<Symbol>>>> {
+    pub fn get_all_dependencies(&self, step: BuildSteps) -> &Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
         if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
@@ -232,7 +232,7 @@ impl Symbol {
     }
 
     //Return a HashSet of all 'step' of symbols that require that this symbol is built until 'level';
-    pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> &HashSet<MyWeak<RefCell<Symbol>>> {
+    pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> &PtrWeakHashSet<Weak<RefCell<Symbol>>> {
         if level == BuildSteps::SYNTAX || step == BuildSteps::SYNTAX {
             panic!("Can't get dependents for syntax step")
         }
@@ -263,8 +263,8 @@ impl Symbol {
         }
         let step_i = step as usize;
         let level_i = dep_level as usize;
-        self.dependencies[step_i][level_i].insert(MyWeak::new(Rc::downgrade(&symbol.get_arc().unwrap())));
-        symbol.dependents[level_i][step_i].insert(MyWeak::new(Rc::downgrade(&self.get_arc().unwrap())));
+        self.dependencies[step_i][level_i].insert(symbol.get_arc().unwrap());
+        symbol.dependents[level_i][step_i].insert(self.get_arc().unwrap());
     }
 
     pub fn get_arc(&self) -> Option<Rc<RefCell<Symbol>>> {
@@ -277,8 +277,85 @@ impl Symbol {
         None
     }
 
-    pub fn invalidate(&mut self, step: &BuildSteps) {
-        //TODO
+    pub fn is_symbol_in_parents(&self, symbol: Rc<RefCell<Symbol>>) -> bool {
+        if Rc::ptr_eq(&symbol, &self.get_arc().unwrap()) {
+            return true;
+        }
+        if self.parent.is_none() {
+            return false;
+        }
+        let parent = self.parent.as_ref().unwrap().upgrade().unwrap();
+        return parent.borrow_mut().is_symbol_in_parents(symbol);
+    }
+
+    pub fn invalidate(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
+        //signals that a change occured to this symbol. "step" indicates which level of change occured.
+        //It will trigger rebuild on all dependencies
+        let vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol]);
+        while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
+            let mut_symbol = ref_to_inv.borrow_mut();
+            if [SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
+                if *step == BuildSteps::ARCH {
+                    for (index, hashset) in mut_symbol.dependents[BuildSteps::ARCH as usize].iter().enumerate() {
+                        for sym in hashset {
+                            if !Rc::ptr_eq(&sym, &symbol) && !sym.is_symbol_in_parents(symbol) {
+                                if index == BuildSteps::ARCH as usize {
+                                    odoo.add_to_rebuild_arch(sym.clone());
+                                } else if index == BuildSteps::ARCH_EVAL as usize {
+                                    odoo.add_to_arch_eval(sym.clone());
+                                } else if index == BuildSteps::ODOO as usize {
+                                    odoo.add_to_init_odoo(sym.clone());
+                                } else if index == BuildSteps::VALIDATION as usize {
+                                    odoo.add_to_validations(sym.clone());
+                                }
+                            }
+                        
+                        }
+                    }
+                }
+                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) {
+                    for (index, hashset) in mut_symbol.dependents[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
+                        for sym in hashset {
+                            let s = sym.upgrade();
+                            if s.is_none() {
+                                continue;
+                            }
+                            let s = s.unwrap();
+                            if !Rc::ptr_eq(&s, &symbol) && !s.is_symbol_in_parents(symbol) {
+                                if index == BuildSteps::ARCH_EVAL as usize {
+                                    odoo.add_to_arch_eval(sym.clone());
+                                } else if index == BuildSteps::ODOO as usize {
+                                    odoo.add_to_init_odoo(sym.clone());
+                                } else if index == BuildSteps::VALIDATION as usize {
+                                    odoo.add_to_validations(sym.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO].contains(step) {
+                    for (index, hashset) in mut_symbol.dependents[BuildSteps::ODOO as usize].iter().enumerate() {
+                        for sym in hashset {
+                            let s = sym.upgrade();
+                            if s.is_none() {
+                                continue;
+                            }
+                            let s = s.unwrap();
+                            if !Rc::ptr_eq(&s, &symbol) && !s.is_symbol_in_parents(symbol) {
+                                if index == BuildSteps::ODOO as usize {
+                                    odoo.add_to_init_odoo(sym.clone());
+                                } else if index == BuildSteps::VALIDATION as usize {
+                                    odoo.add_to_validations(sym.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for sym in symbol.all_symbols(Some(TextRange::new(TextSize::new(9999999999), TextSize::new(99999999999))), false) {
+                vec_to_invalidate.push_back(sym.clone());
+            }
+        }
     }
 
     pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<RefCell<Symbol>>> {
@@ -474,6 +551,8 @@ impl Symbol {
     }
 
     pub fn all_symbols<'a>(&'a self, position:Option<TextRange>, include_inherits:bool) -> impl Iterator<Item= &'a Rc<RefCell<Symbol>>> + 'a {
+        //return an iterator on all symbols of self. If position is set, search in local_symbols too, otherwise only symbols in symbols and module_symbols will
+        //be returned. If include_inherits is set, symbols from parent will be included.
         let mut iter: Vec<Box<dyn Iterator<Item = &Rc<RefCell<Symbol>>>>> = Vec::new();
         if position.is_some() {
             let pos = position.as_ref().unwrap().clone();

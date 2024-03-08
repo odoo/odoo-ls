@@ -1,15 +1,11 @@
 mod backend;
 mod constants;
 mod core;
-use lazy_static::lazy_static;
-mod my_weak;
 mod utils;
 
 use backend::Backend;
 use core::odoo::Odoo;
-use core::file_mgr::FileMgr;
 use std::env;
-use std::sync::Mutex;
 use std::sync::Arc;
 use tower_lsp::{LspService, Server};
 
