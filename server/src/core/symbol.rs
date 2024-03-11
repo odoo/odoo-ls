@@ -277,7 +277,7 @@ impl Symbol {
         None
     }
 
-    pub fn is_symbol_in_parents(&self, symbol: Rc<RefCell<Symbol>>) -> bool {
+    pub fn is_symbol_in_parents(&self, symbol: &Rc<RefCell<Symbol>>) -> bool {
         if Rc::ptr_eq(&symbol, &self.get_arc().unwrap()) {
             return true;
         }
@@ -291,39 +291,33 @@ impl Symbol {
     pub fn invalidate(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
         //signals that a change occured to this symbol. "step" indicates which level of change occured.
         //It will trigger rebuild on all dependencies
-        let vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol]);
+        let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let mut_symbol = ref_to_inv.borrow_mut();
             if [SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
                 if *step == BuildSteps::ARCH {
                     for (index, hashset) in mut_symbol.dependents[BuildSteps::ARCH as usize].iter().enumerate() {
                         for sym in hashset {
-                            if !Rc::ptr_eq(&sym, &symbol) && !sym.is_symbol_in_parents(symbol) {
+                            if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
                                 if index == BuildSteps::ARCH as usize {
                                     odoo.add_to_rebuild_arch(sym.clone());
                                 } else if index == BuildSteps::ARCH_EVAL as usize {
-                                    odoo.add_to_arch_eval(sym.clone());
+                                    odoo.add_to_rebuild_arch_eval(sym.clone());
                                 } else if index == BuildSteps::ODOO as usize {
                                     odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
                                     odoo.add_to_validations(sym.clone());
                                 }
                             }
-                        
                         }
                     }
                 }
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) {
                     for (index, hashset) in mut_symbol.dependents[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
                         for sym in hashset {
-                            let s = sym.upgrade();
-                            if s.is_none() {
-                                continue;
-                            }
-                            let s = s.unwrap();
-                            if !Rc::ptr_eq(&s, &symbol) && !s.is_symbol_in_parents(symbol) {
+                            if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
                                 if index == BuildSteps::ARCH_EVAL as usize {
-                                    odoo.add_to_arch_eval(sym.clone());
+                                    odoo.add_to_rebuild_arch_eval(sym.clone());
                                 } else if index == BuildSteps::ODOO as usize {
                                     odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
@@ -336,12 +330,7 @@ impl Symbol {
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO].contains(step) {
                     for (index, hashset) in mut_symbol.dependents[BuildSteps::ODOO as usize].iter().enumerate() {
                         for sym in hashset {
-                            let s = sym.upgrade();
-                            if s.is_none() {
-                                continue;
-                            }
-                            let s = s.unwrap();
-                            if !Rc::ptr_eq(&s, &symbol) && !s.is_symbol_in_parents(symbol) {
+                            if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
                                 if index == BuildSteps::ODOO as usize {
                                     odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
@@ -352,7 +341,7 @@ impl Symbol {
                     }
                 }
             }
-            for sym in symbol.all_symbols(Some(TextRange::new(TextSize::new(9999999999), TextSize::new(99999999999))), false) {
+            for sym in mut_symbol.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
                 vec_to_invalidate.push_back(sym.clone());
             }
         }
@@ -402,7 +391,7 @@ impl Symbol {
                     Some(file_symbol) => {
                         drop(_sym);
                         if file_symbol.upgrade().expect("invalid weak value").borrow().arch_eval_status == BuildStatus::PENDING &&
-                        odoo.is_in_rebuild(&file_symbol, BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                        odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                             let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
                             builder.eval_arch(odoo);
                         }
@@ -435,7 +424,7 @@ impl Symbol {
                 if range.is_some() && range.unwrap().start() < self.symbols[&symbol_name].borrow_mut().range.unwrap().start() {
                     self.local_symbols.push(rc.clone());
                 } else {
-                    self.symbols[&symbol_name].borrow_mut().invalidate(&BuildSteps::ARCH);
+                    Symbol::invalidate(odoo, self.symbols[&symbol_name].clone(), &BuildSteps::ARCH);
                     self.local_symbols.push(self.symbols[&symbol_name].clone());
                     self.symbols.insert(symbol_name.clone(), rc.clone());
                 }

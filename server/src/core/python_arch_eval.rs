@@ -91,7 +91,7 @@ impl PythonArchEval {
                     drop(sym);
                     if file_sym.is_some() {
                         let arc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if arc_file_sym.borrow_mut().arch_eval_status == BuildStatus::PENDING && odoo.is_in_rebuild(file_sym.as_ref().unwrap(), BuildSteps::ARCH_EVAL) {
+                        if arc_file_sym.borrow_mut().arch_eval_status == BuildStatus::PENDING && odoo.is_in_rebuild(&arc_file_sym, BuildSteps::ARCH_EVAL) {
                             let mut builder = PythonArchEval::new(arc_file_sym);
                             builder.eval_arch(odoo);
                             //TODO remove from list?

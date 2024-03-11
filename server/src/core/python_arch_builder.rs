@@ -69,7 +69,7 @@ impl PythonArchBuilder {
                 }
             }
             self._resolve_all_symbols(odoo);
-            odoo.add_to_rebuild_arch_eval(Rc::downgrade(&self.sym_stack[0]));
+            odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.arch_status = BuildStatus::DONE;

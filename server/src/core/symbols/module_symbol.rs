@@ -216,7 +216,7 @@ impl ModuleSymbol {
             if !odoo.modules.contains_key(depend) {
                 let module = find_module(odoo, odoo_addons.clone(), depend);
                 if module.is_none() {
-                    odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().clone());
+                    odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
                     symbol.not_found_paths.insert(BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]);
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
@@ -253,7 +253,7 @@ impl ModuleSymbol {
             let _arc_symbol = Symbol::create_from_path(odoo, &tests_path, symbol, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                odoo.add_to_rebuild_arch(Rc::downgrade(&_arc_symbol));
+                odoo.add_to_rebuild_arch(_arc_symbol);
             }
         }
         vec![]

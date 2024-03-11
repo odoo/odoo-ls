@@ -91,7 +91,7 @@ impl SyncOdoo {
             } else {
                 &self.rebuild_arch
             };
-            let mut selected_sym: Option<&Rc<RefCell<Symbol>>> = None;
+            let mut selected_sym: Option<Rc<RefCell<Symbol>>> = None;
             let mut selected_count: u32 = 999999999;
             let mut current_count: u32;
             for sym in &*set {
@@ -128,7 +128,7 @@ impl SyncOdoo {
                     }
                 }
                 if current_count < selected_count {
-                    selected_sym = Some(&sym);
+                    selected_sym = Some(sym.clone());
                     selected_count = current_count;
                     if current_count == 0 {
                         break;
@@ -202,6 +202,14 @@ impl SyncOdoo {
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
         self.rebuild_arch_eval.insert(symbol);
+    }
+
+    pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        self.rebuild_odoo.insert(symbol);
+    }
+
+    pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        self.rebuild_validation.insert(symbol);
     }
 
     pub fn is_in_rebuild(&self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
