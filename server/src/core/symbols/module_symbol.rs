@@ -41,7 +41,7 @@ impl ModuleSymbol {
         if !manifest_path.exists() {
             return None;
         }
-        let manifest_file_info = odoo.file_mgr.get_file_info(manifest_path.as_os_str().to_str().unwrap());
+        let manifest_file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, manifest_path.as_os_str().to_str().unwrap(), None, None);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.ast.is_none() {
             return None;
@@ -73,7 +73,7 @@ impl ModuleSymbol {
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
-            let manifest_file_info = odoo.file_mgr.get_file_info(manifest_path.as_os_str().to_str().unwrap());
+            let manifest_file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, manifest_path.as_os_str().to_str().unwrap(), None, None);
             let mut manifest_file_info = (*manifest_file_info).borrow_mut();
             manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diagnostics);
             manifest_file_info.publish_diagnostics(odoo);

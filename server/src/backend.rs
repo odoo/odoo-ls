@@ -2,10 +2,12 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use serde_json::to_value;
+use crate::core::config::RefreshMode;
 use crate::core::odoo::Odoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
 use serde;
 use tokio::sync::Mutex;
+use tokio::time::Duration;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -24,6 +26,10 @@ impl LanguageServer for Backend {
                 version: Some("0.2.0".to_string())
             }),
             capabilities: ServerCapabilities {
+                text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
+                    change: Some(TextDocumentSyncKind::FULL),
+                    ..TextDocumentSyncOptions::default()
+                })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
@@ -40,6 +46,10 @@ impl LanguageServer for Backend {
                 },
             ],
         };
+        let textDocumentChangeRegistrationOptions = TextDocumentChangeRegistrationOptions {
+            document_selector: None,
+            sync_kind: 1, //TextDocumentSyncKind::FULL //TODO how to cast to i32?
+        };
         match self.client.register_capability(vec![
             Registration {
                 id: "workspace/didChangeWatchedFiles".to_string(),
@@ -51,6 +61,21 @@ impl LanguageServer for Backend {
                 method: "workspace/didChangeConfiguration".to_string(),
                 register_options: None,
             },
+            Registration {
+                id: "textDocument/didOpen".to_string(),
+                method: "textDocument/didOpen".to_string(),
+                register_options: None,
+            },
+            Registration {
+                id: "textDocument/didChange".to_string(),
+                method: "textDocument/didChange".to_string(),
+                register_options: Some(to_value(textDocumentChangeRegistrationOptions).unwrap()),
+            },
+            Registration {
+                id: "textDocument/didClose".to_string(),
+                method: "textDocument/didClose".to_string(),
+                register_options: None,
+            }
         ]).await {
             Ok(_) => (),
             Err(e) => self.client.log_message(MessageType::ERROR, format!("Error registering capabilities: {:?}", e)).await,
@@ -71,6 +96,24 @@ impl LanguageServer for Backend {
             ),
             range: None
         }))
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let mut odoo = self.odoo.lock().await;
+        let mut delay = 1000;
+        {
+            let sync_odoo = odoo.odoo.lock().unwrap();
+            if sync_odoo.config.refresh_mode != RefreshMode::AfterDelay {
+                return
+            }
+            delay = sync_odoo.config.auto_save_delay;
+        }
+        tokio::time::sleep(Duration::from_millis(delay)).await;
+        let path = params.text_document.uri.to_file_path().unwrap();
+        let version = params.text_document.version;
+        //TODO get source by keeping diff?
+        let source = params.content_changes[0].text.clone();
+        odoo.reload_file(&self.client, path, source, version).await;
     }
 
     async fn shutdown(&self) -> Result<()> {

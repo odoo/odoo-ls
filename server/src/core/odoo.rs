@@ -11,7 +11,7 @@ use weak_table::PtrWeakHashSet;
 use std::process::Command;
 use std::str::FromStr;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use regex::Regex;
 use crate::constants::*;
 use super::config::{self, DiagMissingImportsMode, RefreshMode};
@@ -33,7 +33,7 @@ pub struct SyncOdoo {
     pub builtins: Option<Rc<RefCell<Symbol>>>,
     pub stubs_dir: String,
     pub stdlib_dir: String,
-    pub file_mgr: FileMgr,
+    file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -60,7 +60,7 @@ impl SyncOdoo {
             config: Config::new(),
             symbols: Some(symbols),
             builtins: Some(builtins),
-            file_mgr: FileMgr::new(),
+            file_mgr: Rc::new(RefCell::new(FileMgr::new())),
             stubs_dir: PathBuf::from("./../server/typeshed/stubs").to_str().unwrap().to_string(),
             stdlib_dir: PathBuf::from("./../server/typeshed/stdlib").to_str().unwrap().to_string(),
             modules: HashMap::new(),
@@ -226,6 +226,34 @@ impl SyncOdoo {
             return self.rebuild_validation.contains(symbol);
         }
         false
+    }
+
+    pub fn get_file_mgr(&mut self) -> Rc<RefCell<FileMgr>> {
+        self.file_mgr.clone()
+    }
+
+    pub fn _unload_path(&mut self, path: PathBuf) -> Option<Rc<RefCell<Symbol>>> {
+        let mut symbol = self.symbols.as_ref().unwrap().borrow_mut();
+        let mut parent = symbol.get_symbol(&tree_from_path(&path));
+        if parent.is_none() {
+            return None;
+        }
+        let parent = parent.unwrap();
+        let mut parent = parent.borrow_mut();
+        let mut children = parent.children.clone();
+        let mut index = 0;
+        for child in children.iter() {
+            if child.borrow().path == path {
+                break;
+            }
+            index += 1;
+        }
+        if index < children.len() {
+            let removed = children.remove(index);
+            parent.children = children;
+            return Some(removed);
+        }
+        None
     }
 }
 
@@ -483,6 +511,26 @@ impl Odoo {
             println!("{}", sync_odoo.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
         }).await.unwrap();
         self.msg_sender.send(Msg::LOG_INFO(String::from("End building modules."))).await.expect("Unable to send message");
+    }
+
+    pub async fn reload_file(&mut self, client: &Client, path: PathBuf, content: String, version: i32) {
+        if path.extension().is_some() && path.extension().unwrap() == "py" {
+            client.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version)).await;
+            let _odoo = self.odoo.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut sync_odoo = _odoo.lock().unwrap();
+                let odoo = &mut sync_odoo;
+                let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
+                let mut mut_file_info = file_info.borrow_mut();
+                mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
+                let parent = odoo._unload_path(path.as_os_str().to_str().unwrap().to_string());
+                if parent.is_none() {
+                    return;
+                }
+                //build new
+                //search for missing symbols
+            }).await.expect("An error occured while executing reload_file sync block");
+        }
     }
 
 }
