@@ -21,6 +21,7 @@ export class ConfigurationWebView {
     public static panels: Map<number, ConfigurationWebView> | undefined;
     public static readonly viewType = 'odooConfiguration';
     public configId: number | undefined;
+    public config;
     private readonly _panel: WebviewPanel;
     private _disposables: Disposable[] = [];
     private readonly _context: vscode.ExtensionContext
@@ -32,12 +33,12 @@ export class ConfigurationWebView {
      * @param panel A reference to the webview panel
      * @param extensionUri The URI of the directory containing the extension
      */
-    private constructor(panel: WebviewPanel, configId: number, context: vscode.ExtensionContext) {
+    private constructor(panel: WebviewPanel, config, context: vscode.ExtensionContext) {
         this._panel = panel;
         this._context = context;
-        this.configId = configId;
-
-        this.addons = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[configId]["addons"];
+        this.configId = config.id;
+        this.config = config;
+        this.addons = config.addons;
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
@@ -80,7 +81,7 @@ export class ConfigurationWebView {
                     retainContextWhenHidden: true,
                 }
             );
-            ConfigurationWebView.panels.set(config.id, new ConfigurationWebView(panel, config.id, context));
+            ConfigurationWebView.panels.set(config.id, new ConfigurationWebView(panel, config, context));
         }
     }
 
@@ -116,7 +117,6 @@ export class ConfigurationWebView {
         const styleUri = getUri(webview, extensionUri, ["client", "views", "configurations", "style.css"]);
         const codiconStyleUri = getUri(webview, extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"]);
         const mainUri = getUri(webview, extensionUri, ["client", "views", "configurations", "configurationWebView.js"]);
-        const config = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[this.configId];
         const htmlFile = fs.readFileSync(htmlPath.fsPath, 'utf-8');
         const nonce = getNonce();
         const configsVersion: Map<String, String> = this._context.globalState.get("Odoo.configsVersion", null);
@@ -126,7 +126,7 @@ export class ConfigurationWebView {
             styleUri: styleUri,
             codiconStyleUri: codiconStyleUri,
             mainUri: mainUri,
-            config: config,
+            config: this.config,
             cspSource: webview.cspSource,
             nonce: nonce,
             odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null,
@@ -179,7 +179,7 @@ export class ConfigurationWebView {
             "pythonPath": untildify(pythonPath),
         };
         workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
-        if (this._context.workspaceState.get("Odoo.selectedConfiguration") == this.configId) {
+        if (workspace.getConfiguration().get("Odoo.selectedConfigurations") == this.configId) {
             ConfigurationsChange.fire(changes);
         }
         
