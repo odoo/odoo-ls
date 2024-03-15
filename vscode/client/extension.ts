@@ -119,19 +119,11 @@ function setMissingStateVariables(context: ExtensionContext) {
         ["Odoo.stateVersion", stateInit["Odoo.stateVersion"]],
         ["Odoo.lastRecordedVersion", context.extension.packageJSON.version], 
     ]);
-    const workspaceVariables = new Map([["Odoo.selectedConfiguration", [-1]]]);
 
     for (let key of globalVariables.keys()) {
         if (!globalStateKeys.includes(key)) {
             global.LSCLIENT.info(`${key} was missing in global state. Setting up the variable.`);
             context.globalState.update(key, globalVariables.get(key));
-        }
-    }
-
-    for (let key of workspaceVariables.keys()) {
-        if (!workspaceStateKeys.includes(key)) {
-            global.LSCLIENT.info(`${key} was missing in workspace state. Setting up the variable.`);
-            context.workspaceState.update(key, workspaceVariables.get(key));
         }
     }
 }
@@ -235,8 +227,8 @@ async function addNewConfiguration(context: ExtensionContext) {
 }
 
 async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
-    const oldConfig = await getCurrentConfig(context)
-    await context.workspaceState.update("Odoo.selectedConfiguration", configId);
+    const oldConfig = await getCurrentConfig(context);
+    await workspace.getConfiguration().update("Odoo.selectedConfiguration", configId, ConfigurationTarget.Workspace);
     selectedConfigurationChange.fire(oldConfig);
 }
 
@@ -459,6 +451,59 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
         })
     );
 
+    //Listen to changes to the workspace settings.json file
+    workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('Odoo.selectedConfiguration')) {
+            selectedConfigurationChange.event(async (oldConfig) => {
+                try {
+                    if (!global.CAN_QUEUE_CONFIG_CHANGE) return;
+    
+                    if (global.CLIENT_IS_STOPPING) {
+                        global.CAN_QUEUE_CONFIG_CHANGE = false;
+                        await waitForClientStop();
+                        global.CAN_QUEUE_CONFIG_CHANGE = true;
+                    }
+    
+                    let client = global.LSCLIENT;
+                    const config = await getCurrentConfig(context)
+                    if (config) {
+                        await checkOdooPath(context);
+                        await checkAddons(context);
+                        if (!global.IS_PYTHON_EXTENSION_READY){
+                            await checkStandalonePythonVersion(context);
+                            if (!oldConfig || config["pythonPath"] != oldConfig["pythonPath"]){
+                                onDidChangePythonInterpreterEvent.fire(config["pythonPath"]);
+                                await setStatusConfig(context);
+                                return
+                            }
+                        }
+                        if (!client) {
+                            global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
+                            client = global.LSCLIENT;
+                        }
+                        if (client.needsStart()) {
+                            await client.start();
+                            await client.sendNotification(
+                                "Odoo/clientReady",
+                            );
+                        } else {
+                            if (client.diagnostics) client.diagnostics.clear();
+                            await client.sendNotification("Odoo/configurationChanged");
+                        }
+                    } else {
+                        if (client?.isRunning()) await stopClient();
+                        global.IS_LOADING = false;
+                    }
+                    await setStatusConfig(context);
+                }
+                catch (error) {
+                    global.LSCLIENT.error(error);
+                    await displayCrashMessage(context, error, 'event.selectedConfigurationChange');
+                }
+            })
+        }
+    });
+
     // Listen to changes to the selected Configuration
     context.subscriptions.push(
         selectedConfigurationChange.event(async (oldConfig) => {
@@ -613,10 +658,10 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
                 qpick.onDidTriggerItemButton(async (buttonEvent) => {
                     if (buttonEvent.button.iconPath == gearIcon) {
-                        let buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
+                        const buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
+                        const config = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[buttonConfigId]
                         try {
-                            //TODO 
-                            ConfigurationWebView.render(context, Number(buttonConfigId));
+                            ConfigurationWebView.render(context, config);
                         } catch (error) {
                             global.LSCLIENT.error(error);
                             await displayCrashMessage(context, error, 'render.ConfigurationWebView');

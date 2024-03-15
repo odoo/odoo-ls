@@ -164,7 +164,7 @@
                 "odooPath": {
                   "type": "string",
                   "default": "",
-                  "description": "path where odoo community is installed (processed for ${} variables)"
+                  "description": "DO NOT MODIFY"
                 },
                 "pythonPath": {
                   "type": "string",
@@ -184,7 +184,7 @@
             }
           }
         },
-        "Odoo.activeConfiguration" :{
+        "Odoo.selectedConfiguration" :{
           "scope": "window",
           "type": "integer",
           "default": 0,
