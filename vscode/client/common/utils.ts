@@ -38,7 +38,11 @@ export async function getCurrentConfig(context: ExtensionContext) {
 }
 
 export async function evaluateOdooPath(odooPath){
+	if(!odooPath){
+		return
+	}
 	const workspaceFolders = workspace.workspaceFolders;
+	odooPath = odooPath.replaceAll("\\","/");
 
 	const fillTemplate = (template, vars = {}) => {
 		const handler = new Function('vars', [
@@ -54,11 +58,11 @@ export async function evaluateOdooPath(odooPath){
 	for (const i in workspaceFolders){
 		const folder = workspaceFolders[i];
 		let PATH_VAR_LOCAL = global.PATH_VARIABLES;
-		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.path;
+		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\","/");
 		odooPath = fillTemplate(odooPath,PATH_VAR_LOCAL);
 		const version = await getOdooVersion(odooPath);
 		if (version){
-			global.PATH_VARIABLES["workspaceFolder"] = folder.uri.path; 
+			global.PATH_VARIABLES["workspaceFolder"] = folder.uri.path.replaceAll("\\","/"); 
 			return {"path": odooPath,"version": version};
 		}
 	}

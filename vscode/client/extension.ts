@@ -292,7 +292,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                 await displayCrashMessage(context, params["crashInfo"]);
             })
         );
-        global.PATH_VARIABLES = {"userHome" : homedir()};
+        global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","\\\\")};
         if (autoStart) {
             await client.start();
             await client.sendNotification("Odoo/clientReady");
@@ -323,8 +323,8 @@ async function checkAddons(context: ExtensionContext) {
     if (currentConfig) {
         let missingFiles = files.filter(file => {
             return !(
-                currentConfig.addons.some((addon) => file.fsPath.startsWith(addon)) ||
-                file.fsPath.startsWith(currentConfig.processedOdooPath)
+                currentConfig.addons.some((addon) => file.fsPath.replaceAll("\\","/").startsWith(addon)) ||
+                file.fsPath.replaceAll("\\","/").startsWith(currentConfig.odooPath)
             )
         })
         let missingPaths = [...new Set(missingFiles.map(file => {
@@ -354,7 +354,7 @@ async function checkAddons(context: ExtensionContext) {
 
 async function checkOdooPath(context: ExtensionContext) {
     let currentConfig = await getCurrentConfig(context);
-    global.OUTPUT_CHANNEL.appendLine("check odoo path")
+    global.OUTPUT_CHANNEL.appendLine("[INFO] checking odoo path ".concat(currentConfig.rawOdooPath))
     const odoo = await evaluateOdooPath(currentConfig.rawOdooPath);
     if (odoo){
         let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
