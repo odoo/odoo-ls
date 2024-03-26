@@ -233,12 +233,12 @@ impl SyncOdoo {
     }
 
     /* Path must be absolute. */
-    pub fn tree_from_path(&mut self, path: &PathBuf) -> Result<Tree, &str> {
+    pub fn tree_from_path(&self, path: &PathBuf) -> Result<Tree, &str> {
         for root_sym in self.symbols.as_ref().unwrap().borrow().module_symbols.values() {
             let root_path = root_sym.borrow().paths.clone();
             for rp in root_path.iter() {
                 if path.starts_with(rp) {
-                    let mut path = path.strip_prefix(rp).unwrap().to_path_buf();
+                    let path = path.strip_prefix(rp).unwrap().to_path_buf();
                     let mut tree: Tree = (vec![], vec![]);
                     path.components().for_each(|c| {
                         tree.0.push(c.as_os_str().to_str().unwrap().to_string());
@@ -251,15 +251,15 @@ impl SyncOdoo {
     }
 
     pub fn _unload_path(&mut self, path: PathBuf, clean_cache: bool) -> Result<Rc<RefCell<Symbol>>, &str> {
-        let mut symbol = self.symbols.as_ref().unwrap().borrow_mut();
-        let mut path_symbol = symbol.get_symbol(&self.tree_from_path(&path).unwrap());
+        let symbol = self.symbols.as_ref().unwrap().borrow();
+        let path_symbol = symbol.get_symbol(&self.tree_from_path(&path).unwrap());
         if path_symbol.is_none() {
             return Err("Symbol not found");
         }
-        let parent = path_symbol.unwrap().borrow().parent.unwrap().upgrade().unwrap();
+        let parent = path_symbol.unwrap().borrow().parent.clone().unwrap().upgrade().unwrap();
         let mut parent_mut = parent.borrow_mut();
         if clean_cache {
-            let file_mgr = self.file_mgr.borrow_mut();
+            let mut file_mgr = self.file_mgr.borrow_mut();
             file_mgr.delete_path(self, path.as_os_str().to_str().unwrap().to_string());
             let mut to_del = Vec::from_iter(path_symbol.unwrap().borrow_mut().module_symbols.values());
             let mut index = 0;
@@ -270,8 +270,8 @@ impl SyncOdoo {
                 index += 1;
             }
         }
-        path_symbol.unwrap().borrow_mut().unload();
-        Ok(parent)
+        Symbol::unload(self, path_symbol.unwrap());
+        Ok(parent.clone())
     }
 }
 
@@ -541,8 +541,8 @@ impl Odoo {
                 let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
                 let mut mut_file_info = file_info.borrow_mut();
                 mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
-                let parent = odoo._unload_path(path);
-                if parent.is_none() {
+                let parent = odoo._unload_path(path, false);
+                if parent.is_err() {
                     return;
                 }
                 //build new

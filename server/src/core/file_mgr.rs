@@ -68,7 +68,7 @@ impl FileInfo {
         self.diagnostics.insert(step, diagnostics);
     }
 
-    pub fn publish_diagnostics(&mut self, odoo: &mut SyncOdoo) {
+    pub fn publish_diagnostics(&mut self, odoo: &SyncOdoo) {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
@@ -121,7 +121,7 @@ impl FileMgr {
         return_info
     }
 
-    pub fn delete_path(&mut self, odoo: &mut SyncOdoo, uri: String) {
+    pub fn delete_path(&mut self, odoo: &SyncOdoo, uri: String) {
         let to_del = self.files.remove(&uri);
         if let Some(to_del) = to_del {
             let mut to_del = (*to_del).borrow_mut();

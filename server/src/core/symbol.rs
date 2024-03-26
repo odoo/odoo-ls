@@ -347,7 +347,7 @@ impl Symbol {
         }
     }
 
-    pub fn unload(symbol: Rc<RefCell<Symbol>>) {
+    pub fn unload(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         if symbol.borrow().sym_type == SymType::DIRTY {
             panic!("Can't unload dirty symbol");
@@ -356,12 +356,63 @@ impl Symbol {
         while vec_to_unload.len() > 0 {
             let ref_to_unload = vec_to_unload.front().unwrap();
             let mut mut_symbol = ref_to_unload.borrow_mut();
+            // Unload children first
             let mut found_one = false;
             for sym in mut_symbol.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
                 found_one = true;
                 vec_to_unload.push_front(sym.clone());
             }
+            if found_one {
+                continue;
+            } else {
+                vec_to_unload.pop_front();
+            }
+            if DEBUG_MEMORY {
+                println!("Unloading symbol {:?} at {:?}", mut_symbol.name, mut_symbol.paths);
+            }
+            //unload symbol
+            mut_symbol.parent.unwrap().upgrade().unwrap().borrow_mut().remove_symbol(ref_to_unload.clone());
+            if mut_symbol._module.is_some() {
+                odoo.modules.remove(mut_symbol._module.as_ref().unwrap().dir_name.as_str());
+            }
+            if vec![SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
+                Symbol::invalidate(odoo, ref_to_unload.clone(), &BuildSteps::ARCH);
+            }
+            mut_symbol.sym_type = SymType::DIRTY;
         }
+    }
+
+    pub fn remove_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        if self.is_file_content() {
+            let in_symbols = self.symbols.get(&symbol.borrow().name);
+            if in_symbols.is_some() && Rc::ptr_eq(&in_symbols.unwrap(), &symbol) {
+                self.symbols.remove(&symbol.borrow().name);
+                let mut last: Option<Rc<RefCell<Symbol>>> = None;
+                let mut pos: usize = 0;
+                for s in self.local_symbols.iter() {
+                    pos += 1;
+                    if Rc::ptr_eq(s, &symbol) {
+                        last = Some(s.clone());
+                    }
+                }
+                pos -= 1;
+                if let Some(last) = last {
+                    self.symbols[&symbol.borrow().name] = last.clone();
+                    self.local_symbols.remove(pos);
+                }
+            } else {
+                let position = self.local_symbols.iter().position(|x| Rc::ptr_eq(x, &symbol));
+                if let Some(pos) = position {
+                    self.local_symbols.remove(pos);
+                }
+            }
+        } else {
+            let in_modules = self.module_symbols.get(&symbol.borrow().name);
+            if in_modules.is_some() && Rc::ptr_eq(&in_modules.unwrap(), &symbol) {
+                self.module_symbols.remove(&symbol.borrow().name);
+            }
+        }
+        symbol.borrow_mut().parent = None;
     }
 
     pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<RefCell<Symbol>>> {
