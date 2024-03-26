@@ -347,6 +347,23 @@ impl Symbol {
         }
     }
 
+    pub fn unload(symbol: Rc<RefCell<Symbol>>) {
+        /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
+        if symbol.borrow().sym_type == SymType::DIRTY {
+            panic!("Can't unload dirty symbol");
+        }
+        let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
+        while vec_to_unload.len() > 0 {
+            let ref_to_unload = vec_to_unload.front().unwrap();
+            let mut mut_symbol = ref_to_unload.borrow_mut();
+            let mut found_one = false;
+            for sym in mut_symbol.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
+                found_one = true;
+                vec_to_unload.push_front(sym.clone());
+            }
+        }
+    }
+
     pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<RefCell<Symbol>>> {
         if sym_types.contains(&self.sym_type) {
             return self.weak_self.clone();

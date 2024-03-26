@@ -121,6 +121,19 @@ impl FileMgr {
         return_info
     }
 
+    pub fn delete_path(&mut self, odoo: &mut SyncOdoo, uri: String) {
+        let to_del = self.files.remove(&uri);
+        if let Some(to_del) = to_del {
+            let mut to_del = (*to_del).borrow_mut();
+            to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+            to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
+            to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
+            to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
+            to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+            to_del.publish_diagnostics(odoo)
+        }
+    }
+
     // fn pathname2uri(s: &str) -> String {
     //     let mut path = s.replace("\\", "/");
     //     path = percent_encode(path.as_bytes(), PATH_SEGMENT_ENCODE_SET).to_string();

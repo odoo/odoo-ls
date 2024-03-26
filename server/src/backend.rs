@@ -50,6 +50,7 @@ impl LanguageServer for Backend {
             document_selector: None,
             sync_kind: 1, //TextDocumentSyncKind::FULL //TODO how to cast to i32?
         };
+        TextDocumentSyncKind::FULL;
         match self.client.register_capability(vec![
             Registration {
                 id: "workspace/didChangeWatchedFiles".to_string(),
