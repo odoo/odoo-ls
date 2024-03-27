@@ -6,7 +6,7 @@ pub const DEBUG_ARCH_BUILDER: bool = false;
 pub const DEBUG_ARCH_EVAL: bool = false;
 pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_VALIDATION: bool = false;
-pub const DEBUG_MEMORY: bool = false;
+pub const DEBUG_MEMORY: bool = true;
 pub const DEBUG_REBUILD: bool = false;
 
 pub type Tree = (Vec<String>, Vec<String>);

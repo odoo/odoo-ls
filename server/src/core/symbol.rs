@@ -371,19 +371,23 @@ impl Symbol {
                 println!("Unloading symbol {:?} at {:?}", mut_symbol.name, mut_symbol.paths);
             }
             //unload symbol
-            mut_symbol.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().remove_symbol(ref_to_unload.clone());
+            let parent = mut_symbol.parent.as_ref().unwrap().upgrade().unwrap().clone();
+            let mut parent = parent.borrow_mut();
+            drop(mut_symbol);
+            parent.remove_symbol(ref_to_unload.clone());
+            let mut mut_symbol = ref_to_unload.borrow_mut();
             if mut_symbol._module.is_some() {
                 odoo.modules.remove(mut_symbol._module.as_ref().unwrap().dir_name.as_str());
             }
+            mut_symbol.sym_type = SymType::DIRTY;
             if vec![SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
                 Symbol::invalidate(odoo, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
-            mut_symbol.sym_type = SymType::DIRTY;
         }
     }
 
     pub fn remove_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        if self.is_file_content() {
+        if symbol.borrow().is_file_content() {
             let in_symbols = self.symbols.get(&symbol.borrow().name);
             if in_symbols.is_some() && Rc::ptr_eq(&in_symbols.unwrap(), &symbol) {
                 self.symbols.remove(&symbol.borrow().name);
@@ -395,8 +399,8 @@ impl Symbol {
                         last = Some(s.clone());
                     }
                 }
-                pos -= 1;
                 if let Some(last) = last {
+                    pos -= 1;
                     self.symbols.insert(symbol.borrow().name.clone(), last.clone());
                     self.local_symbols.remove(pos);
                 }
@@ -602,6 +606,7 @@ impl Symbol {
     }
 
     pub fn debug_print_graph(&self) -> String {
+        println!("starting log");
         let mut res: String = String::new();
         self._debug_print_graph_node(&mut res, 0);
         res

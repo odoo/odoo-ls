@@ -48,17 +48,17 @@ impl FileInfo {
             }
         }
         if let Some(content) = content {
-            self._build_ast(&content);
+            self._build_ast(&content, uri);
         } else {
             match fs::read_to_string(uri) {
-                Ok(content) => self._build_ast(&content),
+                Ok(content) => self._build_ast(&content, uri),
                 Err(_) => odoo.msg_sender.blocking_send(Msg::LOG_ERROR(format!("Failed to read file {}", uri))).expect("error sending log message"),
             };
         }
     }
-
-    pub fn _build_ast(&mut self, content: &str) {
-        self.ast = Some(ast::Suite::parse_without_path(&content).unwrap()); //TODO handle errors
+//"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
+    pub fn _build_ast(&mut self, content: &str, content_path: &str) {
+        self.ast = Some(ast::Suite::parse(&content, content_path).unwrap()); //TODO handle errors
         self.text_rope = Some(ropey::Rope::from(content));
         self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
     }

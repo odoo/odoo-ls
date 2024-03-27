@@ -36,6 +36,9 @@ impl ModuleSymbol {
             depends: vec!("base".to_string()),
             data: Vec::new(),
         };
+        if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
+            module.depends.clear();
+        }
         module.dir_name = dir_path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let manifest_path = dir_path.join("__manifest__.py");
         if !manifest_path.exists() {

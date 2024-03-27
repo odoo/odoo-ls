@@ -130,7 +130,7 @@ pub fn find_module(odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>, name: 
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name);
         if is_dir_cs(full_path.as_os_str().to_str().unwrap().to_string()) {
-            let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), odoo_addons.clone(), false);
+            let _arc_symbol = Symbol::create_from_path(odoo, &full_path, odoo_addons.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 odoo.add_to_rebuild_arch(_arc_symbol.clone());

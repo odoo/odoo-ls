@@ -20,6 +20,7 @@ use super::symbol::Symbol;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::messages::Msg;
+use crate::utils::S;
 //use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
@@ -232,25 +233,43 @@ impl SyncOdoo {
         self.file_mgr.clone()
     }
 
-    /* Path must be absolute. */
+    /* Path must be absolute. Return a valid tree according the root paths and odoo/addons path. The given
+    tree may not be in the graph however */
     pub fn tree_from_path(&self, path: &PathBuf) -> Result<Tree, &str> {
-        for root_sym in self.symbols.as_ref().unwrap().borrow().module_symbols.values() {
-            let root_path = root_sym.borrow().paths.clone();
-            for rp in root_path.iter() {
-                if path.starts_with(rp) {
-                    let path = path.strip_prefix(rp).unwrap().to_path_buf();
-                    let mut tree: Tree = (vec![], vec![]);
+        //First check in odoo, before anywhere else
+        {
+            let odoo_sym = self.symbols.as_ref().unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![]));
+            for addon_path in odoo_sym.unwrap().borrow().paths.iter() {
+                if path.starts_with(addon_path) {
+                    let path = path.strip_prefix(addon_path).unwrap().to_path_buf();
+                    let mut tree: Tree = (vec![S!("odoo"), S!("addons")], vec![]);
                     path.components().for_each(|c| {
-                        tree.0.push(c.as_os_str().to_str().unwrap().to_string());
+                        tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
                     });
+                    if vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
+                        tree.0.pop();
+                    } 
                     return Ok(tree);
                 }
+            }
+        }
+        for root_path in self.symbols.as_ref().unwrap().borrow().paths.iter() {
+            if path.starts_with(root_path) {
+                let path = path.strip_prefix(root_path).unwrap().to_path_buf();
+                let mut tree: Tree = (vec![], vec![]);
+                path.components().for_each(|c| {
+                    tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").to_string());
+                });
+                if tree.0.len() > 0 && vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
+                    tree.0.pop();
+                } 
+                return Ok(tree);
             }
         }
         Err("Path not found in any module")
     }
 
-    pub fn _unload_path(&mut self, path: PathBuf, clean_cache: bool) -> Result<Rc<RefCell<Symbol>>, &str> {
+    pub fn _unload_path(&mut self, path: &PathBuf, clean_cache: bool) -> Result<Rc<RefCell<Symbol>>, &str> {
         let symbol = self.symbols.as_ref().unwrap().borrow();
         let path_symbol = symbol.get_symbol(&self.tree_from_path(&path).unwrap());
         if path_symbol.is_none() {
@@ -258,7 +277,6 @@ impl SyncOdoo {
         }
         let path_symbol = path_symbol.unwrap();
         let parent = path_symbol.borrow().parent.clone().unwrap().upgrade().unwrap();
-        let mut parent_mut = parent.borrow_mut();
         if clean_cache {
             let mut file_mgr = self.file_mgr.borrow_mut();
             file_mgr.delete_path(self, path.as_os_str().to_str().unwrap().to_string());
@@ -273,7 +291,23 @@ impl SyncOdoo {
         }
         drop(symbol);
         Symbol::unload(self, path_symbol);
-        Ok(parent.clone())
+        Ok(parent)
+    }
+
+    pub fn create_new_symbol(&mut self, path: PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<(Rc<RefCell<Symbol>>,Tree)> {
+        let _arc_symbol = Symbol::create_from_path(self, &path, parent, require_module);
+        if _arc_symbol.is_some() {
+            let _arc_symbol = _arc_symbol.unwrap();
+            self.add_to_rebuild_arch(_arc_symbol.clone());
+            return Some((_arc_symbol.clone(), _arc_symbol.borrow().get_tree().clone()));
+        }
+        None
+    }
+
+    /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
+        from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
+    pub fn search_symbols_to_rebuild(&mut self, tree: &Tree) {
+        //TODO
     }
 }
 
@@ -543,12 +577,18 @@ impl Odoo {
                 let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
                 let mut mut_file_info = file_info.borrow_mut();
                 mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
-                let parent = odoo._unload_path(path, false);
+                let parent = odoo._unload_path(&path, false);
                 if parent.is_err() {
+                    println!("An error occured while reloading file. Ignoring");
                     return;
                 }
+                let parent = parent.unwrap();
                 //build new
-                //search for missing symbols
+                let result = odoo.create_new_symbol(path.clone(), parent, false);
+                if let Some((symbol, tree)) = result {
+                    //search for missing symbols
+                    odoo.search_symbols_to_rebuild(&tree);
+                }
             }).await.expect("An error occured while executing reload_file sync block");
         }
     }
