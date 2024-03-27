@@ -256,21 +256,23 @@ impl SyncOdoo {
         if path_symbol.is_none() {
             return Err("Symbol not found");
         }
-        let parent = path_symbol.unwrap().borrow().parent.clone().unwrap().upgrade().unwrap();
+        let path_symbol = path_symbol.unwrap();
+        let parent = path_symbol.borrow().parent.clone().unwrap().upgrade().unwrap();
         let mut parent_mut = parent.borrow_mut();
         if clean_cache {
             let mut file_mgr = self.file_mgr.borrow_mut();
             file_mgr.delete_path(self, path.as_os_str().to_str().unwrap().to_string());
-            let mut to_del = Vec::from_iter(path_symbol.unwrap().borrow_mut().module_symbols.values());
+            let mut to_del = Vec::from_iter(path_symbol.borrow_mut().module_symbols.values().map(|x| x.clone()));
             let mut index = 0;
             while index < to_del.len() {
                 file_mgr.delete_path(self, to_del[index].borrow().paths[0].clone());
-                let mut to_del_child = Vec::from_iter(to_del[index].borrow().module_symbols.values());
+                let mut to_del_child = Vec::from_iter(to_del[index].borrow().module_symbols.values().map(|x| x.clone()));
                 to_del.append(&mut to_del_child);
                 index += 1;
             }
         }
-        Symbol::unload(self, path_symbol.unwrap());
+        drop(symbol);
+        Symbol::unload(self, path_symbol);
         Ok(parent.clone())
     }
 }

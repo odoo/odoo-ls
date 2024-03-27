@@ -354,7 +354,7 @@ impl Symbol {
         }
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while vec_to_unload.len() > 0 {
-            let ref_to_unload = vec_to_unload.front().unwrap();
+            let ref_to_unload = vec_to_unload.front().unwrap().clone();
             let mut mut_symbol = ref_to_unload.borrow_mut();
             // Unload children first
             let mut found_one = false;
@@ -371,7 +371,7 @@ impl Symbol {
                 println!("Unloading symbol {:?} at {:?}", mut_symbol.name, mut_symbol.paths);
             }
             //unload symbol
-            mut_symbol.parent.unwrap().upgrade().unwrap().borrow_mut().remove_symbol(ref_to_unload.clone());
+            mut_symbol.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().remove_symbol(ref_to_unload.clone());
             if mut_symbol._module.is_some() {
                 odoo.modules.remove(mut_symbol._module.as_ref().unwrap().dir_name.as_str());
             }
@@ -397,7 +397,7 @@ impl Symbol {
                 }
                 pos -= 1;
                 if let Some(last) = last {
-                    self.symbols[&symbol.borrow().name] = last.clone();
+                    self.symbols.insert(symbol.borrow().name.clone(), last.clone());
                     self.local_symbols.remove(pos);
                 }
             } else {
