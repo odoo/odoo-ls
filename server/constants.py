@@ -1,7 +1,7 @@
 from enum import Enum
 
 EXTENSION_NAME = "Odoo"
-EXTENSION_VERSION = "0.2.4"
+EXTENSION_VERSION = "0.2.5"
 
 #DEBUG PARAMETERS
 

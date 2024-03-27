@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.5 - 2024/03/27
+
+This update brings some changes to the vscode integration of the language server. There is no update to the server itself as we are
+currently rewritting it in a different language (Rust). It will bring a lot of performances and save memory. No new feature to the server
+is planned while the translation is not done.
+
+### VsCode
+
+- allowing odooPath to contain ${workspaceFolder} and ${userHome}
+- configurations are now editable in settings.json
+- current configuration is now stored in the workspace settings
+- allowing the extension to work with the python VS code extension or in standalone mode
+- heavy refactoring, improved stability
+
+### Fixs
+- Odoo configuration selected does not match the odoo path popup fixed
+
 ## 0.2.4 - 2023/01/10
 
 ### Fixs
