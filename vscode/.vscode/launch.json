@@ -18,28 +18,6 @@
             }
         },
         {
-            "name": "Launch Server",
-            "type": "lldb",
-            "request": "launch",
-            "program": "${workspaceRoot}/../server/target/debug/server",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "console": "externalTerminal"
-        },
-        {
-            "name": "Launch Server [WebSockets]",
-            "type": "python",
-            "request": "launch",
-            "module": "server",
-            "args": ["--ws"],
-            "justMyCode": false,
-            "python": "${command:python.interpreterPath}",
-            "cwd": "${workspaceFolder}/..",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            }
-        },
-        {
             "name": "Launch Test Setup",
             "type": "python",
             "request": "launch",
@@ -105,10 +83,4 @@
             }
         },
     ],
-    "compounds": [
-        {
-            "name": "Server + Client",
-            "configurations": ["Launch Server", "Launch VsCode Client"]
-        }
-    ]
 }

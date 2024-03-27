@@ -1,0 +1,19 @@
+// A launch configuration that compiles the extension and then opens it inside a new window
+{
+    "version": "1.0.0",
+    "configurations": [
+        {
+            "name": "Launch Server (lldb)",
+            "type": "lldb",
+            "request": "launch",
+            "args": [],
+            "cargo": {
+                "args": [
+                    "build"
+                ]
+            },
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
+        },
+    ]
+}
