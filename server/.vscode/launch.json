@@ -15,5 +15,14 @@
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal"
         },
+        {
+            "name": "Launch Server (cppvsdbg)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/server.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
+        },
     ]
 }
