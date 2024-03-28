@@ -166,6 +166,7 @@ impl SyncOdoo {
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         while !self.rebuild_arch.is_empty() || !self.rebuild_arch_eval.is_empty() {
+            //println!("remains: {:?} - {:?}", self.rebuild_arch.len(), self.rebuild_arch_eval.len());
             let sym = self.pop_item(BuildSteps::ARCH);
             if sym.is_some() {
                 let sym_arc = sym.as_ref().unwrap().clone();
@@ -211,6 +212,22 @@ impl SyncOdoo {
 
     pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
         self.rebuild_validation.insert(symbol);
+    }
+
+    pub fn remove_from_rebuild_arch(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+        self.rebuild_arch.remove(symbol);
+    }
+
+    pub fn remove_from_rebuild_arch_eval(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+        self.rebuild_arch_eval.remove(symbol);
+    }
+
+    pub fn remove_from_rebuild_odoo(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+        self.rebuild_odoo.remove(symbol);
+    }
+
+    pub fn remove_from_rebuild_validation(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+        self.rebuild_validation.remove(symbol);
     }
 
     pub fn is_in_rebuild(&self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
@@ -306,8 +323,44 @@ impl SyncOdoo {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
         from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, tree: &Tree) {
-        //TODO
+    pub fn search_symbols_to_rebuild(&mut self, tree: &Tree) -> bool {
+        let flat_tree = vec![tree.0.clone(), tree.1.clone()].concat();
+        let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+        let mut need_rebuild = false;
+        for s in self.not_found_symbols.iter() {
+            let mut index = 0;
+            while index < s.borrow().not_found_paths.len() {
+                let (step, not_found_tree) = s.borrow().not_found_paths[index].clone();
+                if flat_tree[..not_found_tree.len()] == not_found_tree[..flat_tree.len()] {
+                    need_rebuild = true;
+                    match step {
+                        BuildSteps::ARCH => {
+                            self.rebuild_arch.insert(s.clone());
+                        },
+                        BuildSteps::ARCH_EVAL => {
+                            self.rebuild_arch_eval.insert(s.clone());
+                        },
+                        BuildSteps::ODOO => {
+                            self.rebuild_odoo.insert(s.clone());
+                        },
+                        BuildSteps::VALIDATION => {
+                            self.rebuild_validation.insert(s.clone());
+                        },
+                        _ => {}
+                    }
+                    s.borrow_mut().not_found_paths.remove(index);
+                    index -= 1;
+                }
+                index += 1;
+            }
+            if s.borrow().not_found_paths.len() == 0 {
+                found_sym.insert(s.clone());
+            }
+        }
+        for sym in found_sym.iter() {
+            self.not_found_symbols.remove(&sym);
+        }
+        need_rebuild
     }
 }
 
@@ -395,7 +448,6 @@ impl Odoo {
                 let mut root_symbol = sync_odoo.symbols.as_ref().unwrap().borrow_mut();
                 root_symbol.paths.push(sync_odoo.stdlib_dir.clone());
                 root_symbol.paths.push(sync_odoo.stubs_dir.clone());
-                //TODO add sys.path
                 let output = Command::new(sync_odoo.config.python_path.clone()).args(&["-c", "import sys; print(sys.path)"]).output().expect("Can't exec python3");
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -548,7 +600,7 @@ impl Odoo {
                         for item in PathBuf::from(addon_path).read_dir().expect("Unable to find odoo addons path") {
                             match item {
                                 Ok(item) => {
-                                    if item.file_type().unwrap().is_dir() {
+                                    if item.file_type().unwrap().is_dir() && !sync_odoo.modules.contains_key(&item.file_name().to_str().unwrap().to_string()) {
                                         let module_symbol = Symbol::create_from_path(&mut sync_odoo, &item.path(), addons_symbol.clone(), true);
                                         if module_symbol.is_some() {
                                             sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
@@ -577,6 +629,7 @@ impl Odoo {
                 let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
                 let mut mut_file_info = file_info.borrow_mut();
                 mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
+                drop(mut_file_info);
                 let parent = odoo._unload_path(&path, false);
                 if parent.is_err() {
                     println!("An error occured while reloading file. Ignoring");
@@ -589,6 +642,7 @@ impl Odoo {
                     //search for missing symbols
                     odoo.search_symbols_to_rebuild(&tree);
                 }
+                odoo.process_rebuilds();
             }).await.expect("An error occured while executing reload_file sync block");
         }
     }

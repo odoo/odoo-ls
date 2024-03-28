@@ -35,7 +35,7 @@ pub struct Symbol {
     dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
     pub range: Option<TextRange>,
-    pub not_found_paths: HashMap<BuildSteps, Vec<String>>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: bool,
@@ -96,7 +96,7 @@ impl Symbol {
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
             range: None,
-            not_found_paths: HashMap::new(),
+            not_found_paths: Vec::new(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             odoo_status: false,

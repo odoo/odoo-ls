@@ -36,6 +36,7 @@ impl ModuleSymbol {
             depends: vec!("base".to_string()),
             data: Vec::new(),
         };
+        println!("building new module: {:?}", dir_path);
         if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
             module.depends.clear();
         }
@@ -56,6 +57,7 @@ impl ModuleSymbol {
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diags);
         manifest_file_info.publish_diagnostics(odoo);
         drop(manifest_file_info);
+        println!("End building new module: {:?}", dir_path);
         Some(module)
     }
 
@@ -220,7 +222,7 @@ impl ModuleSymbol {
                 let module = find_module(odoo, odoo_addons.clone(), depend);
                 if module.is_none() {
                     odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
-                    symbol.not_found_paths.insert(BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]);
+                    symbol.not_found_paths.push((BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]));
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
                         Some(DiagnosticSeverity::ERROR),

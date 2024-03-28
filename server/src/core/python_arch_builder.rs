@@ -5,7 +5,7 @@ use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Alias, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, Constant};
 use std::path::PathBuf;
 
-use crate::constants::{SymType, BuildStatus};
+use crate::constants::{SymType, BuildStatus, BuildSteps};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -37,7 +37,7 @@ impl PythonArchBuilder {
             panic!()
         }
         let mut path = symbol.paths[0].clone();
-        //println!("path: {}", path);
+        //println!("load arch path: {}", path);
         if symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
@@ -91,7 +91,9 @@ impl PythonArchBuilder {
                     level,
                     range).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    //TODO add to not found symbols
+                    odoo.not_found_symbols.insert(self.sym_stack[0].clone());
+                    let file_tree_flattened = vec![import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
+                    self.sym_stack[0].borrow_mut().not_found_paths.push((BuildSteps::ARCH, file_tree_flattened));
                     continue;
                 }
                 let allowed_names = true;
@@ -103,6 +105,14 @@ impl PythonArchBuilder {
                     variable.range = Some(import_name.range.clone());
                     variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
                     //TODO add dependency
+                    if variable.evaluation.is_some() {
+                        let evaluation = variable.evaluation.as_ref().unwrap();
+                        let evaluated = evaluation.get_symbol().upgrade();
+                        if evaluated.is_some() {
+                            let evaluated = evaluated.unwrap();
+                            self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                        }
+                    }
                     self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
                 }
 

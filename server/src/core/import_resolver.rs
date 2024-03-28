@@ -133,6 +133,7 @@ pub fn find_module(odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>, name: 
             let _arc_symbol = Symbol::create_from_path(odoo, &full_path, odoo_addons.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
+                odoo.modules.insert(name.clone(), Rc::downgrade(&_arc_symbol));
                 odoo.add_to_rebuild_arch(_arc_symbol.clone());
                 return Some(_arc_symbol);
             }
