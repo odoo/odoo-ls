@@ -19,8 +19,8 @@ use super::file_mgr::FileMgr;
 use super::symbol::Symbol;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
-use crate::core::messages::Msg;
-use crate::utils::S;
+use crate::core::messages::{Msg, MsgHandler};
+use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
 
 #[derive(Debug)]
@@ -41,14 +41,14 @@ pub struct SyncOdoo {
     rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    pub msg_sender: tokio::sync::mpsc::Sender<Msg>,
+    pub msg_sender: MsgHandler,
 }
 
 unsafe impl Send for SyncOdoo {}
 
 impl SyncOdoo {
 
-    pub fn new(msg_sender: tokio::sync::mpsc::Sender<Msg>) -> Self {
+    pub fn new(msg_sender: MsgHandler) -> Self {
         let symbols = Rc::new(RefCell::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
         let builtins = Rc::new(RefCell::new(Symbol::new_root("builtins".to_string(), SymType::ROOT)));
         builtins.borrow_mut().weak_self = Some(Rc::downgrade(&builtins)); // manually set weakself for root symbols
@@ -372,8 +372,9 @@ pub struct Odoo {
 
 impl Odoo {
     pub fn new(sx: tokio::sync::mpsc::Sender<Msg>) -> Self {
+        let odoo = Arc::new(Mutex::new(SyncOdoo::new(MsgHandler::TOKIO_MPSC(sx.clone()))));
         Self {
-            odoo: Arc::new(Mutex::new(SyncOdoo::new(sx.clone()))),
+            odoo: odoo,
             msg_sender: sx.clone(),
         }
     }
@@ -451,7 +452,7 @@ impl Odoo {
                 let output = Command::new(sync_odoo.config.python_path.clone()).args(&["-c", "import sys; print(sys.path)"]).output().expect("Can't exec python3");
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
-                    sync_odoo.msg_sender.blocking_send(Msg::LOG_INFO(format!("Detected sys.path: {}", stdout))).expect("Unable to send message");
+                    sync_odoo.msg_sender.send(Msg::LOG_INFO(format!("Detected sys.path: {}", stdout)));
                     // extract vec of string from output
                     if stdout.len() > 5 {
                         let values = String::from((stdout[2..stdout.len()-3]).to_string());
@@ -460,7 +461,7 @@ impl Odoo {
                             if value.len() > 0 {
                                 let pathbuf = PathBuf::from(value.clone());
                                 if pathbuf.is_dir() {
-                                    sync_odoo.msg_sender.blocking_send(Msg::LOG_INFO(format!("Adding sys.path: {}", stdout))).expect("Unable to send message");
+                                    sync_odoo.msg_sender.send(Msg::LOG_INFO(format!("Adding sys.path: {}", stdout)));
                                     root_symbol.paths.push(value.clone());
                                 }
                             }

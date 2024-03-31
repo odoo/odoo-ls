@@ -1,10 +1,5 @@
-mod backend;
-mod constants;
-mod core;
-mod utils;
-
-use backend::Backend;
-use core::odoo::Odoo;
+use server::backend::Backend;
+use server::core::odoo::Odoo;
 use std::env;
 use std::sync::Arc;
 use tower_lsp::{LspService, Server};

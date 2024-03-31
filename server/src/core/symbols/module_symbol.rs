@@ -9,7 +9,7 @@ use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::{self, Symbol};
 use crate::constants::EXTENSION_NAME;
-use crate::utils::S;
+use crate::S;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;

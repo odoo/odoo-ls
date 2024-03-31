@@ -1,11 +1,11 @@
 use std::fs;
 
+#[macro_export]
 macro_rules! S {
     ($x: expr) => {
         String::from($x)
     };
 }
-pub(crate) use S;
 
 pub fn is_file_cs(path: String) -> bool {
     match fs::canonicalize(path) {

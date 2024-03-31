@@ -52,7 +52,7 @@ impl FileInfo {
         } else {
             match fs::read_to_string(uri) {
                 Ok(content) => self._build_ast(&content, uri),
-                Err(_) => odoo.msg_sender.blocking_send(Msg::LOG_ERROR(format!("Failed to read file {}", uri))).expect("error sending log message"),
+                Err(_) => odoo.msg_sender.send(Msg::LOG_ERROR(format!("Failed to read file {}", uri))),
             };
         }
     }
@@ -75,7 +75,7 @@ impl FileInfo {
             for diagnostics in self.diagnostics.values() {
                 all_diagnostics.extend(diagnostics.clone());
             }
-            let _ = odoo.msg_sender.blocking_send(Msg::DIAGNOSTIC(MsgDiagnostic{
+            let _ = odoo.msg_sender.send(Msg::DIAGNOSTIC(MsgDiagnostic{
                 uri: url::Url::parse(&format!("file://{}", self.uri)).expect("Failed to parse manifest uri"),
                 diags: all_diagnostics,
                 version: Some(self.version),
