@@ -15,8 +15,8 @@ fn test_setup() {
     assert!(Path::new(&env::var("COMMUNITY_PATH").unwrap()).join("odoo").join("release.py").exists());
 }
 
-#[tokio::test]
-async fn test_start_odoo_server() {
+#[test]
+fn test_start_odoo_server() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
     let odoo = setup::setup::setup_server();
     let sync_channel = &odoo.msg_sender;

@@ -543,6 +543,7 @@ impl Symbol {
                 } else if !require_module {
                     (*ref_sym).borrow_mut().paths = vec![path_str.clone()];
                 } else {
+                    (*parent).borrow_mut().remove_symbol(ref_sym);
                     return None;
                 }
                 return Some(ref_sym);
