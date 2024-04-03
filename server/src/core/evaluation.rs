@@ -15,42 +15,73 @@ pub enum EvaluationValue {
     TUPLE(Vec<rustpython_parser::ast::Constant>)
 }
 
+#[derive(Debug)]
+pub enum Evaluation {
+    EvaluationSymbol(EvaluationSymbol),
+    EvaluationValue(EvaluationValue)
+}
 
 #[derive(Debug, Default)]
-pub struct Evaluation {
+pub struct EvaluationSymbol {
     symbol: Weak<RefCell<Symbol>>,
     pub instance: bool,
     pub context: HashMap<String, bool>,
-    pub value: Option<EvaluationValue>,
     _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>,
 }
 
 impl Evaluation {
+
+    pub fn is_symbol(&self) -> bool {
+        match self {
+            Evaluation::EvaluationSymbol(s) => true,
+            _ => false
+        }
+    }
+
+    pub fn is_value(&self) -> bool {
+        match self {
+            Evaluation::EvaluationValue(s) => true,
+            _ => false
+        }
+    }
+
+    pub fn as_symbol(&self) -> Option<&EvaluationSymbol> {
+        match self {
+            Evaluation::EvaluationSymbol(s) => Some(s),
+            _ => None
+        }
+    }
+
+    pub fn as_value(&self) -> Option<&EvaluationValue> {
+        match self {
+            Evaluation::EvaluationValue(s) => Some(s),
+            _ => None
+        }
+    }
 
     pub fn eval_from_symbol(symbol: &Rc<RefCell<Symbol>>) -> Evaluation{
         let mut instance = false;
         if [SymType::VARIABLE, SymType::CONSTANT].contains(&symbol.borrow_mut().sym_type) {
             instance = true
         }
-        Evaluation {
+        Evaluation::EvaluationSymbol(EvaluationSymbol {
             symbol: Rc::downgrade(symbol),
             instance: instance,
             context: HashMap::new(),
-            value: None,
             _internal_hold_symbol: None,
-        }
+        })
     }
 
     // eval an ast expression that represent the evaluation of a symbol.
     // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on a
     pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr<TextRange>, parent: Rc<RefCell<Symbol>>) -> Option<Evaluation> {
-        let mut res = Evaluation::default();
+        let mut res = EvaluationSymbol::default();
         match ast {
             Expr::Constant(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT)))); //TODO check to not hold a dummy symbol for constants
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
-                res.value = Some(EvaluationValue::CONSTANT(expr.value.clone()));
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::CONSTANT(expr.value.clone())));
             },
             Expr::List(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_l".to_string(), SymType::CONSTANT))));
@@ -66,9 +97,7 @@ impl Evaluation {
                     }
                 }
                 if values.len() > 0 {
-                    res.value = Some(EvaluationValue::LIST(values));
-                } else {
-                    res.value = None;
+                    res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::LIST(values)));
                 }
             },
             Expr::Tuple(expr) => {
@@ -85,9 +114,7 @@ impl Evaluation {
                     }
                 }
                 if values.len() > 0 {
-                    res.value = Some(EvaluationValue::TUPLE(values));
-                } else {
-                    res.value = None;
+                    res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::TUPLE(values)));
                 }
             },
             Expr::Dict(expr) => {
@@ -122,9 +149,7 @@ impl Evaluation {
                     }
                 }
                 if values.len() > 0 {
-                    res.value = Some(EvaluationValue::DICT(values));
-                } else {
-                    res.value = None;
+                    res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::DICT(values)));
                 }
             },
             Expr::Call(expr) => {
@@ -132,10 +157,10 @@ impl Evaluation {
             },
             Expr::Attribute(expr) => {
                 let eval = Evaluation::eval_from_ast(odoo, &expr.value, parent);
-                if eval.is_none() || eval.as_ref().unwrap().symbol.upgrade().is_none() {
+                if eval.is_none() || eval.as_ref().unwrap().as_symbol().unwrap().symbol.upgrade().is_none() {
                     return None;
                 }
-                let base = eval.unwrap().symbol.upgrade();
+                let base = eval.unwrap().as_symbol().unwrap().symbol.upgrade();
                 if base.is_none() {
                     return None;
                 }
@@ -161,18 +186,20 @@ impl Evaluation {
                 res.symbol = Rc::downgrade(infered_sym.as_ref().unwrap());
                 let infered_sym = infered_sym.as_ref().unwrap().borrow();
                 res.instance = infered_sym.sym_type != SymType::CLASS;
-                if infered_sym.evaluation.is_some() {
-                    res.instance = infered_sym.evaluation.as_ref().unwrap().instance;
+                if infered_sym.evaluation.is_some() && infered_sym.evaluation.as_ref().unwrap().is_symbol() {
+                    res.instance = infered_sym.evaluation.as_ref().unwrap().as_symbol().unwrap().instance;
                 }
 
             },
             _ => {}
         }
-        Some(res)
+        Some(Evaluation::EvaluationSymbol(res))
     }
 
+}
+
+impl EvaluationSymbol {
     pub fn get_symbol(&self) -> &Weak<RefCell<Symbol>> { //TODO evaluate context
         &self.symbol
     }
-
 }

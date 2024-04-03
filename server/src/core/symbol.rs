@@ -436,8 +436,8 @@ impl Symbol {
     }
 
     pub fn next_ref(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if SymType::is_instance(&self.sym_type) && self.evaluation.is_some() && self.evaluation.as_ref().unwrap().get_symbol().upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().get_symbol().clone());
+        if SymType::is_instance(&self.sym_type) && self.evaluation.is_some() && self.evaluation.as_ref().unwrap().is_symbol() && self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol().upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol().clone());
         }
         return None;
     }
@@ -450,8 +450,8 @@ impl Symbol {
         let mut next_ref = _sym.next_ref();
         let can_eval_external = !_sym.is_external;
         let mut instance = SymType::is_instance(&_sym.sym_type);
-        while next_ref.is_some() {
-            instance = _sym.evaluation.as_ref().unwrap().instance;
+        while next_ref.is_some() && _sym.evaluation.as_ref().unwrap().is_symbol() {
+            instance = _sym.evaluation.as_ref().unwrap().as_symbol().unwrap().instance;
             //TODO update context
             if stop_on_type && ! instance && !_sym.is_import_variable {
                 return (sym, instance)

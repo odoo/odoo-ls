@@ -83,13 +83,18 @@ impl PythonArchBuilder {
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
                     let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
                     let all = Symbol::follow_ref(all, odoo, false).0;
-                    if all.is_expired() || !vec!["list", "tuple"].contains(&(*all.upgrade().unwrap()).borrow().name.as_str()) || !(*all.upgrade().unwrap()).borrow().evaluation.is_some() {
-                        println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                    if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() || 
+                        !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().is_value() {
+                            println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
                     } else {
                         let all = all.upgrade().unwrap();
-                        let all = all.borrow();
-                        let eval = all.evaluation.as_ref().unwrap();
-                        name_filter = self.extract_all_symbol_eval_values(&eval.value);
+                        let all = (*all).borrow();
+                        let value = all.evaluation.as_ref().unwrap().as_value();
+                        let (nf, parse_error) = self.extract_all_symbol_eval_values(&value);
+                        if parse_error {
+                            println!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                        }
+                        name_filter = nf;
                         all_name_allowed = false;
                     }
                 }
@@ -100,10 +105,13 @@ impl PythonArchBuilder {
                         variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
                         if variable.evaluation.is_some() {
                             let evaluation = variable.evaluation.as_ref().unwrap();
-                            let evaluated = evaluation.get_symbol().upgrade();
+                            let evaluated = evaluation.as_symbol();
                             if evaluated.is_some() {
-                                let evaluated = evaluated.unwrap();
-                                self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                                let evaluated = evaluated.unwrap().get_symbol().upgrade();
+                                if evaluated.is_some() {
+                                    let evaluated = evaluated.unwrap();
+                                    self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                                }
                             }
                         }
                         self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
@@ -151,8 +159,9 @@ impl PythonArchBuilder {
         Ok(())
     }
 
-    fn extract_all_symbol_eval_values(&self, value: &Option<EvaluationValue>) -> Vec<String> {
-        match value {
+    fn extract_all_symbol_eval_values(&self, value: &Option<&EvaluationValue>) -> (Vec<String>, bool) {
+        let mut parse_error = false;
+        let vec = match value {
             Some(eval) => {
                 match eval {
                     EvaluationValue::CONSTANT(c) => {
@@ -160,11 +169,11 @@ impl PythonArchBuilder {
                             Constant::Str(s) => {
                                 vec!(s.clone())
                             },
-                            _ => {vec![]}
+                            _ => {parse_error = true; vec![]}
                         }
                     },
                     EvaluationValue::DICT(d) => {
-                        vec![]
+                        parse_error = true; vec![]
                     },
                     EvaluationValue::LIST(l) => {
                         let mut res = vec![];
@@ -173,7 +182,7 @@ impl PythonArchBuilder {
                                 Constant::Str(s) => {
                                     res.push(s.clone());
                                 }
-                                _ => {}
+                                _ => {parse_error = true; }
                             }
                         }
                         res
@@ -185,15 +194,16 @@ impl PythonArchBuilder {
                                 Constant::Str(s) => {
                                     res.push(s.clone());
                                 }
-                                _ => {}
+                                _ => {parse_error = true; }
                             }
                         }
                         res
                     }
                 }
             },
-            None => {vec![]}
-        }
+            None => {parse_error = true; vec![]}
+        };
+        (vec, parse_error)
     }
 
     fn _visit_ann_assign(&mut self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
@@ -230,26 +240,29 @@ impl PythonArchBuilder {
                             // we don't want to handle that, so just declare __all__ content
                             // as symbols to not raise any error.
                             let evaluation = variable.evaluation.as_ref().unwrap();
-                            let evaluated = evaluation.get_symbol().upgrade();
+                            let evaluated = evaluation.as_symbol();
                             if evaluated.is_some() {
-                                let evaluated = evaluated.unwrap();
-                                let evaluated = evaluated.borrow();
-                                if evaluated.sym_type == SymType::CONSTANT {
-                                    match evaluation.value.as_ref().unwrap() {
-                                        EvaluationValue::LIST(list) => {
-                                            for item in list.iter() {
-                                                match item {
-                                                    Constant::Str(s) => {
-                                                        let mut var = Symbol::new(s.to_string(), SymType::VARIABLE);
-                                                        var.range = evaluated.range.clone();
-                                                        var.evaluation = None;
-                                                        self.__all_symbols_to_add.push(var);
-                                                    },
-                                                    _ => {}
+                                let evaluated = evaluated.unwrap().get_symbol().upgrade();
+                                if evaluated.is_some() {
+                                    let evaluated = evaluated.unwrap();
+                                    let evaluated = evaluated.borrow();
+                                    if evaluated.sym_type == SymType::CONSTANT && evaluated.evaluation.is_some() && evaluated.evaluation.as_ref().unwrap().is_value() {
+                                        match evaluated.evaluation.as_ref().unwrap().as_value().unwrap() {
+                                            EvaluationValue::LIST(list) => {
+                                                for item in list.iter() {
+                                                    match item {
+                                                        Constant::Str(s) => {
+                                                            let mut var = Symbol::new(s.to_string(), SymType::VARIABLE);
+                                                            var.range = evaluated.range.clone();
+                                                            var.evaluation = None;
+                                                            self.__all_symbols_to_add.push(var);
+                                                        },
+                                                        _ => {}
+                                                    }
                                                 }
-                                            }
-                                        },
-                                        _ => {}
+                                            },
+                                            _ => {}
+                                        }
                                     }
                                 }
                             }
