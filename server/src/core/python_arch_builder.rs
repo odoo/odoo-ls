@@ -2,7 +2,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use anyhow::{Error};
 use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Alias, Constant, ExprConstant, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef};
+use rustpython_parser::ast::{Alias, Constant, ExprConstant, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
@@ -14,6 +14,7 @@ use crate::core::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 
 use super::import_resolver::ImportResult;
+use super::symbols::function_symbol::FunctionSymbol;
 
 
 #[derive(Debug)]
@@ -33,9 +34,6 @@ impl PythonArchBuilder {
     pub fn load_arch(&mut self, odoo: &mut SyncOdoo) -> Result<(), Error> {
         //println!("load arch");
         let mut symbol = self.sym_stack[0].borrow_mut();
-        if symbol.name == "constants" {
-            println!("here");
-        }
         symbol.arch_status = BuildStatus::IN_PROGRESS;
         if symbol.paths.len() != 1 {
             panic!()
@@ -148,7 +146,7 @@ impl PythonArchBuilder {
                     self._visit_assign(odoo, assign_stmt);
                 },
                 Stmt::FunctionDef(function_def_stmt) => {
-
+                    self.visit_func_def(odoo, function_def_stmt);
                 },
                 Stmt::ClassDef(class_def_stmt) => {
                     self.visit_class_def(odoo, class_def_stmt)?;
@@ -271,6 +269,41 @@ impl PythonArchBuilder {
                 }
             }
         }
+    }
+
+    fn visit_func_def(&mut self, odoo: &mut SyncOdoo, func_def: &StmtFunctionDef) -> Result<(), Error> {
+        let mut sym = Symbol::new(func_def.name.to_string(), SymType::FUNCTION);
+        sym.range = Some(func_def.range.clone());
+        sym._function = Some(FunctionSymbol{
+            is_static: false,
+            is_property: false,
+        });
+        for decorator in func_def.decorator_list.iter() {
+            if decorator.is_name_expr() && decorator.as_name_expr().unwrap().id.to_string() == "staticmethod" {
+                sym._function.as_mut().unwrap().is_static = true;
+            }
+            if decorator.is_name_expr() && decorator.as_name_expr().unwrap().id.to_string() == "property" {
+                sym._function.as_mut().unwrap().is_property = true;
+            }
+        }
+        if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {
+            let expr = func_def.body[0].as_expr_stmt().unwrap();
+            if expr.value.is_constant_expr() {
+                let const_expr = expr.value.as_constant_expr().unwrap();
+                match &const_expr.value {
+                    Constant::Str(s) => {
+                        sym.doc_string = Some(s.clone())
+                    },
+                    _ => {}
+                }
+            }
+        }
+        //TODO add self value
+        let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(odoo, sym);
+        self.sym_stack.push(sym);
+        self.visit_node(odoo, &func_def.body)?;
+        self.sym_stack.pop();
+        Ok(())
     }
 
     fn visit_class_def(&mut self, odoo: &mut SyncOdoo, class_def: &StmtClassDef) -> Result<(), Error> {
