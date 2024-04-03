@@ -35,7 +35,7 @@ fn test_structure() {
             &models.borrow().get_symbol(&(vec![], vec![S!("base_test_models")])).unwrap()));
     assert!(Rc::ptr_eq(&models.borrow().symbols["base_test_models"], &models.borrow().get_symbol(&(vec![], vec![S!("base_test_models")])).unwrap()));
     assert!(Rc::ptr_eq(&models.borrow().module_symbols["base_test_models"], &models.borrow().get_symbol(&(vec![S!("base_test_models")], vec![])).unwrap()));
-    let module_1 = models.borrow().get_symbol(&(vec![S!("base_test_models")], vec![])).unwrap();
+    let module_1 = odoo.get_symbol(&(vec![S!("odoo"), S!("addons"), S!("module_1")], vec![])).unwrap();
     assert!(compare_symbol_with_json(module_1, "tests/module_1_structure.json"))
 }
 
@@ -82,7 +82,7 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                         },
                         "module_symbols" => {
                             let mut res = true;
-                            for val_mod_sym in value.as_array().expect("module_symbols key should hole an array").iter() {
+                            for val_mod_sym in value.as_array().expect("module_symbols key should hold an array").iter() {
                                 let val_mod_sym_data = val_mod_sym.as_object().expect("module_symbols array should hold objects");
                                 let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
                                 let mod_sym = sym.module_symbols.get(val_mod_sym_name);
@@ -97,54 +97,60 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                         },
                         "symbols" => {
                             let mut res = true;
-                            for val_mod_sym in value.as_array().expect("module_symbols key should hole an array").iter() {
+                            for val_mod_sym in value.as_array().expect("module_symbols key should hold an array").iter() {
                                 let val_mod_sym_data = val_mod_sym.as_object().expect("module_symbols array should hold objects");
                                 let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
-                                let mod_sym = sym.symbols.get(val_mod_sym_name);
-                                if mod_sym.is_none() {
+                                let sym = sym.symbols.get(val_mod_sym_name);
+                                if sym.is_none() {
                                     println!("Symbol not found: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
-                                    symbols.push((mod_sym.unwrap().clone(), val_mod_sym.clone()));
+                                    symbols.push((sym.unwrap().clone(), val_mod_sym.clone()));
                                 }
                             }
                             res
                         },
                         "local_symbols" => {
                             let mut res = true;
-                            for val_mod_sym in value.as_array().expect("module_symbols key should hole an array").iter() {
+                            for val_mod_sym in value.as_array().expect("module_symbols key should hold an array").iter() {
                                 let val_mod_sym_data = val_mod_sym.as_object().expect("module_symbols array should hold objects");
                                 let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
-                                let mut mod_sym = None;
+                                let mut loc_sym = None;
                                 let mut index = 0;
                                 for s in sym.local_symbols.iter() {
                                     if s.borrow().name == val_mod_sym_name {
                                         if index == val_mod_sym_data.get("index").expect("local_symbols object should have an index key").as_u64().expect("index key should be an integer") {
-                                            mod_sym = Some(s.clone());
+                                            loc_sym = Some(s.clone());
                                             break;
                                         } else {
                                             index += 1;
                                         }
                                     }
                                 }
-                                if mod_sym.is_none() {
+                                if loc_sym.is_none() {
                                     println!("Local symbol not found: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
-                                    module_symbols.push((mod_sym.unwrap().clone(), val_mod_sym.clone()));
+                                    local_symbols.push((loc_sym.unwrap().clone(), val_mod_sym.clone()));
                                 }
                             }
                             res
                         },
-                        _ => {
-                            println!("Invalid json format");
+                        "value" => {
+                            true
+                        }
+                        "index" => {
+                            true //used at top level
+                        }
+                        default => {
+                            println!("Invalid json format - key {} unknown", default);
                             false
                         }
                     }
                 }
             },
             _ => {
-                println!("Invalid json format");
+                println!("Invalid json format: it should be an object");
             }
         }
     }

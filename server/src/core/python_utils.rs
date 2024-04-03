@@ -132,7 +132,7 @@ pub fn unpack_assign<R>(targets: &Vec<Expr<R>>, annotation: Option<&Box<Expr<R>>
                 if value.is_tuple_expr() {
                     res.append(&mut _link_tuples(expr.elts.clone(), value.clone().tuple_expr().unwrap().elts.clone()));
                 } else if value.is_list_expr() {
-                    res.append(&mut _link_tuples(expr.elts.clone(), value.clone().tuple_expr().unwrap().elts.clone()));
+                    res.append(&mut _link_tuples(expr.elts.clone(), value.clone().list_expr().unwrap().elts.clone()));
                 } else {
                     for (index, target) in expr.elts.iter().enumerate() {
                         match target {

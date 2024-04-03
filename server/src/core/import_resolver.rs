@@ -10,6 +10,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::utils::{is_dir_cs, is_file_cs};
+use crate::S;
 
 pub struct ImportResult {
     pub name: String,
@@ -183,7 +184,7 @@ fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names
     for branch in names.iter() {
         let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]));
         if next_symbol.is_none() {
-            next_symbol = match _resolve_new_symbol(odoo, file_symbol.clone(), &branch, asname.clone(), range) {
+            next_symbol = match _resolve_new_symbol(odoo, sym.as_ref().unwrap().clone(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),
                 Err(e) => None
             }
@@ -217,21 +218,21 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: Rc<RefCell<Symbol>>, name: &
             let _arc_symbol = Symbol::create_from_path(odoo, &full_path, parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                odoo.add_to_rebuild_arch(_arc_symbol.clone());
+                odoo.rebuild_arch_now(&_arc_symbol);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").to_str().unwrap().to_string()) {
             let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("py"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                odoo.add_to_rebuild_arch(_arc_symbol.clone());
+                odoo.rebuild_arch_now(&_arc_symbol);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension(".pyi").to_str().unwrap().to_string()) {
             let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                odoo.add_to_rebuild_arch(_arc_symbol.clone());
+                odoo.rebuild_arch_now(&_arc_symbol);
                 return Ok(_arc_symbol);
             }
         } else if !(*parent).borrow().get_tree().0.is_empty() {

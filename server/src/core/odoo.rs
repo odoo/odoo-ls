@@ -203,10 +203,12 @@ impl SyncOdoo {
         self.process_rebuilds();
         //search common odoo addons path
         let addon_symbol = self.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
-        if odoo_addon_path.exists() && self.load_odoo_addons {
-            addon_symbol.as_ref().unwrap().borrow_mut().paths.push(
-                odoo_addon_path.to_str().unwrap().to_string()
-            );
+        if odoo_addon_path.exists() {
+            if self.load_odoo_addons {
+                addon_symbol.as_ref().unwrap().borrow_mut().paths.push(
+                    odoo_addon_path.to_str().unwrap().to_string()
+                );
+            }
         } else {
             let odoo_addon_path = PathBuf::from(odoo_path.clone()).join("addons");
             self.msg_sender.send(Msg::LOG_ERROR(format!("Unable to find odoo addons path at {}", odoo_addon_path.to_str().unwrap().to_string())));
@@ -249,6 +251,7 @@ impl SyncOdoo {
         }
         self.process_rebuilds();
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
+        fs::write("out_architecture.json", self.symbols.as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
         self.msg_sender.send(Msg::LOG_INFO(String::from("End building modules.")));
     }
 
@@ -373,6 +376,12 @@ impl SyncOdoo {
                 continue;
             }
         }
+    }
+
+    pub fn rebuild_arch_now(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+        self.rebuild_arch.remove(symbol);
+        let mut builder = PythonArchBuilder::new(symbol.clone());
+        builder.load_arch(self);
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {

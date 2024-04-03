@@ -1,3 +1,5 @@
+use core::fmt;
+
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "0.2.4";
 
@@ -35,6 +37,12 @@ impl SymType {
             SymType::VARIABLE | SymType::CONSTANT => true,
             _ => false,
         }
+    }
+}
+
+impl fmt::Display for SymType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

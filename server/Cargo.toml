@@ -20,6 +20,3 @@ tower-lsp = "0.20.0"
 tower-lsp-macros = "0.9.0"
 url = "2.5.0"
 weak-table = "0.3.2"
-
-[profile.test]
-opt_level = 3

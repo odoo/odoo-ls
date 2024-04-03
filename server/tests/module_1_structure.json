@@ -1,14 +1,14 @@
 {
     "name": "module_1",
-    "type": "module",
+    "type": "PACKAGE",
     "module_symbols": [
         {
             "name": "constants",
-            "type": "package",
+            "type": "PACKAGE",
             "module_symbols": [
                 {
                     "name": "data",
-                    "type": "package",
+                    "type": "PACKAGE",
                     "module_symbols": [
                         {
                             "name": "constants",
@@ -77,7 +77,7 @@
         },
         {
             "name": "models",
-            "type": "package",
+            "type": "PACKAGE",
             "module_symbols": [
                 {
                     "name": "base_test_models",

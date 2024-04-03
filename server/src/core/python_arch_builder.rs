@@ -32,6 +32,9 @@ impl PythonArchBuilder {
     pub fn load_arch(&mut self, odoo: &mut SyncOdoo) -> Result<(), Error> {
         //println!("load arch");
         let mut symbol = self.sym_stack[0].borrow_mut();
+        if symbol.name == "constants" {
+            println!("here");
+        }
         symbol.arch_status = BuildStatus::IN_PROGRESS;
         if symbol.paths.len() != 1 {
             panic!()
@@ -98,6 +101,7 @@ impl PythonArchBuilder {
                 }
                 let allowed_names = true;
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
+                    println!("here");
                     // TODO implement __all__ imports
                 }
                 for s in import_result.symbol.borrow_mut().symbols.values() {

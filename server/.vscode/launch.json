@@ -16,10 +16,28 @@
             "console": "externalTerminal"
         },
         {
+            "name": "Debug Test (lldb)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/deps/test_ls-7a1baaf6ea83c2e3",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
+        },
+        {
             "name": "Launch Server (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/server.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
+        },
+        {
+            "name": "Debug Test (cppvsdbg)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/target/debug/deps/test_ls-41ae513a18d41487.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal"

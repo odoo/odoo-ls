@@ -1,5 +1,6 @@
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Expr, TextSize};
+use serde_json::{Value, json};
 
 use crate::constants::*;
 use crate::core::evaluation::Evaluation;
@@ -604,6 +605,28 @@ impl Symbol {
                 symbol.borrow_mut()._debug_print_graph_node(acc, level + 1);
             }
         }
+    }
+
+    pub fn debug_to_json(&self) -> Value {
+        let mut modules = vec![];
+        let mut symbols = vec![];
+        let mut locals = vec![];
+        for s in self.module_symbols.values() {
+            modules.push(s.borrow_mut().debug_to_json());
+        }
+        for s in self.symbols.values() {
+            symbols.push(s.borrow_mut().debug_to_json());
+        }
+        for s in self.local_symbols.iter() {
+            locals.push(s.borrow_mut().debug_to_json());
+        }
+        json!({
+            "name": self.name,
+            "type": self.sym_type.to_string(),
+            "module_symbols": modules,
+            "symbols": symbols,
+            "local_symbols": locals
+        })
     }
 
     pub fn debug_print_graph(&self) -> String {

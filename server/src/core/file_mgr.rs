@@ -58,7 +58,15 @@ impl FileInfo {
     }
 //"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
     pub fn _build_ast(&mut self, content: &str, content_path: &str) {
-        self.ast = Some(ast::Suite::parse(&content, content_path).unwrap()); //TODO handle errors
+        let ast = ast::Suite::parse(&content, content_path);
+        match ast {
+            Ok(ast) => {
+                self.ast = Some(ast);
+            },
+            Err(err) => {
+                println!("unable to parse file at {} - {}", content_path, err);
+            }
+        }
         self.text_rope = Some(ropey::Rope::from(content));
         self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
     }
