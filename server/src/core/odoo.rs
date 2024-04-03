@@ -78,6 +78,7 @@ impl SyncOdoo {
     }
 
     pub fn init(&mut self, addons: Vec<String>, odoo_path: String, python_path: String, refresh_mode: RefreshMode, auto_save_delay: u64, diag_missing_imports: DiagMissingImportsMode) {
+        println!("Initializing odoo");
         self.config.addons = addons;
         self.config.odoo_path = odoo_path;
         self.config.python_path = python_path;
@@ -251,7 +252,8 @@ impl SyncOdoo {
         }
         self.process_rebuilds();
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
-        fs::write("out_architecture.json", self.symbols.as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
+        //fs::write("out_architecture.json", self.symbols.as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
+        println!("End building modules");
         self.msg_sender.send(Msg::LOG_INFO(String::from("End building modules.")));
     }
 

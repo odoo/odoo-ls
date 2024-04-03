@@ -2,7 +2,8 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use anyhow::{Error};
 use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Alias, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, Constant};
+use rustpython_parser::ast::{Alias, Constant, ExprConstant, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef};
+use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
 use crate::constants::{SymType, BuildStatus, BuildSteps};
@@ -48,29 +49,7 @@ impl PythonArchBuilder {
         let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str(), None, None); //create ast
         let file_info = (*file_info).borrow();
         if file_info.ast.is_some() {
-            for stmt in file_info.ast.as_ref().unwrap().iter() {
-                match stmt {
-                    Stmt::Import(import_stmt) => {
-                        self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
-                    },
-                    Stmt::ImportFrom(import_from_stmt) => {
-                        self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)?
-                    },
-                    Stmt::AnnAssign(ann_assign_stmt) => {
-                        self._visit_ann_assign(odoo, ann_assign_stmt);
-                    },
-                    Stmt::Assign(assign_stmt) => {
-                        self._visit_assign(odoo, assign_stmt);
-                    },
-                    Stmt::FunctionDef(function_def_stmt) => {
-
-                    },
-                    Stmt::ClassDef(class_def_stmt) => {
-
-                    },
-                    _ => {}
-                }
-            }
+            self.visit_node(odoo, &file_info.ast.as_ref().unwrap())?;
             self._resolve_all_symbols(odoo);
             odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
         }
@@ -99,25 +78,36 @@ impl PythonArchBuilder {
                     self.sym_stack[0].borrow_mut().not_found_paths.push((BuildSteps::ARCH, file_tree_flattened));
                     continue;
                 }
-                let allowed_names = true;
+                let mut all_name_allowed = true;
+                let mut name_filter: Vec<String> = vec![];
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
-                    println!("here");
-                    // TODO implement __all__ imports
+                    let all = import_result.symbol.borrow_mut().symbols["all"].clone();
+                    let all = Symbol::follow_ref(all, odoo, false).0;
+                    if all.is_expired() || !vec!["list", "tuple"].contains(&(*all.upgrade().unwrap()).borrow().name.as_str()) || !(*all.upgrade().unwrap()).borrow().evaluation.is_some() {
+                        println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                    } else {
+                        let all = all.upgrade().unwrap();
+                        let all = all.borrow();
+                        let eval = all.evaluation.as_ref().unwrap();
+                        name_filter = self.extract_all_symbol_eval_values(&eval.value);
+                        all_name_allowed = false;
+                    }
                 }
                 for s in import_result.symbol.borrow_mut().symbols.values() {
-                    let mut variable = Symbol::new(s.borrow_mut().name.clone(), SymType::VARIABLE); //TODO mark as import
-                    variable.range = Some(import_name.range.clone());
-                    variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
-                    //TODO add dependency
-                    if variable.evaluation.is_some() {
-                        let evaluation = variable.evaluation.as_ref().unwrap();
-                        let evaluated = evaluation.get_symbol().upgrade();
-                        if evaluated.is_some() {
-                            let evaluated = evaluated.unwrap();
-                            self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                    if all_name_allowed || name_filter.contains(&s.borrow().name) {
+                        let mut variable = Symbol::new(s.borrow_mut().name.clone(), SymType::VARIABLE); //TODO mark as import
+                        variable.range = Some(import_name.range.clone());
+                        variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
+                        if variable.evaluation.is_some() {
+                            let evaluation = variable.evaluation.as_ref().unwrap();
+                            let evaluated = evaluation.get_symbol().upgrade();
+                            if evaluated.is_some() {
+                                let evaluated = evaluated.unwrap();
+                                self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                            }
                         }
+                        self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
                     }
-                    self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
                 }
 
             } else {
@@ -132,6 +122,78 @@ impl PythonArchBuilder {
             }
         }
         Ok(())
+    }
+
+    fn visit_node(&mut self, odoo: &mut SyncOdoo, nodes: &Vec<Stmt<TextRange>>) -> Result<(), Error> {
+        for stmt in nodes.iter() {
+            match stmt {
+                Stmt::Import(import_stmt) => {
+                    self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
+                },
+                Stmt::ImportFrom(import_from_stmt) => {
+                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)?
+                },
+                Stmt::AnnAssign(ann_assign_stmt) => {
+                    self._visit_ann_assign(odoo, ann_assign_stmt);
+                },
+                Stmt::Assign(assign_stmt) => {
+                    self._visit_assign(odoo, assign_stmt);
+                },
+                Stmt::FunctionDef(function_def_stmt) => {
+
+                },
+                Stmt::ClassDef(class_def_stmt) => {
+                    self.visit_class_def(odoo, class_def_stmt)?;
+                },
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn extract_all_symbol_eval_values(&self, value: &Option<EvaluationValue>) -> Vec<String> {
+        match value {
+            Some(eval) => {
+                match eval {
+                    EvaluationValue::CONSTANT(c) => {
+                        match c {
+                            Constant::Str(s) => {
+                                vec!(s.clone())
+                            },
+                            _ => {vec![]}
+                        }
+                    },
+                    EvaluationValue::DICT(d) => {
+                        vec![]
+                    },
+                    EvaluationValue::LIST(l) => {
+                        let mut res = vec![];
+                        for v in l.iter() {
+                            match v {
+                                Constant::Str(s) => {
+                                    res.push(s.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                        res
+                    },
+                    EvaluationValue::TUPLE(t) => {
+                        let mut res = vec![];
+                        for v in t.iter() {
+                            match v {
+                                Constant::Str(s) => {
+                                    res.push(s.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                        res
+                    }
+                }
+            },
+            None => {vec![]}
+        }
     }
 
     fn _visit_ann_assign(&mut self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
@@ -196,6 +258,29 @@ impl PythonArchBuilder {
                 }
             }
         }
+    }
+
+    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, class_def: &StmtClassDef) -> Result<(), Error> {
+        let mut sym = Symbol::new(class_def.name.to_string(), SymType::CLASS);
+        sym.range = Some(class_def.range.clone());
+        if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
+            let expr = class_def.body[0].as_expr_stmt().unwrap();
+            if expr.value.is_constant_expr() {
+                let const_expr = expr.value.as_constant_expr().unwrap();
+                match &const_expr.value {
+                    Constant::Str(s) => {
+                        sym.doc_string = Some(s.clone())
+                    },
+                    _ => {}
+                }
+            }
+        }
+        sym.evaluation = None;
+        let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(odoo, sym);
+        self.sym_stack.push(sym);
+        self.visit_node(odoo, &class_def.body)?;
+        self.sym_stack.pop();
+        Ok(())
     }
 
     fn _resolve_all_symbols(&mut self, odoo: &mut SyncOdoo) {

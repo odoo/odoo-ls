@@ -43,6 +43,7 @@ pub struct Symbol {
     pub validation_status: bool,
     pub is_import_variable: bool,
     pub ast: Option<Expr<TextRange>>,
+    pub doc_string: Option<String>,
 
     pub _root: Option<RootSymbol>,
     pub _function: Option<FunctionSymbol>,
@@ -104,6 +105,7 @@ impl Symbol {
             validation_status: false,
             is_import_variable: false,
             ast: None,
+            doc_string: None,
 
             _root: None,
             _function: None,
