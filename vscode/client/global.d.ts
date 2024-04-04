@@ -10,6 +10,7 @@ declare global {
    var IS_LOADING: boolean;
    var DEBUG_FILE: string;
    var CLIENT_IS_STOPPING: boolean;
+   var CLIENT_IS_SAVING: boolean;
    var CAN_QUEUE_CONFIG_CHANGE: boolean;
    var IS_PYTHON_EXTENSION_READY: boolean;
    var PATH_VARIABLES: {[id: string] : string};

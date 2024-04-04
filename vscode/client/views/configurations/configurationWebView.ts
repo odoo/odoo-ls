@@ -142,6 +142,8 @@ export class ConfigurationWebView {
     private _saveConfig(configs: any, rawOdooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
+        global.CLIENT_IS_SAVING = false;
+
 
         if (configs[this.configId]["rawOdooPath"] != rawOdooPath) {
             changes.push("rawOdooPath");
@@ -168,7 +170,7 @@ export class ConfigurationWebView {
             }
         }
 
-        global.OUTPUT_CHANNEL.appendLine("saving ".concat(changes.toString()))
+        global.OUTPUT_CHANNEL.appendLine("[INFO] saving ".concat(changes.toString()))
 
         configs[this.configId] = {
             "id": this.configId,
@@ -186,6 +188,7 @@ export class ConfigurationWebView {
         if (changes.includes('name')){
             this._updateWebviewTitle(this._panel, name)
         }
+        global.CLIENT_IS_SAVING = true;
     }
 
     private _deleteConfig(configs: any): void {

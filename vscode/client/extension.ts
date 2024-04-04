@@ -290,6 +290,24 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             }),
             client.onNotification("Odoo/displayCrashNotification", async (params) => {
                 await displayCrashMessage(context, params["crashInfo"]);
+            }),
+            workspace.onDidChangeConfiguration(async (event)=>{
+                if(!event.affectsConfiguration("Odoo")|| global.CLIENT_IS_SAVING){
+                    return;
+                }
+                global.OUTPUT_CHANNEL.appendLine("[INFO] saving everything");
+                let currentConfig = await getCurrentConfig(context);
+
+                await checkOdooPath(context);
+                await checkAddons(context);
+                if (client.diagnostics) client.diagnostics.clear();
+                
+
+                if (!global.IS_PYTHON_EXTENSION_READY){
+                    await checkStandalonePythonVersion(context);
+                    onDidChangePythonInterpreterEvent.fire(currentConfig["pythonPath"]);
+                }
+                await client.sendNotification("Odoo/configurationChanged");
             })
         );
         global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","\\\\")};
