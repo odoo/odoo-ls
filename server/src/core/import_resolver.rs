@@ -228,7 +228,7 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: Rc<RefCell<Symbol>>, name: &
                 odoo.rebuild_arch_now(&_arc_symbol);
                 return Ok(_arc_symbol);
             }
-        } else if is_file_cs(full_path.with_extension(".pyi").to_str().unwrap().to_string()) {
+        } else if is_file_cs(full_path.with_extension("pyi").to_str().unwrap().to_string()) {
             let _arc_symbol = Symbol::create_from_path(odoo, &full_path.with_extension("pyi"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();

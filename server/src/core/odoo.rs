@@ -12,6 +12,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::env;
 use regex::Regex;
 use crate::constants::*;
 use super::config::{self, DiagMissingImportsMode, RefreshMode};
@@ -63,8 +64,8 @@ impl SyncOdoo {
             symbols: Some(symbols),
             builtins: Some(builtins),
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
-            stubs_dir: PathBuf::from("./../server/typeshed/stubs").to_str().unwrap().to_string(),
-            stdlib_dir: PathBuf::from("./../server/typeshed/stdlib").to_str().unwrap().to_string(),
+            stubs_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stubs").to_str().unwrap().to_string(),
+            stdlib_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stdlib").to_str().unwrap().to_string(),
             modules: HashMap::new(),
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
@@ -252,7 +253,7 @@ impl SyncOdoo {
         }
         self.process_rebuilds();
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
-        //fs::write("out_architecture.json", self.symbols.as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
+        //fs::write("out_architecture.json", self.get_symbol(&tree(vec!["odoo", "addons", "module_1"], vec![])).as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
         println!("End building modules");
         self.msg_sender.send(Msg::LOG_INFO(String::from("End building modules.")));
     }

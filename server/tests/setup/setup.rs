@@ -21,7 +21,7 @@ pub fn setup_server() -> SyncOdoo {
 
     server.init(vec![test_addons_path.to_str().unwrap().to_string()],
     community_path,
-    S!("python"),
+    S!("python3"),
     server::core::config::RefreshMode::Off,
 10000,
 DiagMissingImportsMode::All);

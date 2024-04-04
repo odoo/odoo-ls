@@ -1,9 +1,11 @@
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
+use std::vec;
 
 use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Identifier, Stmt, Alias, Int, StmtAnnAssign, StmtAssign};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
+use rustpython_parser::ast::{Alias, Expr, Identifier, Int, Ranged, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
 use crate::constants::*;
@@ -13,10 +15,10 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
+use crate::S;
 
 use super::config::DiagMissingImportsMode;
 use super::import_resolver::ImportResult;
-use super::symbol;
 
 
 #[derive(Debug, Clone)]
@@ -52,16 +54,7 @@ impl PythonArchEval {
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
             for stmt in file_info.ast.as_ref().unwrap() {
-                match stmt {
-                    //TODO move import logic from ast visiting to symbol analyzing
-                    Stmt::Import(import_stmt) => {
-                        self.eval_local_symbols_from_import_stmt(odoo, &file_info, None, &import_stmt.names, None, &import_stmt.range)
-                    },
-                    Stmt::ImportFrom(import_from_stmt) => {
-                        self.eval_local_symbols_from_import_stmt(odoo, &file_info, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
-                    },
-                    _ => {}
-                }
+                self.visit_stmt(odoo, stmt, &file_info);
             }
         }
         drop(file_info);
@@ -72,6 +65,21 @@ impl PythonArchEval {
         let mut symbol = self.symbol.borrow_mut();
         symbol.arch_eval_status = BuildStatus::DONE;
         //TODO odoo.add_to_rebuild_odoo(Arc::downgrade(&self.sym_stack[0]));
+    }
+
+    fn visit_stmt(&mut self, odoo: &mut SyncOdoo, stmt: &Stmt, file_info: &FileInfo) {
+        match stmt {
+            Stmt::Import(import_stmt) => {
+                self.eval_local_symbols_from_import_stmt(odoo, &file_info, None, &import_stmt.names, None, &import_stmt.range)
+            },
+            Stmt::ImportFrom(import_from_stmt) => {
+                self.eval_local_symbols_from_import_stmt(odoo, &file_info, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
+            },
+            Stmt::ClassDef(class_stmt) => {
+                self.visit_class_def(odoo, &file_info, class_stmt);
+            }
+            _ => {}
+        }
     }
 
     fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>) -> bool {
@@ -94,6 +102,9 @@ impl PythonArchEval {
     fn eval_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
+        }
+        if from_stmt.is_some() && from_stmt.unwrap().to_string() == "_weakref" {
+            println!("here");
         }
         let import_results: Vec<ImportResult> = resolve_import_stmt(
             odoo,
@@ -199,5 +210,100 @@ impl PythonArchEval {
 
     fn _visit_assign(&self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
         //TODO
+    }
+
+    fn create_diagnostic_base_not_found(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: &mut Symbol, var_name: &str, range: &TextRange) {
+        let tree = symbol.get_tree();
+        let tree = vec![tree.0.clone(), vec![var_name.to_string()]].concat();
+        symbol.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
+        odoo.not_found_symbols.insert(symbol.get_arc().unwrap());
+        let range = file_info.text_range_to_range(range).unwrap();
+        self.diagnostics.push(Diagnostic::new(
+            range,
+            Some(DiagnosticSeverity::WARNING),
+            None,
+            Some(EXTENSION_NAME.to_string()),
+            format!("{} not found", tree.join(".")),
+            None,
+            None,
+        ));
+    }
+
+    fn load_base_classes(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
+        for base in class_stmt.bases.iter() {
+            let full_base = PythonArchEval::extract_base_name(base);
+            if full_base.len() == 0 {
+                continue;
+            }
+            let elements = full_base.split(".").collect::<Vec<&str>>();
+            let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
+            let mut parent = parent.borrow_mut();
+            let iter_element = parent.infer_name(odoo, elements.first().unwrap().to_string(), Some(class_stmt.range));
+            if iter_element.is_none() {
+                self.create_diagnostic_base_not_found(odoo, file_info, &mut parent, elements[0], &base.range());
+                continue;
+            }
+            drop(parent);
+            let iter_element = iter_element.unwrap();
+            let mut iter_element = Symbol::follow_ref(iter_element, odoo, false).0;
+            let mut previous_element = iter_element.clone();
+            let mut found: bool = true;
+            let mut compiled: bool = false;
+            let mut last_element = elements.first().unwrap();
+            for base_element in elements.iter().skip(1) {
+                last_element = base_element;
+                let iter_up = iter_element.upgrade().unwrap();
+                if iter_up.borrow().sym_type == SymType::COMPILED {
+                    compiled = true;
+                }
+                previous_element = iter_element.clone();
+                let next_iter_element = iter_up.borrow().get_member_symbol(base_element.to_string(), None, false, true, false);
+                if next_iter_element.len() == 0 {
+                    found = false;
+                    break;
+                }
+                let iter_element_rc = next_iter_element.first().unwrap();
+                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, false).0;
+            }
+            if compiled {
+                continue;
+            }
+            if !found {
+                self.create_diagnostic_base_not_found(odoo, file_info, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, &base.range());
+                continue
+            }
+            if (*iter_element.upgrade().unwrap()).borrow().sym_type != SymType::CLASS {
+                let range = file_info.text_range_to_range(&base.range()).unwrap();
+                self.diagnostics.push(Diagnostic::new(
+                    range,
+                    Some(DiagnosticSeverity::WARNING),
+                    None,
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Base class {} is not a class", elements.join(".")),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+
+    fn extract_base_name(base: &Expr) -> String {
+        match base {
+            Expr::Name(name) => {
+                return name.id.to_string();
+            },
+            Expr::Attribute(attr) => {
+                return PythonArchEval::extract_base_name(&attr.value) + "." + &attr.attr.to_string();
+            },
+            _ => {S!("")}
+        }
+    }
+
+    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, class_stmt: &StmtClassDef) {
+        let variable = self.symbol.borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
+        if variable.is_none() {
+            return;
+        }
+        self.load_base_classes(odoo, file_info, variable.unwrap(), class_stmt);
     }
 }

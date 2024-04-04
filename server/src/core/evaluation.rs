@@ -81,10 +81,12 @@ impl Evaluation {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT)))); //TODO check to not hold a dummy symbol for constants
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::CONSTANT(expr.value.clone())));
             },
             Expr::List(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_l".to_string(), SymType::CONSTANT))));
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
                 let mut values: Vec<rustpython_parser::ast::Constant> = Vec::new();
@@ -102,6 +104,7 @@ impl Evaluation {
             },
             Expr::Tuple(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_t".to_string(), SymType::CONSTANT))));
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
                 let mut values: Vec<rustpython_parser::ast::Constant> = Vec::new();
@@ -119,6 +122,7 @@ impl Evaluation {
             },
             Expr::Dict(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_d".to_string(), SymType::CONSTANT))));
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
                 let mut values: Vec<(rustpython_parser::ast::Constant, rustpython_parser::ast::Constant)> = Vec::new();
@@ -179,7 +183,7 @@ impl Evaluation {
             },
             Expr::Name(expr) => {
                 let parent = parent.borrow();
-                let infered_sym = parent.infer_name(odoo, expr.id.to_string(), expr.range);
+                let infered_sym = parent.infer_name(odoo, expr.id.to_string(), Some(expr.range));
                 if infered_sym.is_none() {
                     return None;
                 }

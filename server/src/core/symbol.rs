@@ -6,6 +6,7 @@ use crate::constants::*;
 use crate::core::evaluation::Evaluation;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
+use crate::S;
 use core::panic;
 use std::collections::{HashMap, HashSet, VecDeque};
 use weak_table::PtrWeakHashSet;
@@ -653,29 +654,64 @@ impl Symbol {
         iter.into_iter().flatten()
     }
 
-    pub fn infer_name(&self, odoo: &mut SyncOdoo, name: String, position: TextRange) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn infer_name(&self, odoo: &mut SyncOdoo, name: String, position: Option<TextRange>) -> Option<Rc<RefCell<Symbol>>> {
         let mut selected: Option<Rc<RefCell<Symbol>>> = None;
         if name == "__doc__" {
             //return self.doc; //TODO
         }
-        for symbol in self.all_symbols(Some(position), false) {
+        for symbol in self.all_symbols(position, false) {
             let deref_symbol = (**symbol).borrow();
-            let selected_range = selected.as_ref().unwrap();
-            let selected_range = (**selected_range).borrow().range;
-            if deref_symbol.name == name && (selected.is_none() || deref_symbol.range.unwrap().start() > selected_range.unwrap().start()) {
-                selected = Some(symbol.clone());
+            if deref_symbol.name == name {
+                if selected.is_none() {
+                    selected = Some(symbol.clone());
+                } else {
+                    let selected_range = selected.as_ref().unwrap();
+                    let selected_range = (**selected_range).borrow().range;
+                    if deref_symbol.range.unwrap().start() > selected_range.unwrap().start() {
+                        selected = Some(symbol.clone());
+                    }
+                }
             }
         }
-        if selected.is_none() && !vec![SymType::FILE, SymType::PACKAGE].contains(&self.sym_type) {
+        if selected.is_none() && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&self.sym_type) {
             let parent = self.parent.as_ref().unwrap().upgrade().unwrap();
             let parent = (*parent).borrow();
             return parent.infer_name(odoo, name, position);
         }
         if selected.is_none() && (self.name != "builtins" || self.sym_type != SymType::FILE) {
-            let builtins = odoo.builtins.as_ref().unwrap().clone(); // clone rc to drop odoo borrow
+            let builtins = odoo.builtins.as_ref().unwrap().borrow().get_symbol(&(vec![S!("builtins")], vec![])).unwrap().clone();
             let builtins = (*builtins).borrow();
-            return builtins.infer_name(odoo, name, position);
+            return builtins.infer_name(odoo, name, None);
         }
         selected
+    }
+
+    /* similar to get_symbol: will return the symbol that is under this one with the specified name.
+        However, if the symbol is a class or a model, it will search in the base class or in comodel classes
+        if not all, it will return the first found. If all, the all found symbols are returned, but the first one
+        is the one that is overriding others.
+        :param: from_module: optional, can change the from_module of the given class */
+    pub fn get_member_symbol(&self, name: String, from_module: Option<String>, prevent_local: bool, prevent_comodel: bool, all: bool) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
+        if self.module_symbols.contains_key(&name) {
+            if all {
+                result.push(self.module_symbols[&name].clone());
+            } else {
+                return vec![self.module_symbols[&name].clone()];
+            }
+        }
+        if !prevent_local {
+            if self.symbols.contains_key(&name) {
+                if all {
+                    result.push(self.symbols[&name].clone());
+                } else {
+                    return vec![self.symbols[&name].clone()];
+                }
+            }
+        }
+        //TODO implement model
+        // if self._model.is_some() && !prevent_comodel {
+        // }
+        result
     }
 }
