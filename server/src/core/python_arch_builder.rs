@@ -13,6 +13,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
+use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 
 use super::import_resolver::ImportResult;
 use super::symbols::class_symbol::ClassSymbol;
@@ -328,9 +329,10 @@ impl PythonArchBuilder {
         }
         sym.evaluation = None;
         let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(odoo, sym);
-        self.sym_stack.push(sym);
+        self.sym_stack.push(sym.clone());
         self.visit_node(odoo, &class_def.body)?;
         self.sym_stack.pop();
+        PythonArchBuilderHooks::on_class_def(odoo, sym);
         Ok(())
     }
 

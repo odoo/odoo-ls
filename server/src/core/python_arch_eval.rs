@@ -305,5 +305,8 @@ impl PythonArchEval {
             return;
         }
         self.load_base_classes(odoo, file_info, variable.unwrap(), class_stmt);
+        for stmt in class_stmt.body.iter() {
+            self.visit_stmt(odoo, stmt, file_info);
+        }
     }
 }
