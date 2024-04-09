@@ -19,6 +19,7 @@ use crate::S;
 
 use super::config::DiagMissingImportsMode;
 use super::import_resolver::ImportResult;
+use super::python_arch_eval_hooks::PythonArchEvalHooks;
 
 
 #[derive(Debug, Clone)]
@@ -60,6 +61,7 @@ impl PythonArchEval {
         drop(file_info);
         let mut file_info = (*file_info_rc).borrow_mut();
         file_info.replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+        PythonArchEvalHooks::on_file_eval(odoo, self.symbol.clone());
         //TODO remove that temporary publish
         file_info.publish_diagnostics(odoo);
         let mut symbol = self.symbol.borrow_mut();
@@ -122,7 +124,7 @@ impl PythonArchEval {
             }
             if _import_result.found {
                 //resolve the symbol and build necessary evaluations
-                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, false);
+                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false);
                 let mut old_ref: Option<Weak<RefCell<Symbol>>> = None;
                 let mut arc_sym = _sym.upgrade().unwrap();
                 let mut sym = arc_sym.borrow_mut();
@@ -136,7 +138,7 @@ impl PythonArchEval {
                             odoo.remove_from_rebuild_arch_eval(&arc_file_sym);
                             let mut builder = PythonArchEval::new(arc_file_sym);
                             builder.eval_arch(odoo);
-                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, false);
+                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false);
                             arc_sym = _sym.upgrade().unwrap();
                             sym = arc_sym.borrow_mut();
                         } else {
@@ -245,7 +247,7 @@ impl PythonArchEval {
             }
             drop(parent);
             let iter_element = iter_element.unwrap();
-            let mut iter_element = Symbol::follow_ref(iter_element, odoo, false).0;
+            let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false).0;
             let mut previous_element = iter_element.clone();
             let mut found: bool = true;
             let mut compiled: bool = false;
@@ -263,7 +265,7 @@ impl PythonArchEval {
                     break;
                 }
                 let iter_element_rc = next_iter_element.first().unwrap();
-                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, false).0;
+                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, &mut None, false).0;
             }
             if compiled {
                 continue;

@@ -21,12 +21,39 @@ pub enum Evaluation {
     EvaluationValue(EvaluationValue)
 }
 
+#[derive(Debug, Clone)]
+pub enum ContextValue {
+    BOOLEAN(bool),
+    STRING(String)
+}
+
+impl ContextValue {
+    pub fn as_bool(&self) -> bool {
+        match self {
+            ContextValue::BOOLEAN(b) => *b,
+            _ => panic!("Not a boolean")
+        }
+    }
+
+    pub fn as_string(&self) -> String {
+        match self {
+            ContextValue::STRING(s) => s.clone(),
+            _ => panic!("Not a string")
+        }
+    }
+}
+
+pub type Context = HashMap<String, ContextValue>;
+
+type GetSymbolHook = fn (odoo: &mut SyncOdoo, eval: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>;
+
 #[derive(Debug, Default)]
 pub struct EvaluationSymbol {
-    symbol: Weak<RefCell<Symbol>>,
+    pub symbol: Weak<RefCell<Symbol>>,
     pub instance: bool,
-    pub context: HashMap<String, bool>,
-    _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>,
+    pub context: Context,
+    pub _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>,
+    pub get_symbol_hook: Option<GetSymbolHook>,
 }
 
 impl Evaluation {
@@ -59,6 +86,20 @@ impl Evaluation {
         }
     }
 
+    pub fn as_symbol_mut(&mut self) -> Option<&mut EvaluationSymbol> {
+        match self {
+            Evaluation::EvaluationSymbol(s) => Some(s),
+            _ => None
+        }
+    }
+
+    pub fn as_value_mut(&mut self) -> Option<&mut EvaluationValue> {
+        match self {
+            Evaluation::EvaluationValue(s) => Some(s),
+            _ => None
+        }
+    }
+
     pub fn eval_from_symbol(symbol: &Rc<RefCell<Symbol>>) -> Evaluation{
         let mut instance = false;
         if [SymType::VARIABLE, SymType::CONSTANT].contains(&symbol.borrow_mut().sym_type) {
@@ -69,6 +110,7 @@ impl Evaluation {
             instance: instance,
             context: HashMap::new(),
             _internal_hold_symbol: None,
+            get_symbol_hook: None
         })
     }
 
@@ -169,7 +211,7 @@ impl Evaluation {
                     return None;
                 }
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, false);
+                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false);
                 let attribute = base.upgrade().unwrap();
                 let attribute = (*attribute).borrow();
                 let attribute = attribute.symbols.get(expr.attr.as_str());
@@ -203,7 +245,23 @@ impl Evaluation {
 }
 
 impl EvaluationSymbol {
-    pub fn get_symbol(&self) -> &Weak<RefCell<Symbol>> { //TODO evaluate context
-        &self.symbol
+
+    pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
+        let sym = Rc::new(RefCell::new(symbol));
+        EvaluationSymbol {
+            symbol: Rc::downgrade(&sym),
+            instance: instance,
+            context: context,
+            _internal_hold_symbol: Some(sym),
+            get_symbol_hook: None
+        }
+    }
+
+    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> Weak<RefCell<Symbol>> {
+        if self.get_symbol_hook.is_some() {
+            let hook = self.get_symbol_hook.unwrap();
+            return hook(odoo, self, context);
+        }
+        self.symbol.clone()
     }
 }

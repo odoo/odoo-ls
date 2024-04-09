@@ -83,7 +83,7 @@ impl PythonArchBuilder {
                 let mut name_filter: Vec<String> = vec![];
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
                     let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
-                    let all = Symbol::follow_ref(all, odoo, false).0;
+                    let all = Symbol::follow_ref(all, odoo, &mut None, false).0;
                     if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() || 
                         !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().is_value() {
                             println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
@@ -108,7 +108,7 @@ impl PythonArchBuilder {
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated = evaluation.as_symbol();
                             if evaluated.is_some() {
-                                let evaluated = evaluated.unwrap().get_symbol().upgrade();
+                                let evaluated = evaluated.unwrap().get_symbol(odoo, &mut None).upgrade();
                                 if evaluated.is_some() {
                                     let evaluated = evaluated.unwrap();
                                     self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
@@ -243,7 +243,7 @@ impl PythonArchBuilder {
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated = evaluation.as_symbol();
                             if evaluated.is_some() {
-                                let evaluated = evaluated.unwrap().get_symbol().upgrade();
+                                let evaluated = evaluated.unwrap().get_symbol(odoo, &mut None).upgrade();
                                 if evaluated.is_some() {
                                     let evaluated = evaluated.unwrap();
                                     let evaluated = evaluated.borrow();

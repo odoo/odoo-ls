@@ -3,7 +3,7 @@ use rustpython_parser::ast::{Expr, TextSize};
 use serde_json::{Value, json};
 
 use crate::constants::*;
-use crate::core::evaluation::Evaluation;
+use crate::core::evaluation::{Context, Evaluation};
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::S;
@@ -430,24 +430,29 @@ impl Symbol {
         return None;
     }
 
-    pub fn next_ref(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if SymType::is_instance(&self.sym_type) && self.evaluation.is_some() && self.evaluation.as_ref().unwrap().is_symbol() && self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol().upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol().clone());
+    pub fn next_ref(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<Weak<RefCell<Symbol>>> {
+        if SymType::is_instance(&self.sym_type) &&
+            self.evaluation.is_some() &&
+            self.evaluation.as_ref().unwrap().is_symbol() &&
+            self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol(odoo, context).upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol(odoo, context).clone());
         }
         return None;
     }
 
-    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, stop_on_type: bool) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool) -> (Weak<RefCell<Symbol>>, bool) {
         //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut sym = symbol.borrow().weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
         let mut _sym_upgraded = sym.upgrade().unwrap();
         let mut _sym = symbol.borrow();
-        let mut next_ref = _sym.next_ref();
+        let mut next_ref = _sym.next_ref(odoo, context);
         let can_eval_external = !_sym.is_external;
         let mut instance = SymType::is_instance(&_sym.sym_type);
         while next_ref.is_some() && _sym.evaluation.as_ref().unwrap().is_symbol() {
             instance = _sym.evaluation.as_ref().unwrap().as_symbol().unwrap().instance;
-            //TODO update context
+            if _sym.evaluation.as_ref().unwrap().as_symbol().unwrap().context.len() > 0 && context.is_some() {
+                context.as_mut().unwrap().extend(_sym.evaluation.as_ref().unwrap().as_symbol().unwrap().context.clone());
+            }
             if stop_on_type && ! instance && !_sym.is_import_variable {
                 return (sym, instance)
             }
@@ -470,7 +475,7 @@ impl Symbol {
                     None => {}
                 }
             }
-            next_ref = _sym.next_ref();
+            next_ref = _sym.next_ref(odoo, context);
         }
         return (sym, instance)
     }

@@ -17,6 +17,10 @@ pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
     (a.iter().map(|x| x.to_string()).collect(), b.iter().map(|x| x.to_string()).collect())
 }
 
+pub fn flatten_tree(tree: &Tree) -> Vec<String> {
+    vec![tree.0.clone(), tree.1.clone()].concat()
+}
+
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
     DIRTY,

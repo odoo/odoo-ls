@@ -8,6 +8,7 @@ pub mod odoo;
 pub mod python_arch_builder;
 pub mod python_arch_builder_hooks;
 pub mod python_arch_eval;
+pub mod python_arch_eval_hooks;
 pub mod python_utils;
 pub mod symbol;
 pub mod symbols;
