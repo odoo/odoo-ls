@@ -1,42 +1,34 @@
 
 use std::rc::{Rc, Weak};
 use std::cell::{RefCell, RefMut};
-use std::collections::HashSet;
+use weak_table::PtrWeakHashSet;
+
 use crate::core::symbol::Symbol;
 
 
 #[derive(Debug)]
 pub struct ClassSymbol {
-    pub bases: HashSet<Weak<RefCell<Symbol>>>,
+    pub bases: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
 }
 
 impl ClassSymbol {
-    
-    pub fn inherits(&self, symbol: RefMut<Symbol>, checked: &mut HashSet<Weak<RefCell<Symbol>>>) -> bool {
-        // for base in self.bases.iter() {
-        //     match base.upgrade() {
-        //         Some(base) => {
-        //             if base == symbol {
-        //                 return true;
-        //             }
-        //             if checked.contains(&base) {
-        //                 return false;
-        //             }
-        //             checked.add(base.clone());
-        //             if base.inherits(symbol, checked) {
-        //                 return true;
-        //             }
-        //         },
-        //         None => {}
-        //     }
-        // }
-        // checked.insert(Arc::downgrade(&symbol));
-        // if symbol.sym_type == SymType::CLASS {
-        //     self.bases.insert(Arc::downgrade(&symbol));
-        //     for base in symbol.lock().unwrap().bases.iter() {
-        //         self.inherits(base.lock().unwrap(), checked);
-        //     }
-        // }
+
+    pub fn inherits(&self, base: &Rc<RefCell<Symbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>) -> bool {
+        if checked.is_none() {
+            *checked = Some(PtrWeakHashSet::new());
+        }
+        for b in self.bases.iter() {
+            if Rc::ptr_eq(&b, base) {
+                return true;
+            }
+            if checked.as_ref().unwrap().contains(&b) {
+                return false;
+            }
+            checked.as_mut().unwrap().insert(b.clone());
+            if b.borrow()._class.as_ref().unwrap().inherits(&base, checked) {
+                return true;
+            }
+        }
         false
     }
 

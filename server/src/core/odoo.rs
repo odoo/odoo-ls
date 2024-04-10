@@ -18,8 +18,11 @@ use crate::constants::*;
 use super::config::{self, DiagMissingImportsMode, RefreshMode};
 use super::file_mgr::FileMgr;
 use super::symbol::Symbol;
+use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
+use crate::core::python_odoo_builder::PythonOdooBuilder;
+use crate::core::python_validator::PythonValidator;
 use crate::core::messages::{Msg, MsgHandler};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
@@ -37,6 +40,7 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
+    pub models: HashMap<String, Rc<RefCell<Model>>>,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -67,6 +71,7 @@ impl SyncOdoo {
             stubs_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stubs").to_str().unwrap().to_string(),
             stdlib_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stdlib").to_str().unwrap().to_string(),
             modules: HashMap::new(),
+            models: HashMap::new(),
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
             rebuild_odoo: PtrWeakHashSet::new(),
@@ -348,7 +353,9 @@ impl SyncOdoo {
     fn process_rebuilds(&mut self) {
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
-        while !self.rebuild_arch.is_empty() || !self.rebuild_arch_eval.is_empty() {
+        let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
+        let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
+        while !self.rebuild_arch.is_empty() || !self.rebuild_arch_eval.is_empty() || !self.rebuild_odoo.is_empty() || !self.rebuild_validation.is_empty(){
             //println!("remains: {:?} - {:?}", self.rebuild_arch.len(), self.rebuild_arch_eval.len());
             let sym = self.pop_item(BuildSteps::ARCH);
             if sym.is_some() {
@@ -376,6 +383,34 @@ impl SyncOdoo {
                 //TODO should delete previous first
                 let mut builder = PythonArchEval::new(sym_arc);
                 builder.eval_arch(self);
+                continue;
+            }
+            let sym = self.pop_item(BuildSteps::ODOO);
+            if sym.is_some() {
+                let sym_arc = sym.as_ref().unwrap().clone();
+                let tree = sym_arc.borrow_mut().get_tree().clone();
+                if already_odoo_rebuilt.contains(&tree) {
+                    println!("Already odoo rebuilt, skipping");
+                    continue;
+                }
+                already_odoo_rebuilt.insert(tree);
+                //TODO should delete previous first
+                let mut builder = PythonOdooBuilder::new(sym_arc);
+                builder.load_odoo_content(self);
+                continue;
+            }
+            let sym = self.pop_item(BuildSteps::VALIDATION);
+            if sym.is_some() {
+                let sym_arc = sym.as_ref().unwrap().clone();
+                let tree = sym_arc.borrow_mut().get_tree().clone();
+                if already_validation_rebuilt.contains(&tree) {
+                    println!("Already validation rebuilt, skipping");
+                    continue;
+                }
+                already_validation_rebuilt.insert(tree);
+                //TODO should delete previous first
+                let mut validator = PythonValidator::new(sym_arc);
+                validator.validate(self);
                 continue;
             }
         }

@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
 use crate::core::odoo::SyncOdoo;
+use crate::core::model::ModelData;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::S;
 use core::panic;
@@ -40,8 +41,8 @@ pub struct Symbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
-    pub odoo_status: bool,
-    pub validation_status: bool,
+    pub odoo_status: BuildStatus,
+    pub validation_status: BuildStatus,
     pub is_import_variable: bool,
     pub ast: Option<Expr<TextRange>>,
     pub doc_string: Option<String>,
@@ -50,6 +51,7 @@ pub struct Symbol {
     pub _function: Option<FunctionSymbol>,
     pub _class: Option<ClassSymbol>,
     pub _module: Option<ModuleSymbol>,
+    pub _model: Option<ModelData>,
 }
 
 impl Symbol {
@@ -102,8 +104,8 @@ impl Symbol {
             not_found_paths: Vec::new(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
-            odoo_status: false,
-            validation_status: false,
+            odoo_status: BuildStatus::PENDING,
+            validation_status: BuildStatus::PENDING,
             is_import_variable: false,
             ast: None,
             doc_string: None,
@@ -112,6 +114,7 @@ impl Symbol {
             _function: None,
             _class: None,
             _module: None,
+            _model: None,
         }
     }
 
@@ -123,7 +126,7 @@ impl Symbol {
 
     pub fn new_class(name: String, sym_type: SymType) -> Self {
         let mut new_sym = Symbol::new(name, sym_type);
-        new_sym._class = Some(ClassSymbol{bases: HashSet::new()});
+        new_sym._class = Some(ClassSymbol{bases: PtrWeakHashSet::new()});
         new_sym
     }
 
@@ -261,11 +264,11 @@ impl Symbol {
         }
         let step_i = step as usize;
         let level_i = dep_level as usize;
-        self.dependencies[step_i][level_i].insert(symbol.get_arc().unwrap());
-        symbol.dependents[level_i][step_i].insert(self.get_arc().unwrap());
+        self.dependencies[step_i][level_i].insert(symbol.get_rc().unwrap());
+        symbol.dependents[level_i][step_i].insert(self.get_rc().unwrap());
     }
 
-    pub fn get_arc(&self) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn get_rc(&self) -> Option<Rc<RefCell<Symbol>>> {
         if self.weak_self.is_none() {
             return None;
         }
@@ -276,7 +279,7 @@ impl Symbol {
     }
 
     pub fn is_symbol_in_parents(&self, symbol: &Rc<RefCell<Symbol>>) -> bool {
-        if Rc::ptr_eq(&symbol, &self.get_arc().unwrap()) {
+        if Rc::ptr_eq(&symbol, &self.get_rc().unwrap()) {
             return true;
         }
         if self.parent.is_none() {
@@ -696,27 +699,60 @@ impl Symbol {
         if not all, it will return the first found. If all, the all found symbols are returned, but the first one
         is the one that is overriding others.
         :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, name: String, from_module: Option<String>, prevent_local: bool, prevent_comodel: bool, all: bool) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_member_symbol(&self, odoo: &mut SyncOdoo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_local: bool, prevent_comodel: bool, all: bool) -> Vec<Rc<RefCell<Symbol>>> {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
-        if self.module_symbols.contains_key(&name) {
+        if self.module_symbols.contains_key(name) {
             if all {
-                result.push(self.module_symbols[&name].clone());
+                result.push(self.module_symbols[name].clone());
             } else {
-                return vec![self.module_symbols[&name].clone()];
+                return vec![self.module_symbols[name].clone()];
             }
         }
         if !prevent_local {
-            if self.symbols.contains_key(&name) {
+            if self.symbols.contains_key(name) {
                 if all {
-                    result.push(self.symbols[&name].clone());
+                    result.push(self.symbols[name].clone());
                 } else {
-                    return vec![self.symbols[&name].clone()];
+                    return vec![self.symbols[name].clone()];
                 }
             }
         }
-        //TODO implement model
-        // if self._model.is_some() && !prevent_comodel {
-        // }
+        if self._model.is_some() && !prevent_comodel {
+            let model = odoo.models.get(&self._model.as_ref().unwrap().name);
+            if let Some(model) = model {
+                let symbols = model.clone().borrow().get_symbols(odoo, from_module.unwrap_or(self.get_module_sym()));
+                for sym in symbols {
+                    if Rc::ptr_eq(&sym, &self.get_rc().unwrap()) {
+                        continue;
+                    }
+                    let attribut = sym.borrow().get_member_symbol(odoo, name, None, false, true, all);
+                    if all {
+                        result.extend(attribut);
+                    } else {
+                        return attribut;
+                    }
+                }
+            }
+        }
         result
+    }
+
+    pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> {
+        let mut symbols: Vec<Rc<RefCell<Symbol>>> = Vec::new();
+        symbols.extend(self.local_symbols.iter().cloned());
+        symbols.extend(self.module_symbols.values().cloned());
+        symbols.extend(self.symbols.values().cloned());
+        symbols.sort_by_key(|s| s.borrow().range.unwrap().start());
+        symbols.into_iter()
+    }
+
+    pub fn get_module_sym(&self) -> Rc<RefCell<Symbol>> {
+        if self._module.is_some() {
+            return self.get_rc().unwrap();
+        }
+        if self.parent.is_some() {
+            return self.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().get_module_sym();
+        }
+        return self.get_rc().unwrap();
     }
 }

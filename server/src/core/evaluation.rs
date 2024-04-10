@@ -7,7 +7,7 @@ use crate::constants::*;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EvaluationValue {
     CONSTANT(rustpython_parser::ast::Constant),
     DICT(Vec<(rustpython_parser::ast::Constant, rustpython_parser::ast::Constant)>),
@@ -97,6 +97,33 @@ impl Evaluation {
         match self {
             Evaluation::EvaluationValue(s) => Some(s),
             _ => None
+        }
+    }
+
+    pub fn follow_ref_and_get_value(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<EvaluationValue> {
+        match self {
+            Evaluation::EvaluationValue(v) => {
+                Some((*v).clone())
+            },
+            Evaluation::EvaluationSymbol(s) => {
+                let symbol = s.get_symbol(odoo, context);
+                let symbol = symbol.upgrade();
+                if symbol.is_some() {
+                    let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false);
+                    let symbol = symbol.0.upgrade();
+                    if symbol.is_some() {
+                        let symbol = symbol.unwrap();
+                        let symbol = symbol.borrow();
+                        if symbol.evaluation.is_some() {
+                            let eval = symbol.evaluation.as_ref().unwrap();
+                            if eval.is_value() {
+                                return Some((*eval).as_value().unwrap().clone());
+                            }
+                        }
+                    }
+                }
+                None
+            }
         }
     }
 

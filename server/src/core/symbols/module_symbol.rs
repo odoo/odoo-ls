@@ -2,6 +2,7 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Positi
 use rustpython_parser::ast::{Expr, Ranged, Stmt};
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::Constant::Str;
+use std::collections::HashSet;
 
 use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
@@ -262,6 +263,32 @@ impl ModuleSymbol {
             }
         }
         vec![]
+    }
+
+    pub fn is_in_deps(odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
+        if symbol.borrow()._module.as_ref().unwrap().dir_name == *dir_name || symbol.borrow()._module.as_ref().unwrap().depends.contains(dir_name) {
+            return true;
+        }
+        if acc.is_none() {
+            *acc = Some(HashSet::new());
+        }
+        for dep in symbol.borrow()._module.as_ref().unwrap().depends.iter() {
+            if acc.as_ref().unwrap().contains(dep) {
+                return true;
+            }
+            let dep_module = odoo.modules.get(dep);
+            if let Some(dep_module) = dep_module {
+                let dep_module = dep_module.upgrade();
+                if dep_module.is_none() {
+                    continue;
+                }
+                if ModuleSymbol::is_in_deps(odoo, dep_module.as_ref().unwrap(), dir_name, acc) {
+                    return true;
+                }
+                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone());
+            }
+        }
+        false
     }
 
 }

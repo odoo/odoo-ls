@@ -41,6 +41,9 @@ impl PythonArchEval {
     pub fn eval_arch(&mut self, odoo: &mut SyncOdoo) {
         //println!("eval arch");
         let mut symbol = self.symbol.borrow_mut();
+        if symbol.arch_eval_status != BuildStatus::PENDING {
+            return;
+        }
         symbol.arch_eval_status = BuildStatus::IN_PROGRESS;
         if symbol.paths.len() != 1 {
             panic!()
@@ -62,11 +65,13 @@ impl PythonArchEval {
         let mut file_info = (*file_info_rc).borrow_mut();
         file_info.replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
         PythonArchEvalHooks::on_file_eval(odoo, self.symbol.clone());
-        //TODO remove that temporary publish
-        file_info.publish_diagnostics(odoo);
         let mut symbol = self.symbol.borrow_mut();
         symbol.arch_eval_status = BuildStatus::DONE;
-        //TODO odoo.add_to_rebuild_odoo(Arc::downgrade(&self.sym_stack[0]));
+        if symbol.is_external {
+            odoo.get_file_mgr().borrow_mut().delete_path(odoo, path);
+        } else {
+            odoo.add_to_init_odoo(self.symbol.clone());
+        }
     }
 
     fn visit_stmt(&mut self, odoo: &mut SyncOdoo, stmt: &Stmt, file_info: &FileInfo) {
@@ -218,7 +223,7 @@ impl PythonArchEval {
         let tree = symbol.get_tree();
         let tree = vec![tree.0.clone(), vec![var_name.to_string()]].concat();
         symbol.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
-        odoo.not_found_symbols.insert(symbol.get_arc().unwrap());
+        odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
         let range = file_info.text_range_to_range(range).unwrap();
         self.diagnostics.push(Diagnostic::new(
             range,
@@ -259,7 +264,7 @@ impl PythonArchEval {
                     compiled = true;
                 }
                 previous_element = iter_element.clone();
-                let next_iter_element = iter_up.borrow().get_member_symbol(base_element.to_string(), None, false, true, false);
+                let next_iter_element = iter_up.borrow().get_member_symbol(odoo, &base_element.to_string(), None, false, true, false);
                 if next_iter_element.len() == 0 {
                     found = false;
                     break;

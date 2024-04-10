@@ -5,6 +5,7 @@ use anyhow::{Error};
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Alias, Constant, ExprConstant, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use weak_table::traits::WeakElement;
+use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 
 use crate::constants::{SymType, BuildStatus, BuildSteps};
@@ -312,7 +313,7 @@ impl PythonArchBuilder {
     fn visit_class_def(&mut self, odoo: &mut SyncOdoo, class_def: &StmtClassDef) -> Result<(), Error> {
         let mut sym = Symbol::new(class_def.name.to_string(), SymType::CLASS);
         sym._class = Some(ClassSymbol {
-            bases: HashSet::new(),
+            bases: PtrWeakHashSet::new(),
         });
         sym.range = Some(class_def.range.clone());
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
