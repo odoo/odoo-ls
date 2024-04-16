@@ -1,9 +1,9 @@
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use std::vec;
+use std::{ptr, vec};
 
 use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Alias, Expr, Identifier, Int, Ranged, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef};
+use rustpython_parser::ast::{Alias, Expr, Identifier, Int, Ranged, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
@@ -68,7 +68,10 @@ impl PythonArchEval {
         let mut symbol = self.symbol.borrow_mut();
         symbol.arch_eval_status = BuildStatus::DONE;
         if symbol.is_external {
-            odoo.get_file_mgr().borrow_mut().delete_path(odoo, path);
+            for sym in symbol.all_symbols(None, false) {
+                sym.borrow_mut().ast_ptr = ptr::null();
+            }
+            odoo.get_file_mgr().borrow_mut().delete_path(odoo, &path);
         } else {
             odoo.add_to_init_odoo(self.symbol.clone());
         }
@@ -83,7 +86,10 @@ impl PythonArchEval {
                 self.eval_local_symbols_from_import_stmt(odoo, &file_info, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
-                self.visit_class_def(odoo, &file_info, class_stmt);
+                self.visit_class_def(odoo, &file_info, class_stmt, stmt);
+            },
+            Stmt::FunctionDef(func_stmt) => {
+                self.visit_func_def(func_stmt, stmt);
             }
             _ => {}
         }
@@ -121,7 +127,7 @@ impl PythonArchEval {
             name_aliases,
             level,
             range);
-        
+
         for _import_result in import_results.iter() {
             let variable = self.symbol.borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);
             if variable.is_none() {
@@ -306,14 +312,20 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, class_stmt: &StmtClassDef) {
+    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, class_stmt: &StmtClassDef, stmt: &Stmt) {
         let variable = self.symbol.borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
         if variable.is_none() {
             return;
         }
+        variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
         self.load_base_classes(odoo, file_info, variable.unwrap(), class_stmt);
         for stmt in class_stmt.body.iter() {
             self.visit_stmt(odoo, stmt, file_info);
         }
+    }
+
+    fn visit_func_def(&mut self, func_stmt: &StmtFunctionDef,  stmt: &Stmt) {
+        let variable = self.symbol.borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
+        variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
     }
 }

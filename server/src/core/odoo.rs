@@ -358,58 +358,54 @@ impl SyncOdoo {
         while !self.rebuild_arch.is_empty() || !self.rebuild_arch_eval.is_empty() || !self.rebuild_odoo.is_empty() || !self.rebuild_validation.is_empty(){
             //println!("remains: {:?} - {:?}", self.rebuild_arch.len(), self.rebuild_arch_eval.len());
             let sym = self.pop_item(BuildSteps::ARCH);
-            if sym.is_some() {
-                let sym_arc = sym.as_ref().unwrap().clone();
-                let tree = sym_arc.borrow_mut().get_tree().clone();
+            if let Some(sym_rc) = sym {
+                let tree = sym_rc.borrow().get_tree();
                 if already_arch_rebuilt.contains(&tree) {
                     println!("Already arch rebuilt, skipping");
                     continue;
                 }
                 already_arch_rebuilt.insert(tree);
                 //TODO should delete previous first
-                let mut builder = PythonArchBuilder::new(sym_arc);
+                let mut builder = PythonArchBuilder::new(sym_rc);
                 builder.load_arch(self);
                 continue;
             }
             let sym = self.pop_item(BuildSteps::ARCH_EVAL);
-            if sym.is_some() {
-                let sym_arc = sym.as_ref().unwrap().clone();
-                let tree = sym_arc.borrow_mut().get_tree().clone();
+            if let Some(sym_rc) = sym {
+                let tree = sym_rc.borrow().get_tree();
                 if already_arch_eval_rebuilt.contains(&tree) {
                     println!("Already arch eval rebuilt, skipping");
                     continue;
                 }
                 already_arch_eval_rebuilt.insert(tree);
                 //TODO should delete previous first
-                let mut builder = PythonArchEval::new(sym_arc);
+                let mut builder = PythonArchEval::new(sym_rc);
                 builder.eval_arch(self);
                 continue;
             }
             let sym = self.pop_item(BuildSteps::ODOO);
-            if sym.is_some() {
-                let sym_arc = sym.as_ref().unwrap().clone();
-                let tree = sym_arc.borrow_mut().get_tree().clone();
+            if let Some(sym_rc) = sym {
+                let tree = sym_rc.borrow().get_tree();
                 if already_odoo_rebuilt.contains(&tree) {
                     println!("Already odoo rebuilt, skipping");
                     continue;
                 }
                 already_odoo_rebuilt.insert(tree);
                 //TODO should delete previous first
-                let mut builder = PythonOdooBuilder::new(sym_arc);
+                let mut builder = PythonOdooBuilder::new(sym_rc);
                 builder.load_odoo_content(self);
                 continue;
             }
             let sym = self.pop_item(BuildSteps::VALIDATION);
-            if sym.is_some() {
-                let sym_arc = sym.as_ref().unwrap().clone();
-                let tree = sym_arc.borrow_mut().get_tree().clone();
+            if let Some(sym_rc) = sym {
+                let tree = sym_rc.borrow_mut().get_tree();
                 if already_validation_rebuilt.contains(&tree) {
                     println!("Already validation rebuilt, skipping");
                     continue;
                 }
                 already_validation_rebuilt.insert(tree);
                 //TODO should delete previous first
-                let mut validator = PythonValidator::new(sym_arc);
+                let mut validator = PythonValidator::new(sym_rc);
                 validator.validate(self);
                 continue;
             }
@@ -520,11 +516,11 @@ impl SyncOdoo {
         let parent = path_symbol.borrow().parent.clone().unwrap().upgrade().unwrap();
         if clean_cache {
             let mut file_mgr = self.file_mgr.borrow_mut();
-            file_mgr.delete_path(self, path.as_os_str().to_str().unwrap().to_string());
+            file_mgr.delete_path(self, &path.as_os_str().to_str().unwrap().to_string());
             let mut to_del = Vec::from_iter(path_symbol.borrow_mut().module_symbols.values().map(|x| x.clone()));
             let mut index = 0;
             while index < to_del.len() {
-                file_mgr.delete_path(self, to_del[index].borrow().paths[0].clone());
+                file_mgr.delete_path(self, &to_del[index].borrow().paths[0]);
                 let mut to_del_child = Vec::from_iter(to_del[index].borrow().module_symbols.values().map(|x| x.clone()));
                 to_del.append(&mut to_del_child);
                 index += 1;

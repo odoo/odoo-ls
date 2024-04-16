@@ -1,6 +1,7 @@
 use rustpython_parser::text_size::TextRange;
 use rustpython_parser::ast::{Expr, TextSize};
 use serde_json::{Value, json};
+use rustpython_parser::ast;
 
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
@@ -15,7 +16,9 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::{RefCell, RefMut};
 use std::vec;
+use std::ptr;
 
+use super::python_validator::PythonValidator;
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;
@@ -46,6 +49,8 @@ pub struct Symbol {
     pub is_import_variable: bool,
     pub ast: Option<Expr<TextRange>>,
     pub doc_string: Option<String>,
+    pub ast_ptr: *const ast::Stmt<TextRange>, //ptr only valid if validation_status is PENDING
+    pub in_workspace: bool,
 
     pub _root: Option<RootSymbol>,
     pub _function: Option<FunctionSymbol>,
@@ -109,6 +114,8 @@ impl Symbol {
             is_import_variable: false,
             ast: None,
             doc_string: None,
+            ast_ptr: ptr::null(),
+            in_workspace: false,
 
             _root: None,
             _function: None,
@@ -126,7 +133,7 @@ impl Symbol {
 
     pub fn new_class(name: String, sym_type: SymType) -> Self {
         let mut new_sym = Symbol::new(name, sym_type);
-        new_sym._class = Some(ClassSymbol{bases: PtrWeakHashSet::new()});
+        new_sym._class = Some(ClassSymbol{bases: PtrWeakHashSet::new(), diagnostics: vec![]});
         new_sym
     }
 

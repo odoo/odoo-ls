@@ -109,14 +109,16 @@ impl FileInfo {
 
 #[derive(Debug)]
 pub struct FileMgr {
-    pub files: HashMap<String, Rc<RefCell<FileInfo>>>
+    pub files: HashMap<String, Rc<RefCell<FileInfo>>>,
+    workspace_folder: Vec<String>,
 }
 
 impl FileMgr {
 
     pub fn new() -> Self {
         Self {
-            files: HashMap::new()
+            files: HashMap::new(),
+            workspace_folder: vec![],
         }
     }
 
@@ -129,8 +131,8 @@ impl FileMgr {
         return_info
     }
 
-    pub fn delete_path(&mut self, odoo: &SyncOdoo, uri: String) {
-        let to_del = self.files.remove(&uri);
+    pub fn delete_path(&mut self, odoo: &SyncOdoo, uri: &String) {
+        let to_del = self.files.remove(uri);
         if let Some(to_del) = to_del {
             let mut to_del = (*to_del).borrow_mut();
             to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
@@ -140,6 +142,26 @@ impl FileMgr {
             to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
             to_del.publish_diagnostics(odoo)
         }
+    }
+
+    pub fn add_workspace_folder(&mut self, path: String) {
+        if !self.workspace_folder.contains(&path) {
+            self.workspace_folder.push(path);
+        }
+    }
+
+    pub fn remove_workspace_folder(&mut self, path: String) {
+        let index = self.workspace_folder.iter().position(|x| *x == path).unwrap();
+        self.workspace_folder.swap_remove(index);
+    }
+
+    pub fn is_in_workspace(&self, path: &str) -> bool {
+        for p in self.workspace_folder.iter() {
+            if path.starts_with(p) {
+                return true;
+            }
+        }
+        false
     }
 
     // fn pathname2uri(s: &str) -> String {

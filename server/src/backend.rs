@@ -19,7 +19,16 @@ pub struct Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        if let Some(workspace_folders) = params.workspace_folders {
+            let odoo = self.odoo.lock().await;
+            let mut sync_odoo = odoo.odoo.lock().unwrap();
+            let file_mgr = sync_odoo.get_file_mgr();
+            let mut file_mgr = file_mgr.borrow_mut();
+            for added in workspace_folders.iter() {
+                file_mgr.add_workspace_folder(added.uri.to_string());
+            }
+        }
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "Odoo Language Server".to_string(),
@@ -31,6 +40,13 @@ impl LanguageServer for Backend {
                     ..TextDocumentSyncOptions::default()
                 })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                workspace: Some(WorkspaceServerCapabilities {
+                    workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                        supported: Some(true),
+                        change_notifications: Some(OneOf::Left(true)),
+                    }),
+                    ..WorkspaceServerCapabilities::default()
+                }),
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -121,6 +137,19 @@ impl LanguageServer for Backend {
         let odoo = self.odoo.lock().await;
         odoo.msg_sender.send(Msg::MPSC_SHUTDOWN()).await.unwrap();
         Ok(())
+    }
+
+    async fn did_change_workspace_folders(&self, params: DidChangeWorkspaceFoldersParams) {
+        let odoo = self.odoo.lock().await;
+        let mut sync_odoo = odoo.odoo.lock().unwrap();
+        let file_mgr = sync_odoo.get_file_mgr();
+        let mut file_mgr = file_mgr.borrow_mut();
+        for added in params.event.added {
+            file_mgr.add_workspace_folder(added.uri.to_string());
+        }
+        for removed in params.event.removed {
+            file_mgr.remove_workspace_folder(removed.uri.to_string());
+        }
     }
 }
 

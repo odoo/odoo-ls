@@ -3,6 +3,8 @@ use core::fmt;
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "0.2.4";
 
+pub const DEBUG_MODE:bool = true;
+
 pub const DEBUG_BUILD_ONLY_BASE: bool = false;
 pub const DEBUG_ARCH_BUILDER: bool = false;
 pub const DEBUG_ARCH_EVAL: bool = false;
@@ -59,7 +61,7 @@ pub enum BuildSteps {
     VALIDATION = 3,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum BuildStatus {
     PENDING,
     IN_PROGRESS,

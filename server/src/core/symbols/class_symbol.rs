@@ -1,4 +1,5 @@
 
+use tower_lsp::lsp_types::Diagnostic;
 use std::rc::{Rc, Weak};
 use std::cell::{RefCell, RefMut};
 use weak_table::PtrWeakHashSet;
@@ -9,6 +10,7 @@ use crate::core::symbol::Symbol;
 #[derive(Debug)]
 pub struct ClassSymbol {
     pub bases: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others and stored on FileInfo
 }
 
 impl ClassSymbol {

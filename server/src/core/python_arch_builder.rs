@@ -47,6 +47,10 @@ impl PythonArchBuilder {
         if symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
+        symbol.in_workspace = (symbol.parent.is_some() &&
+            symbol.parent.as_ref().unwrap().upgrade().is_some() &&
+            symbol.parent.as_ref().unwrap().upgrade().unwrap().borrow().in_workspace) ||
+            odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
         drop(symbol);
         let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str(), None, None); //create ast
         let file_info = (*file_info).borrow();
@@ -281,6 +285,7 @@ impl PythonArchBuilder {
         sym._function = Some(FunctionSymbol{
             is_static: false,
             is_property: false,
+            diagnostics: vec![]
         });
         for decorator in func_def.decorator_list.iter() {
             if decorator.is_name_expr() && decorator.as_name_expr().unwrap().id.to_string() == "staticmethod" {
@@ -314,6 +319,7 @@ impl PythonArchBuilder {
         let mut sym = Symbol::new(class_def.name.to_string(), SymType::CLASS);
         sym._class = Some(ClassSymbol {
             bases: PtrWeakHashSet::new(),
+            diagnostics: vec![]
         });
         sym.range = Some(class_def.range.clone());
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
