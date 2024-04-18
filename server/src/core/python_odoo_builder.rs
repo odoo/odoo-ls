@@ -57,7 +57,9 @@ impl PythonOdooBuilder {
 
     fn _load(&mut self, odoo: &mut SyncOdoo) {
         let symbol = self.symbol.borrow_mut();
-        for sym in symbol.get_sorted_symbols() {
+        let iterator = symbol.get_sorted_symbols();
+        drop(symbol);
+        for sym in iterator {
             let mut s_to_build = sym.borrow_mut();
             if s_to_build.sym_type != SymType::CLASS {
                 continue;

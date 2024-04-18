@@ -35,7 +35,6 @@ pub struct SyncOdoo {
     pub full_version: String,
     pub config: Config,
     pub symbols: Option<Rc<RefCell<Symbol>>>,
-    pub builtins: Option<Rc<RefCell<Symbol>>>,
     pub stubs_dir: String,
     pub stdlib_dir: String,
     file_mgr: Rc<RefCell<FileMgr>>,
@@ -56,8 +55,6 @@ impl SyncOdoo {
 
     pub fn new(msg_sender: MsgHandler) -> Self {
         let symbols = Rc::new(RefCell::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
-        let builtins = Rc::new(RefCell::new(Symbol::new_root("builtins".to_string(), SymType::ROOT)));
-        builtins.borrow_mut().weak_self = Some(Rc::downgrade(&builtins)); // manually set weakself for root symbols
         symbols.borrow_mut().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
         let sync_odoo = Self {
             version_major: 0,
@@ -66,7 +63,6 @@ impl SyncOdoo {
             full_version: "0.0.0".to_string(),
             config: Config::new(),
             symbols: Some(symbols),
-            builtins: Some(builtins),
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
             stubs_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stubs").to_str().unwrap().to_string(),
             stdlib_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stdlib").to_str().unwrap().to_string(),
@@ -123,18 +119,14 @@ impl SyncOdoo {
     }
 
     pub fn load_builtins(&mut self) {
-        let path = PathBuf::from("./../server/typeshed/stdlib/builtins.pyi");
-        let builtins_path = fs::canonicalize(path);
-        let Ok(builtins_path) = builtins_path else {
+        let path = std::env::current_dir().unwrap();
+        let builtins_path = path.join("typeshed").join("stdlib").join("builtins.pyi");
+        if !builtins_path.exists() {
             self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to find builtins.pyi")));
             return;
         };
-        if self.builtins.is_none() {
-            panic!("Builtins symbol not found")
-        }
-        let builtins = self.builtins.as_ref().unwrap().clone();
-        let _builtins_arc_symbol = Symbol::create_from_path(self, &builtins_path, builtins, false);
-        self.add_to_rebuild_arch(_builtins_arc_symbol.unwrap());
+        let _builtins_rc_symbol = Symbol::create_from_path(self, &builtins_path, self.symbols.as_ref().unwrap().clone(), false);
+        self.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
         self.process_rebuilds();
     }
 
@@ -356,7 +348,7 @@ impl SyncOdoo {
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
         while !self.rebuild_arch.is_empty() || !self.rebuild_arch_eval.is_empty() || !self.rebuild_odoo.is_empty() || !self.rebuild_validation.is_empty(){
-            //println!("remains: {:?} - {:?}", self.rebuild_arch.len(), self.rebuild_arch_eval.len());
+            println!("remains: {:?} - {:?} - {:?} - {:?}", self.rebuild_arch.len(), self.rebuild_arch_eval.len(), self.rebuild_odoo.len(), self.rebuild_validation.len());
             let sym = self.pop_item(BuildSteps::ARCH);
             if let Some(sym_rc) = sym {
                 let tree = sym_rc.borrow().get_tree();

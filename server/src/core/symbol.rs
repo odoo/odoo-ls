@@ -538,7 +538,9 @@ impl Symbol {
             return Some(ref_sym);
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                let ref_sym = (*parent).borrow_mut().add_symbol(odoo, Symbol::new(name, SymType::PACKAGE));
+                let mut new_sym = Symbol::new(name, SymType::PACKAGE);
+                new_sym.paths = vec![path_str.clone()];
+                let ref_sym = (*parent).borrow_mut().add_symbol(odoo, new_sym);
                 if path.join("__init__.py").exists() {
                     //?
                 } else {
@@ -553,9 +555,7 @@ impl Symbol {
                     } else {
                         return None;
                     }
-                } else if !require_module {
-                    (*ref_sym).borrow_mut().paths = vec![path_str.clone()];
-                } else {
+                } else if require_module {
                     (*parent).borrow_mut().remove_symbol(ref_sym);
                     return None;
                 }
@@ -669,14 +669,14 @@ impl Symbol {
         iter.into_iter().flatten()
     }
 
-    pub fn infer_name(&self, odoo: &mut SyncOdoo, name: String, position: Option<TextRange>) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<TextRange>) -> Option<Rc<RefCell<Symbol>>> {
         let mut selected: Option<Rc<RefCell<Symbol>>> = None;
         if name == "__doc__" {
             //return self.doc; //TODO
         }
-        for symbol in self.all_symbols(position, false) {
+        for symbol in on_symbol.borrow().all_symbols(position, false) {
             let deref_symbol = (**symbol).borrow();
-            if deref_symbol.name == name {
+            if deref_symbol.name == *name {
                 if selected.is_none() {
                     selected = Some(symbol.clone());
                 } else {
@@ -688,15 +688,13 @@ impl Symbol {
                 }
             }
         }
-        if selected.is_none() && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&self.sym_type) {
-            let parent = self.parent.as_ref().unwrap().upgrade().unwrap();
-            let parent = (*parent).borrow();
-            return parent.infer_name(odoo, name, position);
+        if selected.is_none() && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.borrow().sym_type) {
+            let parent = on_symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
+            return Symbol::infer_name(odoo, &parent, name, position);
         }
-        if selected.is_none() && (self.name != "builtins" || self.sym_type != SymType::FILE) {
-            let builtins = odoo.builtins.as_ref().unwrap().borrow().get_symbol(&(vec![S!("builtins")], vec![])).unwrap().clone();
-            let builtins = (*builtins).borrow();
-            return builtins.infer_name(odoo, name, None);
+        if selected.is_none() && (on_symbol.borrow().name != "builtins" || on_symbol.borrow().sym_type != SymType::FILE) {
+            let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![])).as_ref().unwrap().clone();
+            return Symbol::infer_name(odoo, &builtins, name, None);
         }
         selected
     }
@@ -727,7 +725,7 @@ impl Symbol {
         if self._model.is_some() && !prevent_comodel {
             let model = odoo.models.get(&self._model.as_ref().unwrap().name);
             if let Some(model) = model {
-                let symbols = model.clone().borrow().get_symbols(odoo, from_module.unwrap_or(self.get_module_sym()));
+                let symbols = model.clone().borrow().get_symbols(odoo, from_module.unwrap_or(self.get_module_sym().expect("unable to find module")));
                 for sym in symbols {
                     if Rc::ptr_eq(&sym, &self.get_rc().unwrap()) {
                         continue;
@@ -747,19 +745,18 @@ impl Symbol {
     pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> {
         let mut symbols: Vec<Rc<RefCell<Symbol>>> = Vec::new();
         symbols.extend(self.local_symbols.iter().cloned());
-        symbols.extend(self.module_symbols.values().cloned());
         symbols.extend(self.symbols.values().cloned());
         symbols.sort_by_key(|s| s.borrow().range.unwrap().start());
         symbols.into_iter()
     }
 
-    pub fn get_module_sym(&self) -> Rc<RefCell<Symbol>> {
+    pub fn get_module_sym(&self) -> Option<Rc<RefCell<Symbol>>> {
         if self._module.is_some() {
-            return self.get_rc().unwrap();
+            return self.get_rc();
         }
-        if self.parent.is_some() {
-            return self.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().get_module_sym();
+        if let Some(parent) = self.parent.as_ref() {
+            return parent.upgrade().unwrap().borrow().get_module_sym();
         }
-        return self.get_rc().unwrap();
+        return None;
     }
 }

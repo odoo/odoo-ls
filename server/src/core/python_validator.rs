@@ -1,22 +1,24 @@
-use rustpython_parser::ast::{self, StmtClassDef};
+use rustpython_parser::ast::{StmtTry, Identifier, Alias, Int, text_size::TextRange};
 use rustpython_parser::ast::Stmt;
-use std::ptr;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use tower_lsp::lsp_types::Diagnostic;
-use crate::constants::{BuildStatus, DEBUG_MODE};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use crate::constants::*;
 use crate::core::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
-use crate::constants::*;
+use crate::core::import_resolver::{resolve_import_stmt};
+use crate::core::symbols::module_symbol::ModuleSymbol;
 
-use super::file_mgr::{FileInfo, FileMgr};
-use super::symbols::{class_symbol, function_symbol};
+use super::file_mgr::{FileInfo};
 
 #[derive(Debug)]
 pub struct PythonValidator {
     symbol: Rc<RefCell<Symbol>>,
     diagnostics: Vec<Diagnostic>,
+    safe_imports: Vec<bool>,
+    current_module: Option<Rc<RefCell<Symbol>>>,
+    file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on any symbol containing code (file, function, class. Not variable, namespace).
@@ -29,6 +31,9 @@ impl PythonValidator {
         Self {
             symbol,
             diagnostics: Vec::new(),
+            safe_imports: vec![false],
+            current_module: None,
+            file_info: None,
         }
     }
 
@@ -46,14 +51,16 @@ impl PythonValidator {
     pub fn validate(&mut self, odoo: &mut SyncOdoo) {
         let mut symbol = self.symbol.borrow_mut();
         symbol.validation_status = BuildStatus::IN_PROGRESS;
+        self.current_module = symbol.get_module_sym();
         if symbol.validation_status != BuildStatus::PENDING {
             return;
         }
         let sym_type = symbol.sym_type.clone();
         drop(symbol);
+        self.file_info = Some(self.get_file_info(odoo));
         match sym_type {
             SymType::FILE | SymType::PACKAGE => {
-                let file_info = self.get_file_info(odoo);
+                let file_info = self.file_info.as_ref().unwrap().clone();
                 let mut file_info = file_info.borrow_mut();
                 if file_info.ast.is_some() {
                     self.validate_body(odoo, file_info.ast.as_ref().unwrap());
@@ -126,8 +133,65 @@ impl PythonValidator {
                         panic!("symbol not found.");
                     }
                 },
+                Stmt::Try(t) => {
+                    self.visit_try(odoo, t);
+                },
+                Stmt::Import(i) => {
+                    self._resolve_import(odoo, None, &i.names, None, &i.range);
+                },
+                Stmt::ImportFrom(i) => {
+                    self._resolve_import(odoo, i.module.as_ref(), &i.names, i.level.as_ref(), &i.range);
+                }
                 _ => {
                     println!("Stmt not handled");
+                }
+            }
+        }
+    }
+
+    fn visit_try(&mut self, odoo: &mut SyncOdoo, node: &StmtTry) {
+        let mut safe = false;
+        for handler in node.handlers.iter() {
+            let handler = handler.as_except_handler().unwrap();
+            if let Some(type_) = &handler.type_ {
+                if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
+                    safe = true;
+                }
+            }
+        }
+        self.safe_imports.push(safe);
+        self.validate_body(odoo, &node.body);
+        self.safe_imports.pop();
+    }
+
+    fn _resolve_import(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
+        let file_symbol = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+        let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
+        let import_results = resolve_import_stmt(
+            odoo,
+            &file_symbol,
+            &self.symbol,
+            from_stmt,
+            name_aliases,
+            level,
+            range);
+        for import_result in import_results.iter() {
+            if import_result.found && self.current_module.is_some() {
+                let module = import_result.symbol.borrow().get_module_sym();
+                if let Some(module) = module {
+                    if ModuleSymbol::is_in_deps(odoo, &self.current_module.as_ref().unwrap(), &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
+                        let mut file_info = self.file_info.as_ref().unwrap().borrow_mut();
+                        let range = file_info.text_range_to_range(&import_result.range).unwrap();
+                        self.diagnostics.push(Diagnostic::new(
+                            range,
+                            Some(DiagnosticSeverity::WARNING),
+                            None,
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("{} is not in the dependencies of the module", module.borrow()._module.as_ref().unwrap().dir_name),
+                            None,
+                            None,
+                        ))
+                    }
                 }
             }
         }

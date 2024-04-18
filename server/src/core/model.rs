@@ -82,6 +82,7 @@ impl Model {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().get_module_sym();
+            let module = module.expect("Module not found for model symbol");
             if ModuleSymbol::is_in_deps(odoo, &from_module, &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) {
                 symbol.push(s);
             }

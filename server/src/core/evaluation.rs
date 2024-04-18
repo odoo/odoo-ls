@@ -251,8 +251,7 @@ impl Evaluation {
                 }
             },
             Expr::Name(expr) => {
-                let parent = parent.borrow();
-                let infered_sym = parent.infer_name(odoo, expr.id.to_string(), Some(expr.range));
+                let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(expr.range));
                 if infered_sym.is_none() {
                     return None;
                 }

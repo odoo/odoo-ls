@@ -24,7 +24,7 @@ use super::python_arch_eval_hooks::PythonArchEvalHooks;
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
-    symbol: Rc<RefCell<Symbol>>,
+    sym_stack: Vec<Rc<RefCell<Symbol>>>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
 }
@@ -32,7 +32,7 @@ pub struct PythonArchEval {
 impl PythonArchEval {
     pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
         PythonArchEval {
-            symbol: symbol,
+            sym_stack: vec![symbol],
             diagnostics: Vec::new(),
             safe_import: vec![false],
         }
@@ -40,7 +40,7 @@ impl PythonArchEval {
 
     pub fn eval_arch(&mut self, odoo: &mut SyncOdoo) {
         //println!("eval arch");
-        let mut symbol = self.symbol.borrow_mut();
+        let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         if symbol.arch_eval_status != BuildStatus::PENDING {
             return;
         }
@@ -64,16 +64,17 @@ impl PythonArchEval {
         drop(file_info);
         let mut file_info = (*file_info_rc).borrow_mut();
         file_info.replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-        PythonArchEvalHooks::on_file_eval(odoo, self.symbol.clone());
-        let mut symbol = self.symbol.borrow_mut();
+        PythonArchEvalHooks::on_file_eval(odoo, self.sym_stack.first().unwrap().clone());
+        let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         symbol.arch_eval_status = BuildStatus::DONE;
         if symbol.is_external {
             for sym in symbol.all_symbols(None, false) {
                 sym.borrow_mut().ast_ptr = ptr::null();
             }
+            drop(file_info);
             odoo.get_file_mgr().borrow_mut().delete_path(odoo, &path);
         } else {
-            odoo.add_to_init_odoo(self.symbol.clone());
+            odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
         }
     }
 
@@ -116,20 +117,17 @@ impl PythonArchEval {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
-        if from_stmt.is_some() && from_stmt.unwrap().to_string() == "_weakref" {
-            println!("here");
-        }
         let import_results: Vec<ImportResult> = resolve_import_stmt(
             odoo,
-            &self.symbol,
-            &self.symbol,
+            &self.sym_stack.first().unwrap(),
+            &self.sym_stack.last().unwrap(),
             from_stmt,
             name_aliases,
             level,
             range);
 
         for _import_result in import_results.iter() {
-            let variable = self.symbol.borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);
+            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);
             if variable.is_none() {
                 continue;
             }
@@ -166,8 +164,8 @@ impl PythonArchEval {
                 } else {
                     let mut file_tree = vec![_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
                     file_tree.extend(_import_result.name.split(".").map(str::to_string));
-                    self.symbol.borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
-                    odoo.not_found_symbols.insert(self.symbol.clone());
+                    self.sym_stack.first().unwrap().borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
+                    odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
                     if self._match_diag_config(odoo, &_import_result.symbol) {
                         let range = file_info.text_range_to_range(&_import_result.range).unwrap();
                         self.diagnostics.push(Diagnostic::new(
@@ -189,8 +187,8 @@ impl PythonArchEval {
                     continue;
                 }
                 if !self.safe_import.last().unwrap() {
-                    self.symbol.borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
-                    odoo.not_found_symbols.insert(self.symbol.clone());
+                    self.sym_stack.first().unwrap().borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
+                    odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
                     if self._match_diag_config(odoo, &_import_result.symbol) {
                         let range = file_info.text_range_to_range(&_import_result.range).unwrap();
                         self.diagnostics.push(Diagnostic::new(
@@ -217,7 +215,7 @@ impl PythonArchEval {
             let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
             variable.range = Some(assign.target.range.clone());
             variable.evaluation = None;
-            self.symbol.borrow_mut().add_symbol(odoo, variable);
+            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
         }
     }
 
@@ -242,7 +240,7 @@ impl PythonArchEval {
         ));
     }
 
-    fn load_base_classes(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
+    fn load_base_classes(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases.iter() {
             let full_base = PythonArchEval::extract_base_name(base);
             if full_base.len() == 0 {
@@ -250,13 +248,12 @@ impl PythonArchEval {
             }
             let elements = full_base.split(".").collect::<Vec<&str>>();
             let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
-            let mut parent = parent.borrow_mut();
-            let iter_element = parent.infer_name(odoo, elements.first().unwrap().to_string(), Some(class_stmt.range));
+            let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range));
             if iter_element.is_none() {
+                let mut parent = parent.borrow_mut();
                 self.create_diagnostic_base_not_found(odoo, file_info, &mut parent, elements[0], &base.range());
                 continue;
             }
-            drop(parent);
             let iter_element = iter_element.unwrap();
             let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false).0;
             let mut previous_element = iter_element.clone();
@@ -313,19 +310,24 @@ impl PythonArchEval {
     }
 
     fn visit_class_def(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, class_stmt: &StmtClassDef, stmt: &Stmt) {
-        let variable = self.symbol.borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
+        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
         if variable.is_none() {
-            return;
+            panic!("Class not found");
         }
         variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
-        self.load_base_classes(odoo, file_info, variable.unwrap(), class_stmt);
+        self.load_base_classes(odoo, file_info, variable.as_ref().unwrap(), class_stmt);
+        self.sym_stack.push(variable.unwrap());
         for stmt in class_stmt.body.iter() {
             self.visit_stmt(odoo, stmt, file_info);
         }
+        self.sym_stack.pop();
     }
 
     fn visit_func_def(&mut self, func_stmt: &StmtFunctionDef,  stmt: &Stmt) {
-        let variable = self.symbol.borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
+        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
+        if variable.is_none() {
+            panic!("Function symbol not found");
+        }
         variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
     }
 }
