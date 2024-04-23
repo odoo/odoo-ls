@@ -126,21 +126,21 @@ impl ModuleSymbol {
                             let key_str = key_literal.value.to_string();
                             if key_str == "name" {
                                 if !value.is_string_literal_expr() {
-                                    res.push(self._create_diagnostic_for_manifest_key(file_info, "The name of the module should be a string", &key_literal.range));
+                                    res.push(self._create_diagnostic_for_manifest_key("The name of the module should be a string", &key_literal.range));
                                 } else {
                                     self.module_name = value.as_string_literal_expr().unwrap().value.to_string();
                                 }
                             } else if key_str == "depends" {
                                 if !value.is_list_expr() {
-                                    res.push(self._create_diagnostic_for_manifest_key(file_info, "The depends value should be a list", &key_literal.range));
+                                    res.push(self._create_diagnostic_for_manifest_key("The depends value should be a list", &key_literal.range));
                                 } else {
                                     for depend in value.as_list_expr().unwrap().elts.iter() {
                                         if !depend.is_string_literal_expr() {
-                                            res.push(self._create_diagnostic_for_manifest_key(file_info, "The depends key should be a list of strings", &get_expr_range(depend)));
+                                            res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", &get_expr_range(depend)));
                                         } else {
                                             let depend_value = depend.as_string_literal_expr().unwrap().value.to_string();
                                             if depend_value == self.dir_name {
-                                                res.push(self._create_diagnostic_for_manifest_key(file_info, "A module cannot depends on itself", &get_expr_range(depend)));
+                                                res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", &get_expr_range(depend)));
                                             } else {
                                                 self.depends.push(depend_value);
                                             }
@@ -149,11 +149,11 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "data" {
                                 if !value.is_list_expr() {
-                                    res.push(self._create_diagnostic_for_manifest_key(file_info, "The data value should be a list", &key_literal.range));
+                                    res.push(self._create_diagnostic_for_manifest_key("The data value should be a list", &key_literal.range));
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
                                         if !data.is_literal_expr() {
-                                            res.push(self._create_diagnostic_for_manifest_key(file_info, "The data key should be a list of strings", get_expr_range(data)));
+                                            res.push(self._create_diagnostic_for_manifest_key("The data key should be a list of strings", get_expr_range(data)));
                                         } else {
                                             self.data.push(data.as_string_literal_expr().unwrap().value.to_string());
                                         }
@@ -161,7 +161,7 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "active" {
                                 res.push(Diagnostic::new(
-                                    file_info.text_range_to_range(&key_literal.range).unwrap(),
+                                    Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                     Some(DiagnosticSeverity::WARNING),
                                     None,
                                     Some(EXTENSION_NAME.to_string()),
@@ -170,11 +170,11 @@ impl ModuleSymbol {
                                     Some(vec![DiagnosticTag::DEPRECATED]),
                                 ))
                             } else {
-                                res.push(self._create_diagnostic_for_manifest_key(file_info, "Manifest keys should be strings", get_expr_range(key)));
+                                res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", get_expr_range(key)));
                             }
                         }
                         _ => {
-                            res.push(self._create_diagnostic_for_manifest_key(file_info, "Manifest keys should be strings", get_expr_range(key)));
+                            res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", get_expr_range(key)));
                         }
                     }
                 },
@@ -195,9 +195,9 @@ impl ModuleSymbol {
         res
     }
 
-    fn _create_diagnostic_for_manifest_key(&self, file_info: &FileInfo, text: &str, range: &TextRange) -> Diagnostic {
+    fn _create_diagnostic_for_manifest_key(&self, text: &str, range: &TextRange) -> Diagnostic {
         return Diagnostic::new(
-            file_info.text_range_to_range(range).unwrap(),
+            Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::ERROR),
             None,
             Some(EXTENSION_NAME.to_string()),

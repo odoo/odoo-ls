@@ -3,7 +3,7 @@ use ruff_text_size::TextRange;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range, Position};
 use crate::constants::*;
 use crate::core::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
@@ -182,10 +182,8 @@ impl PythonValidator {
                 let module = import_result.symbol.borrow().get_module_sym();
                 if let Some(module) = module {
                     if ModuleSymbol::is_in_deps(odoo, &self.current_module.as_ref().unwrap(), &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
-                        let mut file_info = self.file_info.as_ref().unwrap().borrow_mut();
-                        let range = file_info.text_range_to_range(&import_result.range).unwrap();
                         self.diagnostics.push(Diagnostic::new(
-                            range,
+                            Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
                             None,
                             Some(EXTENSION_NAME.to_string()),

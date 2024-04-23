@@ -1,3 +1,4 @@
+use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use ruff_text_size::TextRange;
@@ -87,12 +88,20 @@ impl FileInfo {
         self.diagnostics.insert(step, diagnostics);
     }
 
+    fn update_range(rope: &Option<Rope>, mut diagnostic: Diagnostic) -> Diagnostic {
+        diagnostic.range.start = FileInfo::byte_position_to_position(rope, diagnostic.range.start.line as usize).unwrap();
+        diagnostic.range.end = FileInfo::byte_position_to_position(rope, diagnostic.range.end.line as usize).unwrap();
+        diagnostic
+    }
+
     pub fn publish_diagnostics(&mut self, odoo: &SyncOdoo) {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            for diagnostics in self.diagnostics.values() {
-                all_diagnostics.extend(diagnostics.clone());
+            for diagnostics in self.diagnostics.values_mut() {
+                for d in diagnostics.iter() {
+                    all_diagnostics.push(FileInfo::update_range(&self.text_rope, d.clone()));
+                }
             }
             let _ = odoo.msg_sender.send(Msg::DIAGNOSTIC(MsgDiagnostic{
                 uri: url::Url::parse(&format!("file://{}", self.uri)).expect("Failed to parse manifest uri"),
@@ -103,18 +112,12 @@ impl FileInfo {
         }
     }
 
-    pub fn byte_position_to_position(&self, offset: usize) -> Option<Position> {
-        let rope = self.text_rope.as_ref()?;
+    pub fn byte_position_to_position(rope: &Option<Rope>, offset: usize) -> Option<Position> {
+        let rope = rope.as_ref()?;
         let line = rope.try_char_to_line(offset).ok()?;
         let first_char_of_line = rope.try_line_to_char(line).ok()?;
         let column = offset - first_char_of_line;
         Some(Position::new(line as u32, column as u32))
-    }
-
-    pub fn text_range_to_range(&self, range: &TextRange) -> Option<Range> {
-        let start = self.byte_position_to_position(range.start().to_usize())?;
-        let end = self.byte_position_to_position(range.end().to_usize())?;
-        Some(Range::new(start, end))
     }
 }
 

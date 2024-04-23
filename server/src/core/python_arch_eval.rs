@@ -4,7 +4,7 @@ use std::{ptr, vec};
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
@@ -82,10 +82,10 @@ impl PythonArchEval {
     fn visit_stmt(&mut self, odoo: &mut SyncOdoo, stmt: &Stmt, file_info: &FileInfo) {
         match stmt {
             Stmt::Import(import_stmt) => {
-                self.eval_local_symbols_from_import_stmt(odoo, &file_info, None, &import_stmt.names, None, &import_stmt.range)
+                self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
             },
             Stmt::ImportFrom(import_from_stmt) => {
-                self.eval_local_symbols_from_import_stmt(odoo, &file_info, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
+                self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
                 self.visit_class_def(odoo, &file_info, class_stmt, stmt);
@@ -114,7 +114,7 @@ impl PythonArchEval {
         false
     }
 
-    fn eval_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
+    fn eval_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
@@ -168,9 +168,8 @@ impl PythonArchEval {
                     self.sym_stack.first().unwrap().borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
                     odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
                     if self._match_diag_config(odoo, &_import_result.symbol) {
-                        let range = file_info.text_range_to_range(&_import_result.range).unwrap();
                         self.diagnostics.push(Diagnostic::new(
-                            range,
+                            Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
                             None,
                             Some(EXTENSION_NAME.to_string()),
@@ -191,9 +190,8 @@ impl PythonArchEval {
                     self.sym_stack.first().unwrap().borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
                     odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
                     if self._match_diag_config(odoo, &_import_result.symbol) {
-                        let range = file_info.text_range_to_range(&_import_result.range).unwrap();
                         self.diagnostics.push(Diagnostic::new(
-                            range,
+                            Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
                             None,
                             Some(EXTENSION_NAME.to_string()),
@@ -224,14 +222,13 @@ impl PythonArchEval {
         //TODO
     }
 
-    fn create_diagnostic_base_not_found(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: &mut Symbol, var_name: &str, range: &TextRange) {
+    fn create_diagnostic_base_not_found(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol, var_name: &str, range: &TextRange) {
         let tree = symbol.get_tree();
         let tree = vec![tree.0.clone(), vec![var_name.to_string()]].concat();
         symbol.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
         odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
-        let range = file_info.text_range_to_range(range).unwrap();
         self.diagnostics.push(Diagnostic::new(
-            range,
+            Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::WARNING),
             None,
             Some(EXTENSION_NAME.to_string()),
@@ -241,7 +238,7 @@ impl PythonArchEval {
         ));
     }
 
-    fn load_base_classes(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
+    fn load_base_classes(&mut self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
             let (full_base, range) = PythonArchEval::extract_base_name(base);
             if range.is_none() {
@@ -253,7 +250,7 @@ impl PythonArchEval {
             let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range));
             if iter_element.is_none() {
                 let mut parent = parent.borrow_mut();
-                self.create_diagnostic_base_not_found(odoo, file_info, &mut parent, elements[0], range);
+                self.create_diagnostic_base_not_found(odoo, &mut parent, elements[0], range);
                 continue;
             }
             let iter_element = iter_element.unwrap();
@@ -281,13 +278,12 @@ impl PythonArchEval {
                 continue;
             }
             if !found {
-                self.create_diagnostic_base_not_found(odoo, file_info, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, range);
+                self.create_diagnostic_base_not_found(odoo, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, range);
                 continue
             }
             if (*iter_element.upgrade().unwrap()).borrow().sym_type != SymType::CLASS {
-                let range = file_info.text_range_to_range(range).unwrap();
                 self.diagnostics.push(Diagnostic::new(
-                    range,
+                    Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::WARNING),
                     None,
                     Some(EXTENSION_NAME.to_string()),
@@ -319,7 +315,7 @@ impl PythonArchEval {
             panic!("Class not found");
         }
         variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
-        self.load_base_classes(odoo, file_info, variable.as_ref().unwrap(), class_stmt);
+        self.load_base_classes(odoo, variable.as_ref().unwrap(), class_stmt);
         self.sym_stack.push(variable.unwrap());
         for stmt in class_stmt.body.iter() {
             self.visit_stmt(odoo, stmt, file_info);
