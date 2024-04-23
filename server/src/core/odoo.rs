@@ -105,6 +105,7 @@ impl SyncOdoo {
                             if pathbuf.is_dir() {
                                 self.msg_sender.send(Msg::LOG_INFO(format!("Adding sys.path: {}", stdout)));
                                 root_symbol.paths.push(value.clone());
+                                root_symbol._root.as_mut().unwrap().sys_path.push(value.clone());
                             }
                         }
                     }
@@ -411,18 +412,22 @@ impl SyncOdoo {
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        println!("ADDED TO ARCH - {}", symbol.borrow().paths.first().unwrap());
         self.rebuild_arch.insert(symbol);
     }
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        println!("ADDED TO EVAL - {}", symbol.borrow().paths.first().unwrap());
         self.rebuild_arch_eval.insert(symbol);
     }
 
     pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        println!("ADDED TO ODOO - {}", symbol.borrow().paths.first().unwrap());
         self.rebuild_odoo.insert(symbol);
     }
 
     pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
+        println!("ADDED TO VALIDATION - {}", symbol.borrow().paths.first().unwrap());
         self.rebuild_validation.insert(symbol);
     }
 

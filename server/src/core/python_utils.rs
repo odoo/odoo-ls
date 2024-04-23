@@ -1,15 +1,15 @@
-use rustpython_parser::ast::{Expr, ExprName};
+use ruff_python_ast::{Expr, ExprName};
 
 #[derive(Debug, Clone)]
-pub struct Assign<R> {
-    pub target: ExprName<R>,
-    pub value: Option<Expr<R>>,
-    pub annotation: Option<Expr<R>>,
+pub struct Assign {
+    pub target: ExprName,
+    pub value: Option<Expr>,
+    pub annotation: Option<Expr>,
     pub index: Option<usize>,
 }
 
-fn _link_tuples<R>(targets: Vec<Expr<R>>, values: Vec<Expr<R>>) -> Vec<Assign<R>> where R:Clone {
-    let mut res: Vec<Assign<R>> = Vec::new();
+fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
+    let mut res: Vec<Assign> = Vec::new();
     if targets.len() != values.len() {
         println!("Invalid stmt: can't unpack a tuple with a different number of elements");
         return res;
@@ -80,7 +80,7 @@ fn _link_tuples<R>(targets: Vec<Expr<R>>, values: Vec<Expr<R>>) -> Vec<Assign<R>
     res
 }
 
-pub fn unpack_assign<R>(targets: &Vec<Expr<R>>, annotation: Option<&Box<Expr<R>>>, value: Option<&Box<Expr<R>>>) -> Vec<Assign<R>> where R:Clone {
+pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value: Option<&Box<Expr>>) -> Vec<Assign> {
     //Given the target, the annotation and the values, return a list of tuples (variable: ExprName, annotation, value)
     //for each variable, associating annotation and value for the right variable
     // Ex: for "a = b = 1", return [("a", None, 1), ("b", , None, 1)]
@@ -89,7 +89,7 @@ pub fn unpack_assign<R>(targets: &Vec<Expr<R>>, annotation: Option<&Box<Expr<R>>
     // Ex: for "a: int", return [("a", "int", None)]
     // Ex: for "(a, (b, c)) = (1, (2, 3))", return [("a", None, 1), ("b", None, 2), ("c", None, 3)]
     // Ex: for "a, b = b, a = 1, 2" return [("a", None, 1), ("b", None, 2), ("a", None, 2), ("b", None, 1)]
-    let mut res: Vec<Assign<R>> = Vec::new();
+    let mut res: Vec<Assign> = Vec::new();
 
     for target in targets.iter() {
         match target {

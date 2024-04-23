@@ -1,4 +1,6 @@
-use rustpython_parser::{Parse, ast, text_size::TextRange};
+use ruff_python_ast::Mod;
+use ruff_python_parser::Mode;
+use ruff_text_size::TextRange;
 use tower_lsp::lsp_types::{Diagnostic, Position, Range};
 use std::{borrow::BorrowMut, collections::HashMap, fs};
 use crate::core::odoo::SyncOdoo;
@@ -11,7 +13,7 @@ use crate::constants::*;
 
 #[derive(Debug)]
 pub struct FileInfo {
-    pub ast: Option<Vec<ast::Stmt>>,
+    pub ast: Option<Vec<ruff_python_ast::Stmt>>,
     pub version: i32,
     pub uri: String,
     need_push: bool,
@@ -58,15 +60,24 @@ impl FileInfo {
     }
 //"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
     pub fn _build_ast(&mut self, content: &str, content_path: &str) {
-        let ast = ast::Suite::parse(&content, content_path);
+        //let ast = ast::Suite::parse(&content, content_path);
+        let ast = ruff_python_parser::parse(&content, Mode::Module);
         match ast {
-            Ok(ast) => {
-                self.ast = Some(ast);
+            Ok(module) => {
+                match module {
+                    Mod::Expression(expr) => {
+                        println!("[Warning] No support for expression-file only");
+                        self.ast = None
+                    },
+                    Mod::Module(module) => {
+                        self.ast = Some(module.body);
+                    }
+                }
             },
             Err(err) => {
                 println!("unable to parse file at {} - {}", content_path, err);
             }
-        }
+        };
         self.text_rope = Some(ropey::Rope::from(content));
         self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
     }

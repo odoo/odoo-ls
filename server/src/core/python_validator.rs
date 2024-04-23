@@ -1,5 +1,5 @@
-use rustpython_parser::ast::{StmtTry, Identifier, Alias, Int, text_size::TextRange};
-use rustpython_parser::ast::Stmt;
+use ruff_python_ast::{Stmt, StmtTry, Identifier, Alias, Int};
+use ruff_text_size::TextRange;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -38,10 +38,11 @@ impl PythonValidator {
     }
 
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
-        let symbol = self.symbol.borrow();
-        let mut path = symbol.paths[0].clone();
-        if symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
+        let file_symbol = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true).unwrap().upgrade().unwrap();
+        let file_symbol = file_symbol.borrow();
+        let mut path = file_symbol.paths[0].clone();
+        if file_symbol.sym_type == SymType::PACKAGE {
+            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + file_symbol.i_ext.as_str();
         }
         let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str(), None, None); //create ast
         file_info_rc
@@ -50,11 +51,11 @@ impl PythonValidator {
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, odoo: &mut SyncOdoo) {
         let mut symbol = self.symbol.borrow_mut();
-        symbol.validation_status = BuildStatus::IN_PROGRESS;
         self.current_module = symbol.get_module_sym();
         if symbol.validation_status != BuildStatus::PENDING {
             return;
         }
+        symbol.validation_status = BuildStatus::IN_PROGRESS;
         let sym_type = symbol.sym_type.clone();
         drop(symbol);
         self.file_info = Some(self.get_file_info(odoo));
@@ -64,7 +65,7 @@ impl PythonValidator {
                 let mut file_info = file_info.borrow_mut();
                 if file_info.ast.is_some() {
                     self.validate_body(odoo, file_info.ast.as_ref().unwrap());
-                    file_info.replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+                    file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
                 }
             },
             SymType::CLASS | SymType::FUNCTION => {
@@ -85,7 +86,7 @@ impl PythonValidator {
         }
         let mut symbol = self.symbol.borrow_mut();
         symbol.validation_status = BuildStatus::DONE;
-        if symbol.in_workspace {
+        if !symbol.in_workspace {
             odoo.get_file_mgr().borrow_mut().delete_path(odoo, &symbol.paths[0].to_string());
         } else {
             drop(symbol);
@@ -123,6 +124,7 @@ impl PythonValidator {
                     if let Some(sym) = sym {
                         let val_status = sym.borrow().validation_status.clone();
                         if val_status == BuildStatus::PENDING {
+                            //TODO not possible, as we do not release the file_info of the file validator.
                             let mut v = PythonValidator::new(sym.clone());
                             v.validate(odoo);
                         } else if val_status == BuildStatus::IN_PROGRESS {
@@ -140,7 +142,7 @@ impl PythonValidator {
                     self._resolve_import(odoo, None, &i.names, None, &i.range);
                 },
                 Stmt::ImportFrom(i) => {
-                    self._resolve_import(odoo, i.module.as_ref(), &i.names, i.level.as_ref(), &i.range);
+                    self._resolve_import(odoo, i.module.as_ref(), &i.names, i.level, &i.range);
                 }
                 _ => {
                     println!("Stmt not handled");
@@ -164,7 +166,7 @@ impl PythonValidator {
         self.safe_imports.pop();
     }
 
-    fn _resolve_import(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
+    fn _resolve_import(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
         let file_symbol = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
         let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
         let import_results = resolve_import_stmt(

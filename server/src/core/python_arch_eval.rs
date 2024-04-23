@@ -2,8 +2,8 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::{ptr, vec};
 
-use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Alias, Expr, Identifier, Int, Ranged, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use ruff_text_size::TextRange;
+use ruff_python_ast::{Alias, Expr, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
@@ -74,6 +74,7 @@ impl PythonArchEval {
             drop(file_info);
             odoo.get_file_mgr().borrow_mut().delete_path(odoo, &path);
         } else {
+            drop(symbol);
             odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
         }
     }
@@ -84,7 +85,7 @@ impl PythonArchEval {
                 self.eval_local_symbols_from_import_stmt(odoo, &file_info, None, &import_stmt.names, None, &import_stmt.range)
             },
             Stmt::ImportFrom(import_from_stmt) => {
-                self.eval_local_symbols_from_import_stmt(odoo, &file_info, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)
+                self.eval_local_symbols_from_import_stmt(odoo, &file_info, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
                 self.visit_class_def(odoo, &file_info, class_stmt, stmt);
@@ -113,7 +114,7 @@ impl PythonArchEval {
         false
     }
 
-    fn eval_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) {
+    fn eval_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
@@ -241,17 +242,18 @@ impl PythonArchEval {
     }
 
     fn load_base_classes(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, symbol: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
-        for base in class_stmt.bases.iter() {
-            let full_base = PythonArchEval::extract_base_name(base);
-            if full_base.len() == 0 {
+        for base in class_stmt.bases() {
+            let (full_base, range) = PythonArchEval::extract_base_name(base);
+            if range.is_none() {
                 continue;
             }
+            let range = range.unwrap();
             let elements = full_base.split(".").collect::<Vec<&str>>();
             let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
             let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range));
             if iter_element.is_none() {
                 let mut parent = parent.borrow_mut();
-                self.create_diagnostic_base_not_found(odoo, file_info, &mut parent, elements[0], &base.range());
+                self.create_diagnostic_base_not_found(odoo, file_info, &mut parent, elements[0], range);
                 continue;
             }
             let iter_element = iter_element.unwrap();
@@ -279,11 +281,11 @@ impl PythonArchEval {
                 continue;
             }
             if !found {
-                self.create_diagnostic_base_not_found(odoo, file_info, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, &base.range());
+                self.create_diagnostic_base_not_found(odoo, file_info, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, range);
                 continue
             }
             if (*iter_element.upgrade().unwrap()).borrow().sym_type != SymType::CLASS {
-                let range = file_info.text_range_to_range(&base.range()).unwrap();
+                let range = file_info.text_range_to_range(range).unwrap();
                 self.diagnostics.push(Diagnostic::new(
                     range,
                     Some(DiagnosticSeverity::WARNING),
@@ -297,15 +299,17 @@ impl PythonArchEval {
         }
     }
 
-    fn extract_base_name(base: &Expr) -> String {
+    fn extract_base_name(base: &Expr) -> (String, Option<&TextRange>) {
         match base {
             Expr::Name(name) => {
-                return name.id.to_string();
+                return (name.id.to_string(), Some(&name.range));
             },
             Expr::Attribute(attr) => {
-                return PythonArchEval::extract_base_name(&attr.value) + "." + &attr.attr.to_string();
+                let (mut name, range) = PythonArchEval::extract_base_name(&attr.value);
+                name = name + "." + &attr.attr.to_string();
+                return (name, range);
             },
-            _ => {S!("")}
+            _ => {(S!(""), None)}
         }
     }
 

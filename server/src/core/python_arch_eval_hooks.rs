@@ -175,7 +175,7 @@ impl PythonArchEvalHooks {
         let ids = sym.get_symbol(&(vec![], vec![S!("ids")]));
         if ids.is_some() {
             let mut list = Symbol::new(S!("_l"), SymType::VARIABLE);
-            let mut values: Vec<rustpython_parser::ast::Constant> = Vec::new();
+            let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
             list.evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::LIST(values)));
             let rc_list = Rc::new(RefCell::new(list));
             let mut ids = ids.as_ref().unwrap().borrow_mut();

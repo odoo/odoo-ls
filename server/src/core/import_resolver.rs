@@ -4,8 +4,8 @@ use std::cell::{RefCell, RefMut};
 use std::path::Path;
 use std::sync::MutexGuard;
 
-use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Identifier, Alias, Int};
+use ruff_text_size::TextRange;
+use ruff_python_ast::{Identifier, Alias, Int};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
@@ -20,7 +20,7 @@ pub struct ImportResult {
     pub range: TextRange,
 }
 
-pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<Symbol>>, parent_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, from_range: &TextRange) -> Vec<ImportResult> {
+pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<Symbol>>, parent_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, from_range: &TextRange) -> Vec<ImportResult> {
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
@@ -143,10 +143,10 @@ pub fn find_module(odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>, name: 
     None
 }
 
-fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<&Int>, from_stmt: Option<&Identifier>) -> Vec<String> {
+fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<u32>, from_stmt: Option<&Identifier>) -> Vec<String> {
     let mut first_part_tree: Vec<String> = vec![];
-    if level.is_some() && level.unwrap().to_u32() > 0 {
-        let mut lvl = level.unwrap().to_u32();
+    if level.is_some() && level.unwrap() > 0 {
+        let mut lvl = level.unwrap();
         if lvl > Path::new(file_path).components().count() as u32 {
             panic!("Level is too high!")
         }

@@ -1,7 +1,6 @@
-use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Expr, TextSize};
+use ruff_text_size::{TextSize, TextRange};
+use ruff_python_ast::{Expr, Stmt};
 use serde_json::{Value, json};
-use rustpython_parser::ast;
 
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
@@ -47,9 +46,9 @@ pub struct Symbol {
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub is_import_variable: bool,
-    pub ast: Option<Expr<TextRange>>,
+    pub ast: Option<Expr>,
     pub doc_string: Option<String>,
-    pub ast_ptr: *const ast::Stmt<TextRange>, //ptr only valid if validation_status is PENDING
+    pub ast_ptr: *const Stmt, //ptr only valid if validation_status is PENDING
     pub in_workspace: bool,
 
     pub _root: Option<RootSymbol>,

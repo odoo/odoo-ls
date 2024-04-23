@@ -1,5 +1,5 @@
-use rustpython_parser::ast::{Expr};
-use rustpython_parser::text_size::TextRange;
+use ruff_python_ast::{Expr};
+use ruff_text_size::TextRange;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -9,10 +9,10 @@ use crate::core::symbol::Symbol;
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
-    CONSTANT(rustpython_parser::ast::Constant),
-    DICT(Vec<(rustpython_parser::ast::Constant, rustpython_parser::ast::Constant)>),
-    LIST(Vec<rustpython_parser::ast::Constant>),
-    TUPLE(Vec<rustpython_parser::ast::Constant>)
+    CONSTANT(ruff_python_ast::Expr), //expr is a literal
+    DICT(Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)>), //expr is a literal
+    LIST(Vec<ruff_python_ast::Expr>), //expr is a literal
+    TUPLE(Vec<ruff_python_ast::Expr>) //expr is a literal
 }
 
 #[derive(Debug)]
@@ -141,30 +141,48 @@ impl Evaluation {
         })
     }
 
+    fn eval_literal(eval_sym: &mut EvaluationSymbol, range: &TextRange, expr: &Expr) {
+        eval_sym._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT)))); //TODO check to not hold a dummy symbol for constants
+        eval_sym.symbol = Rc::downgrade(eval_sym._internal_hold_symbol.as_ref().unwrap());
+        eval_sym.instance = true;
+        eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(*range);
+        eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::CONSTANT(expr.clone())));
+    }
+
     // eval an ast expression that represent the evaluation of a symbol.
     // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on a
-    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr<TextRange>, parent: Rc<RefCell<Symbol>>) -> Option<Evaluation> {
+    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>) -> Option<Evaluation> {
         let mut res = EvaluationSymbol::default();
         match ast {
-            Expr::Constant(expr) => {
-                res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT)))); //TODO check to not hold a dummy symbol for constants
-                res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
-                res.instance = true;
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::CONSTANT(expr.value.clone())));
+            Expr::StringLiteral(expr) => {
+                Evaluation::eval_literal(&mut res, &expr.range, ast);
             },
+            Expr::BytesLiteral(expr) => {
+                Evaluation::eval_literal(&mut res, &expr.range, ast);
+            },
+            Expr::NumberLiteral(expr) => {
+                Evaluation::eval_literal(&mut res, &expr.range, ast);
+            },
+            Expr::BooleanLiteral(expr) => {
+                Evaluation::eval_literal(&mut res, &expr.range, ast);
+            },
+            Expr::NoneLiteral(expr) => {
+                Evaluation::eval_literal(&mut res, &expr.range, ast);
+            },
+            Expr::EllipsisLiteral(expr) => {
+                Evaluation::eval_literal(&mut res, &expr.range, ast);
+            }
             Expr::List(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_l".to_string(), SymType::CONSTANT))));
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
-                let mut values: Vec<rustpython_parser::ast::Constant> = Vec::new();
+                let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
                 for e in expr.elts.iter() {
-                    match e {
-                        Expr::Constant(v) => {
-                            values.push(v.value.clone());
-                        },
-                        _ => {values = Vec::new(); break;}
+                    if e.is_literal_expr() {
+                        values.push(e.clone());
+                    } else {
+                        values = Vec::new(); break;
                     }
                 }
                 if values.len() > 0 {
@@ -176,13 +194,12 @@ impl Evaluation {
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
-                let mut values: Vec<rustpython_parser::ast::Constant> = Vec::new();
+                let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
                 for e in expr.elts.iter() {
-                    match e {
-                        Expr::Constant(v) => {
-                            values.push(v.value.clone());
-                        },
-                        _ => {values = Vec::new(); break;}
+                    if e.is_literal_expr() {
+                        values.push(e.clone());
+                    } else {
+                        values = Vec::new(); break;
                     }
                 }
                 if values.len() > 0 {
@@ -194,25 +211,15 @@ impl Evaluation {
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
-                let mut values: Vec<(rustpython_parser::ast::Constant, rustpython_parser::ast::Constant)> = Vec::new();
+                let mut values: Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> = Vec::new();
                 for (index, e) in expr.keys.iter().enumerate() {
                     let dict_value = expr.values.get(index).unwrap();
                     match e {
                         Some(key) => {
-                            match key {
-                                Expr::Constant(key_const) => {
-                                    match dict_value {
-                                        Expr::Constant(dict_value_const) => {
-                                            values.push((key_const.value.clone(), dict_value_const.value.clone()));
-                                        },
-                                        _ => {
-                                            values.clear(); break;
-                                        }
-                                    }
-                                },
-                                _ => {
-                                    values.clear(); break;
-                                }
+                            if key.is_literal_expr() && dict_value.is_literal_expr() {
+                                values.push((key.clone(), dict_value.clone()));
+                            } else {
+                                values.clear(); break;
                             }
                         },
                         None => {

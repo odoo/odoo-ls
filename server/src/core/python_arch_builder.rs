@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use anyhow::{Error};
-use rustpython_parser::text_size::TextRange;
-use rustpython_parser::ast::{Alias, Constant, ExprConstant, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use ruff_text_size::TextRange;
+use ruff_python_ast::{Expr, Alias, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
@@ -64,7 +64,7 @@ impl PythonArchBuilder {
         Ok(())
     }
 
-    fn create_local_symbols_from_import_stmt(&self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias<TextRange>], level: Option<&Int>, range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -138,14 +138,14 @@ impl PythonArchBuilder {
         Ok(())
     }
 
-    fn visit_node(&mut self, odoo: &mut SyncOdoo, nodes: &Vec<Stmt<TextRange>>) -> Result<(), Error> {
+    fn visit_node(&mut self, odoo: &mut SyncOdoo, nodes: &Vec<Stmt>) -> Result<(), Error> {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
                     self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level.as_ref(), &import_from_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
                     self._visit_ann_assign(odoo, ann_assign_stmt);
@@ -167,13 +167,13 @@ impl PythonArchBuilder {
 
     fn extract_all_symbol_eval_values(&self, value: &Option<&EvaluationValue>) -> (Vec<String>, bool) {
         let mut parse_error = false;
-        let vec = match value {
+        let vec: Vec<String> = match value {
             Some(eval) => {
                 match eval {
                     EvaluationValue::CONSTANT(c) => {
                         match c {
-                            Constant::Str(s) => {
-                                vec!(s.clone())
+                            Expr::StringLiteral(s) => {
+                                vec![s.value.to_string()]
                             },
                             _ => {parse_error = true; vec![]}
                         }
@@ -185,8 +185,8 @@ impl PythonArchBuilder {
                         let mut res = vec![];
                         for v in l.iter() {
                             match v {
-                                Constant::Str(s) => {
-                                    res.push(s.clone());
+                                Expr::StringLiteral(s) => {
+                                    res.push(s.value.to_string());
                                 }
                                 _ => {parse_error = true; }
                             }
@@ -197,8 +197,8 @@ impl PythonArchBuilder {
                         let mut res = vec![];
                         for v in t.iter() {
                             match v {
-                                Constant::Str(s) => {
-                                    res.push(s.clone());
+                                Expr::StringLiteral(s) => {
+                                    res.push(s.value.to_string());
                                 }
                                 _ => {parse_error = true; }
                             }
@@ -257,8 +257,8 @@ impl PythonArchBuilder {
                                             EvaluationValue::LIST(list) => {
                                                 for item in list.iter() {
                                                     match item {
-                                                        Constant::Str(s) => {
-                                                            let mut var = Symbol::new(s.to_string(), SymType::VARIABLE);
+                                                        Expr::StringLiteral(s) => {
+                                                            let mut var = Symbol::new(s.value.to_string(), SymType::VARIABLE);
                                                             var.range = evaluated.range.clone();
                                                             var.evaluation = None;
                                                             self.__all_symbols_to_add.push(var);
@@ -288,23 +288,17 @@ impl PythonArchBuilder {
             diagnostics: vec![]
         });
         for decorator in func_def.decorator_list.iter() {
-            if decorator.is_name_expr() && decorator.as_name_expr().unwrap().id.to_string() == "staticmethod" {
+            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
                 sym._function.as_mut().unwrap().is_static = true;
             }
-            if decorator.is_name_expr() && decorator.as_name_expr().unwrap().id.to_string() == "property" {
+            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
                 sym._function.as_mut().unwrap().is_property = true;
             }
         }
         if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {
-            let expr = func_def.body[0].as_expr_stmt().unwrap();
-            if expr.value.is_constant_expr() {
-                let const_expr = expr.value.as_constant_expr().unwrap();
-                match &const_expr.value {
-                    Constant::Str(s) => {
-                        sym.doc_string = Some(s.clone())
-                    },
-                    _ => {}
-                }
+            let expr: &ruff_python_ast::StmtExpr = func_def.body[0].as_expr_stmt().unwrap();
+            if let Some(s) = expr.value.as_string_literal_expr() {
+                sym.doc_string = Some(s.value.to_string())
             }
         }
         //TODO add self value
@@ -324,13 +318,10 @@ impl PythonArchBuilder {
         sym.range = Some(class_def.range.clone());
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
-            if expr.value.is_constant_expr() {
-                let const_expr = expr.value.as_constant_expr().unwrap();
-                match &const_expr.value {
-                    Constant::Str(s) => {
-                        sym.doc_string = Some(s.clone())
-                    },
-                    _ => {}
+            if expr.value.is_literal_expr() {
+                let const_expr = expr.value.as_literal_expr().unwrap();
+                if let Some(s) = const_expr.as_string_literal() {
+                    sym.doc_string = Some(s.value.to_string());
                 }
             }
         }
