@@ -1,9 +1,8 @@
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
-use ruff_text_size::TextRange;
+use ruff_text_size::{Ranged, TextRange};
 use std::collections::HashSet;
 
-use crate::ruff_utils::get_expr_range;
 use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver::find_module;
@@ -136,11 +135,11 @@ impl ModuleSymbol {
                                 } else {
                                     for depend in value.as_list_expr().unwrap().elts.iter() {
                                         if !depend.is_string_literal_expr() {
-                                            res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", &get_expr_range(depend)));
+                                            res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", &depend.range()));
                                         } else {
                                             let depend_value = depend.as_string_literal_expr().unwrap().value.to_string();
                                             if depend_value == self.dir_name {
-                                                res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", &get_expr_range(depend)));
+                                                res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", &depend.range()));
                                             } else {
                                                 self.depends.push(depend_value);
                                             }
@@ -153,7 +152,7 @@ impl ModuleSymbol {
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
                                         if !data.is_literal_expr() {
-                                            res.push(self._create_diagnostic_for_manifest_key("The data key should be a list of strings", get_expr_range(data)));
+                                            res.push(self._create_diagnostic_for_manifest_key("The data key should be a list of strings", &data.range()));
                                         } else {
                                             self.data.push(data.as_string_literal_expr().unwrap().value.to_string());
                                         }
@@ -170,11 +169,11 @@ impl ModuleSymbol {
                                     Some(vec![DiagnosticTag::DEPRECATED]),
                                 ))
                             } else {
-                                res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", get_expr_range(key)));
+                                res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", &key.range()));
                             }
                         }
                         _ => {
-                            res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", get_expr_range(key)));
+                            res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", &key.range()));
                         }
                     }
                 },
