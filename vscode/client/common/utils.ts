@@ -34,7 +34,7 @@ export function getNonce() {
 export async function getCurrentConfig(context: ExtensionContext) {
 	const configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
     const activeConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
-    return (configs && activeConfig > -1 ? configs[activeConfig] : null);
+    return (Object.keys(configs[activeConfig]).length !== 0? configs[activeConfig] : null);
 }
 
 export async function evaluateOdooPath(odooPath){

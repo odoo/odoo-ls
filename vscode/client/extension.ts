@@ -651,7 +651,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 const gearIcon = new ThemeIcon("gear");
 
                 for (const configId in configs) {
-                    if (currentConfig && configId == currentConfig["id"])
+                    if ((currentConfig && configId == currentConfig["id"]) || (Object.keys(configs[configId]).length === 0))
                         continue;
                     configMap.set({ "label": configs[configId]["name"], "buttons": [{ iconPath: gearIcon }] }, configId)
                 }
