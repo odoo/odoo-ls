@@ -149,7 +149,7 @@ impl PythonArchEvalHooks {
         if iter.is_some() && iter.as_ref().unwrap().borrow().evaluation.is_some() {
             let mut iter = iter.as_mut().unwrap().borrow_mut();
             let evaluation = iter.evaluation.as_mut().unwrap();
-            let eval_sym = evaluation.as_symbol_mut().unwrap();
+            let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
         // ----------- env ------------
@@ -161,13 +161,16 @@ impl PythonArchEvalHooks {
             let mut env = env.borrow_mut();
             let mut context = HashMap::new();
             context.insert(S!("test_mode"), super::evaluation::ContextValue::BOOLEAN(true));
-            env.evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol{
-                symbol: Rc::downgrade(&env_class),
-                context: context,
-                instance: true,
-                _internal_hold_symbol: None,
-                get_symbol_hook: None
-            }));
+            env.evaluation = Some(Evaluation {
+                symbol: EvaluationSymbol{
+                    symbol: Rc::downgrade(&env_class),
+                    context: context,
+                    instance: true,
+                    _internal_hold_symbol: None,
+                    get_symbol_hook: None
+                    },
+                value: None
+            });
             env.add_dependency(&mut env_class.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             env.doc_string = Some(S!(""));
         }
@@ -176,23 +179,26 @@ impl PythonArchEvalHooks {
         if ids.is_some() {
             let mut list = Symbol::new(S!("_l"), SymType::VARIABLE);
             let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
-            list.evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::LIST(values)));
+            list.evaluation = Some(Evaluation::new_list(odoo, values));
             let rc_list = Rc::new(RefCell::new(list));
             let mut ids = ids.as_ref().unwrap().borrow_mut();
-            ids.evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol{
-                symbol: Rc::downgrade(&rc_list),
-                context: HashMap::new(),
-                instance: true,
-                _internal_hold_symbol: Some(rc_list),
-                get_symbol_hook: None
-            }));
+            ids.evaluation = Some(Evaluation {
+                symbol: EvaluationSymbol{
+                    symbol: Rc::downgrade(&rc_list),
+                    context: HashMap::new(),
+                    instance: true,
+                    _internal_hold_symbol: Some(rc_list),
+                    get_symbol_hook: None
+                },
+                value: None,
+            });
         }
         // ------------ sudo ------------
         let mut sudo = sym.get_symbol(&(vec![], vec![S!("sudo")]));
         if sudo.is_some() && sudo.as_ref().unwrap().borrow().evaluation.is_some() {
             let mut sudo = sudo.as_mut().unwrap().borrow_mut();
             let evaluation = sudo.evaluation.as_mut().unwrap();
-            let eval_sym = evaluation.as_symbol_mut().unwrap();
+            let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
         // ------------ create ------------
@@ -200,7 +206,7 @@ impl PythonArchEvalHooks {
         if create.is_some() && create.as_ref().unwrap().borrow().evaluation.is_some() {
             let mut create = create.as_mut().unwrap().borrow_mut();
             let evaluation = create.evaluation.as_mut().unwrap();
-            let eval_sym = evaluation.as_symbol_mut().unwrap();
+            let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
         // ------------ search ------------
@@ -208,7 +214,7 @@ impl PythonArchEvalHooks {
         if search.is_some() && search.as_ref().unwrap().borrow().evaluation.is_some() {
             let mut search = search.as_mut().unwrap().borrow_mut();
             let evaluation = search.evaluation.as_mut().unwrap();
-            let eval_sym = evaluation.as_symbol_mut().unwrap();
+            let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
     }
@@ -240,7 +246,7 @@ impl PythonArchEvalHooks {
         if get_item.is_some() && get_item.as_ref().unwrap().borrow().evaluation.is_some() {
             let mut get_item = get_item.as_mut().unwrap().borrow_mut();
             let evaluation = get_item.evaluation.as_mut().unwrap();
-            let eval_sym = evaluation.as_symbol_mut().unwrap();
+            let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_item);
         }
         let mut cr = symbol.borrow().get_symbol(&(vec![], vec![S!("cr")]));
@@ -248,13 +254,16 @@ impl PythonArchEvalHooks {
         if cursor_sym.is_some() && cr.is_some() {
             let mut cr_mut = cr.as_mut().unwrap().borrow_mut();
 
-            cr_mut.evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol{
-                symbol: Rc::downgrade(cursor_sym.as_ref().unwrap()),
-                context: HashMap::new(),
-                instance: true,
-                _internal_hold_symbol: None,
-                get_symbol_hook: Some(PythonArchEvalHooks::eval_test_cursor)
-            }));
+            cr_mut.evaluation = Some(Evaluation { 
+                symbol: EvaluationSymbol{
+                    symbol: Rc::downgrade(cursor_sym.as_ref().unwrap()),
+                    context: HashMap::new(),
+                    instance: true,
+                    _internal_hold_symbol: None,
+                    get_symbol_hook: Some(PythonArchEvalHooks::eval_test_cursor)
+                },
+                value: None
+            });
             cr_mut.add_dependency(&mut cursor_sym.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }
@@ -276,13 +285,16 @@ impl PythonArchEvalHooks {
             let mut env_var = env_var.borrow_mut();
             let mut context = HashMap::new();
             context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
-            env_var.evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol{
-                symbol: Rc::downgrade(&env_model),
-                context: context,
-                instance: true,
-                _internal_hold_symbol: None,
-                get_symbol_hook: None
-            }));
+            env_var.evaluation = Some(Evaluation { 
+                symbol: EvaluationSymbol{
+                    symbol: Rc::downgrade(&env_model),
+                    context: context,
+                    instance: true,
+                    _internal_hold_symbol: None,
+                    get_symbol_hook: None
+                },
+                value: None
+            });
             env_var.add_dependency(&mut env_model.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }
@@ -317,18 +329,25 @@ impl PythonArchEvalHooks {
             return;
         }
         let mut var_sym = Symbol::new(S!("returned_value"), SymType::CONSTANT);
-        var_sym.evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol{
-            symbol: Rc::downgrade(&return_sym.unwrap()),
-            context: HashMap::new(),
-            instance: true,
-            _internal_hold_symbol: None,
-            get_symbol_hook: None
-        }));
-        get_sym.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol::new_with_symbol(
-            var_sym,
-            true,
-            HashMap::new())));
-        get_sym.as_ref().unwrap().borrow_mut().evaluation.as_mut().unwrap().as_symbol_mut().unwrap().get_symbol_hook = Some(PythonArchEvalHooks::eval_get);
+        var_sym.evaluation = Some(Evaluation {
+            symbol: EvaluationSymbol{
+                symbol: Rc::downgrade(&return_sym.unwrap()),
+                context: HashMap::new(),
+                instance: true,
+                _internal_hold_symbol: None,
+                get_symbol_hook: None
+            },
+            value: None
+        });
+        get_sym.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(
+                var_sym,
+                true,
+                HashMap::new()
+            ),
+            value: None
+        });
+        get_sym.as_ref().unwrap().borrow_mut().evaluation.as_mut().unwrap().symbol.get_symbol_hook = Some(PythonArchEvalHooks::eval_get);
     }
 
     fn eval_relational(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>
@@ -350,12 +369,15 @@ impl PythonArchEvalHooks {
         if get_sym.is_none() {
             return;
         }
-        get_sym.unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationSymbol(EvaluationSymbol{
-            symbol: Weak::new(),
-            context: HashMap::new(),
-            instance: true,
-            _internal_hold_symbol: None,
-            get_symbol_hook: Some(PythonArchEvalHooks::eval_relational)
-        }));
+        get_sym.unwrap().borrow_mut().evaluation = Some(Evaluation {
+            symbol: EvaluationSymbol{
+                symbol: Weak::new(),
+                context: HashMap::new(),
+                instance: true,
+                _internal_hold_symbol: None,
+                get_symbol_hook: Some(PythonArchEvalHooks::eval_relational)
+            },
+            value: None,
+        });
     }
 }

@@ -225,17 +225,17 @@ impl PythonArchEval {
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
-                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent);
+                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range);
                 } else if assign.value.is_some() {
-                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent);
+                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range);
                 } else {
                     panic!("either value or annotation should exists");
                 }
                 let mut v_mut = variable.borrow_mut();
                 let mut sym = None;
-                if let Some(Evaluation::EvaluationSymbol(eval)) = &v_mut.evaluation {
-                    if !eval.symbol.is_expired() {
-                        sym = Some(eval.symbol.upgrade().unwrap());
+                if let Some(eval) = &v_mut.evaluation {
+                    if !eval.symbol.symbol.is_expired() {
+                        sym = Some(eval.symbol.symbol.upgrade().unwrap());
                     }
                 }
                 if let Some(sym) = sym {
@@ -252,15 +252,18 @@ impl PythonArchEval {
     fn _visit_assign(&self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
+            if assign.target.id.to_string() == "_TOKEN_NOT_ALLOWED" || assign.target.id.to_string() == "ffi" {
+                println!("here")
+            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
-                variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent);
+                variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
                 let mut v_mut = variable.borrow_mut();
                 let mut sym = None;
-                if let Some(Evaluation::EvaluationSymbol(eval)) = &v_mut.evaluation {
-                    if !eval.symbol.is_expired() {
-                        sym = Some(eval.symbol.upgrade().unwrap());
+                if let Some(eval) = &v_mut.evaluation {
+                    if !eval.symbol.symbol.is_expired() {
+                        sym = Some(eval.symbol.symbol.upgrade().unwrap());
                     }
                 }
                 if let Some(sym) = sym {
@@ -297,9 +300,6 @@ impl PythonArchEval {
                 continue;
             }
             let range = range.unwrap();
-            if full_base == "models.AbstractModel" {
-                println!("here");
-            }
             let elements = full_base.split(".").collect::<Vec<&str>>();
             let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
             let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range));

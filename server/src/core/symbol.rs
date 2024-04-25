@@ -440,25 +440,24 @@ impl Symbol {
     pub fn next_ref(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<Weak<RefCell<Symbol>>> {
         if SymType::is_instance(&self.sym_type) &&
             self.evaluation.is_some() &&
-            self.evaluation.as_ref().unwrap().is_symbol() &&
-            self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol(odoo, context).upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().as_symbol().unwrap().get_symbol(odoo, context).clone());
+            self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).clone());
         }
         return None;
     }
 
     pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool) -> (Weak<RefCell<Symbol>>, bool) {
         //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut sym = symbol.borrow().weak_self.clone().expect("Can't follow ref on symbol that is not in the tree !");
+        let mut sym = Rc::downgrade(&symbol);
         let mut _sym_upgraded = sym.upgrade().unwrap();
         let mut _sym = symbol.borrow();
         let mut next_ref = _sym.next_ref(odoo, context);
         let can_eval_external = !_sym.is_external;
         let mut instance = SymType::is_instance(&_sym.sym_type);
-        while next_ref.is_some() && _sym.evaluation.as_ref().unwrap().is_symbol() {
-            instance = _sym.evaluation.as_ref().unwrap().as_symbol().unwrap().instance;
-            if _sym.evaluation.as_ref().unwrap().as_symbol().unwrap().context.len() > 0 && context.is_some() {
-                context.as_mut().unwrap().extend(_sym.evaluation.as_ref().unwrap().as_symbol().unwrap().context.clone());
+        while next_ref.is_some() {
+            instance = _sym.evaluation.as_ref().unwrap().symbol.instance;
+            if _sym.evaluation.as_ref().unwrap().symbol.context.len() > 0 && context.is_some() {
+                context.as_mut().unwrap().extend(_sym.evaluation.as_ref().unwrap().symbol.context.clone());
             }
             if stop_on_type && ! instance && !_sym.is_import_variable {
                 return (sym, instance)
@@ -673,16 +672,17 @@ impl Symbol {
         if name == "__doc__" {
             //return self.doc; //TODO
         }
-        for symbol in on_symbol.borrow().all_symbols(position, false) {
-            let deref_symbol = (**symbol).borrow();
-            if deref_symbol.name == *name {
-                if selected.is_none() {
-                    selected = Some(symbol.clone());
-                } else {
-                    let selected_range = selected.as_ref().unwrap();
-                    let selected_range = (**selected_range).borrow().range;
-                    if deref_symbol.range.unwrap().start() > selected_range.unwrap().start() {
-                        selected = Some(symbol.clone());
+        if let Some(rc) = on_symbol.borrow().symbols.get(name) {
+            if position.is_none() || rc.borrow().range.unwrap().start() < position.unwrap().start() {
+                selected = Some(rc.clone());
+            }
+        }
+        if selected.is_none() && position.is_some() {
+            let position = position.unwrap();
+            for local_symbol in on_symbol.borrow().local_symbols.iter() {
+                if local_symbol.borrow_mut().range.unwrap().start() < position.start() {
+                    if selected.is_none() || selected.as_ref().unwrap().borrow().range.unwrap().start() < local_symbol.borrow_mut().range.unwrap().start() {
+                        selected = Some(local_symbol.clone());
                     }
                 }
             }

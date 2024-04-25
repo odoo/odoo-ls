@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use crate::constants::*;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
+use crate::S;
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -16,9 +17,10 @@ pub enum EvaluationValue {
 }
 
 #[derive(Debug)]
-pub enum Evaluation {
-    EvaluationSymbol(EvaluationSymbol),
-    EvaluationValue(EvaluationValue)
+pub struct Evaluation {
+    //symbol lead to type evaluation, while value evaluate the value if it is the evaluation of a CONSTANT Symbol.
+    pub symbol: EvaluationSymbol,
+    pub value: Option<EvaluationValue>
 }
 
 #[derive(Debug, Clone)]
@@ -58,72 +60,79 @@ pub struct EvaluationSymbol {
 
 impl Evaluation {
 
-    pub fn is_symbol(&self) -> bool {
-        match self {
-            Evaluation::EvaluationSymbol(s) => true,
-            _ => false
+    pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")])).expect("builtins list not found")),
+                instance: true,
+                context: HashMap::new(),
+                _internal_hold_symbol: None,
+                get_symbol_hook: None
+            },
+            value: Some(EvaluationValue::LIST(values))
         }
     }
 
-    pub fn is_value(&self) -> bool {
-        match self {
-            Evaluation::EvaluationValue(s) => true,
-            _ => false
+    pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")])).expect("builtins list not found")),
+                instance: true,
+                context: HashMap::new(),
+                _internal_hold_symbol: None,
+                get_symbol_hook: None
+            },
+            value: Some(EvaluationValue::TUPLE(values))
         }
     }
 
-    pub fn as_symbol(&self) -> Option<&EvaluationSymbol> {
-        match self {
-            Evaluation::EvaluationSymbol(s) => Some(s),
-            _ => None
+    pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")])).expect("builtins list not found")),
+                instance: true,
+                context: HashMap::new(),
+                _internal_hold_symbol: None,
+                get_symbol_hook: None
+            },
+            value: Some(EvaluationValue::DICT(values))
         }
     }
 
-    pub fn as_value(&self) -> Option<&EvaluationValue> {
-        match self {
-            Evaluation::EvaluationValue(s) => Some(s),
-            _ => None
-        }
-    }
-
-    pub fn as_symbol_mut(&mut self) -> Option<&mut EvaluationSymbol> {
-        match self {
-            Evaluation::EvaluationSymbol(s) => Some(s),
-            _ => None
-        }
-    }
-
-    pub fn as_value_mut(&mut self) -> Option<&mut EvaluationValue> {
-        match self {
-            Evaluation::EvaluationValue(s) => Some(s),
-            _ => None
+    pub fn new_constant(odoo: &mut SyncOdoo, values: Expr) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")])).expect("builtins list not found")),
+                instance: true,
+                context: HashMap::new(),
+                _internal_hold_symbol: None,
+                get_symbol_hook: None
+            },
+            value: Some(EvaluationValue::CONSTANT(values))
         }
     }
 
     pub fn follow_ref_and_get_value(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<EvaluationValue> {
-        match self {
-            Evaluation::EvaluationValue(v) => {
-                Some((*v).clone())
-            },
-            Evaluation::EvaluationSymbol(s) => {
-                let symbol = s.get_symbol(odoo, context);
-                let symbol = symbol.upgrade();
+        if self.value.is_some() {
+            Some(self.value.as_ref().unwrap().clone())
+        } else {
+            let symbol = self.symbol.get_symbol(odoo, context);
+            let symbol = symbol.upgrade();
+            if symbol.is_some() {
+                let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false);
+                let symbol = symbol.0.upgrade();
                 if symbol.is_some() {
-                    let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false);
-                    let symbol = symbol.0.upgrade();
-                    if symbol.is_some() {
-                        let symbol = symbol.unwrap();
-                        let symbol = symbol.borrow();
-                        if symbol.evaluation.is_some() {
-                            let eval = symbol.evaluation.as_ref().unwrap();
-                            if eval.is_value() {
-                                return Some((*eval).as_value().unwrap().clone());
-                            }
+                    let symbol = symbol.unwrap();
+                    let symbol = symbol.borrow();
+                    if symbol.evaluation.is_some() {
+                        let eval = symbol.evaluation.as_ref().unwrap();
+                        if eval.value.is_some() {
+                            return Some((*eval).value.as_ref().unwrap().clone());
                         }
                     }
                 }
-                None
             }
+            None
         }
     }
 
@@ -132,45 +141,48 @@ impl Evaluation {
         if [SymType::VARIABLE, SymType::CONSTANT].contains(&symbol.borrow_mut().sym_type) {
             instance = true
         }
-        Evaluation::EvaluationSymbol(EvaluationSymbol {
-            symbol: Rc::downgrade(symbol),
-            instance: instance,
-            context: HashMap::new(),
-            _internal_hold_symbol: None,
-            get_symbol_hook: None
-        })
+        Evaluation {
+            symbol: EvaluationSymbol {symbol: Rc::downgrade(symbol),
+                instance: instance,
+                context: HashMap::new(),
+                _internal_hold_symbol: None,
+                get_symbol_hook: None
+            },
+            value: None,
+        }
     }
 
-    fn eval_literal(eval_sym: &mut EvaluationSymbol, range: &TextRange, expr: &Expr) {
-        eval_sym._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT)))); //TODO check to not hold a dummy symbol for constants
+    fn eval_literal(odoo: &mut SyncOdoo, eval_sym: &mut EvaluationSymbol, range: &TextRange, expr: &Expr) {
+        eval_sym._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT))));
         eval_sym.symbol = Rc::downgrade(eval_sym._internal_hold_symbol.as_ref().unwrap());
         eval_sym.instance = true;
         eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(*range);
-        eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::CONSTANT(expr.clone())));
+        eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_constant(odoo, expr.clone()));
     }
 
     // eval an ast expression that represent the evaluation of a symbol.
-    // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on a
-    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>) -> Option<Evaluation> {
+    // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on 'a'
+    // max_infer must be the range of 'a'
+    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> Option<Evaluation> {
         let mut res = EvaluationSymbol::default();
         match ast {
             Expr::StringLiteral(expr) => {
-                Evaluation::eval_literal(&mut res, &expr.range, ast);
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
             },
             Expr::BytesLiteral(expr) => {
-                Evaluation::eval_literal(&mut res, &expr.range, ast);
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
             },
             Expr::NumberLiteral(expr) => {
-                Evaluation::eval_literal(&mut res, &expr.range, ast);
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
             },
             Expr::BooleanLiteral(expr) => {
-                Evaluation::eval_literal(&mut res, &expr.range, ast);
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
             },
             Expr::NoneLiteral(expr) => {
-                Evaluation::eval_literal(&mut res, &expr.range, ast);
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
             },
             Expr::EllipsisLiteral(expr) => {
-                Evaluation::eval_literal(&mut res, &expr.range, ast);
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
             }
             Expr::List(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_l".to_string(), SymType::CONSTANT))));
@@ -185,9 +197,7 @@ impl Evaluation {
                         values = Vec::new(); break;
                     }
                 }
-                if values.len() > 0 {
-                    res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::LIST(values)));
-                }
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_list(odoo, values));
             },
             Expr::Tuple(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_t".to_string(), SymType::CONSTANT))));
@@ -202,9 +212,7 @@ impl Evaluation {
                         values = Vec::new(); break;
                     }
                 }
-                if values.len() > 0 {
-                    res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::TUPLE(values)));
-                }
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_tuple(odoo, values));
             },
             Expr::Dict(expr) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_d".to_string(), SymType::CONSTANT))));
@@ -228,19 +236,17 @@ impl Evaluation {
                         }
                     }
                 }
-                if values.len() > 0 {
-                    res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::EvaluationValue(EvaluationValue::DICT(values)));
-                }
+                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_dict(odoo, values));
             },
             Expr::Call(expr) => {
                 //TODO implement Call
             },
             Expr::Attribute(expr) => {
-                let eval = Evaluation::eval_from_ast(odoo, &expr.value, parent);
-                if eval.is_none() || eval.as_ref().unwrap().as_symbol().unwrap().symbol.upgrade().is_none() {
+                let eval = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
+                if eval.is_none() || eval.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
                     return None;
                 }
-                let base = eval.unwrap().as_symbol().unwrap().symbol.upgrade();
+                let base = eval.unwrap().symbol.symbol.upgrade();
                 if base.is_none() {
                     return None;
                 }
@@ -258,21 +264,24 @@ impl Evaluation {
                 }
             },
             Expr::Name(expr) => {
-                let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(expr.range));
+                let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(*max_infer));
                 if infered_sym.is_none() {
                     return None;
                 }
                 res.symbol = Rc::downgrade(infered_sym.as_ref().unwrap());
                 let infered_sym = infered_sym.as_ref().unwrap().borrow();
                 res.instance = infered_sym.sym_type != SymType::CLASS;
-                if infered_sym.evaluation.is_some() && infered_sym.evaluation.as_ref().unwrap().is_symbol() {
-                    res.instance = infered_sym.evaluation.as_ref().unwrap().as_symbol().unwrap().instance;
+                if infered_sym.evaluation.is_some() {
+                    res.instance = infered_sym.evaluation.as_ref().unwrap().symbol.instance;
                 }
 
             },
             _ => {}
         }
-        Some(Evaluation::EvaluationSymbol(res))
+        Some(Evaluation {
+            symbol: res,
+            value: None,
+        })
     }
 
 }

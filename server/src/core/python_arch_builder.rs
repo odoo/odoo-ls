@@ -90,13 +90,13 @@ impl PythonArchBuilder {
                     let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
                     let all = Symbol::follow_ref(all, odoo, &mut None, false).0;
                     if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() || 
-                        !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().is_value() {
+                        !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
                             println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
                     } else {
                         let all = all.upgrade().unwrap();
                         let all = (*all).borrow();
-                        let value = all.evaluation.as_ref().unwrap().as_value();
-                        let (nf, parse_error) = self.extract_all_symbol_eval_values(&value);
+                        let value = &all.evaluation.as_ref().unwrap().value;
+                        let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                         if parse_error {
                             println!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
                         }
@@ -111,13 +111,11 @@ impl PythonArchBuilder {
                         variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
                         if variable.evaluation.is_some() {
                             let evaluation = variable.evaluation.as_ref().unwrap();
-                            let evaluated = evaluation.as_symbol();
-                            if evaluated.is_some() {
-                                let evaluated = evaluated.unwrap().get_symbol(odoo, &mut None).upgrade();
-                                if evaluated.is_some() {
-                                    let evaluated = evaluated.unwrap();
-                                    self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
-                                }
+                            let evaluated_type = &evaluation.symbol;
+                            let evaluated_type = evaluated_type.get_symbol(odoo, &mut None).upgrade();
+                            if evaluated_type.is_some() {
+                                let evaluated_type = evaluated_type.unwrap();
+                                self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
                             }
                         }
                         self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
@@ -237,7 +235,7 @@ impl PythonArchBuilder {
                 let parent = variable.parent.as_ref().unwrap().upgrade();
                 if parent.is_some() {
                     let parent = parent.unwrap();
-                    variable.evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent);
+                    variable.evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
                     if variable.evaluation.is_some() {
                         //TODO add dependency
                         if (*self.sym_stack.last().unwrap()).borrow().is_external {
@@ -246,29 +244,27 @@ impl PythonArchBuilder {
                             // we don't want to handle that, so just declare __all__ content
                             // as symbols to not raise any error.
                             let evaluation = variable.evaluation.as_ref().unwrap();
-                            let evaluated = evaluation.as_symbol();
+                            let evaluated = &evaluation.symbol;
+                            let evaluated = evaluated.get_symbol(odoo, &mut None).upgrade();
                             if evaluated.is_some() {
-                                let evaluated = evaluated.unwrap().get_symbol(odoo, &mut None).upgrade();
-                                if evaluated.is_some() {
-                                    let evaluated = evaluated.unwrap();
-                                    let evaluated = evaluated.borrow();
-                                    if evaluated.sym_type == SymType::CONSTANT && evaluated.evaluation.is_some() && evaluated.evaluation.as_ref().unwrap().is_value() {
-                                        match evaluated.evaluation.as_ref().unwrap().as_value().unwrap() {
-                                            EvaluationValue::LIST(list) => {
-                                                for item in list.iter() {
-                                                    match item {
-                                                        Expr::StringLiteral(s) => {
-                                                            let mut var = Symbol::new(s.value.to_string(), SymType::VARIABLE);
-                                                            var.range = evaluated.range.clone();
-                                                            var.evaluation = None;
-                                                            self.__all_symbols_to_add.push(var);
-                                                        },
-                                                        _ => {}
-                                                    }
+                                let evaluated = evaluated.unwrap();
+                                let evaluated = evaluated.borrow();
+                                if evaluated.sym_type == SymType::CONSTANT && evaluated.evaluation.is_some() && evaluated.evaluation.as_ref().unwrap().value.is_some() {
+                                    match evaluated.evaluation.as_ref().unwrap().value.as_ref().unwrap() {
+                                        EvaluationValue::LIST(list) => {
+                                            for item in list.iter() {
+                                                match item {
+                                                    Expr::StringLiteral(s) => {
+                                                        let mut var = Symbol::new(s.value.to_string(), SymType::VARIABLE);
+                                                        var.range = evaluated.range.clone();
+                                                        var.evaluation = None;
+                                                        self.__all_symbols_to_add.push(var);
+                                                    },
+                                                    _ => {}
                                                 }
-                                            },
-                                            _ => {}
-                                        }
+                                            }
+                                        },
+                                        _ => {}
                                     }
                                 }
                             }
