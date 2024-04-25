@@ -673,7 +673,7 @@ impl Odoo {
             tokio::task::spawn_blocking(move || {
                 let mut sync_odoo = _odoo.lock().unwrap();
                 let odoo = &mut sync_odoo;
-                let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
+                let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
                 let mut mut_file_info = file_info.borrow_mut();
                 mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
                 drop(mut_file_info);

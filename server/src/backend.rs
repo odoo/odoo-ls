@@ -5,7 +5,7 @@ use serde_json::to_value;
 use crate::core::config::RefreshMode;
 use crate::core::odoo::Odoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
-use serde;
+use serde::{self, Deserialize};
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use std::sync::Arc;
@@ -26,7 +26,8 @@ impl LanguageServer for Backend {
             let file_mgr = sync_odoo.get_file_mgr();
             let mut file_mgr = file_mgr.borrow_mut();
             for added in workspace_folders.iter() {
-                file_mgr.add_workspace_folder(added.uri.to_string());
+                let path = added.uri.to_file_path().expect("unable to get normalized file path").as_os_str().to_str().unwrap().to_string();
+                file_mgr.add_workspace_folder(path);
             }
         }
         Ok(InitializeResult {

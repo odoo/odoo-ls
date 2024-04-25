@@ -52,7 +52,7 @@ impl PythonArchBuilder {
             symbol.parent.as_ref().unwrap().upgrade().unwrap().borrow().in_workspace) ||
             odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
         drop(symbol);
-        let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str(), None, None); //create ast
+        let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, path.as_str(), None, None); //create ast
         let file_info = (*file_info).borrow();
         if file_info.ast.is_some() {
             self.visit_node(odoo, &file_info.ast.as_ref().unwrap())?;

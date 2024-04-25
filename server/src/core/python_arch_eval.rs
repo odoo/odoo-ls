@@ -27,6 +27,7 @@ pub struct PythonArchEval {
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
+    ast_indexes: Vec<u16>,
 }
 
 impl PythonArchEval {
@@ -35,6 +36,7 @@ impl PythonArchEval {
             sym_stack: vec![symbol],
             diagnostics: Vec::new(),
             safe_import: vec![false],
+            ast_indexes: vec![],
         }
     }
 
@@ -54,11 +56,13 @@ impl PythonArchEval {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str(), None, None); //create ast
+        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str());
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
-            for stmt in file_info.ast.as_ref().unwrap() {
-                self.visit_stmt(odoo, stmt, &file_info);
+            for (index, stmt) in file_info.ast.as_ref().unwrap().iter().enumerate() {
+                self.ast_indexes.push(index as u16);
+                self.visit_stmt(odoo, stmt);
+                self.ast_indexes.pop();
             }
         }
         drop(file_info);
@@ -69,7 +73,7 @@ impl PythonArchEval {
         symbol.arch_eval_status = BuildStatus::DONE;
         if symbol.is_external {
             for sym in symbol.all_symbols(None, false) {
-                sym.borrow_mut().ast_ptr = ptr::null();
+                sym.borrow_mut().ast_indexes = None;
             }
             drop(file_info);
             odoo.get_file_mgr().borrow_mut().delete_path(odoo, &path);
@@ -79,7 +83,7 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_stmt(&mut self, odoo: &mut SyncOdoo, stmt: &Stmt, file_info: &FileInfo) {
+    fn visit_stmt(&mut self, odoo: &mut SyncOdoo, stmt: &Stmt) {
         match stmt {
             Stmt::Import(import_stmt) => {
                 self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
@@ -88,10 +92,16 @@ impl PythonArchEval {
                 self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
-                self.visit_class_def(odoo, &file_info, class_stmt, stmt);
+                self.visit_class_def(odoo, class_stmt, stmt);
             },
             Stmt::FunctionDef(func_stmt) => {
-                self.visit_func_def(func_stmt, stmt);
+                self.visit_func_def(odoo, func_stmt);
+            },
+            Stmt::AnnAssign(ann_assign_stmt) => {
+                self._visit_ann_assign(odoo, ann_assign_stmt);
+            },
+            Stmt::Assign(assign_stmt) => {
+                self._visit_assign(odoo, assign_stmt);
             }
             _ => {}
         }
@@ -211,15 +221,57 @@ impl PythonArchEval {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
-            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
-            variable.range = Some(assign.target.range.clone());
-            variable.evaluation = None;
-            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
+            if let Some(variable) = variable {
+                let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
+                if assign.annotation.is_some() {
+                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent);
+                } else if assign.value.is_some() {
+                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent);
+                } else {
+                    panic!("either value or annotation should exists");
+                }
+                let mut v_mut = variable.borrow_mut();
+                let mut sym = None;
+                if let Some(Evaluation::EvaluationSymbol(eval)) = &v_mut.evaluation {
+                    if !eval.symbol.is_expired() {
+                        sym = Some(eval.symbol.upgrade().unwrap());
+                    }
+                }
+                if let Some(sym) = sym {
+                    if sym.borrow().sym_type != SymType::CONSTANT && sym.borrow().parent.is_some() {
+                        v_mut.add_dependency(&mut sym.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                    }
+                }
+            } else {
+                println!("Symbol not found");
+            }
         }
     }
 
     fn _visit_assign(&self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
-        //TODO
+        let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
+        for assign in assigns.iter() {
+            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
+            if let Some(variable) = variable {
+                let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
+                variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent);
+                let mut v_mut = variable.borrow_mut();
+                let mut sym = None;
+                if let Some(Evaluation::EvaluationSymbol(eval)) = &v_mut.evaluation {
+                    if !eval.symbol.is_expired() {
+                        sym = Some(eval.symbol.upgrade().unwrap());
+                    }
+                }
+                if let Some(sym) = sym {
+                    if sym.borrow().sym_type != SymType::CONSTANT && sym.borrow().parent.is_some() {
+                        v_mut.add_dependency(&mut sym.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                    }
+                }
+            } else {
+                println!("Symbol not found");
+            }
+        }
     }
 
     fn create_diagnostic_base_not_found(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol, var_name: &str, range: &TextRange) {
@@ -245,6 +297,9 @@ impl PythonArchEval {
                 continue;
             }
             let range = range.unwrap();
+            if full_base == "models.AbstractModel" {
+                println!("here");
+            }
             let elements = full_base.split(".").collect::<Vec<&str>>();
             let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
             let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range));
@@ -309,25 +364,45 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, file_info: &FileInfo, class_stmt: &StmtClassDef, stmt: &Stmt) {
+    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, class_stmt: &StmtClassDef, stmt: &Stmt) {
         let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
         if variable.is_none() {
             panic!("Class not found");
         }
-        variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
+        variable.as_ref().unwrap().borrow_mut().ast_indexes = Some(self.ast_indexes.clone());
         self.load_base_classes(odoo, variable.as_ref().unwrap(), class_stmt);
         self.sym_stack.push(variable.unwrap());
-        for stmt in class_stmt.body.iter() {
-            self.visit_stmt(odoo, stmt, file_info);
+        for (index, stmt) in class_stmt.body.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(odoo, stmt);
+            self.ast_indexes.pop();
         }
         self.sym_stack.pop();
     }
 
-    fn visit_func_def(&mut self, func_stmt: &StmtFunctionDef,  stmt: &Stmt) {
+    fn visit_func_def(&mut self, odoo: &mut SyncOdoo, func_stmt: &StmtFunctionDef) {
         let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
         if variable.is_none() {
             panic!("Function symbol not found");
         }
-        variable.as_ref().unwrap().borrow_mut().ast_ptr = stmt as *const Stmt;
+        variable.as_ref().unwrap().borrow_mut().ast_indexes = Some(self.ast_indexes.clone());
+        self.sym_stack.push(variable.unwrap());
+        for (index, stmt) in func_stmt.body.iter().enumerate() {
+            //we don't want to evaluate functions here, but in validator. We must only assign ast indexes
+            match stmt {
+                Stmt::FunctionDef(f) => {
+                    self.ast_indexes.push(index as u16);
+                    self.visit_func_def(odoo, f);
+                    self.ast_indexes.pop();
+                },
+                Stmt::ClassDef(c) => {
+                    self.ast_indexes.push(index as u16);
+                    self.visit_class_def(odoo, c, stmt);
+                    self.ast_indexes.pop();
+                }
+                _ => {}
+            }
+        }
+        self.sym_stack.pop();
     }
 }

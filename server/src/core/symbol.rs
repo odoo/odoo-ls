@@ -46,9 +46,8 @@ pub struct Symbol {
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub is_import_variable: bool,
-    pub ast: Option<Expr>,
     pub doc_string: Option<String>,
-    pub ast_ptr: *const Stmt, //ptr only valid if validation_status is PENDING
+    pub ast_indexes: Option<Vec<u16>>, //list of index to reach the corresponding ast node from file ast
     pub in_workspace: bool,
 
     pub _root: Option<RootSymbol>,
@@ -111,9 +110,8 @@ impl Symbol {
             odoo_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             is_import_variable: false,
-            ast: None,
             doc_string: None,
-            ast_ptr: ptr::null(),
+            ast_indexes: None,
             in_workspace: false,
 
             _root: None,
@@ -551,6 +549,8 @@ impl Symbol {
                     if module.is_some() {
                         (*ref_sym).borrow_mut()._module = module;
                         ModuleSymbol::load_module_info(ref_sym.clone(), odoo, parent);
+                        //as the symbol has been added to parent before module creation, it has not been added to modules
+                        odoo.modules.insert((*ref_sym).borrow()._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&ref_sym));
                     } else {
                         return None;
                     }

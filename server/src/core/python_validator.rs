@@ -17,8 +17,7 @@ pub struct PythonValidator {
     symbol: Rc<RefCell<Symbol>>,
     diagnostics: Vec<Diagnostic>,
     safe_imports: Vec<bool>,
-    current_module: Option<Rc<RefCell<Symbol>>>,
-    file_info: Option<Rc<RefCell<FileInfo>>>,
+    current_module: Option<Rc<RefCell<Symbol>>>
 }
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on any symbol containing code (file, function, class. Not variable, namespace).
@@ -33,7 +32,6 @@ impl PythonValidator {
             diagnostics: Vec::new(),
             safe_imports: vec![false],
             current_module: None,
-            file_info: None,
         }
     }
 
@@ -44,8 +42,24 @@ impl PythonValidator {
         if file_symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + file_symbol.i_ext.as_str();
         }
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str(), None, None); //create ast
+        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str());
         file_info_rc
+    }
+
+    fn find_stmt_from_ast<'a>(ast: &'a Vec<Stmt>, indexes: &Vec<u16>) -> &'a Stmt {
+        let mut stmt = ast.get(indexes[0] as usize).expect("index not found in ast");
+        for i in indexes.iter().skip(1) {
+            match stmt {
+                Stmt::ClassDef(c) => {
+                    stmt = c.body.get(*i as usize).expect("index not found in ast");
+                },
+                Stmt::FunctionDef(f) => {
+                    stmt = f.body.get(*i as usize).expect("index not found in ast");
+                }
+                _ => {}
+            }
+        }
+        stmt
     }
 
     /* Validate the symbol. The dependencies must be done before any validation. */
@@ -58,45 +72,54 @@ impl PythonValidator {
         symbol.validation_status = BuildStatus::IN_PROGRESS;
         let sym_type = symbol.sym_type.clone();
         drop(symbol);
-        self.file_info = Some(self.get_file_info(odoo));
         match sym_type {
             SymType::FILE | SymType::PACKAGE => {
-                let file_info = self.file_info.as_ref().unwrap().clone();
-                let mut file_info = file_info.borrow_mut();
+                let file_info_rc = self.get_file_info(odoo).clone();
+                let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
                     self.validate_body(odoo, file_info.ast.as_ref().unwrap());
-                    file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
                 }
+                drop(file_info);
+                let mut file_info = file_info_rc.borrow_mut();
+                file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymType::CLASS | SymType::FUNCTION => {
-                let ref_symbol = self.symbol.clone(); //to make 'body' lives until the end
-                let stmt = unsafe{&*ref_symbol.borrow().ast_ptr};
-                let body = match stmt {
-                    Stmt::FunctionDef(s) => {
-                        &s.body
-                    },
-                    Stmt::ClassDef(s) => {
-                        &s.body
-                    }
-                    _ => {panic!("Wrong statement in validation ast extraction")}
-                };
-                self.validate_body(odoo, body);
+                let file_info_rc = self.get_file_info(odoo).clone();
+                let file_info = file_info_rc.borrow();
+                if file_info.ast.is_some() {
+                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.symbol.borrow().ast_indexes.as_ref().expect("this node should contains an index vector"));
+                    let body = match stmt {
+                        Stmt::FunctionDef(s) => {
+                            &s.body
+                        },
+                        Stmt::ClassDef(s) => {
+                            &s.body
+                        }
+                        _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                    };
+                    self.validate_body(odoo, body);
+                } else {
+                    println!("no ast found on file info");
+                }
+                
             },
             _ => {panic!("Only File, function or class can be validated")}
         }
         let mut symbol = self.symbol.borrow_mut();
         symbol.validation_status = BuildStatus::DONE;
-        if !symbol.in_workspace {
-            odoo.get_file_mgr().borrow_mut().delete_path(odoo, &symbol.paths[0].to_string());
-        } else {
-            drop(symbol);
-            match sym_type {
-                SymType::FILE | SymType::PACKAGE => {
-                    let file_info = self.get_file_info(odoo);
-                    let mut file_info = file_info.borrow_mut();
-                    file_info.publish_diagnostics(odoo);
-                },
-                _ => {}
+        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.sym_type) {
+            if !symbol.in_workspace {
+                odoo.get_file_mgr().borrow_mut().delete_path(odoo, &symbol.paths[0].to_string());
+            } else {
+                drop(symbol);
+                match sym_type {
+                    SymType::FILE | SymType::PACKAGE => {
+                        let file_info = self.get_file_info(odoo);
+                        let mut file_info = file_info.borrow_mut();
+                        file_info.publish_diagnostics(odoo);
+                    },
+                    _ => {}
+                }
             }
         }
     }
@@ -116,7 +139,7 @@ impl PythonValidator {
                         }
                         self.diagnostics.append(&mut sym.borrow_mut()._function.as_mut().unwrap().diagnostics);
                     } else {
-                        panic!("symbol not found.");
+                        //TODO panic!("symbol not found.");
                     }
                 },
                 Stmt::ClassDef(c) => {
@@ -132,7 +155,7 @@ impl PythonValidator {
                         }
                         self.diagnostics.append(&mut sym.borrow_mut()._class.as_mut().unwrap().diagnostics);
                     } else {
-                        panic!("symbol not found.");
+                        //TODO panic!("symbol not found.");
                     }
                 },
                 Stmt::Try(t) => {
@@ -181,10 +204,10 @@ impl PythonValidator {
             if import_result.found && self.current_module.is_some() {
                 let module = import_result.symbol.borrow().get_module_sym();
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(odoo, &self.current_module.as_ref().unwrap(), &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
+                    if !ModuleSymbol::is_in_deps(odoo, &self.current_module.as_ref().unwrap(), &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
-                            Some(DiagnosticSeverity::WARNING),
+                            Some(DiagnosticSeverity::ERROR),
                             None,
                             Some(EXTENSION_NAME.to_string()),
                             format!("{} is not in the dependencies of the module", module.borrow()._module.as_ref().unwrap().dir_name),

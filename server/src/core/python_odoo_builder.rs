@@ -42,7 +42,7 @@ impl PythonOdooBuilder {
         if DEBUG_ODOO_BUILDER {
             println!("Loading Odoo content for: {}", path);
         }
-        let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path, None, None);
+        let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path);
         if file_info.borrow().ast.is_none() {
             symbol.odoo_status = BuildStatus::DONE;
             return;

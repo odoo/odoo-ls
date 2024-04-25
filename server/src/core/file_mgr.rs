@@ -89,8 +89,9 @@ impl FileInfo {
     }
 
     fn update_range(rope: &Option<Rope>, mut diagnostic: Diagnostic) -> Diagnostic {
-        diagnostic.range.start = FileInfo::byte_position_to_position(rope, diagnostic.range.start.line as usize).unwrap();
-        diagnostic.range.end = FileInfo::byte_position_to_position(rope, diagnostic.range.end.line as usize).unwrap();
+        let start = diagnostic.range.start.line;
+        diagnostic.range.start = FileInfo::byte_position_to_position(rope, diagnostic.range.start.line as usize);
+        diagnostic.range.end = FileInfo::byte_position_to_position(rope, diagnostic.range.end.line as usize);
         diagnostic
     }
 
@@ -98,7 +99,7 @@ impl FileInfo {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            for diagnostics in self.diagnostics.values_mut() {
+            for diagnostics in self.diagnostics.values() {
                 for d in diagnostics.iter() {
                     all_diagnostics.push(FileInfo::update_range(&self.text_rope, d.clone()));
                 }
@@ -112,12 +113,13 @@ impl FileInfo {
         }
     }
 
-    pub fn byte_position_to_position(rope: &Option<Rope>, offset: usize) -> Option<Position> {
-        let rope = rope.as_ref()?;
-        let line = rope.try_char_to_line(offset).ok()?;
-        let first_char_of_line = rope.try_line_to_char(line).ok()?;
-        let column = offset - first_char_of_line;
-        Some(Position::new(line as u32, column as u32))
+    pub fn byte_position_to_position(rope: &Option<Rope>, offset: usize) -> Position {
+        let rope = rope.as_ref().expect("no rope provided");
+        let char = rope.try_byte_to_char(offset).expect("unable to get char from bytes");
+        let line = rope.try_char_to_line(char).ok().expect("unable to get line from char");
+        let first_char_of_line = rope.try_line_to_char(line).expect("unable to get char from line");
+        let column = char - first_char_of_line;
+        Position::new(line as u32, column as u32)
     }
 }
 
@@ -136,7 +138,11 @@ impl FileMgr {
         }
     }
 
-    pub fn get_file_info(&mut self, syncOdoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
+    pub fn get_file_info(&self, syncOdoo: &mut SyncOdoo, uri: &str) -> Rc<RefCell<FileInfo>> {
+        self.files.get(&uri.to_string()).expect("File not found in cache").clone()
+    }
+
+    pub fn update_file_info(&mut self, syncOdoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         let mut file_info_mut = (*return_info).borrow_mut();
@@ -148,13 +154,15 @@ impl FileMgr {
     pub fn delete_path(&mut self, odoo: &SyncOdoo, uri: &String) {
         let to_del = self.files.remove(uri);
         if let Some(to_del) = to_del {
-            let mut to_del = (*to_del).borrow_mut();
-            to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
-            to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-            to_del.publish_diagnostics(odoo)
+            if self.is_in_workspace(uri) {
+                let mut to_del = (*to_del).borrow_mut();
+                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
+                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                to_del.publish_diagnostics(odoo)
+            }
         }
     }
 
