@@ -13,6 +13,7 @@ use std::str::FromStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
+use std::cmp;
 use regex::Regex;
 use crate::constants::*;
 use super::config::{self, DiagMissingImportsMode, RefreshMode};
@@ -529,6 +530,10 @@ impl SyncOdoo {
     }
 
     pub fn create_new_symbol(&mut self, path: PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<(Rc<RefCell<Symbol>>,Tree)> {
+        let mut path = path.clone();
+        if path.ends_with("__init__.py") || path.ends_with("__init__.pyi") || path.ends_with("__manifest__.py") {
+            path.pop();
+        }
         let _arc_symbol = Symbol::create_from_path(self, &path, parent, require_module);
         if _arc_symbol.is_some() {
             let _arc_symbol = _arc_symbol.unwrap();
@@ -548,7 +553,7 @@ impl SyncOdoo {
             let mut index = 0;
             while index < s.borrow().not_found_paths.len() {
                 let (step, not_found_tree) = s.borrow().not_found_paths[index].clone();
-                if flat_tree[..not_found_tree.len()] == not_found_tree[..flat_tree.len()] {
+                if flat_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] == not_found_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] {
                     need_rebuild = true;
                     match step {
                         BuildSteps::ARCH => {
