@@ -584,6 +584,11 @@ impl SyncOdoo {
         }
         need_rebuild
     }
+
+    pub fn get_file_symbol(&self, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
+        let symbol = self.symbols.as_ref().unwrap().borrow();
+        symbol.get_symbol(&self.tree_from_path(&path).unwrap())
+    }
 }
 
 #[derive(Debug)]

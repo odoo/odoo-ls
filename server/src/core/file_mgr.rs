@@ -88,10 +88,10 @@ impl FileInfo {
         self.diagnostics.insert(step, diagnostics);
     }
 
-    fn update_range(rope: &Option<Rope>, mut diagnostic: Diagnostic) -> Diagnostic {
+    fn update_range(&self, mut diagnostic: Diagnostic) -> Diagnostic {
         let start = diagnostic.range.start.line;
-        diagnostic.range.start = FileInfo::byte_position_to_position(rope, diagnostic.range.start.line as usize);
-        diagnostic.range.end = FileInfo::byte_position_to_position(rope, diagnostic.range.end.line as usize);
+        diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line as usize);
+        diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line as usize);
         diagnostic
     }
 
@@ -101,7 +101,7 @@ impl FileInfo {
 
             for diagnostics in self.diagnostics.values() {
                 for d in diagnostics.iter() {
-                    all_diagnostics.push(FileInfo::update_range(&self.text_rope, d.clone()));
+                    all_diagnostics.push(self.update_range(d.clone()));
                 }
             }
             let _ = odoo.msg_sender.send(Msg::DIAGNOSTIC(MsgDiagnostic{
@@ -113,13 +113,19 @@ impl FileInfo {
         }
     }
 
-    pub fn byte_position_to_position(rope: &Option<Rope>, offset: usize) -> Position {
-        let rope = rope.as_ref().expect("no rope provided");
+    pub fn offset_to_position(&self, offset: usize) -> Position {
+        let rope = self.text_rope.as_ref().expect("no rope provided");
         let char = rope.try_byte_to_char(offset).expect("unable to get char from bytes");
         let line = rope.try_char_to_line(char).ok().expect("unable to get line from char");
         let first_char_of_line = rope.try_line_to_char(line).expect("unable to get char from line");
         let column = char - first_char_of_line;
         Position::new(line as u32, column as u32)
+    }
+
+    pub fn position_to_offset(&self, line: u32, char: u32) -> usize {
+        let rope = self.text_rope.as_ref().expect("no rope provided");
+        let line_char = rope.try_line_to_char(line as usize).expect("unable to get char from line");
+        rope.try_char_to_byte(line_char + char as usize).expect("unable to get byte from char")
     }
 }
 

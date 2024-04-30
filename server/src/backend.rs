@@ -5,10 +5,13 @@ use serde_json::to_value;
 use crate::core::config::RefreshMode;
 use crate::core::odoo::Odoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
+use crate::features::hover::HoverFeature;
 use serde::{self, Deserialize};
 use tokio::sync::Mutex;
 use tokio::time::Duration;
+use tokio::time::timeout;
 use std::sync::Arc;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Backend {
@@ -107,13 +110,33 @@ impl LanguageServer for Backend {
         });
     }
 
-    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
-        Ok(Some(Hover {
-            contents: HoverContents::Scalar(
-                MarkedString::String("You're hovering!".to_string())
-            ),
-            range: None
-        }))
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        self.client.log_message(MessageType::INFO, format!("Hover requested on {} at {} - {}",
+            params.text_document_position_params.text_document.uri.to_string(),
+            params.text_document_position_params.position.line,
+            params.text_document_position_params.position.character)).await;
+        let mut odoo = timeout(Duration::from_millis(1000), self.odoo.lock()).await;
+        if let Err(_) = odoo {
+            return Ok(Some(Hover {
+                contents: HoverContents::Scalar(
+                    MarkedString::String("Odoo is still loading. Please wait...".to_string())
+                ),
+                range: None
+            }))
+        }
+        let mut odoo = odoo.unwrap();
+        {
+            let sync_odoo = odoo.odoo.lock().unwrap();
+            if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
+                if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(params.text_document_position_params.text_document.uri.to_string())) {
+                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&mut sync_odoo, params.text_document_position_params.text_document.uri.to_string().as_str());
+                    if let Some(ast) = file_info.borrow().ast {
+                        return HoverFeature::get_Hover(&file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
