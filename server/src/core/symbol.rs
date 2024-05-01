@@ -762,7 +762,7 @@ impl Symbol {
     /* return the symbol (class or function) the closest to the given offset */
     pub fn get_scope_symbol(sym: Rc<RefCell<Symbol>>, offset: u32) -> Rc<RefCell<Symbol>> {
         //TODO search in localSymbols too
-        let mut symbol = sym;
+        let mut symbol = sym.clone();
         for s in sym.borrow().symbols.values() {
             if s.borrow().range.unwrap().start().to_u32() < offset && s.borrow().range.unwrap().end().to_u32() >= offset && vec![SymType::CLASS, SymType::FUNCTION].contains(&s.borrow().sym_type) {
                 symbol = Symbol::get_scope_symbol(s.clone(), offset);
