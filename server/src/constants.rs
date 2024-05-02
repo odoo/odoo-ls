@@ -1,3 +1,4 @@
+#![allow(non_camel_case_types)]
 use core::fmt;
 
 pub const EXTENSION_NAME: &str = "Odoo";

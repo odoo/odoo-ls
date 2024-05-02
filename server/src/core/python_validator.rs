@@ -1,4 +1,4 @@
-use ruff_python_ast::{Stmt, StmtTry, Identifier, Alias, Int};
+use ruff_python_ast::{Stmt, StmtTry, Identifier, Alias};
 use ruff_text_size::TextRange;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -7,10 +7,10 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range, Position};
 use crate::constants::*;
 use crate::core::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
-use crate::core::import_resolver::{resolve_import_stmt};
+use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 
-use super::file_mgr::{FileInfo};
+use super::file_mgr::FileInfo;
 
 #[derive(Debug)]
 pub struct PythonValidator {
@@ -42,7 +42,7 @@ impl PythonValidator {
         if file_symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + file_symbol.i_ext.as_str();
         }
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str());
+        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(path.as_str());
         file_info_rc
     }
 

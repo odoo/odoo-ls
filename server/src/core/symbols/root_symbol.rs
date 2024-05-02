@@ -9,7 +9,7 @@ pub struct RootSymbol {
 
 impl RootSymbol {
 
-    pub fn add_symbol(&self, odoo: &SyncOdoo, self_symbol: &Symbol, symbol: &mut RefMut<Symbol>) {
+    pub fn add_symbol(&self, odoo: &SyncOdoo, _self_symbol: &Symbol, symbol: &mut RefMut<Symbol>) {
         match symbol.sym_type {
             SymType::FILE | SymType::PACKAGE => {
                 for path in symbol.paths.iter() {

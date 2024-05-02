@@ -4,9 +4,8 @@ use tower_lsp::{Client, LanguageServer};
 use serde_json::to_value;
 use crate::core::config::RefreshMode;
 use crate::core::odoo::Odoo;
-use crate::core::messages::{Msg, MsgDiagnostic};
+use crate::core::messages::Msg;
 use crate::features::hover::HoverFeature;
-use serde::{self, Deserialize};
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::timeout;
@@ -126,12 +125,12 @@ impl LanguageServer for Backend {
         }
         let mut odoo = odoo.unwrap();
         {
-            let sync_odoo = odoo.odoo.lock().unwrap();
+            let mut sync_odoo = odoo.odoo.lock().unwrap();
             if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
                 if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(params.text_document_position_params.text_document.uri.to_string())) {
-                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&mut sync_odoo, params.text_document_position_params.text_document.uri.to_string().as_str());
-                    if let Some(ast) = file_info.borrow().ast {
-                        return HoverFeature::get_Hover(&file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(params.text_document_position_params.text_document.uri.to_string().as_str());
+                    if file_info.borrow().ast.is_some() {
+                        return HoverFeature::get_hover(&file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
                     }
                 }
             }

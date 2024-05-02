@@ -39,7 +39,7 @@ struct ExprFinderVisitor<'a> {
 
 impl<'a> ExprFinderVisitor<'a> {
 
-    pub fn find_expr_at(stmt: &Stmt, offset: u32) -> Option<&Expr> {
+    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> Option<&Expr> {
         let mut visitor = Self {
             offset: offset,
             expr: None
@@ -50,9 +50,9 @@ impl<'a> ExprFinderVisitor<'a> {
 
 }
 
-impl<'a> Visitor<'_> for ExprFinderVisitor<'a> {
+impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
 
-    fn visit_expr(&mut self, expr: &'_ Expr) {
+    fn visit_expr(&mut self, expr: &'a Expr) {
         if expr.range().start().to_u32() <= self.offset && expr.range().end().to_u32() >= self.offset {
             walk_expr(self, expr);
             if self.expr.is_none() { //do not put expr if inner expr is valid

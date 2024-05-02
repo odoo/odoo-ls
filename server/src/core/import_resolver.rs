@@ -1,16 +1,14 @@
 use glob::glob;
-use std::rc::{Rc, Weak};
-use std::cell::{RefCell, RefMut};
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::path::Path;
-use std::sync::MutexGuard;
 
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Identifier, Alias, Int};
+use ruff_python_ast::{Identifier, Alias};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::utils::{is_dir_cs, is_file_cs};
-use crate::S;
 
 pub struct ImportResult {
     pub name: String,
@@ -30,7 +28,7 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
         level,
         from_stmt);
     drop(_source_file_symbol_lock);
-    let (mut from_symbol, mut fallback_sym) = _get_or_create_symbol(
+    let (from_symbol, fallback_sym) = _get_or_create_symbol(
         odoo,
         odoo.symbols.as_ref().unwrap().clone(),
         &file_tree,
@@ -90,7 +88,7 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
         let name_last_name: Vec<String> = vec![name_split.last().unwrap().clone()];
 
         // get the full file_tree, including the first part of the name import stmt. (os in import os.path)
-        let (mut next_symbol, fallback_sym) = _get_or_create_symbol(
+        let (next_symbol, fallback_sym) = _get_or_create_symbol(
             odoo,
             from_symbol.as_ref().unwrap().clone(),
             &name_first_part,
@@ -186,7 +184,7 @@ fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names
         if next_symbol.is_none() {
             next_symbol = match _resolve_new_symbol(odoo, sym.as_ref().unwrap().clone(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),
-                Err(e) => None
+                Err(_) => None
             }
         }
         sym = next_symbol.clone();
@@ -239,21 +237,21 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: Rc<RefCell<Symbol>>, name: &
             if cfg!(windows) {
                 for entry in glob((full_path.as_os_str().to_str().unwrap().to_owned() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
-                        Ok(path) => {
+                        Ok(_path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
                             return Ok((*parent).borrow_mut().add_symbol(odoo, compiled_sym));
                         }
-                        Err(e) => {},
+                        Err(_) => {},
                     }
                 }
             } else if cfg!(linux) {
                 for entry in glob((full_path.as_os_str().to_str().unwrap().to_owned() + "*.so").as_str()).expect("Failed to read glob pattern") {
                     match entry {
-                        Ok(path) => {
+                        Ok(_path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
                             return Ok((*parent).borrow_mut().add_symbol(odoo, compiled_sym));
                         }
-                        Err(e) => {},
+                        Err(_) => {},
                     }
                 }
             }

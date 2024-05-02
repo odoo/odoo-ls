@@ -1,9 +1,8 @@
-use std::collections::HashSet;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::cell::RefCell;
-use anyhow::{Error};
+use anyhow::Error;
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Expr, Alias, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use ruff_python_ast::{Expr, Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;

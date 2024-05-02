@@ -1,7 +1,7 @@
 
 use tower_lsp::lsp_types::Diagnostic;
 use std::rc::{Rc, Weak};
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
 use crate::core::symbol::Symbol;

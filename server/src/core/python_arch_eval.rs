@@ -1,16 +1,15 @@
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use std::{ptr, vec};
+use std::vec;
 
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Alias, Expr, Identifier, Int, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::file_mgr::FileInfo;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
@@ -56,7 +55,7 @@ impl PythonArchEval {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, path.as_str());
+        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(path.as_str());
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
             for (index, stmt) in file_info.ast.as_ref().unwrap().iter().enumerate() {

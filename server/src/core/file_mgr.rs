@@ -1,13 +1,9 @@
-use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
-use ruff_text_size::TextRange;
-use tower_lsp::lsp_types::{Diagnostic, Position, Range};
-use std::{borrow::BorrowMut, collections::HashMap, fs};
+use tower_lsp::lsp_types::{Diagnostic, Position};
+use std::{collections::HashMap, fs};
 use crate::core::odoo::SyncOdoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
-use anyhow::Result;
-use url::Url;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::constants::*;
@@ -66,7 +62,7 @@ impl FileInfo {
         match ast {
             Ok(module) => {
                 match module {
-                    Mod::Expression(expr) => {
+                    Mod::Expression(_expr) => {
                         println!("[Warning] No support for expression-file only");
                         self.ast = None
                     },
@@ -89,7 +85,6 @@ impl FileInfo {
     }
 
     fn update_range(&self, mut diagnostic: Diagnostic) -> Diagnostic {
-        let start = diagnostic.range.start.line;
         diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line as usize);
         diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line as usize);
         diagnostic
@@ -144,15 +139,15 @@ impl FileMgr {
         }
     }
 
-    pub fn get_file_info(&self, syncOdoo: &mut SyncOdoo, uri: &str) -> Rc<RefCell<FileInfo>> {
+    pub fn get_file_info(&self, uri: &str) -> Rc<RefCell<FileInfo>> {
         self.files.get(&uri.to_string()).expect("File not found in cache").clone()
     }
 
-    pub fn update_file_info(&mut self, syncOdoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
+    pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         let mut file_info_mut = (*return_info).borrow_mut();
-        file_info_mut.update(syncOdoo, uri, content, version);
+        file_info_mut.update(sync_odoo, uri, content, version);
         drop(file_info_mut);
         return_info
     }

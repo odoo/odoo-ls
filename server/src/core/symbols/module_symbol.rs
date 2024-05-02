@@ -7,7 +7,7 @@ use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbol::{self, Symbol};
+use crate::core::symbol::Symbol;
 use crate::constants::EXTENSION_NAME;
 use crate::S;
 use std::path::PathBuf;
@@ -78,7 +78,7 @@ impl ModuleSymbol {
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
-            let manifest_file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, manifest_path.as_os_str().to_str().unwrap());
+            let manifest_file_info = odoo.get_file_mgr().borrow_mut().get_file_info(manifest_path.as_os_str().to_str().unwrap());
             let mut manifest_file_info = (*manifest_file_info).borrow_mut();
             manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
             manifest_file_info.publish_diagnostics(odoo);
@@ -243,7 +243,7 @@ impl ModuleSymbol {
         (diagnostics, loaded)
     }
 
-    fn _load_data(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+    fn _load_data(_symbol: Rc<RefCell<Symbol>>, _odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
         vec![]
     }
 

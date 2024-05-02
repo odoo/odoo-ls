@@ -1,4 +1,4 @@
-use ruff_python_ast::{Expr};
+use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};

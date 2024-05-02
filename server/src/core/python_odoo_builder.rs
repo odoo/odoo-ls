@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
-use ruff_python_ast::{Expr, ExprBooleanLiteral, StringLiteral};
+use ruff_python_ast::Expr;
 use tower_lsp::lsp_types::Diagnostic;
 
 use crate::constants::{BuildSteps, BuildStatus, SymType, DEBUG_ODOO_BUILDER};
@@ -10,7 +10,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::S;
 
-use super::evaluation::{Evaluation, EvaluationSymbol, EvaluationValue};
+use super::evaluation::EvaluationValue;
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
@@ -42,7 +42,7 @@ impl PythonOdooBuilder {
         if DEBUG_ODOO_BUILDER {
             println!("Loading Odoo content for: {}", path);
         }
-        let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(odoo, &path);
+        let file_info = odoo.get_file_mgr().borrow_mut().get_file_info(&path);
         if file_info.borrow().ast.is_none() {
             symbol.odoo_status = BuildStatus::DONE;
             return;

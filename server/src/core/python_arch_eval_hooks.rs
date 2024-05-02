@@ -10,7 +10,6 @@ use crate::S;
 
 use super::evaluation::Evaluation;
 use super::evaluation::ContextValue;
-use super::evaluation::EvaluationValue;
 use super::evaluation::EvaluationSymbol;
 
 pub struct PythonArchEvalHooks {}

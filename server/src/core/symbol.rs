@@ -1,5 +1,4 @@
 use ruff_text_size::{TextSize, TextRange};
-use ruff_python_ast::{Expr, Stmt};
 use serde_json::{Value, json};
 
 use crate::constants::*;
@@ -9,15 +8,13 @@ use crate::core::model::ModelData;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::S;
 use core::panic;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::vec;
-use std::ptr;
 
-use super::python_validator::PythonValidator;
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;

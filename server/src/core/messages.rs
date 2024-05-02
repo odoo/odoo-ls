@@ -1,4 +1,4 @@
-use std::borrow::BorrowMut;
+#![allow(non_camel_case_types)]
 use std::cell::RefCell;
 
 use tower_lsp::lsp_types::Diagnostic;
