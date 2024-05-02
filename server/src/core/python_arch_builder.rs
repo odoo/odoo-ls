@@ -1,8 +1,11 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::vec;
 use anyhow::Error;
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Expr, Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
@@ -24,6 +27,7 @@ use super::symbols::function_symbol::FunctionSymbol;
 pub struct PythonArchBuilder {
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     __all_symbols_to_add: Vec<Symbol>,
+    diagnostics: Vec<Diagnostic>
 }
 
 impl PythonArchBuilder {
@@ -31,6 +35,7 @@ impl PythonArchBuilder {
         PythonArchBuilder {
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
+            diagnostics: vec![]
         }
     }
 
@@ -52,11 +57,13 @@ impl PythonArchBuilder {
             odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
         drop(symbol);
         let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, path.as_str(), None, None); //create ast
-        let file_info = (*file_info).borrow();
+        let mut file_info = (*file_info).borrow_mut();
         if file_info.ast.is_some() {
             self.visit_node(odoo, &file_info.ast.as_ref().unwrap())?;
             self._resolve_all_symbols(odoo);
             odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+        } else {
+            file_info.publish_diagnostics(odoo);
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.arch_status = BuildStatus::DONE;
@@ -139,19 +146,27 @@ impl PythonArchBuilder {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
+                    if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
+                        self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
+                    }
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
+                    if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
+                        self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
+                    }
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
-                    self._visit_ann_assign(odoo, ann_assign_stmt);
+                    if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
+                        self._visit_ann_assign(odoo, ann_assign_stmt);
+                    }
                 },
                 Stmt::Assign(assign_stmt) => {
-                    self._visit_assign(odoo, assign_stmt);
+                    if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
+                        self._visit_assign(odoo, assign_stmt);
+                    }
                 },
                 Stmt::FunctionDef(function_def_stmt) => {
-                    self.visit_func_def(odoo, function_def_stmt);
+                    self.visit_func_def(odoo, function_def_stmt)?;
                 },
                 Stmt::ClassDef(class_def_stmt) => {
                     self.visit_class_def(odoo, class_def_stmt)?;
@@ -234,7 +249,9 @@ impl PythonArchBuilder {
                 let parent = variable.parent.as_ref().unwrap().upgrade();
                 if parent.is_some() {
                     let parent = parent.unwrap();
-                    variable.evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
+                    let eval = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
+                    variable.evaluation = eval.0;
+                    //TODO publish diags in eval.1
                     if variable.evaluation.is_some() {
                         //TODO add dependency
                         if (*self.sym_stack.last().unwrap()).borrow().is_external {
@@ -296,8 +313,14 @@ impl PythonArchBuilder {
                 sym.doc_string = Some(s.value.to_string())
             }
         }
-        //TODO add self value
         let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(odoo, sym);
+        //add params
+        for arg in func_def.parameters.args.iter() {
+            let mut param = Symbol::new(arg.parameter.name.id.clone(), SymType::VARIABLE);
+            param.range = Some(arg.range);
+            sym.borrow_mut().add_symbol_to_locals(odoo, param);
+        }
+        //visit body
         self.sym_stack.push(sym);
         self.visit_node(odoo, &func_def.body)?;
         self.sym_stack.pop();

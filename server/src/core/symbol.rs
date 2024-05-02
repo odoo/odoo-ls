@@ -521,6 +521,23 @@ impl Symbol {
         rc.clone()
     }
 
+    pub fn add_symbol_to_locals(&mut self, odoo: &mut SyncOdoo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
+        let symbol_name = symbol.name.clone();
+        if self.is_external {
+            symbol.is_external = true;
+        }
+        let symbol_range = symbol.range.clone();
+        let rc = Rc::new(RefCell::new(symbol));
+        let mut locked_symbol = rc.borrow_mut();
+        locked_symbol.weak_self = Some(Rc::downgrade(&rc));
+        locked_symbol.parent = match self.weak_self {
+            Some(ref weak_self) => Some(weak_self.clone()),
+            None => panic!("no weak_self set")
+        };
+        self.local_symbols.push(rc.clone());
+        rc.clone()
+    }
+
     pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();

@@ -1,4 +1,5 @@
-use ruff_python_ast::{Stmt, StmtTry, Identifier, Alias};
+use ruff_python_ast::visitor::Visitor;
+use ruff_python_ast::{Alias, Identifier, Stmt, StmtAssign, StmtTry};
 use ruff_text_size::TextRange;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -10,10 +11,13 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 
+use super::evaluation::Evaluation;
 use super::file_mgr::FileInfo;
+use super::python_utils::{self, unpack_assign};
 
 #[derive(Debug)]
 pub struct PythonValidator {
+    file_mode: bool,
     symbol: Rc<RefCell<Symbol>>,
     diagnostics: Vec<Diagnostic>,
     safe_imports: Vec<bool>,
@@ -22,12 +26,11 @@ pub struct PythonValidator {
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on any symbol containing code (file, function, class. Not variable, namespace).
 It will validate this node and run a validator on all subsymbol and dependencies.
-It will try to inference the return type of functions if it is not annotated;
-To achieve that, it will keep a pointer to the corresponding ast node. This pointer (unsafe in rust) is valid as long asµ
-the file_info.ast is not modified during the process, which should never occur. */
+It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
     pub fn new(symbol: Rc<RefCell<Symbol>>) -> Self {
         Self {
+            file_mode: true,
             symbol,
             diagnostics: Vec::new(),
             safe_imports: vec![false],
@@ -84,6 +87,7 @@ impl PythonValidator {
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymType::CLASS | SymType::FUNCTION => {
+                self.file_mode = false;
                 let file_info_rc = self.get_file_info(odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
@@ -166,6 +170,9 @@ impl PythonValidator {
                 },
                 Stmt::ImportFrom(i) => {
                     self._resolve_import(odoo, i.module.as_ref(), &i.names, i.level, &i.range);
+                },
+                Stmt::Assign(a) => {
+                    self.visit_assign(odoo, a);
                 }
                 _ => {
                     println!("Stmt not handled");
@@ -216,6 +223,19 @@ impl PythonValidator {
                         ))
                     }
                 }
+            }
+        }
+    }
+
+    fn visit_assign(&mut self, odoo: &mut SyncOdoo, assign: &StmtAssign) {
+        if self.file_mode {
+            return;
+        }
+        let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));
+        for a in assigns.iter() {
+            if let Some(expr) = &a.value {
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range);
+                self.diagnostics.extend(diags);
             }
         }
     }

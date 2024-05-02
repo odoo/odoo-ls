@@ -1,5 +1,7 @@
 use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
+use tower_lsp::lsp_types::Diagnostic;
+use weak_table::traits::WeakElement;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -163,8 +165,9 @@ impl Evaluation {
     // eval an ast expression that represent the evaluation of a symbol.
     // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on 'a'
     // max_infer must be the range of 'a'
-    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> Option<Evaluation> {
+    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
         let mut res = EvaluationSymbol::default();
+        let mut diagnostics = vec![];
         match ast {
             Expr::StringLiteral(expr) => {
                 Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
@@ -242,14 +245,12 @@ impl Evaluation {
                 //TODO implement Call
             },
             Expr::Attribute(expr) => {
-                let eval = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
+                diagnostics.extend(diags);
                 if eval.is_none() || eval.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
-                    return None;
+                    return (None, diagnostics);
                 }
                 let base = eval.unwrap().symbol.symbol.upgrade();
-                if base.is_none() {
-                    return None;
-                }
                 let base = base.unwrap();
                 let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false);
                 let attribute = base.upgrade().unwrap();
@@ -260,13 +261,13 @@ impl Evaluation {
                         res.symbol = Rc::downgrade(att);
                         res.instance = (**att).borrow().sym_type == SymType::VARIABLE;
                     }
-                    None => {return None;}
+                    None => {return (None, diagnostics);}
                 }
             },
             Expr::Name(expr) => {
                 let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(*max_infer));
                 if infered_sym.is_none() {
-                    return None;
+                    return (None, diagnostics);
                 }
                 res.symbol = Rc::downgrade(infered_sym.as_ref().unwrap());
                 let infered_sym = infered_sym.as_ref().unwrap().borrow();
@@ -274,14 +275,38 @@ impl Evaluation {
                 if infered_sym.evaluation.is_some() {
                     res.instance = infered_sym.evaluation.as_ref().unwrap().symbol.instance;
                 }
-
+            },
+            Expr::Subscript(sub) => {
+                let (eval_left, diags) = Evaluation::eval_from_ast(odoo, &sub.value, parent, max_infer);
+                diagnostics.extend(diags);
+                if eval_left.is_none() || eval_left.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
+                    return (None, diagnostics);
+                }
+                let base = eval_left.unwrap().symbol.symbol.upgrade();
+                let base = base.unwrap();
+                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false);
+                let base = base.upgrade().unwrap();
+                let base = base.borrow();
+                let get_item = base.get_symbol(&(vec![], vec![S!("__getitem__")]));
+                if let Some(get_item) = get_item {
+                    let get_item = get_item.borrow();
+                    if let Some(get_item_eval) = &get_item.evaluation {
+                        if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
+                            //TODO work on context 
+                            // let hook_result = hook(odoo, &get_item_eval.symbol, context);
+                            // if !hook_result.is_expired() {
+                                
+                            // }
+                        }
+                    }
+                }
             },
             _ => {}
         }
-        Some(Evaluation {
+        (Some(Evaluation {
             symbol: res,
             value: None,
-        })
+        }), diagnostics)
     }
 
 }

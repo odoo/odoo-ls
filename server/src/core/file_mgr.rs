@@ -1,6 +1,6 @@
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
-use tower_lsp::lsp_types::{Diagnostic, Position};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use std::{collections::HashMap, fs};
 use crate::core::odoo::SyncOdoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
@@ -58,6 +58,7 @@ impl FileInfo {
 //"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
     pub fn _build_ast(&mut self, content: &str, content_path: &str) {
         //let ast = ast::Suite::parse(&content, content_path);
+        let mut diagnostics = vec![];
         let ast = ruff_python_parser::parse(&content, Mode::Module);
         match ast {
             Ok(module) => {
@@ -72,11 +73,20 @@ impl FileInfo {
                 }
             },
             Err(err) => {
-                println!("unable to parse file at {} - {}", content_path, err);
+                diagnostics.push(Diagnostic::new(
+                    Range{ start: Position::new(err.location.start().to_u32(), 0),
+                        end: Position::new(err.location.end().to_u32(), 0)},
+                    Some(DiagnosticSeverity::ERROR),
+                    None,
+                    None,
+                    err.error.to_string(),
+                    None,
+                    None));
+                println!("unable to parse file at {} - {}", content_path, err.to_string());
             }
         };
         self.text_rope = Some(ropey::Rope::from(content));
-        self.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+        self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
     }
 
     pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {

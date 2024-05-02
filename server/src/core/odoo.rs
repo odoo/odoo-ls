@@ -587,7 +587,13 @@ impl SyncOdoo {
 
     pub fn get_file_symbol(&self, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let symbol = self.symbols.as_ref().unwrap().borrow();
-        symbol.get_symbol(&self.tree_from_path(&path).unwrap())
+        let tree = &self.tree_from_path(&path);
+        if let Ok(tree) = tree {
+            return symbol.get_symbol(tree);
+        } else {
+            println!("Path {} not found", path.to_str().expect("unable to stringify path"));
+            None
+        }
     }
 }
 

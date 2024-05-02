@@ -214,7 +214,7 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_ann_assign(&self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
+    fn _visit_ann_assign(&mut self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
         let assigns = match ann_assign_stmt.value.as_ref() {
             Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
@@ -224,9 +224,13 @@ impl PythonArchEval {
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
-                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range);
+                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range);
+                    variable.borrow_mut().evaluation = eval;
+                    self.diagnostics.extend(diags);
                 } else if assign.value.is_some() {
-                    variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range);
+                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range);
+                    variable.borrow_mut().evaluation = eval;
+                    self.diagnostics.extend(diags);
                 } else {
                     panic!("either value or annotation should exists");
                 }
@@ -248,16 +252,15 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_assign(&self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
+    fn _visit_assign(&mut self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
-            if assign.target.id.to_string() == "_TOKEN_NOT_ALLOWED" || assign.target.id.to_string() == "ffi" {
-                println!("here")
-            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
-                variable.borrow_mut().evaluation = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
+                variable.borrow_mut().evaluation = eval;
+                self.diagnostics.extend(diags);
                 let mut v_mut = variable.borrow_mut();
                 let mut sym = None;
                 if let Some(eval) = &v_mut.evaluation {

@@ -253,7 +253,7 @@ impl PythonArchEvalHooks {
         if cursor_sym.is_some() && cr.is_some() {
             let mut cr_mut = cr.as_mut().unwrap().borrow_mut();
 
-            cr_mut.evaluation = Some(Evaluation { 
+            cr_mut.evaluation = Some(Evaluation {
                 symbol: EvaluationSymbol{
                     symbol: Rc::downgrade(cursor_sym.as_ref().unwrap()),
                     context: HashMap::new(),
