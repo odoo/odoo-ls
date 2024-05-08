@@ -1,4 +1,4 @@
-use ruff_python_ast::Expr;
+use ruff_python_ast::{Expr, Operator};
 use ruff_text_size::TextRange;
 use tower_lsp::lsp_types::Diagnostic;
 use weak_table::traits::WeakElement;
@@ -57,7 +57,15 @@ pub struct EvaluationSymbol {
     pub instance: bool,
     pub context: Context,
     pub _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>,
+    pub factory: Option<Weak<RefCell<Symbol>>>,
     pub get_symbol_hook: Option<GetSymbolHook>,
+}
+
+pub struct AstEvaluationResult {
+    symbol: Rc<RefCell<Symbol>>,
+    effective_sym: Rc<RefCell<Symbol>>,
+    factory: Option<Weak<RefCell<Symbol>>,
+    context: Option<Context>,
 }
 
 impl Evaluation {
@@ -69,6 +77,7 @@ impl Evaluation {
                 instance: true,
                 context: HashMap::new(),
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: None
             },
             value: Some(EvaluationValue::LIST(values))
@@ -82,6 +91,7 @@ impl Evaluation {
                 instance: true,
                 context: HashMap::new(),
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: None
             },
             value: Some(EvaluationValue::TUPLE(values))
@@ -95,6 +105,7 @@ impl Evaluation {
                 instance: true,
                 context: HashMap::new(),
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: None
             },
             value: Some(EvaluationValue::DICT(values))
@@ -108,6 +119,7 @@ impl Evaluation {
                 instance: true,
                 context: HashMap::new(),
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: None
             },
             value: Some(EvaluationValue::CONSTANT(values))
@@ -148,6 +160,7 @@ impl Evaluation {
                 instance: instance,
                 context: HashMap::new(),
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: None
             },
             value: None,
@@ -162,10 +175,44 @@ impl Evaluation {
         eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_constant(odoo, expr.clone()));
     }
 
+    fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
+        let ast_evaluation = AstEvaluationResult::evaluate_ast(odoo, ast, parent, max_infer);
+    }
+}
+
+impl EvaluationSymbol {
+
+    pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
+        let sym = Rc::new(RefCell::new(symbol));
+        EvaluationSymbol {
+            symbol: Rc::downgrade(&sym),
+            instance: instance,
+            context: context,
+            _internal_hold_symbol: Some(sym),
+            factory: None,
+            get_symbol_hook: None
+        }
+    }
+
+    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> Weak<RefCell<Symbol>> {
+        if self.get_symbol_hook.is_some() {
+            let hook = self.get_symbol_hook.unwrap();
+            return hook(odoo, self, context);
+        }
+        self.symbol.clone()
+    }
+}
+
+impl AstEvaluationResult {
+
     // eval an ast expression that represent the evaluation of a symbol.
     // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on 'a'
     // max_infer must be the range of 'a'
-    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
+    /*
+    eval_from_ast evaluates a node, and return everything we can infer about it.
+
+     */
+    pub fn evaluate_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
         let mut res = EvaluationSymbol::default();
         let mut diagnostics = vec![];
         match ast {
@@ -301,6 +348,14 @@ impl Evaluation {
                     }
                 }
             },
+            Expr::BinOp(operator) => {
+                match operator.op {
+                    Operator::Add => {
+
+                    },
+                    _ => {}
+                }
+            }
             _ => {}
         }
         (Some(Evaluation {
@@ -309,26 +364,4 @@ impl Evaluation {
         }), diagnostics)
     }
 
-}
-
-impl EvaluationSymbol {
-
-    pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
-        let sym = Rc::new(RefCell::new(symbol));
-        EvaluationSymbol {
-            symbol: Rc::downgrade(&sym),
-            instance: instance,
-            context: context,
-            _internal_hold_symbol: Some(sym),
-            get_symbol_hook: None
-        }
-    }
-
-    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> Weak<RefCell<Symbol>> {
-        if self.get_symbol_hook.is_some() {
-            let hook = self.get_symbol_hook.unwrap();
-            return hook(odoo, self, context);
-        }
-        self.symbol.clone()
-    }
 }

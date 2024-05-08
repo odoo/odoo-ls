@@ -105,7 +105,6 @@ impl PythonValidator {
                 } else {
                     println!("no ast found on file info");
                 }
-                
             },
             _ => {panic!("Only File, function or class can be validated")}
         }

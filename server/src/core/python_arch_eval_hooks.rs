@@ -166,6 +166,7 @@ impl PythonArchEvalHooks {
                     context: context,
                     instance: true,
                     _internal_hold_symbol: None,
+                    factory: None,
                     get_symbol_hook: None
                     },
                 value: None
@@ -187,6 +188,7 @@ impl PythonArchEvalHooks {
                     context: HashMap::new(),
                     instance: true,
                     _internal_hold_symbol: Some(rc_list),
+                    factory: None,
                     get_symbol_hook: None
                 },
                 value: None,
@@ -259,6 +261,7 @@ impl PythonArchEvalHooks {
                     context: HashMap::new(),
                     instance: true,
                     _internal_hold_symbol: None,
+                    factory: None,
                     get_symbol_hook: Some(PythonArchEvalHooks::eval_test_cursor)
                 },
                 value: None
@@ -290,6 +293,7 @@ impl PythonArchEvalHooks {
                     context: context,
                     instance: true,
                     _internal_hold_symbol: None,
+                    factory: None,
                     get_symbol_hook: None
                 },
                 value: None
@@ -334,6 +338,7 @@ impl PythonArchEvalHooks {
                 context: HashMap::new(),
                 instance: true,
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: None
             },
             value: None
@@ -374,6 +379,7 @@ impl PythonArchEvalHooks {
                 context: HashMap::new(),
                 instance: true,
                 _internal_hold_symbol: None,
+                factory: None,
                 get_symbol_hook: Some(PythonArchEvalHooks::eval_relational)
             },
             value: None,
