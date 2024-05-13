@@ -61,13 +61,6 @@ pub struct EvaluationSymbol {
     pub get_symbol_hook: Option<GetSymbolHook>,
 }
 
-pub struct AstEvaluationResult {
-    symbol: Rc<RefCell<Symbol>>,
-    effective_sym: Rc<RefCell<Symbol>>,
-    factory: Option<Weak<RefCell<Symbol>>,
-    context: Option<Context>,
-}
-
 impl Evaluation {
 
     pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>) -> Evaluation {
@@ -175,45 +168,58 @@ impl Evaluation {
         eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_constant(odoo, expr.clone()));
     }
 
+    //Build an evaluation from an ast node that can be associated to a symbol
+    //For example: a = "5"
+    // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
     fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
-        let ast_evaluation = AstEvaluationResult::evaluate_ast(odoo, ast, parent, max_infer);
-    }
-}
-
-impl EvaluationSymbol {
-
-    pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
-        let sym = Rc::new(RefCell::new(symbol));
-        EvaluationSymbol {
-            symbol: Rc::downgrade(&sym),
-            instance: instance,
-            context: context,
-            _internal_hold_symbol: Some(sym),
-            factory: None,
-            get_symbol_hook: None
-        }
+        let analyze_result = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
+        return (analyze_result.0, analyze_result.3)
     }
 
-    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> Weak<RefCell<Symbol>> {
-        if self.get_symbol_hook.is_some() {
-            let hook = self.get_symbol_hook.unwrap();
-            return hook(odoo, self, context);
-        }
-        self.symbol.clone()
-    }
-}
 
-impl AstEvaluationResult {
-
-    // eval an ast expression that represent the evaluation of a symbol.
-    // For example, in a= 1+2, it will create the evaluation of 1+2 to be stored on 'a'
-    // max_infer must be the range of 'a'
     /*
-    eval_from_ast evaluates a node, and return everything we can infer about it.
+    analyze_ast will extract all known information about an ast:
+    result.0: the direct evaluation
+    result.1: the effective symbol that would be used if the program is running
+    result.2: the factory used to build the effective symbol
+    result.3: the context after the evaluation
+    result.4: the diagnostics that code is generating.
+    Example:
+        --------
+        context
+        --------
+        A| class Char():
+        B|     def __get__(self, instance, owner=None):
+        C|         return ""
+        D| MyChar = Char
+        E| class Test():
+        G|     a = MyChar()
+        H| test = Test()
+        --------
+        result of analyze_ast("test.a") (with adapted parameters)
+        --------
+        symbol/evaluation: a (at G)
+        effective_sym: str
+        factory: Char (#TODO not MyChar?)
+        context: {}
+        diagnostics: vec![]
 
+        this is used in following features:
+        ast build -> symbol, diagnostics
+        Hover -> effective_sym (will follow it to display type)
+            -> factory (to show how it has been built)
+        Definition -> symbol
+        Autocompletion -> effective_sym
      */
-    pub fn evaluate_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
+    pub fn analyze_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> 
+            (Option<Evaluation>,  //evaluation (symbol)
+            Option<Weak<RefCell<Symbol>>>, //effective_sym
+            Option<Weak<RefCell<Symbol>>>, //factory
+            Option<Context>, //context
+            Vec<Diagnostic>) {
         let mut res = EvaluationSymbol::default();
+        let mut effective_sym = None;
+        let mut factory = None;
         let mut diagnostics = vec![];
         match ast {
             Expr::StringLiteral(expr) => {
@@ -295,7 +301,7 @@ impl AstEvaluationResult {
                 let (eval, diags) = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
                 diagnostics.extend(diags);
                 if eval.is_none() || eval.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
-                    return (None, diagnostics);
+                    return (None, None, None, None, diagnostics);
                 }
                 let base = eval.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
@@ -308,13 +314,13 @@ impl AstEvaluationResult {
                         res.symbol = Rc::downgrade(att);
                         res.instance = (**att).borrow().sym_type == SymType::VARIABLE;
                     }
-                    None => {return (None, diagnostics);}
+                    None => {return (None, None, None, None, diagnostics);}
                 }
             },
             Expr::Name(expr) => {
                 let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(*max_infer));
                 if infered_sym.is_none() {
-                    return (None, diagnostics);
+                    return (None, None, None, None, diagnostics);
                 }
                 res.symbol = Rc::downgrade(infered_sym.as_ref().unwrap());
                 let infered_sym = infered_sym.as_ref().unwrap().borrow();
@@ -327,7 +333,7 @@ impl AstEvaluationResult {
                 let (eval_left, diags) = Evaluation::eval_from_ast(odoo, &sub.value, parent, max_infer);
                 diagnostics.extend(diags);
                 if eval_left.is_none() || eval_left.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
-                    return (None, diagnostics);
+                    return (None, None, None ,None, diagnostics);
                 }
                 let base = eval_left.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
@@ -363,5 +369,27 @@ impl AstEvaluationResult {
             value: None,
         }), diagnostics)
     }
+}
 
+impl EvaluationSymbol {
+
+    pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
+        let sym = Rc::new(RefCell::new(symbol));
+        EvaluationSymbol {
+            symbol: Rc::downgrade(&sym),
+            instance: instance,
+            context: context,
+            _internal_hold_symbol: Some(sym),
+            factory: None,
+            get_symbol_hook: None
+        }
+    }
+
+    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> Weak<RefCell<Symbol>> {
+        if self.get_symbol_hook.is_some() {
+            let hook = self.get_symbol_hook.unwrap();
+            return hook(odoo, self, context);
+        }
+        self.symbol.clone()
+    }
 }
