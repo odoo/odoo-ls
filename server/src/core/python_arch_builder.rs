@@ -118,7 +118,7 @@ impl PythonArchBuilder {
                         if variable.evaluation.is_some() {
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated_type = &evaluation.symbol;
-                            let evaluated_type = evaluated_type.get_symbol(odoo, &mut None).upgrade();
+                            let evaluated_type = evaluated_type.get_symbol(odoo, &mut None).0.upgrade();
                             if evaluated_type.is_some() {
                                 let evaluated_type = evaluated_type.unwrap();
                                 self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
@@ -261,7 +261,7 @@ impl PythonArchBuilder {
                             // as symbols to not raise any error.
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated = &evaluation.symbol;
-                            let evaluated = evaluated.get_symbol(odoo, &mut None).upgrade();
+                            let evaluated = evaluated.get_symbol(odoo, &mut None).0.upgrade();
                             if evaluated.is_some() {
                                 let evaluated = evaluated.unwrap();
                                 let evaluated = evaluated.borrow();

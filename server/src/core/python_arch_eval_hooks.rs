@@ -136,7 +136,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_take_parent(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>
+    fn eval_get_take_parent(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
     {
         todo!()
     }
@@ -220,26 +220,26 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_item(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>
+    fn eval_get_item(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
     {
         //TODO after models
         todo!()
     }
 
-    fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>
+    fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]));
             match test_cursor_sym {
                 Some(test_cursor_sym) => {
-                    return Rc::downgrade(&test_cursor_sym);
+                    return (Rc::downgrade(&test_cursor_sym), true);
                 },
                 None => {
-                    return evaluation_sym.symbol.clone();
+                    return (evaluation_sym.symbol.clone(), true); //TODO really true?
                 }
             }
         }
-        return evaluation_sym.symbol.clone();
+        return (evaluation_sym.symbol.clone(), true); //TODO really true?
     }
 
     fn on_env_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
@@ -302,7 +302,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>
+    fn eval_get(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() {
             let parent_instance = context.as_ref().unwrap().get(&S!("parent_instance"));
@@ -310,14 +310,14 @@ impl PythonArchEvalHooks {
                 match parent_instance.unwrap() {
                     ContextValue::BOOLEAN(b) => {
                         if !*b {
-                            return Weak::new();
+                            return (Weak::new(), false);
                         }
                     },
                     _ => {}
                 }
             }
         }
-        evaluation_sym.symbol.clone()
+        (evaluation_sym.symbol.clone(), evaluation_sym.instance)
     }
 
     fn _update_get_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, tree: Tree) {
@@ -354,18 +354,18 @@ impl PythonArchEvalHooks {
         get_sym.as_ref().unwrap().borrow_mut().evaluation.as_mut().unwrap().symbol.get_symbol_hook = Some(PythonArchEvalHooks::eval_get);
     }
 
-    fn eval_relational(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>
+    fn eval_relational(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_none() {
-            return evaluation_sym.symbol.clone();
+            return (evaluation_sym.symbol.clone(), evaluation_sym.instance);
         }
         let comodel = context.as_ref().unwrap().get(&S!("comodel"));
         if comodel.is_none() {
-            return evaluation_sym.symbol.clone();
+            return (evaluation_sym.symbol.clone(), evaluation_sym.instance);
         }
         let comodel = comodel.unwrap().as_string();
         //TODO let comodel_sym = odoo.models.get(comodel);
-        Weak::new()
+       (Weak::new(), false)
     }
 
     fn _update_get_eval_relational(symbol: Rc<RefCell<Symbol>>) {

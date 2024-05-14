@@ -49,7 +49,7 @@ impl ContextValue {
 
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (odoo: &mut SyncOdoo, eval: &EvaluationSymbol, context: &mut Option<Context>) -> Weak<RefCell<Symbol>>;
+type GetSymbolHook = fn (odoo: &mut SyncOdoo, eval: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool);
 
 #[derive(Debug, Default)]
 pub struct EvaluationSymbol {
@@ -123,7 +123,7 @@ impl Evaluation {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
         } else {
-            let symbol = self.symbol.get_symbol(odoo, context);
+            let symbol = self.symbol.get_symbol(odoo, context).0;
             let symbol = symbol.upgrade();
             if symbol.is_some() {
                 let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false);
@@ -171,9 +171,32 @@ impl Evaluation {
     //Build an evaluation from an ast node that can be associated to a symbol
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
-    fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
         let analyze_result = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
-        return (analyze_result.0, analyze_result.3)
+        return (analyze_result.0, analyze_result.4)
+    }
+
+    /* Given an Expr, try to return the represented String. None if it can't be achieved */
+    fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<String>, Vec<Diagnostic>) {
+        let value = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
+        if value.0.is_some() {
+            let eval = value.0.unwrap();
+            let v = eval.follow_ref_and_get_value(odoo, &mut None);
+            if let Some(v) = v {
+                match v {
+                    EvaluationValue::CONSTANT(v) => {
+                        match v {
+                            Expr::StringLiteral(s) => {
+                                return (Some(s.value.to_string()), value.4);
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
+        (None, value.4)
     }
 
 
@@ -221,6 +244,9 @@ impl Evaluation {
         let mut effective_sym = None;
         let mut factory = None;
         let mut diagnostics = vec![];
+        let mut context : Context = HashMap::from([
+            (S!(""), ContextValue::BOOLEAN(false))
+        ]);
         match ast {
             Expr::StringLiteral(expr) => {
                 Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
@@ -330,7 +356,7 @@ impl Evaluation {
                 }
             },
             Expr::Subscript(sub) => {
-                let (eval_left, diags) = Evaluation::eval_from_ast(odoo, &sub.value, parent, max_infer);
+                let (eval_left, diags) = Evaluation::eval_from_ast(odoo, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
                 if eval_left.is_none() || eval_left.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
                     return (None, None, None ,None, diagnostics);
@@ -339,17 +365,25 @@ impl Evaluation {
                 let base = base.unwrap();
                 let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false);
                 let base = base.upgrade().unwrap();
+                let value = Evaluation::expr_to_str(odoo, &sub.value, parent.clone(), max_infer);
                 let base = base.borrow();
-                let get_item = base.get_symbol(&(vec![], vec![S!("__getitem__")]));
-                if let Some(get_item) = get_item {
-                    let get_item = get_item.borrow();
-                    if let Some(get_item_eval) = &get_item.evaluation {
-                        if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
-                            //TODO work on context 
-                            // let hook_result = hook(odoo, &get_item_eval.symbol, context);
-                            // if !hook_result.is_expired() {
-                                
-                            // }
+                diagnostics.extend(value.1);
+                if let Some(value) = value.0 {
+                    let get_item = base.get_symbol(&(vec![], vec![S!("__getitem__")]));
+                    if let Some(get_item) = get_item {
+                        let get_item = get_item.borrow();
+                        if let Some(get_item_eval) = &get_item.evaluation {
+                            if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
+                                context.insert(S!("args"), ContextValue::STRING(value));
+                                let mut ctxt = Some(context);
+                                let hook_result = hook(odoo, &get_item_eval.symbol, &mut ctxt);
+                                if !hook_result.0.is_expired() {
+                                    res.symbol = hook_result.0;
+                                    res.instance = hook_result.1;
+                                }
+                                context = ctxt.unwrap();
+                                context.remove(&S!("args"));
+                            }
                         }
                     }
                 }
@@ -357,7 +391,7 @@ impl Evaluation {
             Expr::BinOp(operator) => {
                 match operator.op {
                     Operator::Add => {
-
+                         
                     },
                     _ => {}
                 }
@@ -367,7 +401,11 @@ impl Evaluation {
         (Some(Evaluation {
             symbol: res,
             value: None,
-        }), diagnostics)
+        }),
+        effective_sym,
+        factory,
+        Some(context),
+        diagnostics)
     }
 }
 
@@ -385,11 +423,11 @@ impl EvaluationSymbol {
         }
     }
 
-    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> Weak<RefCell<Symbol>> {
+    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool) {
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
             return hook(odoo, self, context);
         }
-        self.symbol.clone()
+        (self.symbol.clone(), self.instance)
     }
 }

@@ -437,8 +437,8 @@ impl Symbol {
     pub fn next_ref(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<Weak<RefCell<Symbol>>> {
         if SymType::is_instance(&self.sym_type) &&
             self.evaluation.is_some() &&
-            self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).clone());
+            self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).0.upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).0.clone());
         }
         return None;
     }
