@@ -85,11 +85,11 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _load_class_inherit(&self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
+    fn _load_class_inherit(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
         let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]));
         if let Some(_inherit) = _inherit {
             if let Some(eval) = _inherit.borrow().evaluation.as_ref() {
-                let eval = eval.follow_ref_and_get_value(odoo, &mut None);
+                let eval = eval.follow_ref_and_get_value(odoo, &mut None, &mut self.diagnostics);
                 if let Some(eval) = eval.as_ref() {
                     match eval {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
@@ -122,11 +122,14 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _evaluate_name(&self, odoo: &mut SyncOdoo, symbol: &Symbol) -> String {
+    fn _evaluate_name(&mut self, odoo: &mut SyncOdoo, symbol: &Symbol) -> String {
+        if symbol.name == "ResCompany" {
+            println!("here")
+        }
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]));
         if let Some(_name) = _name {
             if let Some(eval) = _name.borrow().evaluation.as_ref() {
-                let eval = eval.follow_ref_and_get_value(odoo, &mut None);
+                let eval = eval.follow_ref_and_get_value(odoo, &mut None, &mut self.diagnostics);
                 if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = eval {
                     return S!(s.value.to_str());
                 }
@@ -140,7 +143,7 @@ impl PythonOdooBuilder {
         symbol.name.clone()
     }
 
-    fn _load_class_name(&self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
+    fn _load_class_name(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
         symbol._model.as_mut().unwrap().name = self._evaluate_name(odoo, symbol);
         if symbol._model.as_ref().unwrap().name.is_empty() {
             symbol._model = None;
@@ -151,11 +154,11 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _load_class_inherits(&self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
+    fn _load_class_inherits(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
         let _inherits = symbol.get_symbol(&(vec![], vec![S!("_inherits")]));
         if let Some(_inherits) = _inherits {
             if let Some(eval) = _inherits.borrow().evaluation.as_ref() {
-                let eval = eval.follow_ref_and_get_value(odoo, &mut None);
+                let eval = eval.follow_ref_and_get_value(odoo, &mut None, &mut self.diagnostics);
                 symbol._model.as_mut().unwrap().inherits.clear();
                 if let Some(EvaluationValue::DICT(d)) = eval {
                     for (k, v) in d.iter() {
@@ -172,20 +175,20 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _get_attribute(&self, odoo: &mut SyncOdoo, symbol: &mut Symbol, attr: &String) -> Option<EvaluationValue> {
-        let attr_sym = symbol.get_member_symbol(odoo, attr, None, false, true, false);
+    fn _get_attribute(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol, attr: &String) -> Option<EvaluationValue> {
+        let attr_sym = symbol.get_member_symbol(odoo, attr, None, false, true, false, &mut self.diagnostics);
         if attr_sym.len() == 0 {
             return None;
         }
         let attr_sym = attr_sym[0].clone();
         if let Some(eval) = attr_sym.borrow().evaluation.as_ref() {
-            let eval = eval.follow_ref_and_get_value(odoo, &mut None);
+            let eval = eval.follow_ref_and_get_value(odoo, &mut None, &mut self.diagnostics);
             return eval;
         }
         None
     }
 
-    fn _load_class_attributes(&self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
+    fn _load_class_attributes(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
         let descr = self._get_attribute(odoo, symbol, &"_description".to_string());
         if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = descr {
             symbol._model.as_mut().unwrap().description = S!(s.value.to_str());
@@ -274,9 +277,12 @@ impl PythonOdooBuilder {
     }
 
     /* true if the symbol inherit from odoo.models.BaseModel */
-    fn test_symbol_is_model(&self, odoo: &mut SyncOdoo, rc_symbol: &Rc<RefCell<Symbol>>, symbol: &mut Symbol) -> bool {
+    fn test_symbol_is_model(&mut self, odoo: &mut SyncOdoo, rc_symbol: &Rc<RefCell<Symbol>>, symbol: &mut Symbol) -> bool {
         if symbol._class.is_none() {
             panic!("Symbol has no class Data. This should not happen");
+        }
+        if symbol.name == "ResCompany" {
+            println!("here");
         }
         let base_model = odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]));
         let model = odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("Model")]));
@@ -301,7 +307,7 @@ impl PythonOdooBuilder {
             let register_eval = &register.borrow().evaluation;
             if register_eval.is_some() {
                 let eval = register_eval.as_ref().unwrap();
-                let value = eval.follow_ref_and_get_value(odoo, &mut None);
+                let value = eval.follow_ref_and_get_value(odoo, &mut None, &mut self.diagnostics);
                 if value.is_some() {
                     let value = value.unwrap();
                     if let EvaluationValue::CONSTANT(Expr::BooleanLiteral(b)) = value {
@@ -313,6 +319,6 @@ impl PythonOdooBuilder {
             }
             return true;
         }
-        false
+        true
     }
 }

@@ -7,6 +7,7 @@ use crate::core::messages::{Msg, MsgDiagnostic};
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::constants::*;
+use ruff_text_size::TextRange;
 
 #[derive(Debug)]
 pub struct FileInfo {
@@ -147,6 +148,12 @@ impl FileMgr {
             files: HashMap::new(),
             workspace_folder: vec![],
         }
+    }
+
+    pub fn textRange_to_temporary_Range(range: &TextRange) -> Range {
+        Range::new(
+            Position::new(range.start().to_u32(), 0),
+            Position::new(range.end().to_u32(), 0))
     }
 
     pub fn get_file_info(&self, uri: &str) -> Rc<RefCell<FileInfo>> {

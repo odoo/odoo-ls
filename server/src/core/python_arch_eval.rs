@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
+use crate::core::file_mgr::FileMgr;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
@@ -143,7 +144,7 @@ impl PythonArchEval {
             }
             if _import_result.found {
                 //resolve the symbol and build necessary evaluations
-                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false);
+                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, &mut self.diagnostics);
                 let mut old_ref: Option<Weak<RefCell<Symbol>>> = None;
                 let mut arc_sym = _sym.upgrade().unwrap();
                 let mut sym = arc_sym.borrow_mut();
@@ -157,7 +158,7 @@ impl PythonArchEval {
                             odoo.remove_from_rebuild_arch_eval(&arc_file_sym);
                             let mut builder = PythonArchEval::new(arc_file_sym);
                             builder.eval_arch(odoo);
-                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false);
+                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, &mut self.diagnostics);
                             arc_sym = _sym.upgrade().unwrap();
                             sym = arc_sym.borrow_mut();
                         } else {
@@ -311,7 +312,7 @@ impl PythonArchEval {
                 continue;
             }
             let iter_element = iter_element.unwrap();
-            let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false).0;
+            let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false, &mut self.diagnostics).0;
             let mut previous_element = iter_element.clone();
             let mut found: bool = true;
             let mut compiled: bool = false;
@@ -323,13 +324,13 @@ impl PythonArchEval {
                     compiled = true;
                 }
                 previous_element = iter_element.clone();
-                let next_iter_element = iter_up.borrow().get_member_symbol(odoo, &base_element.to_string(), None, false, true, false);
+                let next_iter_element = iter_up.borrow().get_member_symbol(odoo, &base_element.to_string(), None, false, true, false, &mut self.diagnostics);
                 if next_iter_element.len() == 0 {
                     found = false;
                     break;
                 }
                 let iter_element_rc = next_iter_element.first().unwrap();
-                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, &mut None, false).0;
+                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, &mut None, false, &mut self.diagnostics).0;
             }
             if compiled {
                 continue;
@@ -348,6 +349,9 @@ impl PythonArchEval {
                     None,
                     None,
                 ));
+            } else {
+                symbol.borrow_mut().add_dependency(&mut iter_element.upgrade().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                symbol.borrow_mut()._class.as_mut().unwrap().bases.insert(iter_element.upgrade().unwrap());
             }
         }
     }
@@ -387,8 +391,32 @@ impl PythonArchEval {
         if variable.is_none() {
             panic!("Function symbol not found");
         }
-        variable.as_ref().unwrap().borrow_mut().ast_indexes = Some(self.ast_indexes.clone());
-        self.sym_stack.push(variable.unwrap());
+        let variable = variable.unwrap();
+        variable.borrow_mut().ast_indexes = Some(self.ast_indexes.clone());
+        {
+            let inner_func = &variable.borrow()._function;
+            if !inner_func.as_ref().unwrap().is_static {
+                if self.sym_stack.last().unwrap().borrow().sym_type == SymType::CLASS {
+                    if func_stmt.parameters.args.len() == 0 || variable.borrow().local_symbols.len() == 0 {
+                        // self.diagnostics.push(Diagnostic::new(
+                        //     FileMgr::textRange_to_temporary_Range(&func_stmt.range),
+                        //     Some(DiagnosticSeverity::ERROR),
+                        //     None,
+                        //     None,
+                        //     S!("Non-static method should have at least one parameter"),
+                        //     None,
+                        //     None
+                        // ))
+                    } else {
+                        let var = variable.borrow();
+                        let first_param = var.local_symbols.first().unwrap();
+                        first_param.borrow_mut().evaluation = Some(Evaluation::eval_from_symbol(self.sym_stack.last().unwrap()));
+                        first_param.borrow_mut().evaluation.as_mut().unwrap().symbol.instance = true;
+                    }
+                }
+            }
+        }
+        self.sym_stack.push(variable);
         for (index, stmt) in func_stmt.body.iter().enumerate() {
             //we don't want to evaluate functions here, but in validator. We must only assign ast indexes
             match stmt {

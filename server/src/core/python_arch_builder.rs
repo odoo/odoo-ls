@@ -58,6 +58,7 @@ impl PythonArchBuilder {
         drop(symbol);
         let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, path.as_str(), None, None); //create ast
         let mut file_info = (*file_info).borrow_mut();
+        file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         if file_info.ast.is_some() {
             self.visit_node(odoo, &file_info.ast.as_ref().unwrap())?;
             self._resolve_all_symbols(odoo);
@@ -70,7 +71,7 @@ impl PythonArchBuilder {
         Ok(())
     }
 
-    fn create_local_symbols_from_import_stmt(&self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -94,8 +95,8 @@ impl PythonArchBuilder {
                 let mut name_filter: Vec<String> = vec![];
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
                     let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
-                    let all = Symbol::follow_ref(all, odoo, &mut None, false).0;
-                    if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() || 
+                    let all = Symbol::follow_ref(all, odoo, &mut None, false, &mut self.diagnostics).0;
+                    if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() ||
                         !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
                             println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
                     } else {
@@ -118,7 +119,7 @@ impl PythonArchBuilder {
                         if variable.evaluation.is_some() {
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated_type = &evaluation.symbol;
-                            let evaluated_type = evaluated_type.get_symbol(odoo, &mut None).0.upgrade();
+                            let evaluated_type = evaluated_type.get_symbol(odoo, &mut None, &mut self.diagnostics).0.upgrade();
                             if evaluated_type.is_some() {
                                 let evaluated_type = evaluated_type.unwrap();
                                 self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
@@ -261,7 +262,7 @@ impl PythonArchBuilder {
                             // as symbols to not raise any error.
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated = &evaluation.symbol;
-                            let evaluated = evaluated.get_symbol(odoo, &mut None).0.upgrade();
+                            let evaluated = evaluated.get_symbol(odoo, &mut None, &mut self.diagnostics).0.upgrade();
                             if evaluated.is_some() {
                                 let evaluated = evaluated.unwrap();
                                 let evaluated = evaluated.borrow();

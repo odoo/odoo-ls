@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::vec;
+use tower_lsp::lsp_types::Diagnostic;
 
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
@@ -434,21 +435,21 @@ impl Symbol {
         return None;
     }
 
-    pub fn next_ref(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn next_ref(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<Weak<RefCell<Symbol>>> {
         if SymType::is_instance(&self.sym_type) &&
             self.evaluation.is_some() &&
-            self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).0.upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context).0.clone());
+            self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context, diagnostics).0.upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context, diagnostics).0.clone());
         }
         return None;
     }
 
-    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
         //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut sym = Rc::downgrade(&symbol);
         let mut _sym_upgraded = sym.upgrade().unwrap();
         let mut _sym = symbol.borrow();
-        let mut next_ref = _sym.next_ref(odoo, context);
+        let mut next_ref = _sym.next_ref(odoo, context, diagnostics);
         let can_eval_external = !_sym.is_external;
         let mut instance = SymType::is_instance(&_sym.sym_type);
         while next_ref.is_some() {
@@ -478,7 +479,7 @@ impl Symbol {
                     None => {}
                 }
             }
-            next_ref = _sym.next_ref(odoo, context);
+            next_ref = _sym.next_ref(odoo, context, diagnostics);
         }
         return (sym, instance)
     }
@@ -694,7 +695,7 @@ impl Symbol {
         if selected.is_none() && position.is_some() {
             let position = position.unwrap();
             for local_symbol in on_symbol.borrow().local_symbols.iter() {
-                if local_symbol.borrow_mut().range.unwrap().start() < position.start() {
+                if local_symbol.borrow().name.eq(name) && local_symbol.borrow_mut().range.unwrap().start() < position.start() {
                     if selected.is_none() || selected.as_ref().unwrap().borrow().range.unwrap().start() < local_symbol.borrow_mut().range.unwrap().start() {
                         selected = Some(local_symbol.clone());
                     }
@@ -717,7 +718,7 @@ impl Symbol {
         if not all, it will return the first found. If all, the all found symbols are returned, but the first one
         is the one that is overriding others.
         :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, odoo: &mut SyncOdoo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_local: bool, prevent_comodel: bool, all: bool) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_member_symbol(&self, odoo: &mut SyncOdoo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_local: bool, prevent_comodel: bool, all: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         if self.module_symbols.contains_key(name) {
             if all {
@@ -738,16 +739,31 @@ impl Symbol {
         if self._model.is_some() && !prevent_comodel {
             let model = odoo.models.get(&self._model.as_ref().unwrap().name);
             if let Some(model) = model {
-                let symbols = model.clone().borrow().get_symbols(odoo, from_module.unwrap_or(self.get_module_sym().expect("unable to find module")));
+                let symbols = model.clone().borrow().get_symbols(odoo, from_module.clone().unwrap_or(self.get_module_sym().expect("unable to find module")));
                 for sym in symbols {
                     if Rc::ptr_eq(&sym, &self.get_rc().unwrap()) {
                         continue;
                     }
-                    let attribut = sym.borrow().get_member_symbol(odoo, name, None, false, true, all);
+                    let attribut = sym.borrow().get_member_symbol(odoo, name, None, false, true, all, diagnostics);
                     if all {
                         result.extend(attribut);
                     } else {
                         return attribut;
+                    }
+                }
+            }
+        }
+        if !all && result.len() != 0 {
+            return result;
+        }
+        if self._class.is_some() {
+            for base in self._class.as_ref().unwrap().bases.iter() {
+                let s = base.borrow().get_member_symbol(odoo, name, from_module.clone(), prevent_local, prevent_comodel, all, diagnostics);
+                if s.len() != 0 {
+                    if all {
+                        result.extend(s);
+                    } else {
+                        return s;
                     }
                 }
             }

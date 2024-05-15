@@ -49,7 +49,7 @@ impl ContextValue {
 
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (odoo: &mut SyncOdoo, eval: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool);
+type GetSymbolHook = fn (odoo: &mut SyncOdoo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool);
 
 #[derive(Debug, Default)]
 pub struct EvaluationSymbol {
@@ -119,14 +119,14 @@ impl Evaluation {
         }
     }
 
-    pub fn follow_ref_and_get_value(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>) -> Option<EvaluationValue> {
+    pub fn follow_ref_and_get_value(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
         } else {
-            let symbol = self.symbol.get_symbol(odoo, context).0;
+            let symbol = self.symbol.get_symbol(odoo, context, diagnostics).0;
             let symbol = symbol.upgrade();
             if symbol.is_some() {
-                let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false);
+                let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false, diagnostics);
                 let symbol = symbol.0.upgrade();
                 if symbol.is_some() {
                     let symbol = symbol.unwrap();
@@ -177,11 +177,11 @@ impl Evaluation {
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<String>, Vec<Diagnostic>) {
+    fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let value = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
         if value.0.is_some() {
             let eval = value.0.unwrap();
-            let v = eval.follow_ref_and_get_value(odoo, &mut None);
+            let v = eval.follow_ref_and_get_value(odoo, &mut None, diagnostics);
             if let Some(v) = v {
                 match v {
                     EvaluationValue::CONSTANT(v) => {
@@ -247,6 +247,7 @@ impl Evaluation {
         let mut context : Context = HashMap::from([
             (S!(""), ContextValue::BOOLEAN(false))
         ]);
+        let module: Option<Rc<RefCell<Symbol>>> = parent.borrow().get_module_sym();
         match ast {
             Expr::StringLiteral(expr) => {
                 Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
@@ -331,17 +332,15 @@ impl Evaluation {
                 }
                 let base = eval.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false);
+                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, &mut diagnostics);
                 let attribute = base.upgrade().unwrap();
                 let attribute = (*attribute).borrow();
-                let attribute = attribute.symbols.get(expr.attr.as_str());
-                match attribute {
-                    Some(att) => {
-                        res.symbol = Rc::downgrade(att);
-                        res.instance = (**att).borrow().sym_type == SymType::VARIABLE;
-                    }
-                    None => {return (None, None, None, None, diagnostics);}
+                let attribute = attribute.get_member_symbol(odoo, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
+                if attribute.len() == 0 {
+                    return (None, None, None, None, diagnostics);
                 }
+                res.symbol = Rc::downgrade(attribute.first().unwrap());
+                res.instance = (**attribute.first().unwrap()).borrow().sym_type == SymType::VARIABLE;
             },
             Expr::Name(expr) => {
                 let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(*max_infer));
@@ -363,9 +362,9 @@ impl Evaluation {
                 }
                 let base = eval_left.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false);
+                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, &mut diagnostics);
                 let base = base.upgrade().unwrap();
-                let value = Evaluation::expr_to_str(odoo, &sub.value, parent.clone(), max_infer);
+                let value = Evaluation::expr_to_str(odoo, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 let base = base.borrow();
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
@@ -376,7 +375,7 @@ impl Evaluation {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
                                 context.insert(S!("args"), ContextValue::STRING(value));
                                 let mut ctxt = Some(context);
-                                let hook_result = hook(odoo, &get_item_eval.symbol, &mut ctxt);
+                                let hook_result = hook(odoo, &get_item_eval.symbol, &mut ctxt, &mut diagnostics);
                                 if !hook_result.0.is_expired() {
                                     res.symbol = hook_result.0;
                                     res.instance = hook_result.1;
@@ -423,10 +422,10 @@ impl EvaluationSymbol {
         }
     }
 
-    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
-            return hook(odoo, self, context);
+            return hook(odoo, self, context, diagnostics);
         }
         (self.symbol.clone(), self.instance)
     }

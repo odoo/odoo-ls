@@ -233,6 +233,13 @@ impl PythonValidator {
         let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
+                if let Some(file) = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true) {
+                    if file.upgrade().unwrap().borrow().paths[0].contains("account_lock")
+                    && file.upgrade().unwrap().borrow().paths[0].contains("models")
+                    && file.upgrade().unwrap().borrow().paths[0].contains("res_company.py") {
+                        println!("here");
+                    }
+                }
                 let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range);
                 self.diagnostics.extend(diags);
             }

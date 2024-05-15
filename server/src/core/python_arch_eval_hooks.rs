@@ -2,6 +2,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::cell::RefCell;
+use tower_lsp::lsp_types::Diagnostic;
+use tower_lsp::lsp_types::DiagnosticSeverity;
+use tower_lsp::lsp_types::Position;
+use tower_lsp::lsp_types::Range;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbol::Symbol;
@@ -20,7 +24,7 @@ impl PythonArchEvalHooks {
         let tree = symbol.borrow().get_tree();
         let name = symbol.borrow().name.clone();
         match name.as_str() {
-            "model" => {
+            "models" => {
                 if tree == (vec![S!("odoo"), S!("models")], vec!()) {
                     let base_model = symbol.borrow().get_symbol(&(vec![], vec![S!("BaseModel")]));
                     if base_model.is_some() {
@@ -136,7 +140,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_take_parent(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get_take_parent(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         todo!()
     }
@@ -220,13 +224,30 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_item(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get_item(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
-        //TODO after models
+        if let Some(context) = context {
+            let arg = context.get(&S!("args"));
+            if let Some(arg) = arg {
+                match arg {
+                    ContextValue::STRING(s) => {
+
+                    }
+                    _ => {
+                        //NOT A STRING
+                    }
+                }
+            }
+        }
+        let sym = evaluation_sym.symbol.upgrade();
+        if let Some(sym) = sym {
+            let range = Range::new(Position::new(sym.borrow().range.unwrap().start().to_u32(), 0), Position::new(sym.borrow().range.unwrap().end().to_u32(), 0));
+            diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("Here there is a subscript")));
+        }
         todo!()
     }
 
-    fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]));
@@ -302,7 +323,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() {
             let parent_instance = context.as_ref().unwrap().get(&S!("parent_instance"));
@@ -354,7 +375,7 @@ impl PythonArchEvalHooks {
         get_sym.as_ref().unwrap().borrow_mut().evaluation.as_mut().unwrap().symbol.get_symbol_hook = Some(PythonArchEvalHooks::eval_get);
     }
 
-    fn eval_relational(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_relational(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_none() {
             return (evaluation_sym.symbol.clone(), evaluation_sym.instance);
