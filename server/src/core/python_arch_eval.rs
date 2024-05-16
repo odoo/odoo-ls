@@ -144,7 +144,7 @@ impl PythonArchEval {
             }
             if _import_result.found {
                 //resolve the symbol and build necessary evaluations
-                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, &mut self.diagnostics);
+                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, false, &mut self.diagnostics);
                 let mut old_ref: Option<Weak<RefCell<Symbol>>> = None;
                 let mut arc_sym = _sym.upgrade().unwrap();
                 let mut sym = arc_sym.borrow_mut();
@@ -158,7 +158,7 @@ impl PythonArchEval {
                             odoo.remove_from_rebuild_arch_eval(&arc_file_sym);
                             let mut builder = PythonArchEval::new(arc_file_sym);
                             builder.eval_arch(odoo);
-                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, &mut self.diagnostics);
+                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, false, &mut self.diagnostics);
                             arc_sym = _sym.upgrade().unwrap();
                             sym = arc_sym.borrow_mut();
                         } else {
@@ -312,7 +312,7 @@ impl PythonArchEval {
                 continue;
             }
             let iter_element = iter_element.unwrap();
-            let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false, &mut self.diagnostics).0;
+            let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false, false, &mut self.diagnostics).0;
             let mut previous_element = iter_element.clone();
             let mut found: bool = true;
             let mut compiled: bool = false;
@@ -330,7 +330,7 @@ impl PythonArchEval {
                     break;
                 }
                 let iter_element_rc = next_iter_element.first().unwrap();
-                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, &mut None, false, &mut self.diagnostics).0;
+                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, &mut None, false, false, &mut self.diagnostics).0;
             }
             if compiled {
                 continue;

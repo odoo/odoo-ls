@@ -444,7 +444,7 @@ impl Symbol {
         return None;
     }
 
-    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
         //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut sym = Rc::downgrade(&symbol);
         let mut _sym_upgraded = sym.upgrade().unwrap();
@@ -458,6 +458,9 @@ impl Symbol {
                 context.as_mut().unwrap().extend(_sym.evaluation.as_ref().unwrap().symbol.context.clone());
             }
             if stop_on_type && ! instance && !_sym.is_import_variable {
+                return (sym, instance)
+            }
+            if stop_on_value && _sym.evaluation.as_ref().unwrap().value.is_some() {
                 return (sym, instance)
             }
             sym = next_ref.as_ref().unwrap().clone();

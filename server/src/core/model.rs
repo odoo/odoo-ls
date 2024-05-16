@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::rc::Weak;
 use weak_table::PtrWeakHashSet;
+use std::collections::HashSet;
 
 use crate::core::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
@@ -88,5 +89,27 @@ impl Model {
             }
         }
         symbol.into_iter()
+    }
+
+    pub fn get_main_symbols(&self, odoo: &mut SyncOdoo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<Symbol>>> {
+        if acc.is_none() {
+            *acc = Some(HashSet::new());
+        }
+        let mut res: Vec<Rc<RefCell<Symbol>>> = vec![];
+        for sym in self.symbols.iter() {
+            if !sym.borrow()._model.as_ref().unwrap().inherit.contains(&sym.borrow()._model.as_ref().unwrap().name) {
+                if from_module.is_none() || sym.as_ref().borrow().get_module_sym().is_none() {
+                        res.push(sym);
+                } else {
+                    let dir_name = sym.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone();
+                    if (acc.is_some() && acc.as_ref().unwrap().contains(&dir_name)) ||
+                    ModuleSymbol::is_in_deps(odoo, from_module.as_ref().unwrap(), &dir_name, acc) {
+                        res.push(sym);
+                        acc.as_mut().unwrap().insert(dir_name);
+                    }
+                }
+            }
+        }
+        res
     }
 }

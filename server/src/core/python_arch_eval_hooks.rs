@@ -9,12 +9,15 @@ use tower_lsp::lsp_types::Range;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbol::Symbol;
+use crate::core::model::Model;
 use crate::constants::*;
 use crate::S;
 
 use super::evaluation::Evaluation;
 use super::evaluation::ContextValue;
 use super::evaluation::EvaluationSymbol;
+use super::file_mgr::FileMgr;
+use super::symbols::module_symbol::ModuleSymbol;
 
 pub struct PythonArchEvalHooks {}
 
@@ -231,7 +234,32 @@ impl PythonArchEvalHooks {
             if let Some(arg) = arg {
                 match arg {
                     ContextValue::STRING(s) => {
-
+                        let model = odoo.models.get(s);
+                        if let Some(model) = model {
+                            let module = context.get(&S!("module"));
+                            let from_module;
+                            if let Some(ContextValue::MODULE(m)) = module {
+                                from_module = Some(m.clone());
+                            } else {
+                                from_module = None;
+                            }
+                            let symbols = model.clone().borrow().get_main_symbols(odoo, from_module.clone(), &mut None);
+                            if symbols.len() > 0 {
+                                for s in symbols.iter() {
+                                    if from_module.is_none() || ModuleSymbol::is_in_deps(odoo, &from_module.as_ref().unwrap(),&s.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name, &mut None) {
+                                        return (Rc::downgrade(s), true);
+                                    }
+                                }
+                                //still here? If from module is set, dependencies are not met
+                                if from_module.is_some() {
+                                    let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
+                                    diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("This model is not in the dependencies of your module.")));    
+                                }
+                            } else {
+                                let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
+                                diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("Unknown model. Check the dependencies of your module.")));
+                            }
+                        }
                     }
                     _ => {
                         //NOT A STRING
@@ -239,12 +267,7 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        let sym = evaluation_sym.symbol.upgrade();
-        if let Some(sym) = sym {
-            let range = Range::new(Position::new(sym.borrow().range.unwrap().start().to_u32(), 0), Position::new(sym.borrow().range.unwrap().end().to_u32(), 0));
-            diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("Here there is a subscript")));
-        }
-        todo!()
+        (Weak::new(), true)
     }
 
     fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
@@ -265,11 +288,18 @@ impl PythonArchEvalHooks {
 
     fn on_env_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
         let mut get_item = symbol.borrow().get_symbol(&(vec![], vec![S!("__getitem__")]));
-        if get_item.is_some() && get_item.as_ref().unwrap().borrow().evaluation.is_some() {
+        if get_item.is_some() {
             let mut get_item = get_item.as_mut().unwrap().borrow_mut();
-            let evaluation = get_item.evaluation.as_mut().unwrap();
-            let eval_sym = &mut evaluation.symbol;
-            eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_item);
+            get_item.evaluation = Some(Evaluation {
+                symbol: EvaluationSymbol {symbol: Weak::new(),
+                    instance: true,
+                    context: HashMap::new(),
+                    _internal_hold_symbol: None,
+                    factory: None,
+                    get_symbol_hook: Some(PythonArchEvalHooks::eval_get_item)
+                },
+                value: None,
+            });
         }
         let mut cr = symbol.borrow().get_symbol(&(vec![], vec![S!("cr")]));
         let cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("Cursor")]));

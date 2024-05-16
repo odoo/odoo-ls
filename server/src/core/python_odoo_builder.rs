@@ -123,9 +123,6 @@ impl PythonOdooBuilder {
     }
 
     fn _evaluate_name(&mut self, odoo: &mut SyncOdoo, symbol: &Symbol) -> String {
-        if symbol.name == "ResCompany" {
-            println!("here")
-        }
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]));
         if let Some(_name) = _name {
             if let Some(eval) = _name.borrow().evaluation.as_ref() {
@@ -280,9 +277,6 @@ impl PythonOdooBuilder {
     fn test_symbol_is_model(&mut self, odoo: &mut SyncOdoo, rc_symbol: &Rc<RefCell<Symbol>>, symbol: &mut Symbol) -> bool {
         if symbol._class.is_none() {
             panic!("Symbol has no class Data. This should not happen");
-        }
-        if symbol.name == "ResCompany" {
-            println!("here");
         }
         let base_model = odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]));
         let model = odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("Model")]));

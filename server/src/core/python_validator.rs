@@ -102,6 +102,15 @@ impl PythonValidator {
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     };
                     self.validate_body(odoo, body);
+                    match stmt {
+                        Stmt::FunctionDef(s) => {
+                            self.symbol.borrow_mut()._function.as_mut().unwrap().diagnostics = self.diagnostics.clone();
+                        },
+                        Stmt::ClassDef(s) => {
+                            self.symbol.borrow_mut()._class.as_mut().unwrap().diagnostics = self.diagnostics.clone();
+                        },
+                        _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                    }
                 } else {
                     println!("no ast found on file info");
                 }
@@ -115,14 +124,9 @@ impl PythonValidator {
                 odoo.get_file_mgr().borrow_mut().delete_path(odoo, &symbol.paths[0].to_string());
             } else {
                 drop(symbol);
-                match sym_type {
-                    SymType::FILE | SymType::PACKAGE => {
-                        let file_info = self.get_file_info(odoo);
-                        let mut file_info = file_info.borrow_mut();
-                        file_info.publish_diagnostics(odoo);
-                    },
-                    _ => {}
-                }
+                let file_info = self.get_file_info(odoo);
+                let mut file_info = file_info.borrow_mut();
+                file_info.publish_diagnostics(odoo);
             }
         }
     }
@@ -234,9 +238,9 @@ impl PythonValidator {
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
                 if let Some(file) = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true) {
-                    if file.upgrade().unwrap().borrow().paths[0].contains("account_lock")
+                    if file.upgrade().unwrap().borrow().paths[0].contains("iap")
                     && file.upgrade().unwrap().borrow().paths[0].contains("models")
-                    && file.upgrade().unwrap().borrow().paths[0].contains("res_company.py") {
+                    && file.upgrade().unwrap().borrow().paths[0].contains("iap_enrich_api.py") {
                         println!("here");
                     }
                 }

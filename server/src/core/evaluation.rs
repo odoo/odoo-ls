@@ -1,5 +1,5 @@
 use ruff_python_ast::{Expr, Operator};
-use ruff_text_size::TextRange;
+use ruff_text_size::{Ranged, TextRange};
 use tower_lsp::lsp_types::Diagnostic;
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use crate::constants::*;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
+use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::S;
 
 #[derive(Debug, Clone)]
@@ -28,7 +29,9 @@ pub struct Evaluation {
 #[derive(Debug, Clone)]
 pub enum ContextValue {
     BOOLEAN(bool),
-    STRING(String)
+    STRING(String),
+    MODULE(Rc<RefCell<Symbol>>),
+    RANGE(TextRange)
 }
 
 impl ContextValue {
@@ -43,6 +46,20 @@ impl ContextValue {
         match self {
             ContextValue::STRING(s) => s.clone(),
             _ => panic!("Not a string")
+        }
+    }
+
+    pub fn as_module(&self) -> Rc<RefCell<Symbol>> {
+        match self {
+            ContextValue::MODULE(m) => m.clone(),
+            _ => panic!("Not a module")
+        }
+    }
+
+    pub fn as_text_range(&self) -> TextRange {
+        match self {
+            ContextValue::RANGE(r) => r.clone(),
+            _ => panic!("Not a TextRange")
         }
     }
 }
@@ -106,9 +123,30 @@ impl Evaluation {
     }
 
     pub fn new_constant(odoo: &mut SyncOdoo, values: Expr) -> Evaluation {
+        let tree_value = match &values {
+            Expr::StringLiteral(s) => {
+                (vec![S!("builtins")], vec![S!("str")])
+            },
+            Expr::BooleanLiteral(b) => {
+                (vec![S!("builtins")], vec![S!("bool")])
+            },
+            Expr::NumberLiteral(n) => {
+                (vec![S!("builtins")], vec![S!("int")]) //TODO
+            },
+            Expr::BytesLiteral(b) => {
+                (vec![S!("builtins")], vec![S!("bytes")])
+            }
+            _ => {(vec![S!("builtins")], vec![S!("object")])}
+        };
+        let symbol;
+        if !values.is_none_literal_expr() {
+            symbol = Rc::downgrade(&odoo.get_symbol(&tree_value).expect("builtins class not found"));
+        } else {
+            symbol = Weak::new();
+        }
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")])).expect("builtins list not found")),
+                symbol: symbol,
                 instance: true,
                 context: HashMap::new(),
                 _internal_hold_symbol: None,
@@ -126,7 +164,7 @@ impl Evaluation {
             let symbol = self.symbol.get_symbol(odoo, context, diagnostics).0;
             let symbol = symbol.upgrade();
             if symbol.is_some() {
-                let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false, diagnostics);
+                let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false, true, diagnostics);
                 let symbol = symbol.0.upgrade();
                 if symbol.is_some() {
                     let symbol = symbol.unwrap();
@@ -244,8 +282,15 @@ impl Evaluation {
         let mut effective_sym = None;
         let mut factory = None;
         let mut diagnostics = vec![];
+        let from_module;
+        if let Some(module) = parent.borrow().get_module_sym() {
+            from_module = ContextValue::MODULE(module);
+        } else {
+            from_module = ContextValue::BOOLEAN(false);
+        }
         let mut context : Context = HashMap::from([
-            (S!(""), ContextValue::BOOLEAN(false))
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(ast.range()))
         ]);
         let module: Option<Rc<RefCell<Symbol>>> = parent.borrow().get_module_sym();
         match ast {
@@ -332,7 +377,7 @@ impl Evaluation {
                 }
                 let base = eval.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, &mut diagnostics);
+                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, false, &mut diagnostics);
                 let attribute = base.upgrade().unwrap();
                 let attribute = (*attribute).borrow();
                 let attribute = attribute.get_member_symbol(odoo, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
@@ -362,7 +407,7 @@ impl Evaluation {
                 }
                 let base = eval_left.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, &mut diagnostics);
+                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, false, &mut diagnostics);
                 let base = base.upgrade().unwrap();
                 let value = Evaluation::expr_to_str(odoo, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 let base = base.borrow();
@@ -374,6 +419,8 @@ impl Evaluation {
                         if let Some(get_item_eval) = &get_item.evaluation {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
                                 context.insert(S!("args"), ContextValue::STRING(value));
+                                let old_range = context.remove(&S!("range"));
+                                context.insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
                                 let mut ctxt = Some(context);
                                 let hook_result = hook(odoo, &get_item_eval.symbol, &mut ctxt, &mut diagnostics);
                                 if !hook_result.0.is_expired() {
@@ -382,6 +429,7 @@ impl Evaluation {
                                 }
                                 context = ctxt.unwrap();
                                 context.remove(&S!("args"));
+                                context.insert(S!("range"), old_range.unwrap());
                             }
                         }
                     }

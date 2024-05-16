@@ -269,7 +269,7 @@ impl ModuleSymbol {
         }
         for dep in symbol.borrow()._module.as_ref().unwrap().depends.iter() {
             if acc.as_ref().unwrap().contains(dep) {
-                return true;
+                continue;
             }
             let dep_module = odoo.modules.get(dep);
             if let Some(dep_module) = dep_module {

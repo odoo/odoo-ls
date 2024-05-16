@@ -95,7 +95,7 @@ impl PythonArchBuilder {
                 let mut name_filter: Vec<String> = vec![];
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
                     let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
-                    let all = Symbol::follow_ref(all, odoo, &mut None, false, &mut self.diagnostics).0;
+                    let all = Symbol::follow_ref(all, odoo, &mut None, false, false, &mut self.diagnostics).0;
                     if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() ||
                         !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
                             println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
