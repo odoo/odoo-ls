@@ -253,7 +253,7 @@ impl PythonArchEvalHooks {
                                 //still here? If from module is set, dependencies are not met
                                 if from_module.is_some() {
                                     let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                    diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("This model is not in the dependencies of your module.")));    
+                                    diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("This model is not in the dependencies of your module.")));
                                 }
                             } else {
                                 let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());

@@ -99,7 +99,7 @@ impl Model {
         for sym in self.symbols.iter() {
             if !sym.borrow()._model.as_ref().unwrap().inherit.contains(&sym.borrow()._model.as_ref().unwrap().name) {
                 if from_module.is_none() || sym.as_ref().borrow().get_module_sym().is_none() {
-                        res.push(sym);
+                    res.push(sym);
                 } else {
                     let dir_name = sym.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone();
                     if (acc.is_some() && acc.as_ref().unwrap().contains(&dir_name)) ||

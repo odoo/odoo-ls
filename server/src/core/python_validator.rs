@@ -1,5 +1,5 @@
 use ruff_python_ast::visitor::Visitor;
-use ruff_python_ast::{Alias, Identifier, Stmt, StmtAssign, StmtTry};
+use ruff_python_ast::{Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtTry};
 use ruff_text_size::TextRange;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -176,7 +176,17 @@ impl PythonValidator {
                 },
                 Stmt::Assign(a) => {
                     self.visit_assign(odoo, a);
-                }
+                },
+                Stmt::AnnAssign(a) => {
+                    self.visit_ann_assign(odoo, a);
+                },
+                Stmt::Expr(e) => {
+                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &e.value, self.symbol.clone(), &e.range);
+                    self.diagnostics.extend(diags);
+                },
+                Stmt::If(i) => {
+                    self.validate_body(odoo, &i.body);
+                },
                 _ => {
                     println!("Stmt not handled");
                 }
@@ -230,6 +240,22 @@ impl PythonValidator {
         }
     }
 
+    fn visit_ann_assign(&mut self, odoo: &mut SyncOdoo, assign: &StmtAnnAssign) {
+        if self.file_mode {
+            return;
+        }
+        let assigns = match assign.value.as_ref() {
+            Some(value) => python_utils::unpack_assign(&vec![*assign.target.clone()], Some(&assign.annotation), Some(value)),
+            None => python_utils::unpack_assign(&vec![*assign.target.clone()], Some(&assign.annotation), None)
+        };
+        for a in assigns.iter() {
+            if let Some(expr) = &a.value {
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range);
+                self.diagnostics.extend(diags);
+            }
+        }
+    }
+
     fn visit_assign(&mut self, odoo: &mut SyncOdoo, assign: &StmtAssign) {
         if self.file_mode {
             return;
@@ -237,13 +263,6 @@ impl PythonValidator {
         let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
-                if let Some(file) = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true) {
-                    if file.upgrade().unwrap().borrow().paths[0].contains("iap")
-                    && file.upgrade().unwrap().borrow().paths[0].contains("models")
-                    && file.upgrade().unwrap().borrow().paths[0].contains("iap_enrich_api.py") {
-                        println!("here");
-                    }
-                }
                 let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range);
                 self.diagnostics.extend(diags);
             }

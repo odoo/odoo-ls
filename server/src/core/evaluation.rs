@@ -1,6 +1,6 @@
 use ruff_python_ast::{Expr, Operator};
 use ruff_text_size::{Ranged, TextRange};
-use tower_lsp::lsp_types::Diagnostic;
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -10,6 +10,9 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::S;
+
+use super::file_mgr::FileMgr;
+use super::python_validator::PythonValidator;
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -367,21 +370,65 @@ impl Evaluation {
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_dict(odoo, values));
             },
             Expr::Call(expr) => {
-                //TODO implement Call
+                let (base_eval, diags) = Evaluation::eval_from_ast(odoo, &expr.func, parent, max_infer);
+                diagnostics.extend(diags);
+                if base_eval.is_none() {
+                    return (None, None, None, None, diagnostics);
+                }
+                let (base_sym, instance) = base_eval.unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics);
+                let base_sym = base_sym.upgrade();
+                if let Some(base_sym) = base_sym {
+                    if base_sym.borrow().sym_type == SymType::CLASS {
+                        if instance {
+                            //TODO handle call on class instance
+                        } else {
+                            //TODO diagnostic __new__ call parameters
+                            res.symbol = Rc::downgrade(&base_sym);
+                            res.instance = true;
+                        }
+                    } else if base_sym.borrow().sym_type == SymType::FUNCTION {
+                        //function return evaluation can come from:
+                        //  - type annotation parsing (ARCH_EVAL step)
+                        //  - documentation parsing (Arch_eval and VALIDATION step)
+                        //  - function body inference (VALIDATION step)
+                        // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
+                        // We don't want to launch validation step while Arch evaluating the code.
+                        if base_sym.borrow().evaluation.is_none() {
+                            if base_sym.borrow().odoo_status == BuildStatus::DONE {
+                                let mut v = PythonValidator::new(base_sym.clone());
+                                v.validate(odoo);
+                            }
+                        }
+                        if let Some(evaluation) = base_sym.borrow().evaluation.as_ref() {
+                            (res.symbol, res.instance) = evaluation.symbol.get_symbol(odoo, &mut None, &mut diagnostics);
+                        }
+                    } else {
+                        println!("not able to do a call on {:?}", base_sym.borrow().sym_type);
+                    }
+                }
             },
             Expr::Attribute(expr) => {
                 let (eval, diags) = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
                 diagnostics.extend(diags);
-                if eval.is_none() || eval.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
+                if eval.is_none() || eval.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics).0.upgrade().is_none() {
                     return (None, None, None, None, diagnostics);
                 }
-                let base = eval.unwrap().symbol.symbol.upgrade();
+                let base = eval.unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics).0.upgrade();
                 let base = base.unwrap();
                 let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, false, &mut diagnostics);
                 let attribute = base.upgrade().unwrap();
                 let attribute = (*attribute).borrow();
                 let attribute = attribute.get_member_symbol(odoo, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
                 if attribute.len() == 0 {
+                    diagnostics.push(Diagnostic::new(
+                            FileMgr::textRange_to_temporary_Range(&expr.range),
+                            Some(DiagnosticSeverity::ERROR),
+                            None,
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("{} is unknown on {}", expr.attr.as_str(), base.upgrade().unwrap().borrow().name),
+                            None,
+                            None,
+                    ));
                     return (None, None, None, None, diagnostics);
                 }
                 res.symbol = Rc::downgrade(attribute.first().unwrap());
