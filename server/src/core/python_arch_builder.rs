@@ -113,7 +113,8 @@ impl PythonArchBuilder {
                 }
                 for s in import_result.symbol.borrow_mut().symbols.values() {
                     if all_name_allowed || name_filter.contains(&s.borrow().name) {
-                        let mut variable = Symbol::new(s.borrow_mut().name.clone(), SymType::VARIABLE); //TODO mark as import
+                        let mut variable = Symbol::new(s.borrow_mut().name.clone(), SymType::VARIABLE);
+                        variable.is_import_variable = true;
                         variable.range = Some(import_name.range.clone());
                         variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
                         if variable.evaluation.is_some() {
@@ -135,7 +136,8 @@ impl PythonArchBuilder {
                 } else {
                     import_name.asname.as_ref().unwrap().clone()
                 };
-                let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE); //TODO mark as import
+                let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE);
+                variable.is_import_variable = true;
                 variable.range = Some(import_name.range.clone());
                 self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
             }

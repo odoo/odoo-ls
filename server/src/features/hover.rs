@@ -1,18 +1,115 @@
-use tower_lsp::lsp_types::Hover;
-use crate::core::file_mgr::FileInfo;
-use tower_lsp::jsonrpc::Result;
+use serde_json::Value;
+use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, Position, Range};
+use crate::core::evaluation::AnalyzeAstResult;
+use crate::core::file_mgr::{FileInfo, FileMgr};
+use tower_lsp::jsonrpc::{ErrorCode, Result};
+use std::path::PathBuf;
 use std::rc::Rc;
 use crate::core::symbol::Symbol;
+use crate::constants::*;
+use crate::core::odoo::SyncOdoo;
+use crate::features::ast_utils::AstUtils;
+use crate::S;
 use std::cell::RefCell;
 
 pub struct HoverFeature {}
 
 impl HoverFeature {
 
-    pub fn get_hover(file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Result<Option<Hover>> {
+    pub fn get_hover(odoo: &mut SyncOdoo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Result<Option<Hover>> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        //let (symbol, effective_sym, factory, range, context) = AstUtils::get_symbols(file_symbol, ast, offset);
-            
+        let analyse_ast_result: AnalyzeAstResult = AstUtils::get_symbols(odoo, file_symbol, file_info, offset as u32);
+        let Some(evaluation) = analyse_ast_result.symbol.as_ref() else {
+            return Ok(None);
+        };
+        let symbol = evaluation.symbol.get_symbol(odoo, &mut None, &mut vec![]).0;
+        let symbol = symbol.upgrade().unwrap();
+        let (type_ref, _) = Symbol::follow_ref(symbol.clone(), odoo, &mut None, true, false, &mut vec![]);
+        let type_ref = type_ref.upgrade().unwrap();
+        let mut type_str = S!("Any");
+        if !Rc::ptr_eq(&type_ref, &symbol) && (type_ref.borrow().sym_type != SymType::VARIABLE || type_ref.borrow().is_type_alias()) {
+            type_str = type_ref.borrow().name.clone();
+        }
+        if analyse_ast_result.factory.is_some() && analyse_ast_result.effective_sym.is_some() {
+            type_str = Symbol::follow_ref(analyse_ast_result.effective_sym.unwrap().upgrade().unwrap(), odoo, &mut None, true, false, &mut vec![]).0.upgrade().unwrap().borrow().name.clone();
+        }
+        let mut type_sym = symbol.borrow().sym_type.to_string().to_lowercase();
+        if symbol.borrow().is_type_alias() {
+            type_sym = S!("type alias");
+            let mut type_alias_ref = Symbol::next_ref(&type_ref.borrow(), odoo, &mut None, &mut vec![]);
+            if let Some(mut type_alias_ref) = type_alias_ref {
+                if !Rc::ptr_eq(&type_alias_ref.upgrade().unwrap(), &type_ref) {
+                    type_alias_ref = Symbol::follow_ref(type_alias_ref.upgrade().unwrap(), odoo, &mut None, true, false, &mut vec![]).0;
+                    type_str = type_alias_ref.upgrade().unwrap().borrow().name.clone();
+                }
+            }
+        }
+        if symbol.borrow().sym_type == SymType::FUNCTION {
+            if symbol.borrow()._function.as_ref().unwrap().is_property {
+                type_sym = S!("property");
+            } else {
+                type_sym = S!("method");
+            }
+        }
+        // BLOCK 1: (type) **name** -> infered_type
+        let mut value: String = HoverFeature::build_block_1(&symbol, &type_sym, &type_str);
+        // BLOCK 2: useful links
+        if type_str != S!("Any") && type_str != S!("constant") {
+            let paths = &type_ref.borrow().paths;
+            if paths.len() > 0 {
+                let mut path = PathBuf::new();//TODO FileMgr::pathname2uri(paths.first().unwrap());
+                if type_ref.borrow().sym_type == SymType::PACKAGE {
+                    path = PathBuf::from(path).join("__init__.py");
+                }
+                value += "  \n***  \n";
+                value += format!("See also: [{}]({}#{})  \n", type_ref.borrow().name.as_str(), path.to_str().unwrap(), type_ref.borrow().range.unwrap().start().to_usize()).as_str();
+            }
+        }
+        // BLOCK 3: documentation
+        if symbol.borrow().doc_string.is_some() {
+            value = value + "  \n***  \n" + symbol.borrow().doc_string.as_ref().unwrap();
+        }
+        let range = analyse_ast_result.symbol.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut vec![]).0.upgrade().unwrap().borrow().range;
+        let range = Some(Range {
+            start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
+            end: file_info.borrow().offset_to_position(range.unwrap().end().to_usize())
+        });
+        return Ok(Some(Hover { contents:
+            HoverContents::Markup(MarkupContent {
+                kind: tower_lsp::lsp_types::MarkupKind::Markdown,
+                value: value
+            }),
+            range: range
+        }));
+
         todo!()
+    }
+
+    fn build_block_1(symbol: &Rc<RefCell<Symbol>>, type_sym: &String, infered_type: &String) -> String {
+        let symbol = symbol.borrow();
+        let mut value = S!("```python  \n");
+        value += &format!("({})", type_sym);
+        if symbol.sym_type == SymType::FUNCTION && !symbol._function.as_ref().unwrap().is_property {
+            value += "def ";
+        }
+        value += &symbol.name;
+        if symbol.sym_type == SymType::FUNCTION && !symbol._function.as_ref().unwrap().is_property {// && args?
+            //TODO add args to function
+        }
+        if !infered_type.is_empty() && *type_sym != S!("module") {
+            if symbol.sym_type == SymType::FUNCTION && !symbol._function.as_ref().unwrap().is_property {
+                value += " -> ";
+                value += &infered_type;
+            } else if symbol.name != *infered_type && symbol.sym_type != SymType::CLASS {
+                if *type_sym == S!("type alias") {
+                    value += &format!(": type[{}]", infered_type);
+                } else {
+                    value += ": ";
+                    value += &infered_type;
+                }
+            }
+        }
+        value += "  \n```";
+        value
     }
 }

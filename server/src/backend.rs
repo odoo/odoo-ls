@@ -130,7 +130,7 @@ impl LanguageServer for Backend {
                 if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(params.text_document_position_params.text_document.uri.to_string())) {
                     let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(params.text_document_position_params.text_document.uri.to_string().as_str());
                     if file_info.borrow().ast.is_some() {
-                        return HoverFeature::get_hover(&file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                        return HoverFeature::get_hover(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
                     }
                 }
             }

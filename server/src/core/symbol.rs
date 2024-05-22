@@ -807,4 +807,8 @@ impl Symbol {
         }
         return symbol
     }
+
+    pub fn is_type_alias(&self) -> bool {
+        return self.evaluation.is_some() && self.evaluation.as_ref().unwrap().symbol.instance && !self.is_import_variable;
+    }
 }

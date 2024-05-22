@@ -1,7 +1,10 @@
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
+use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation};
 use crate::core::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
+use crate::core::odoo::SyncOdoo;
+use tower_lsp::lsp_types::Diagnostic;
 use ruff_python_ast::visitor::{Visitor, walk_expr};
 use ruff_python_ast::Expr;
 use ruff_python_ast::Stmt;
@@ -11,9 +14,8 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_symbols(file_symbol: Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) {
-        //let range = None;
-        let scope = Symbol::get_scope_symbol(file_symbol, offset);
+    pub fn get_symbols(odoo: &mut SyncOdoo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> AnalyzeAstResult {
+        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset);
         let mut expr: Option<&Expr> = None;
         let file_info_borrowed = file_info.borrow();
         for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
@@ -21,13 +23,11 @@ impl AstUtils {
         }
         if expr.is_none() {
             println!("expr not found");
-            return;
+            return AnalyzeAstResult::default();
         }
-        //let (symbol, effective_sym, factory, context) = AstUtils::evaluate_expr(expr, scope_symbol);
-    }
-
-    fn evaluate_expr(expr: &Expr, scope_symbol: &Rc<RefCell<Symbol>>) -> () {
-
+        let expr = expr.unwrap();
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(odoo, expr, parent_symbol, &expr.range());
+        return analyse_ast_result;
     }
 
 }
