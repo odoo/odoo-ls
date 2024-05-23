@@ -2,9 +2,13 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use serde_json::to_value;
+use crate::core::file_mgr::FileMgr;
+use crate::S;
 use crate::core::config::RefreshMode;
 use crate::core::odoo::Odoo;
 use crate::core::messages::Msg;
+use crate::features::completion::CompletionFeature;
+use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
@@ -43,6 +47,11 @@ impl LanguageServer for Backend {
                     ..TextDocumentSyncOptions::default()
                 })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: Some(true),
+                    trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\"")]),
+                    ..CompletionOptions::default()
+                }),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -123,14 +132,69 @@ impl LanguageServer for Backend {
                 range: None
             }))
         }
+        let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
         let mut odoo = odoo.unwrap();
         {
             let mut sync_odoo = odoo.odoo.lock().unwrap();
             if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
-                if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(params.text_document_position_params.text_document.uri.to_string())) {
-                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(params.text_document_position_params.text_document.uri.to_string().as_str());
+                if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
+                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                     if file_info.borrow().ast.is_some() {
                         return HoverFeature::get_hover(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        self.client.log_message(MessageType::INFO, format!("GoToDefinition requested on {} at {} - {}",
+            params.text_document_position_params.text_document.uri.to_string(),
+            params.text_document_position_params.position.line,
+            params.text_document_position_params.position.character)).await;
+        let mut odoo = timeout(Duration::from_millis(1000), self.odoo.lock()).await;
+        if let Err(_) = odoo {
+            return Ok(None);
+        }
+        let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
+        let mut odoo = odoo.unwrap();
+        {
+            let mut sync_odoo = odoo.odoo.lock().unwrap();
+            if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
+                if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
+                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                    if file_info.borrow().ast.is_some() {
+                        return DefinitionFeature::get_location(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        self.client.log_message(MessageType::INFO, format!("Completion requested at {}:{}-{}",
+            params.text_document_position.text_document.uri,
+            params.text_document_position.position.line,
+            params.text_document_position.position.character
+            )).await;
+        let mut odoo = timeout(Duration::from_millis(1000), self.odoo.lock()).await;
+        if let Err(_) = odoo {
+            return Ok(None);
+        }
+        let path = FileMgr::uri2pathname(params.text_document_position.text_document.uri.as_str());
+        let mut odoo = odoo.unwrap();
+        {
+            let mut sync_odoo = odoo.odoo.lock().unwrap();
+            if params.text_document_position.text_document.uri.to_string().ends_with(".py") {
+                if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
+                    let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                    if file_info.borrow().ast.is_some() {
+                        return CompletionFeature::autocomplete(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character);
                     }
                 }
             }

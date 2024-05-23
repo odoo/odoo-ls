@@ -1,3 +1,4 @@
+use ruff_text_size::TextRange;
 use serde_json::Value;
 use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, Position, Range};
 use crate::core::evaluation::AnalyzeAstResult;
@@ -18,7 +19,7 @@ impl HoverFeature {
 
     pub fn get_hover(odoo: &mut SyncOdoo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Result<Option<Hover>> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let analyse_ast_result: AnalyzeAstResult = AstUtils::get_symbols(odoo, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, range): (AnalyzeAstResult, Option<TextRange>) = AstUtils::get_symbols(odoo, file_symbol, file_info, offset as u32);
         let Some(evaluation) = analyse_ast_result.symbol.as_ref() else {
             return Ok(None);
         };
@@ -61,15 +62,21 @@ impl HoverFeature {
                 if type_ref.borrow().sym_type == SymType::PACKAGE {
                     path = PathBuf::from(path).join("__init__.py");
                 }
-                value += "  \n***  \n";
-                value += format!("See also: [{}]({}#{})  \n", type_ref.borrow().name.as_str(), path.to_str().unwrap(), type_ref.borrow().range.unwrap().start().to_usize()).as_str();
+                if type_ref.borrow().range.is_none() {
+                    let t = type_ref.borrow();
+                    let t2 = t.sym_type;
+                    let t3 = t.name.clone();
+                    println!("no range defined");
+                } else {
+                    value += "  \n***  \n";
+                    value += format!("See also: [{}]({}#{})  \n", type_ref.borrow().name.as_str(), path.to_str().unwrap(), type_ref.borrow().range.unwrap().start().to_usize()).as_str();
+                }
             }
         }
         // BLOCK 3: documentation
         if symbol.borrow().doc_string.is_some() {
             value = value + "  \n***  \n" + symbol.borrow().doc_string.as_ref().unwrap();
         }
-        let range = analyse_ast_result.symbol.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut vec![]).0.upgrade().unwrap().borrow().range;
         let range = Some(Range {
             start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
             end: file_info.borrow().offset_to_position(range.unwrap().end().to_usize())
@@ -88,7 +95,7 @@ impl HoverFeature {
     fn build_block_1(symbol: &Rc<RefCell<Symbol>>, type_sym: &String, infered_type: &String) -> String {
         let symbol = symbol.borrow();
         let mut value = S!("```python  \n");
-        value += &format!("({})", type_sym);
+        value += &format!("({}) ", type_sym);
         if symbol.sym_type == SymType::FUNCTION && !symbol._function.as_ref().unwrap().is_property {
             value += "def ";
         }

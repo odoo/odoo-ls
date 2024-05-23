@@ -45,7 +45,7 @@ impl PythonValidator {
         if file_symbol.sym_type == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + file_symbol.i_ext.as_str();
         }
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(path.as_str());
+        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path);
         file_info_rc
     }
 

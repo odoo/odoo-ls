@@ -56,7 +56,7 @@ impl PythonArchEval {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(path.as_str());
+        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path);
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
             for (index, stmt) in file_info.ast.as_ref().unwrap().iter().enumerate() {

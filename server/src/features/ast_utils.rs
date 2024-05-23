@@ -8,26 +8,29 @@ use tower_lsp::lsp_types::Diagnostic;
 use ruff_python_ast::visitor::{Visitor, walk_expr};
 use ruff_python_ast::Expr;
 use ruff_python_ast::Stmt;
-use ruff_text_size::Ranged;
+use ruff_text_size::{Ranged, TextRange};
 
 pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_symbols(odoo: &mut SyncOdoo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> AnalyzeAstResult {
+    pub fn get_symbols(odoo: &mut SyncOdoo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
         let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset);
         let mut expr: Option<&Expr> = None;
         let file_info_borrowed = file_info.borrow();
         for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
             expr = ExprFinderVisitor::find_expr_at(stmt, offset);
+            if expr.is_some() {
+                break;
+            }
         }
         if expr.is_none() {
             println!("expr not found");
-            return AnalyzeAstResult::default();
+            return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
         let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(odoo, expr, parent_symbol, &expr.range());
-        return analyse_ast_result;
+        return (analyse_ast_result, Some(expr.range()));
     }
 
 }

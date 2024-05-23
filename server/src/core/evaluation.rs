@@ -424,7 +424,7 @@ impl Evaluation {
                 let attribute = (*attribute).borrow();
                 let attribute = attribute.get_member_symbol(odoo, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
                 if attribute.len() == 0 {
-                    /*diagnostics.push(Diagnostic::new(
+                    diagnostics.push(Diagnostic::new(
                             FileMgr::textRange_to_temporary_Range(&expr.range),
                             Some(DiagnosticSeverity::ERROR),
                             None,
@@ -432,7 +432,7 @@ impl Evaluation {
                             format!("{} is unknown on {}", expr.attr.as_str(), base.upgrade().unwrap().borrow().name),
                             None,
                             None,
-                    ));*/
+                    ));
                     return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
                 }
                 res.symbol = Rc::downgrade(attribute.first().unwrap());
@@ -505,6 +505,10 @@ impl Evaluation {
 
 impl EvaluationSymbol {
 
+    pub fn new(symbol: Weak<RefCell<Symbol>>, instance: bool, context: Context, _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
+        Self { symbol, instance, context, _internal_hold_symbol, factory, get_symbol_hook }
+    }
+    
     pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
         let sym = Rc::new(RefCell::new(symbol));
         EvaluationSymbol {

@@ -6,6 +6,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
 use std::rc::Rc;
 use std::cell::RefCell;
+use crate::S;
 use crate::constants::*;
 use ruff_text_size::TextRange;
 
@@ -156,8 +157,8 @@ impl FileMgr {
             Position::new(range.end().to_u32(), 0))
     }
 
-    pub fn get_file_info(&self, uri: &str) -> Rc<RefCell<FileInfo>> {
-        self.files.get(&uri.to_string()).expect("File not found in cache").clone()
+    pub fn get_file_info(&self, path: &String) -> Rc<RefCell<FileInfo>> {
+        self.files.get(path).expect("File not found in cache").clone()
     }
 
     pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
@@ -204,14 +205,13 @@ impl FileMgr {
         false
     }
 
-    // fn pathname2uri(s: &str) -> String {
-    //     let mut path = s.replace("\\", "/");
-    //     path = percent_encode(path.as_bytes(), PATH_SEGMENT_ENCODE_SET).to_string();
-    //     if cfg!(target_os = "windows") {
-    //         path = format!("file:///{}", path);
-    //     } else {
-    //         path = format!("file://{}", path);
-    //     }
-    //     path
-    // }
+    pub fn uri2pathname(s: &str) -> String {
+        if let Ok(url) = url::Url::parse(s) {
+            if let Ok(url) = url.to_file_path() {
+                return S!(url.to_str().unwrap());
+            }
+        }
+        println!("Beau petit println: {s}");
+        S!(s)
+    }
 }
