@@ -29,7 +29,7 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(odoo, expr, parent_symbol, &expr.range());
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(odoo, expr, parent_symbol, &expr.range().end());
         return (analyse_ast_result, Some(expr.range()));
     }
 

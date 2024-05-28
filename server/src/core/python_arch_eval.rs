@@ -225,11 +225,11 @@ impl PythonArchEval {
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range);
+                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
                     variable.borrow_mut().evaluation = eval;
                     self.diagnostics.extend(diags);
                 } else if assign.value.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range);
+                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
                     variable.borrow_mut().evaluation = eval;
                     self.diagnostics.extend(diags);
                 } else {
@@ -259,7 +259,7 @@ impl PythonArchEval {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                 variable.borrow_mut().evaluation = eval;
                 self.diagnostics.extend(diags);
                 let mut v_mut = variable.borrow_mut();
@@ -305,7 +305,7 @@ impl PythonArchEval {
             let range = range.unwrap();
             let elements = full_base.split(".").collect::<Vec<&str>>();
             let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
-            let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range));
+            let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range.start()));
             if iter_element.is_none() {
                 let mut parent = parent.borrow_mut();
                 self.create_diagnostic_base_not_found(odoo, &mut parent, elements[0], range);

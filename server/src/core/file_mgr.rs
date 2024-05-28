@@ -205,13 +205,20 @@ impl FileMgr {
         false
     }
 
+    pub fn pathname2uri(s: &String) -> url::Url {
+        if let Ok(url) = url::Url::from_file_path(s) {
+            return url;
+        }
+        panic!("unable to transform pathname to uri: {s}")
+    }
+
     pub fn uri2pathname(s: &str) -> String {
         if let Ok(url) = url::Url::parse(s) {
             if let Ok(url) = url.to_file_path() {
                 return S!(url.to_str().unwrap());
             }
         }
-        println!("Beau petit println: {s}");
+        println!("Unable to extract path from uri: {s}");
         S!(s)
     }
 }

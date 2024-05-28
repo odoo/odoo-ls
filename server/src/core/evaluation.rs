@@ -1,5 +1,5 @@
 use ruff_python_ast::{Expr, Operator};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
@@ -221,13 +221,13 @@ impl Evaluation {
     //Build an evaluation from an ast node that can be associated to a symbol
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
-    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> (Option<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Option<Evaluation>, Vec<Diagnostic>) {
         let analyze_result = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
         return (analyze_result.symbol, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
+    fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let value = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
         if value.symbol.is_some() {
             let eval = value.symbol.unwrap();
@@ -284,7 +284,7 @@ impl Evaluation {
         Definition -> symbol
         Autocompletion -> effective_sym
      */
-    pub fn analyze_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextRange) -> AnalyzeAstResult {
+    pub fn analyze_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
         let mut res = EvaluationSymbol::default();
         let mut effective_sym = None;
         let mut factory = None;
@@ -442,6 +442,10 @@ impl Evaluation {
                 let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(*max_infer));
                 if infered_sym.is_none() {
                     return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
+                }
+                if infered_sym.as_ref().unwrap().borrow().parent.is_none() {
+                    //for temporary symbol, store it in internal storage
+                    res._internal_hold_symbol = Some(infered_sym.as_ref().unwrap().clone());
                 }
                 res.symbol = Rc::downgrade(infered_sym.as_ref().unwrap());
                 let infered_sym = infered_sym.as_ref().unwrap().borrow();

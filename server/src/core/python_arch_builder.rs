@@ -252,7 +252,7 @@ impl PythonArchBuilder {
                 let parent = variable.parent.as_ref().unwrap().upgrade();
                 if parent.is_some() {
                     let parent = parent.unwrap();
-                    let eval = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range);
+                    let eval = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                     variable.evaluation = eval.0;
                     //TODO publish diags in eval.1
                     if variable.evaluation.is_some() {

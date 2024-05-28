@@ -181,7 +181,7 @@ impl PythonValidator {
                     self.visit_ann_assign(odoo, a);
                 },
                 Stmt::Expr(e) => {
-                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &e.value, self.symbol.clone(), &e.range);
+                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &e.value, self.symbol.clone(), &e.range.start());
                     self.diagnostics.extend(diags);
                 },
                 Stmt::If(i) => {
@@ -250,7 +250,7 @@ impl PythonValidator {
         };
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
-                let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range);
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range.start());
                 self.diagnostics.extend(diags);
             }
         }
@@ -263,7 +263,7 @@ impl PythonValidator {
         let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
-                let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range);
+                let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range.start());
                 self.diagnostics.extend(diags);
             }
         }

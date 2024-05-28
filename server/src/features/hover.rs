@@ -1,6 +1,7 @@
 use ruff_text_size::TextRange;
 use serde_json::Value;
 use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, Position, Range};
+use weak_table::traits::WeakElement;
 use crate::core::evaluation::AnalyzeAstResult;
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use tower_lsp::jsonrpc::{ErrorCode, Result};
@@ -24,6 +25,10 @@ impl HoverFeature {
             return Ok(None);
         };
         let symbol = evaluation.symbol.get_symbol(odoo, &mut None, &mut vec![]).0;
+        if symbol.is_expired() {
+            println!("symbol expired");
+            return Ok(None);
+        }
         let symbol = symbol.upgrade().unwrap();
         let (type_ref, _) = Symbol::follow_ref(symbol.clone(), odoo, &mut None, true, false, &mut vec![]);
         let type_ref = type_ref.upgrade().unwrap();
@@ -88,8 +93,6 @@ impl HoverFeature {
             }),
             range: range
         }));
-
-        todo!()
     }
 
     fn build_block_1(symbol: &Rc<RefCell<Symbol>>, type_sym: &String, infered_type: &String) -> String {

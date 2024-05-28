@@ -32,7 +32,7 @@ pub struct Symbol {
     pub symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub local_symbols: Vec<Rc<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<Weak<RefCell<Symbol>>>, //parent can be None only on detached symbol, like proxys (super() for example)
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub evaluation: Option<Evaluation>,
     dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
@@ -685,20 +685,42 @@ impl Symbol {
         iter.into_iter().flatten()
     }
 
-    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<TextRange>) -> Option<Rc<RefCell<Symbol>>> {
+    //infer a name, given a position
+    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<TextSize>) -> Option<Rc<RefCell<Symbol>>> {
         let mut selected: Option<Rc<RefCell<Symbol>>> = None;
         if name == "__doc__" {
             //return self.doc; //TODO
         }
+        if name == "super" { //build temporary super Symbol
+            let class = on_symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
+            if let Some(class) = class {
+                let class = class.upgrade();
+                if let Some(class) = class {
+                    let mut symbol = Symbol::new( //TODO by doing it that way, a symbol will be created and stored each time a super is called in the code
+                        S!("super"),
+                        SymType::FUNCTION
+                    );
+                    symbol.parent = None;
+                    symbol._function = Some(FunctionSymbol{
+                        is_static: true,
+                        is_property: false,
+                        diagnostics: vec![]
+                    });
+                    symbol.evaluation = Some(Evaluation::eval_from_symbol(&class));
+                    selected = Some(Rc::new(RefCell::new(symbol)));
+                    return selected;
+                }
+            }
+        }
         if let Some(rc) = on_symbol.borrow().symbols.get(name) {
-            if position.is_none() || rc.borrow().range.unwrap().start() < position.unwrap().start() {
+            if position.is_none() || rc.borrow().range.unwrap().start() < position.unwrap() {
                 selected = Some(rc.clone());
             }
         }
         if selected.is_none() && position.is_some() {
             let position = position.unwrap();
             for local_symbol in on_symbol.borrow().local_symbols.iter() {
-                if local_symbol.borrow().name.eq(name) && local_symbol.borrow_mut().range.unwrap().start() < position.start() {
+                if local_symbol.borrow().name.eq(name) && local_symbol.borrow_mut().range.unwrap().start() < position {
                     if selected.is_none() || selected.as_ref().unwrap().borrow().range.unwrap().start() < local_symbol.borrow_mut().range.unwrap().start() {
                         selected = Some(local_symbol.clone());
                     }
@@ -801,14 +823,11 @@ impl Symbol {
                 symbol = Symbol::get_scope_symbol(s.clone(), offset);
                 break
             }
-            else if s.borrow().range.unwrap().start().to_u32() > offset {
-                break
-            }
         }
         return symbol
     }
 
     pub fn is_type_alias(&self) -> bool {
-        return self.evaluation.is_some() && self.evaluation.as_ref().unwrap().symbol.instance && !self.is_import_variable;
+        return self.evaluation.is_some() && !self.evaluation.as_ref().unwrap().symbol.instance && !self.is_import_variable;
     }
 }

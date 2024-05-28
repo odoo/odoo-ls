@@ -47,6 +47,11 @@ impl LanguageServer for Backend {
                     ..TextDocumentSyncOptions::default()
                 })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Right(DefinitionOptions{
+                    work_done_progress_options: WorkDoneProgressOptions{
+                        work_done_progress: Some(false)
+                    }
+                })),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(true),
                     trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\"")]),
