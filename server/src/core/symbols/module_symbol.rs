@@ -1,4 +1,4 @@
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, Position, Range};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::HashSet;
@@ -107,7 +107,7 @@ impl ModuleSymbol {
             res.push(Diagnostic::new(
                 Range::new(Position::new(0, 0), Position::new(0, 1)),
                 Some(DiagnosticSeverity::ERROR),
-                None,
+                Some(NumberOrString::String(S!("OLS30201"))),
                 Some(EXTENSION_NAME.to_string()),
                 "A manifest should only contains one dictionnary".to_string(),
                 None,
@@ -125,21 +125,21 @@ impl ModuleSymbol {
                             let key_str = key_literal.value.to_string();
                             if key_str == "name" {
                                 if !value.is_string_literal_expr() {
-                                    res.push(self._create_diagnostic_for_manifest_key("The name of the module should be a string", &key_literal.range));
+                                    res.push(self._create_diagnostic_for_manifest_key("The name of the module should be a string", S!("OLS30203"), &key_literal.range));
                                 } else {
                                     self.module_name = value.as_string_literal_expr().unwrap().value.to_string();
                                 }
                             } else if key_str == "depends" {
                                 if !value.is_list_expr() {
-                                    res.push(self._create_diagnostic_for_manifest_key("The depends value should be a list", &key_literal.range));
+                                    res.push(self._create_diagnostic_for_manifest_key("The depends value should be a list", S!("OLS30204"), &key_literal.range));
                                 } else {
                                     for depend in value.as_list_expr().unwrap().elts.iter() {
                                         if !depend.is_string_literal_expr() {
-                                            res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", &depend.range()));
+                                            res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", S!("OLS30205"), &depend.range()));
                                         } else {
                                             let depend_value = depend.as_string_literal_expr().unwrap().value.to_string();
                                             if depend_value == self.dir_name {
-                                                res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", &depend.range()));
+                                                res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range()));
                                             } else {
                                                 self.depends.push(depend_value);
                                             }
@@ -148,11 +148,11 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "data" {
                                 if !value.is_list_expr() {
-                                    res.push(self._create_diagnostic_for_manifest_key("The data value should be a list", &key_literal.range));
+                                    res.push(self._create_diagnostic_for_manifest_key("The data value should be a list", S!("OLS30207"), &key_literal.range));
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
                                         if !data.is_literal_expr() {
-                                            res.push(self._create_diagnostic_for_manifest_key("The data key should be a list of strings", &data.range()));
+                                            res.push(self._create_diagnostic_for_manifest_key("The data key should be a list of strings", S!("OLS30208"), &data.range()));
                                         } else {
                                             self.data.push(data.as_string_literal_expr().unwrap().value.to_string());
                                         }
@@ -162,7 +162,7 @@ impl ModuleSymbol {
                                 res.push(Diagnostic::new(
                                     Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                     Some(DiagnosticSeverity::WARNING),
-                                    None,
+                                    Some(NumberOrString::String(S!("OLS20201"))),
                                     Some(EXTENSION_NAME.to_string()),
                                     "The active key is deprecated".to_string(),
                                     None,
@@ -173,7 +173,7 @@ impl ModuleSymbol {
                             }
                         }
                         _ => {
-                            res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", &key.range()));
+                            res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", S!("OLS30209"), &key.range()));
                         }
                     }
                 },
@@ -181,7 +181,7 @@ impl ModuleSymbol {
                     res.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
                         Some(DiagnosticSeverity::ERROR),
-                        None,
+                        Some(NumberOrString::String(S!("OLS30302"))),
                         Some(EXTENSION_NAME.to_string()),
                         "Do not use dict unpacking to build your manifest".to_string(),
                         None,
@@ -194,11 +194,11 @@ impl ModuleSymbol {
         res
     }
 
-    fn _create_diagnostic_for_manifest_key(&self, text: &str, range: &TextRange) -> Diagnostic {
+    fn _create_diagnostic_for_manifest_key(&self, text: &str, code: String, range: &TextRange) -> Diagnostic {
         return Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::ERROR),
-            None,
+            Some(NumberOrString::String(code)),
             Some(EXTENSION_NAME.to_string()),
             text.to_string(),
             None,
@@ -222,7 +222,7 @@ impl ModuleSymbol {
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
                         Some(DiagnosticSeverity::ERROR),
-                        None,
+                        Some(NumberOrString::String(S!("OLS30210"))),
                         Some(EXTENSION_NAME.to_string()),
                         format!("Module {} depends on {} which is not found. Please review your addons paths", symbol.name, depend),
                         None,

@@ -4,12 +4,13 @@ use ruff_text_size::TextRange;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range, Position};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use crate::constants::*;
 use crate::core::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
+use crate::S;
 
 use super::evaluation::Evaluation;
 use super::file_mgr::FileInfo;
@@ -228,7 +229,7 @@ impl PythonValidator {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
-                            None,
+                            Some(NumberOrString::String(S!("OLS30103"))),
                             Some(EXTENSION_NAME.to_string()),
                             format!("{} is not in the dependencies of the module", module.borrow()._module.as_ref().unwrap().dir_name),
                             None,

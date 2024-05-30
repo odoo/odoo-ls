@@ -1,6 +1,6 @@
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use std::{collections::HashMap, fs};
 use crate::core::odoo::SyncOdoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
@@ -79,12 +79,11 @@ impl FileInfo {
                     Range{ start: Position::new(err.location.start().to_u32(), 0),
                         end: Position::new(err.location.end().to_u32(), 0)},
                     Some(DiagnosticSeverity::ERROR),
-                    None,
+                    Some(NumberOrString::String(S!("OLS30001"))),
                     None,
                     err.error.to_string(),
                     None,
                     None));
-                println!("unable to parse file at {} - {}", content_path, err.to_string());
             }
         };
         self.text_rope = Some(ropey::Rope::from(content));

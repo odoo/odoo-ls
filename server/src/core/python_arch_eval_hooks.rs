@@ -4,6 +4,7 @@ use std::rc::Weak;
 use std::cell::RefCell;
 use tower_lsp::lsp_types::Diagnostic;
 use tower_lsp::lsp_types::DiagnosticSeverity;
+use tower_lsp::lsp_types::NumberOrString;
 use tower_lsp::lsp_types::Position;
 use tower_lsp::lsp_types::Range;
 use crate::core::odoo::SyncOdoo;
@@ -253,11 +254,26 @@ impl PythonArchEvalHooks {
                                 //still here? If from module is set, dependencies are not met
                                 if from_module.is_some() {
                                     let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                    diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("This model is not in the dependencies of your module.")));
+                                    diagnostics.push(Diagnostic::new(range,
+                                        Some(DiagnosticSeverity::ERROR),
+                                        Some(NumberOrString::String(S!("OLS30101"))),
+                                        None,
+                                        S!("This model is not in the dependencies of your module."),
+                                        None,
+                                        None
+                                        )
+                                    );
                                 }
                             } else {
                                 let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                diagnostics.push(Diagnostic::new_with_code_number(range, DiagnosticSeverity::ERROR, 1, None, S!("Unknown model. Check the dependencies of your module.")));
+                                diagnostics.push(Diagnostic::new(range,
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30102"))),
+                                    None,
+                                    S!("Unknown model. Check your addons path"),
+                                    None,
+                                    None
+                                ));
                             }
                         }
                     }

@@ -4,7 +4,7 @@ use std::vec;
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
@@ -181,7 +181,7 @@ impl PythonArchEval {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
-                            None,
+                            Some(NumberOrString::String(S!("OLS20001"))),
                             Some(EXTENSION_NAME.to_string()),
                             format!("{} not found", file_tree.clone().join(".")),
                             None,
@@ -203,7 +203,7 @@ impl PythonArchEval {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
-                            None,
+                            Some(NumberOrString::String(S!("OLS20001"))),
                             Some(EXTENSION_NAME.to_string()),
                             format!("{} not found", file_tree.clone().join(".")),
                             None,
@@ -288,7 +288,7 @@ impl PythonArchEval {
         self.diagnostics.push(Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::WARNING),
-            None,
+            Some(NumberOrString::String(S!("OLS20002"))),
             Some(EXTENSION_NAME.to_string()),
             format!("{} not found", tree.join(".")),
             None,
@@ -343,7 +343,7 @@ impl PythonArchEval {
                 self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::WARNING),
-                    None,
+                    Some(NumberOrString::String(S!("OLS20003"))),
                     Some(EXTENSION_NAME.to_string()),
                     format!("Base class {} is not a class", elements.join(".")),
                     None,
