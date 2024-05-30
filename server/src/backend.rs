@@ -81,9 +81,8 @@ impl LanguageServer for Backend {
         };
         let textDocumentChangeRegistrationOptions = TextDocumentChangeRegistrationOptions {
             document_selector: None,
-            sync_kind: 1, //TextDocumentSyncKind::FULL //TODO how to cast to i32?
+            sync_kind: 1, //TextDocumentSyncKind::FULL
         };
-        TextDocumentSyncKind::FULL;
         match self.client.register_capability(vec![
             Registration {
                 id: "workspace/didChangeWatchedFiles".to_string(),

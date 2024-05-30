@@ -23,4 +23,8 @@ pub struct Cli {
     //python path to use (parse mode required)
     #[arg(long)]
     pub python: Option<String>,
+
+    //output path. Default to "output.json"
+    #[arg(short, long)]
+    pub output: Option<String>,
 }
