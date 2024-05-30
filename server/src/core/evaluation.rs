@@ -379,7 +379,7 @@ impl Evaluation {
                 if base_eval.is_none() {
                     return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
                 }
-                let (base_sym, instance) = base_eval.unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics);
+                let (base_sym, instance) = base_eval.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics);
                 let base_sym = base_sym.upgrade();
                 if let Some(base_sym) = base_sym {
                     if base_sym.borrow().sym_type == SymType::CLASS {
@@ -424,7 +424,7 @@ impl Evaluation {
                 let attribute = (*attribute).borrow();
                 let attribute = attribute.get_member_symbol(odoo, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
                 if attribute.len() == 0 {
-                    diagnostics.push(Diagnostic::new(
+                    /*diagnostics.push(Diagnostic::new(
                             FileMgr::textRange_to_temporary_Range(&expr.range),
                             Some(DiagnosticSeverity::ERROR),
                             None,
@@ -432,7 +432,7 @@ impl Evaluation {
                             format!("{} is unknown on {}", expr.attr.as_str(), base.upgrade().unwrap().borrow().name),
                             None,
                             None,
-                    ));
+                    ));*/
                     return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
                 }
                 res.symbol = Rc::downgrade(attribute.first().unwrap());

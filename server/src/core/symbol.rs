@@ -696,7 +696,7 @@ impl Symbol {
             if let Some(class) = class {
                 let class = class.upgrade();
                 if let Some(class) = class {
-                    let mut symbol = Symbol::new( //TODO by doing it that way, a symbol will be created and stored each time a super is called in the code
+                    let mut symbol = Symbol::new(
                         S!("super"),
                         SymType::FUNCTION
                     );

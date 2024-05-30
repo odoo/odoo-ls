@@ -209,7 +209,7 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: Rc<RefCell<Symbol>>, name: &
     let paths = (*parent).borrow().paths.clone();
     for path in paths.iter() {
         let mut full_path = Path::new(path.as_str()).join(name);
-        if full_path.to_str().unwrap().to_string() == odoo.stubs_dir {
+        if path.as_str().to_string() == odoo.stubs_dir {
             full_path = full_path.join(name);
         }
         if is_dir_cs(full_path.to_str().unwrap().to_string()) {
