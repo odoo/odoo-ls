@@ -1,3 +1,4 @@
+use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
@@ -49,10 +50,14 @@ impl FileInfo {
             }
         }
         if let Some(content) = content {
+            self.text_rope = Some(ropey::Rope::from(content.as_str()));
             self._build_ast(&content, uri);
         } else {
             match fs::read_to_string(uri) {
-                Ok(content) => self._build_ast(&content, uri),
+                Ok(content) => {
+                    self.text_rope = Some(ropey::Rope::from(content.as_str()));
+                    self._build_ast(&content, uri)
+                },
                 Err(_) => odoo.msg_sender.send(Msg::LOG_ERROR(format!("Failed to read file {}", uri))),
             };
         }
@@ -86,7 +91,6 @@ impl FileInfo {
                     None));
             }
         };
-        self.text_rope = Some(ropey::Rope::from(content));
         self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
     }
 
@@ -119,8 +123,7 @@ impl FileInfo {
         }
     }
 
-    pub fn offset_to_position(&self, offset: usize) -> Position {
-        let rope = self.text_rope.as_ref().expect("no rope provided");
+    pub fn offset_to_position_with_rope(rope: &Rope, offset: usize) -> Position {
         let char = rope.try_byte_to_char(offset).expect("unable to get char from bytes");
         let line = rope.try_char_to_line(char).ok().expect("unable to get line from char");
         let first_char_of_line = rope.try_line_to_char(line).expect("unable to get char from line");
@@ -128,10 +131,19 @@ impl FileInfo {
         Position::new(line as u32, column as u32)
     }
 
-    pub fn position_to_offset(&self, line: u32, char: u32) -> usize {
+    pub fn offset_to_position(&self, offset: usize) -> Position {
         let rope = self.text_rope.as_ref().expect("no rope provided");
+        FileInfo::offset_to_position_with_rope(rope, offset)
+    }
+
+    pub fn position_to_offset_with_rope(rope: &Rope, line: u32, char: u32) -> usize {
         let line_char = rope.try_line_to_char(line as usize).expect("unable to get char from line");
         rope.try_char_to_byte(line_char + char as usize).expect("unable to get byte from char")
+    }
+
+    pub fn position_to_offset(&self, line: u32, char: u32) -> usize {
+        let rope = self.text_rope.as_ref().expect("no rope provided");
+        FileInfo::position_to_offset_with_rope(rope, line, char)
     }
 }
 
@@ -158,6 +170,28 @@ impl FileMgr {
 
     pub fn get_file_info(&self, path: &String) -> Rc<RefCell<FileInfo>> {
         self.files.get(path).expect("File not found in cache").clone()
+    }
+
+    pub fn text_range_to_range(&mut self, odoo: &mut SyncOdoo, path: &String, range: &TextRange) -> Range {
+        let file = self.files.get(path);
+        if let Some(file) = file {
+            return Range {
+                start: file.borrow().offset_to_position(range.start().to_usize()),
+                end: file.borrow().offset_to_position(range.end().to_usize())
+            }
+        }
+        //file not in cache, let's load rope on the fly
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                let rope = ropey::Rope::from(content.as_str());
+                return Range {
+                    start: FileInfo::offset_to_position_with_rope(&rope, range.start().to_usize()),
+                    end: FileInfo::offset_to_position_with_rope(&rope, range.end().to_usize())
+                };
+            },
+            Err(_) => odoo.msg_sender.send(Msg::LOG_ERROR(format!("Failed to read file {}", path)))
+        };
+        Range::default()
     }
 
     pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {

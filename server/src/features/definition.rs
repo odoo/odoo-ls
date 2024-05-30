@@ -33,13 +33,9 @@ impl DefinitionFeature {
         let file = sym.get_in_parents(&vec![SymType::FILE], true);
         if let Some(file) = file {
             for path in file.upgrade().unwrap().borrow().paths.iter() {
-                let file_info = FileMgr::get_file_info(&odoo.get_file_mgr().borrow(), path);
                 links.push(Location{
                     uri: FileMgr::pathname2uri(path),
-                    range: Range{
-                        start: file_info.borrow().offset_to_position(sym.range.unwrap().start().to_usize()),
-                        end: file_info.borrow().offset_to_position(sym.range.unwrap().end().to_usize())
-                    }
+                    range: odoo.get_file_mgr().borrow_mut().text_range_to_range(odoo, path, &sym.range.unwrap())
                 });
             }
         }
