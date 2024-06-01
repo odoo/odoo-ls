@@ -54,7 +54,7 @@ Do not forget that even if your model is in an auto-installed module, it can be 
 ### OLS30102
 
 "Unknown model. Check your addons path"
-With the Environment (often via self.env), you are trying to get a recordset of a model that is unknown by OdooLS. It means that if the model exists in the codebase, OdooLS 
+With the Environment (often via self.env), you are trying to get a recordset of a model that is unknown by OdooLS. It means that if the model exists in the codebase, OdooLS
 is not aware of it. Check the addons path you provided to be sure that the module declaring this model is in an addon path.
 
 ### OLS30103
@@ -62,6 +62,12 @@ is not aware of it. Check the addons path you provided to be sure that the modul
 "XXXX is not in the dependencies of the module"
 The symbol you are importing is in a module that is not in the dependencies of the current module.
 You should check the dependencies in the \_\_manifest\_\_.py file of your module.
+
+### OLS30104
+
+"Model is inheriting from a model not declared in the dependencies of the module. Check the manifest."
+The declared model is specifying an inheritance to a model that is not declared in the visible modules by the current one.
+Consider updating the manifest of your module to include the relevant module.
 
 ### OLS30201
 

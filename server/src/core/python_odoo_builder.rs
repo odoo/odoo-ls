@@ -2,15 +2,18 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
 use ruff_python_ast::Expr;
-use tower_lsp::lsp_types::Diagnostic;
+use ruff_text_size::TextRange;
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 
 use crate::constants::{BuildSteps, BuildStatus, SymType, DEBUG_ODOO_BUILDER};
+use crate::core::file_mgr::FileInfo;
 use crate::core::model::{Model, ModelData};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::S;
 
 use super::evaluation::EvaluationValue;
+use super::symbols::module_symbol::ModuleSymbol;
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
@@ -85,7 +88,48 @@ impl PythonOdooBuilder {
         }
     }
 
+    fn _check_module_dependency(&mut self, odoo: &mut SyncOdoo, from_module: &Option<Rc<RefCell<Symbol>>>, model: &String, range: &TextRange) {
+        if let Some(from) = from_module {
+            let model = odoo.models.get(model);
+            if let Some(model) = model {
+                let model = model.clone();
+                let borrowed_model = model.borrow();
+                for main_sym in borrowed_model.get_main_symbols(odoo, None, &mut None).iter() {
+                    let main_sym = main_sym.borrow();
+                    let main_sym_module = main_sym.get_module_sym();
+                    if let Some(main_sym_module) = main_sym_module {
+                        let module_name = main_sym_module.borrow()._module.as_ref().unwrap().dir_name.clone();
+                        if !ModuleSymbol::is_in_deps(odoo, from, &module_name, &mut None) {
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30104"))),
+                                None,
+                                S!("Model is inheriting from a model not declared in the dependencies of the module. Check the manifest."),
+                                None,
+                                None)
+                            )
+                        }
+                    }
+                }
+            } else {
+                self.diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30102"))),
+                    None,
+                    S!("Unknown model. Check your addons path"),
+                    None,
+                    None)
+                )
+            }
+        } else {
+            //TODO do we want to raise something?
+        }
+    }
+
     fn _load_class_inherit(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol) {
+        let module = symbol.get_module_sym();
         let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]));
         if let Some(_inherit) = _inherit {
             if let Some(eval) = _inherit.borrow().evaluation.as_ref() {
@@ -93,11 +137,13 @@ impl PythonOdooBuilder {
                 if let Some(eval) = eval.as_ref() {
                     match eval {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
+                            self._check_module_dependency(odoo, &module, &S!(s.value.to_str()), &s.range);
                             symbol._model.as_mut().unwrap().inherit = vec![S!(s.value.to_str())];
                         },
                         EvaluationValue::LIST(l) => {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
+                                    self._check_module_dependency(odoo, &module, &S!(s.value.to_str()), &s.range);
                                     symbol._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
                                 }
                             }
@@ -105,6 +151,7 @@ impl PythonOdooBuilder {
                         EvaluationValue::TUPLE(l) => {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
+                                    self._check_module_dependency(odoo, &module, &S!(s.value.to_str()), &s.range);
                                     symbol._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
                                 }
                             }
