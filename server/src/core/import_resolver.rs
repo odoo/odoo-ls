@@ -38,7 +38,7 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
     let mut result = vec![];
     for alias in name_aliases {
         result.push(ImportResult{
-            name: alias.name.as_str().to_string().clone(),
+            name: alias.asname.as_ref().unwrap_or(&alias.name).to_string().clone(),
             found: false,
             symbol: fallback_sym.clone(),
             file_tree: (file_tree.clone(), vec![]),
