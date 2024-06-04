@@ -29,6 +29,9 @@ impl DefinitionFeature {
         }
         let mut links = vec![];
         let sym = analyse_ast_result.symbol.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut vec![]).0.upgrade();
+        if sym.is_none() {
+            return Ok(None);
+        }
         let sym = sym.as_ref().unwrap().borrow();
         let file = sym.get_in_parents(&vec![SymType::FILE], true);
         if let Some(file) = file {
