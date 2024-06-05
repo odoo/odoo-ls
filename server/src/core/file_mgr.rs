@@ -29,7 +29,7 @@ impl FileInfo {
             uri,
             need_push: false,
             text_rope: None,
-            diagnostics: HashMap::with_capacity(5),
+            diagnostics: HashMap::new(),
         }
     }
     pub fn update(&mut self, odoo: &SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) {
@@ -48,6 +48,9 @@ impl FileInfo {
                 }
                 self.version = version;
             }
+        } else if self.version != 0 {
+            //if no version is provided and a versionned version exists, discard the update
+            return;
         }
         if let Some(content) = content {
             self.text_rope = Some(ropey::Rope::from(content.as_str()));
@@ -198,6 +201,7 @@ impl FileMgr {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         let mut file_info_mut = (*return_info).borrow_mut();
+        file_info_mut.diagnostics.clear();
         file_info_mut.update(sync_odoo, uri, content, version);
         drop(file_info_mut);
         return_info
