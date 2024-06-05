@@ -1,6 +1,6 @@
 use ruff_python_ast::visitor::Visitor;
-use ruff_python_ast::{Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtTry};
-use ruff_text_size::TextRange;
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtTry};
+use ruff_text_size::{Ranged, TextRange};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -12,7 +12,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::S;
 
-use super::evaluation::Evaluation;
+use super::evaluation::{Evaluation, EvaluationValue};
 use super::file_mgr::FileInfo;
 use super::python_utils::{self, unpack_assign};
 
@@ -155,12 +155,12 @@ impl PythonValidator {
                     if let Some(sym) = sym {
                         let val_status = sym.borrow().validation_status.clone();
                         if val_status == BuildStatus::PENDING {
-                            //TODO not possible, as we do not release the file_info of the file validator.
                             let mut v = PythonValidator::new(sym.clone());
                             v.validate(odoo);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
+                        self._check_model(odoo, &sym);
                         self.diagnostics.append(&mut sym.borrow_mut()._class.as_mut().unwrap().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
@@ -267,6 +267,106 @@ impl PythonValidator {
                 let (eval, diags) = Evaluation::eval_from_ast(odoo, expr, self.symbol.clone(), &assign.range.start());
                 self.diagnostics.extend(diags);
             }
+        }
+    }
+
+    fn _check_model(&mut self, odoo: &mut SyncOdoo, class: &Rc<RefCell<Symbol>>) {
+        let cl = class.borrow();
+        let Some(model) = cl._model.as_ref() else {
+            return;
+        };
+        if self.current_module.is_none() {
+            return;
+        }
+        //Check inherit field
+        let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]));
+        if let Some(inherit) = inherit {
+            let inherit_eval = &inherit.borrow().evaluation;
+            if let Some(inherit_eval) = inherit_eval {
+                let inherit_value = inherit_eval.follow_ref_and_get_value(odoo, &mut None, &mut vec![]);
+                if let Some(inherit_value) = inherit_value {
+                    match inherit_value {
+                        EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
+                            self._check_module_dependency(odoo, &s.value.to_string(), &s.range());
+                        },
+                        EvaluationValue::LIST(l) => {
+                            for e in l {
+                                if let Expr::StringLiteral(s) = e {
+                                    self._check_module_dependency(odoo, &s.value.to_string(), &s.range());
+                                }
+                            }
+                        },
+                        EvaluationValue::TUPLE(l) => {
+                            for e in l {
+                                if let Expr::StringLiteral(s) = e {
+                                    self._check_module_dependency(odoo, &s.value.to_string(), &s.range());
+                                }
+                            }
+                        },
+                        _ => {
+                            println!("Error: wrong _inherit value");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn _check_module_dependency(&mut self, odoo: &mut SyncOdoo, model: &String, range: &TextRange) {
+        if let Some(from) = self.current_module.as_ref() {
+            let model = odoo.models.get(model);
+            if let Some(model) = model {
+                let model = model.clone();
+                let borrowed_model = model.borrow();
+                let mut main_modules = vec![];
+                let mut found_one = false;
+                for main_sym in borrowed_model.get_main_symbols(odoo, None, &mut None).iter() {
+                    let main_sym = main_sym.borrow();
+                    let main_sym_module = main_sym.get_module_sym();
+                    if let Some(main_sym_module) = main_sym_module {
+                        let module_name = main_sym_module.borrow()._module.as_ref().unwrap().dir_name.clone();
+                        main_modules.push(module_name.clone());
+                        if ModuleSymbol::is_in_deps(odoo, &from, &module_name, &mut None) {
+                            found_one = true;
+                        }
+                    }
+                }
+                if !found_one {
+                    if main_modules.len() > 0 {
+                        self.diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30104"))),
+                            None,
+                            S!("Model is inheriting from a model not declared in the dependencies of the module. Check the manifest."),
+                            None,
+                            None)
+                        )
+                    } else {
+                        self.diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30102"))),
+                            None,
+                            S!("Unknown model. Check your addons path"),
+                            None,
+                            None)
+                        )
+                    }
+                }
+            } else {
+                self.diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30102"))),
+                    None,
+                    S!("Unknown model. Check your addons path"),
+                    None,
+                    None)
+                )
+            }
+        } else {
+            //TODO do we want to raise something?
         }
     }
 }
