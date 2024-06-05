@@ -22,9 +22,11 @@ impl RootSymbol {
                             return;
                         }
                     }
-                    if path.starts_with(&odoo.stubs_dir) || path.starts_with(&odoo.stdlib_dir) {
-                        symbol.is_external = true;
-                        return;
+                    for stub in odoo.stubs_dirs.iter() {
+                        if path.starts_with(stub) || path.starts_with(&odoo.stdlib_dir) {
+                            symbol.is_external = true;
+                            return;
+                        }
                     }
                 }
             },

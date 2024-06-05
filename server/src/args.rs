@@ -27,4 +27,12 @@ pub struct Cli {
     //output path. Default to "output.json"
     #[arg(short, long)]
     pub output: Option<String>,
+
+    #[arg(short, long)]
+    //additional stubs directories. Be careful that each stub must be in a directory with its own name.
+    pub stubs: Option<Vec<String>>,
+
+    //Remove Typeshed stubs. Useful if you want to provide your own version of stubs. It does not remove stdlib stubs however (they are required), only stubs of external packages
+    #[arg(long)]
+    pub no_typeshed: bool,
 }

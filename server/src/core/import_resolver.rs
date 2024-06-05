@@ -9,6 +9,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::utils::{is_dir_cs, is_file_cs};
+use crate::S;
 
 pub struct ImportResult {
     pub name: String,
@@ -209,10 +210,15 @@ fn _resolve_new_symbol(odoo: &mut SyncOdoo, parent: Rc<RefCell<Symbol>>, name: &
     let paths = (*parent).borrow().paths.clone();
     for path in paths.iter() {
         let mut full_path = Path::new(path.as_str()).join(name);
-        if path.as_str().to_string() == odoo.stubs_dir {
-            full_path = full_path.join(name);
+        for stub in odoo.stubs_dirs.iter() {
+            if path.as_str().to_string() == *stub {
+                full_path = full_path.join(name);
+            }
         }
         if is_dir_cs(full_path.to_str().unwrap().to_string()) {
+            // if is_dir_cs(full_path.to_str().unwrap().to_string() + "-stubs") {
+            //     full_path.set_file_name(full_path.file_name().unwrap().to_str().unwrap().to_string() + "-stubs");
+            // }
             let _arc_symbol = Symbol::create_from_path(odoo, &full_path, parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();

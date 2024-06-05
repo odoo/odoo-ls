@@ -36,7 +36,7 @@ pub struct SyncOdoo {
     pub full_version: String,
     pub config: Config,
     pub symbols: Option<Rc<RefCell<Symbol>>>,
-    pub stubs_dir: String,
+    pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
     file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
@@ -65,8 +65,8 @@ impl SyncOdoo {
             config: Config::new(),
             symbols: Some(symbols),
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
-            stubs_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stubs").to_str().unwrap().to_string(),
-            stdlib_dir: env::current_dir().unwrap().parent().unwrap().join("server").join("typeshed").join("stdlib").to_str().unwrap().to_string(),
+            stubs_dirs: vec![env::current_dir().unwrap().join("typeshed").join("stubs").to_str().unwrap().to_string()],
+            stdlib_dir: env::current_dir().unwrap().join("typeshed").join("stdlib").to_str().unwrap().to_string(),
             modules: HashMap::new(),
             models: HashMap::new(),
             rebuild_arch: PtrWeakHashSet::new(),
@@ -80,18 +80,21 @@ impl SyncOdoo {
         sync_odoo
     }
 
-    pub fn init(&mut self, addons: Vec<String>, odoo_path: String, python_path: String, refresh_mode: RefreshMode, auto_save_delay: u64, diag_missing_imports: DiagMissingImportsMode) {
+    pub fn init(&mut self, config: Config) {
         println!("Initializing odoo");
-        self.config.addons = addons;
-        self.config.odoo_path = odoo_path;
-        self.config.python_path = python_path;
-        self.config.refresh_mode = refresh_mode;
-        self.config.auto_save_delay = auto_save_delay;
-        self.config.diag_missing_imports = diag_missing_imports;
+        self.config = config;
+        if self.config.no_typeshed {
+            self.stubs_dirs.clear();
+        }
+        for stub in self.config.additional_stubs.iter() {
+            self.stubs_dirs.push(stub.clone());
+        }
         {
             let mut root_symbol = self.symbols.as_ref().unwrap().borrow_mut();
             root_symbol.paths.push(self.stdlib_dir.clone());
-            root_symbol.paths.push(self.stubs_dir.clone());
+            for stub_dir in self.stubs_dirs.iter() {
+                root_symbol.paths.push(stub_dir.clone());
+            }
             let output = Command::new(self.config.python_path.clone()).args(&["-c", "import sys; print(sys.path)"]).output().expect("Can't exec python3");
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -672,13 +675,14 @@ impl Odoo {
         }
         tokio::task::spawn_blocking(move || {
             let mut sync_odoo = _odoo.lock().unwrap();
-            sync_odoo.init(
-                        response.addons.clone(),
-                        response.odoo_path.clone(),
-                        response.python_path.clone(),
-                        _refresh_mode,
-                        _auto_save_delay,
-                        _diag_missing_imports);
+            let mut config = Config::new();
+            config.addons = response.addons.clone();
+            config.odoo_path = response.odoo_path.clone();
+            config.python_path = response.python_path.clone();
+            config.refresh_mode = _refresh_mode;
+            config.auto_save_delay = _auto_save_delay;
+            config.diag_missing_imports = _diag_missing_imports;
+            sync_odoo.init(config);
         }).await.unwrap();
     }
 

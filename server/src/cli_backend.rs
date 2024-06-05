@@ -42,12 +42,15 @@ impl CliBackend {
             server.get_file_mgr().borrow_mut().add_workspace_folder(tracked_folder);
         }
 
-        server.init(addons_paths,
-        community_path,
-        S!("python3"),
-        crate::core::config::RefreshMode::Off,
-        10000,
-        DiagMissingImportsMode::All);
+        let mut config = Config::new();
+        config.addons = addons_paths;
+        config.odoo_path = community_path;
+        config.python_path = S!("python3");
+        config.refresh_mode = crate::core::config::RefreshMode::Off;
+        config.diag_missing_imports = DiagMissingImportsMode::All;
+        config.no_typeshed = self.cli.no_typeshed;
+        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]);
+        server.init(config);
 
         let output_path = self.cli.output.clone().unwrap_or(S!("output.json"));
         let file = File::create(output_path.clone());

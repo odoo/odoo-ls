@@ -72,6 +72,8 @@ pub struct Config {
     pub addons: Vec<String>,
     pub odoo_path: String,
     pub python_path: String,
+    pub no_typeshed: bool,
+    pub additional_stubs: Vec<String>,
 }
 
 impl Config {
@@ -83,7 +85,9 @@ impl Config {
             diag_only_opened_files: false,
             addons: Vec::new(),
             odoo_path: "".to_string(),
-            python_path: "".to_string(),
+            python_path: "python3".to_string(),
+            no_typeshed: false,
+            additional_stubs: vec![],
         }
     }
 }

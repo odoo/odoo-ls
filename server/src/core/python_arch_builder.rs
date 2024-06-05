@@ -56,7 +56,7 @@ impl PythonArchBuilder {
             symbol.parent.as_ref().unwrap().upgrade().unwrap().borrow().in_workspace) ||
             odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
         drop(symbol);
-        let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, path.as_str(), None, None); //create ast
+        let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, path.as_str(), None, None); //create ast if not in cache
         let mut file_info = (*file_info).borrow_mut();
         file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         if file_info.ast.is_some() {

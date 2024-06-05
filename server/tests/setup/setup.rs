@@ -19,12 +19,14 @@ pub fn setup_server() -> SyncOdoo {
     test_addons_path = test_addons_path.join("tests").join("data").join("addons");
     println!("Test addons path: {:?}", test_addons_path);
 
-    server.init(vec![test_addons_path.to_str().unwrap().to_string()],
-    community_path,
-    S!("python3"),
-    server::core::config::RefreshMode::Off,
-10000,
-DiagMissingImportsMode::All);
+    let mut config = Config::new();
+    config.addons = vec![test_addons_path.to_str().unwrap().to_string()];
+    config.odoo_path = community_path;
+    config.python_path = S!("python3");
+    config.refresh_mode = server::core::config::RefreshMode::Off;
+    config.diag_missing_imports = DiagMissingImportsMode::All;
+    config.no_typeshed = false;
+    server.init(config);
 
     server
 }
