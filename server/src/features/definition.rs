@@ -33,7 +33,7 @@ impl DefinitionFeature {
             return Ok(None);
         }
         let sym = sym.as_ref().unwrap().borrow();
-        let file = sym.get_in_parents(&vec![SymType::FILE], true);
+        let file = sym.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
         if let Some(file) = file {
             for path in file.upgrade().unwrap().borrow().paths.iter() {
                 links.push(Location{
