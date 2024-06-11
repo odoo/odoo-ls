@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+testpaths = [
+    "test-data",
+]
+
+[tool.coverage.paths]
+source = ["lxml-stubs", "*/.tox/*/site-packages"]
+
+[tool.isort]
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+balanced_wrapping = true
+default_section = "THIRDPARTY"
+use_parentheses = true
+
+[tool.pyright]
+include = ["lxml-stubs"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "/.tox",
+]
+reportPrivateUsage = false
