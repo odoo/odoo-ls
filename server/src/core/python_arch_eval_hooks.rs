@@ -283,7 +283,7 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        (Weak::new(), true)
+        (evaluation_sym.symbol.clone(), true)
     }
 
     fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
