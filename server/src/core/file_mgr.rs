@@ -171,8 +171,11 @@ impl FileMgr {
             Position::new(range.end().to_u32(), 0))
     }
 
-    pub fn get_file_info(&self, path: &String) -> Rc<RefCell<FileInfo>> {
-        self.files.get(path).expect("File not found in cache").clone()
+    pub fn get_file_info(&self, path: &String) -> Option<Rc<RefCell<FileInfo>>> {
+        match self.files.get(path) {
+            Some(rc) => Some(rc.clone()),
+            None => None
+        }
     }
 
     pub fn text_range_to_range(&mut self, odoo: &mut SyncOdoo, path: &String, range: &TextRange) -> Range {

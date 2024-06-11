@@ -143,8 +143,10 @@ impl LanguageServer for Backend {
             if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
                 if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
                     let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                    if file_info.borrow().ast.is_some() {
-                        return HoverFeature::get_hover(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                    if let Some(file_info) = file_info {
+                        if file_info.borrow().ast.is_some() {
+                            return HoverFeature::get_hover(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                        }
                     }
                 }
             }
@@ -171,8 +173,10 @@ impl LanguageServer for Backend {
             if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
                 if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
                     let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                    if file_info.borrow().ast.is_some() {
-                        return DefinitionFeature::get_location(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                    if let Some(file_info) = file_info {
+                        if file_info.borrow().ast.is_some() {
+                            return DefinitionFeature::get_location(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character);
+                        }
                     }
                 }
             }
@@ -197,8 +201,10 @@ impl LanguageServer for Backend {
             if params.text_document_position.text_document.uri.to_string().ends_with(".py") {
                 if let Some(file_symbol) = sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
                     let file_info = sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                    if file_info.borrow().ast.is_some() {
-                        return CompletionFeature::autocomplete(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character);
+                    if let Some(file_info) = file_info {
+                        if file_info.borrow().ast.is_some() {
+                            return CompletionFeature::autocomplete(&mut sync_odoo, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character);
+                        }
                     }
                 }
             }
