@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
@@ -102,6 +102,9 @@ impl PythonArchEval {
             },
             Stmt::Assign(assign_stmt) => {
                 self._visit_assign(odoo, assign_stmt);
+            },
+            Stmt::If(if_stmt) => {
+                self._visit_if(odoo, if_stmt);
             }
             _ => {}
         }
@@ -419,20 +422,42 @@ impl PythonArchEval {
         self.sym_stack.push(variable);
         for (index, stmt) in func_stmt.body.iter().enumerate() {
             //we don't want to evaluate functions here, but in validator. We must only assign ast indexes
+            self.ast_indexes.push(index as u16);
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    self.ast_indexes.push(index as u16);
                     self.visit_func_def(odoo, f);
-                    self.ast_indexes.pop();
                 },
                 Stmt::ClassDef(c) => {
-                    self.ast_indexes.push(index as u16);
                     self.visit_class_def(odoo, c, stmt);
-                    self.ast_indexes.pop();
+                },
+                Stmt::If(if_stmt) => {
+                    self._visit_if(odoo, if_stmt);
                 }
                 _ => {}
             }
+            self.ast_indexes.pop();
         }
         self.sym_stack.pop();
+    }
+
+    fn _visit_if(&mut self, odoo: &mut SyncOdoo, if_stmt: &StmtIf) {
+        //TODO eval test (walrus op)
+        self.ast_indexes.push(0 as u16);//0 for body
+        for (index, stmt) in if_stmt.body.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(odoo, stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
+        for (index, elif_clause) in if_stmt.elif_else_clauses.iter().enumerate() {
+            //TODO eval test of else clauses
+            self.ast_indexes.push((index+1) as u16);//0 for body, so index + 1
+            for (index_stmt, stmt) in elif_clause.body.iter().enumerate() {
+                self.ast_indexes.push(index_stmt as u16);
+                self.visit_stmt(odoo, stmt);
+                self.ast_indexes.pop();
+            }
+            self.ast_indexes.pop();
+        }
     }
 }

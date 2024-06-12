@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Expr, Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
@@ -174,6 +174,9 @@ impl PythonArchBuilder {
                 Stmt::ClassDef(class_def_stmt) => {
                     self.visit_class_def(odoo, class_def_stmt)?;
                 },
+                Stmt::If(if_stmt) => {
+                    self.visit_if(odoo, if_stmt);
+                }
                 _ => {}
             }
         }
@@ -361,5 +364,14 @@ impl PythonArchBuilder {
                 self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, symbol);
             }
         }
+    }
+
+    fn visit_if(&mut self, odoo: &mut SyncOdoo, if_stmt: &StmtIf) -> Result<(), Error> {
+        //TODO check platform condition (sys.version > 3.12, etc...)
+        self.visit_node(odoo, &if_stmt.body)?;
+        for else_clause in if_stmt.elif_else_clauses.iter() {
+            self.visit_node(odoo, &else_clause.body)?;
+        }
+        Ok(())
     }
 }

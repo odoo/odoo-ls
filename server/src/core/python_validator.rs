@@ -52,16 +52,28 @@ impl PythonValidator {
 
     fn find_stmt_from_ast<'a>(ast: &'a Vec<Stmt>, indexes: &Vec<u16>) -> &'a Stmt {
         let mut stmt = ast.get(indexes[0] as usize).expect("index not found in ast");
-        for i in indexes.iter().skip(1) {
+        let mut i_index = 1;
+        while i_index < indexes.len() {
             match stmt {
                 Stmt::ClassDef(c) => {
-                    stmt = c.body.get(*i as usize).expect("index not found in ast");
+                    stmt = c.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
                 },
                 Stmt::FunctionDef(f) => {
-                    stmt = f.body.get(*i as usize).expect("index not found in ast");
-                }
+                    stmt = f.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
+                },
+                Stmt::If(if_stmt) => {
+                    let bloc = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    if *bloc == 0 {
+                        stmt = if_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
+                    } else {
+                        stmt = if_stmt.elif_else_clauses.get((bloc-1) as usize).expect("Bloc not found in if stmt").body.get(*stmt_index as usize).expect("index not found in ast");
+                    }
+                },
                 _ => {}
             }
+            i_index += 1;
         }
         stmt
     }
