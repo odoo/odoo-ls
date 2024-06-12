@@ -1,6 +1,6 @@
-use ruff_python_ast::{Expr, Operator};
+use ruff_python_ast::{Identifier, Expr, Operator};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use tower_lsp::lsp_types::Diagnostic;
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -8,10 +8,9 @@ use std::cell::RefCell;
 use crate::constants::*;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
-use crate::core::symbols::module_symbol::ModuleSymbol;
+use crate::utils::Either;
 use crate::S;
 
-use super::file_mgr::FileMgr;
 use super::python_validator::PythonValidator;
 
 #[derive(Debug, Clone)]
@@ -88,6 +87,12 @@ pub struct AnalyzeAstResult {
     pub factory: Option<Weak<RefCell<Symbol>>>,
     pub context: Option<Context>,
     pub diagnostics: Vec<Diagnostic>
+}
+
+impl AnalyzeAstResult {
+    pub fn from_only_diagnostics(diags: Vec<Diagnostic>) -> Self {
+        AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics: diags }
+    }
 }
 
 impl Evaluation {
@@ -222,13 +227,13 @@ impl Evaluation {
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
     pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Option<Evaluation>, Vec<Diagnostic>) {
-        let analyze_result = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
+        let analyze_result = Evaluation::analyze_ast(odoo, Either::Left(ast), parent, max_infer);
         return (analyze_result.symbol, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
     fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
-        let value = Evaluation::analyze_ast(odoo, ast, parent, max_infer);
+        let value = Evaluation::analyze_ast(odoo, Either::Left(ast), parent, max_infer);
         if value.symbol.is_some() {
             let eval = value.symbol.unwrap();
             let v = eval.follow_ref_and_get_value(odoo, &mut None, diagnostics);
@@ -284,7 +289,7 @@ impl Evaluation {
         Definition -> symbol
         Autocompletion -> effective_sym
      */
-    pub fn analyze_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
+    pub fn analyze_ast(odoo: &mut SyncOdoo, ast: Either<&Expr, &Identifier>, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
         let mut res = EvaluationSymbol::default();
         let mut effective_sym = None;
         let mut factory = None;
@@ -295,31 +300,35 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context : Context = HashMap::from([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
-        ]);
         let module: Option<Rc<RefCell<Symbol>>> = parent.borrow().get_module_sym();
+        let mut context: Context = HashMap::from([
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(match ast {
+                Either::Left(ast) => ast.range(),
+                Either::Right(alias) => alias.range()
+            }))
+        ]);
+
         match ast {
-            Expr::StringLiteral(expr) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
+            Either::Left(Expr::StringLiteral(expr)) => {
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.left().unwrap());
             },
-            Expr::BytesLiteral(expr) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
+            Either::Left(Expr::BytesLiteral(expr)) => {
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.left().unwrap());
             },
-            Expr::NumberLiteral(expr) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
+            Either::Left(Expr::NumberLiteral(expr)) => {
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.left().unwrap());
             },
-            Expr::BooleanLiteral(expr) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
+            Either::Left(Expr::BooleanLiteral(expr)) => {
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.left().unwrap());
             },
-            Expr::NoneLiteral(expr) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
+            Either::Left(Expr::NoneLiteral(expr)) => {
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.left().unwrap());
             },
-            Expr::EllipsisLiteral(expr) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast);
+            Either::Left(Expr::EllipsisLiteral(expr)) => {
+                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.left().unwrap());
             }
-            Expr::List(expr) => {
+            Either::Left(Expr::List(expr)) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_l".to_string(), SymType::CONSTANT))));
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
@@ -334,7 +343,7 @@ impl Evaluation {
                 }
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_list(odoo, values));
             },
-            Expr::Tuple(expr) => {
+            Either::Left(Expr::Tuple(expr)) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_t".to_string(), SymType::CONSTANT))));
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
@@ -349,7 +358,7 @@ impl Evaluation {
                 }
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_tuple(odoo, values));
             },
-            Expr::Dict(expr) => {
+            Either::Left(Expr::Dict(expr)) => {
                 res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_d".to_string(), SymType::CONSTANT))));
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
@@ -373,11 +382,11 @@ impl Evaluation {
                 }
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_dict(odoo, values));
             },
-            Expr::Call(expr) => {
+            Either::Left(Expr::Call(expr)) => {
                 let (base_eval, diags) = Evaluation::eval_from_ast(odoo, &expr.func, parent, max_infer);
                 diagnostics.extend(diags);
                 if base_eval.is_none() {
-                    return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
+                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let (base_sym, instance) = base_eval.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics);
                 let base_sym = base_sym.upgrade();
@@ -411,11 +420,11 @@ impl Evaluation {
                     }
                 }
             },
-            Expr::Attribute(expr) => {
+            Either::Left(Expr::Attribute(expr)) => {
                 let (eval, diags) = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
                 diagnostics.extend(diags);
                 if eval.is_none() || eval.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics).0.upgrade().is_none() {
-                    return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
+                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = eval.unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics).0.upgrade();
                 let base = base.unwrap();
@@ -433,16 +442,28 @@ impl Evaluation {
                             None,
                             None,
                     ));*/
-                    return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
+                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 res.symbol = Rc::downgrade(attribute.first().unwrap());
                 res.instance = (**attribute.first().unwrap()).borrow().sym_type == SymType::VARIABLE;
             },
-            Expr::Name(expr) => {
-                let infered_sym = Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(*max_infer));
+            Either::Left(Expr::Name(_)) | Either::Right(_) => {
+                let mut infered_sym: Option<Rc<RefCell<Symbol>>> = match ast {
+                    Either::Left(Expr::Name(expr))  =>  {
+                        Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
+                    },
+                    Either::Right(expr) => {
+                        Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
+                    }
+                    _ => {
+                        unreachable!();
+                    }
+                };
+
                 if infered_sym.is_none() {
-                    return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
+                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
+
                 if infered_sym.as_ref().unwrap().borrow().parent.is_none() {
                     //for temporary symbol, store it in internal storage
                     res._internal_hold_symbol = Some(infered_sym.as_ref().unwrap().clone());
@@ -454,11 +475,11 @@ impl Evaluation {
                     res.instance = infered_sym.evaluation.as_ref().unwrap().symbol.instance;
                 }
             },
-            Expr::Subscript(sub) => {
+            Either::Left(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(odoo, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
                 if eval_left.is_none() || eval_left.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
-                    return AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics };
+                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = eval_left.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
@@ -490,10 +511,10 @@ impl Evaluation {
                     }
                 }
             },
-            Expr::BinOp(operator) => {
+            Either::Left(Expr::BinOp(operator)) => {
                 match operator.op {
                     Operator::Add => {
-                         
+
                     },
                     _ => {}
                 }

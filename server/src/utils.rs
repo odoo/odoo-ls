@@ -7,6 +7,28 @@ macro_rules! S {
     };
 }
 
+#[derive(Debug)]
+pub enum Either<T1, T2> {
+    Left(T1),
+    Right(T2),
+}
+
+impl <T1, T2> Either<T1, T2> {
+    pub fn left(&self) -> Option<&T1> {
+        match self {
+            Either::Left(left) => Some(left),
+            _ => None
+        }
+    }
+
+    pub fn right(&self) -> Option<&T2> {
+        match self {
+            Either::Right(right) => Some(right),
+            _ => None
+        }
+    }
+}
+
 pub fn is_file_cs(path: String) -> bool {
     match fs::canonicalize(path) {
         Ok(canonical_path) => {
