@@ -71,6 +71,18 @@ impl PythonValidator {
                         stmt = if_stmt.elif_else_clauses.get((bloc-1) as usize).expect("Bloc not found in if stmt").body.get(*stmt_index as usize).expect("index not found in ast");
                     }
                 },
+                Stmt::Try(try_stmt) => {
+                    let bloc = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    if *bloc == 0 {
+                        stmt = try_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
+                    } else if *bloc == 1 {
+                        stmt = try_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
+                    } else if *bloc == 2 {
+                        stmt = try_stmt.finalbody.get(*stmt_index as usize).expect("index not found in ast");
+                    }
+                }
                 _ => {}
             }
             i_index += 1;

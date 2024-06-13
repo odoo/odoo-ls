@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
@@ -105,6 +105,9 @@ impl PythonArchEval {
             },
             Stmt::If(if_stmt) => {
                 self._visit_if(odoo, if_stmt);
+            },
+            Stmt::Try(try_stmt) => {
+                self._visit_try(odoo, try_stmt);
             }
             _ => {}
         }
@@ -184,9 +187,9 @@ impl PythonArchEval {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
-                            Some(NumberOrString::String(S!("OLS20001"))),
+                            Some(NumberOrString::String(S!("OLS20004"))),
                             Some(EXTENSION_NAME.to_string()),
-                            format!("{} not found", file_tree.clone().join(".")),
+                            format!("Failed to evaluate import {}", file_tree.clone().join(".")),
                             None,
                             None,
                         ));
@@ -432,6 +435,9 @@ impl PythonArchEval {
                 },
                 Stmt::If(if_stmt) => {
                     self._visit_if(odoo, if_stmt);
+                },
+                Stmt::Try(try_stmt) => {
+                    self._visit_try(odoo, try_stmt);
                 }
                 _ => {}
             }
@@ -459,5 +465,40 @@ impl PythonArchEval {
             }
             self.ast_indexes.pop();
         }
+    }
+
+    fn _visit_try(&mut self, odoo: &mut SyncOdoo, try_stmt: &StmtTry) {
+        let mut safe = false;
+        for handler in try_stmt.handlers.iter() {
+            let handler = handler.as_except_handler().unwrap();
+            if let Some(type_) = &handler.type_ {
+                if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
+                    safe = true;
+                }
+            }
+        }
+        self.safe_import.push(safe);
+        self.ast_indexes.push(0 as u16);
+        for (index, stmt) in try_stmt.body.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(odoo, stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
+        self.safe_import.pop();
+        self.ast_indexes.push(1 as u16);
+        for (index, stmt) in try_stmt.orelse.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(odoo, stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
+        self.ast_indexes.push(2 as u16);
+        for (index, stmt) in try_stmt.finalbody.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(odoo, stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
     }
 }

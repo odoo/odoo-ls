@@ -32,6 +32,12 @@ Be sure that the symbol is refering to a valid python class.
 The symbol you used as a base class is not a class, or not evaluated to a class.
 Be sure that the symbol is refering to a valid python class.
 
+### OLS20004
+
+"Failed to evaluate XXXX".
+The extension failed to evaluate a symbol. This occurs more specificaly when the extension detect a loop in the imports.
+If your code is working fine, it can happen if you use too many "import *" that can break the extension flow for now.
+
 ### OLS20201
 
 "The active key is deprecated".
