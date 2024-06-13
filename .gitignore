@@ -1,6 +1,7 @@
 out
 node_modules
 client/server
+.idea
 .vscode-test
 .vscode/settings.json
 server/libs/
