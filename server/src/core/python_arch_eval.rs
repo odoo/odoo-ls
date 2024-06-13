@@ -346,6 +346,9 @@ impl PythonArchEval {
                 continue
             }
             if (*iter_element.upgrade().unwrap()).borrow().sym_type != SymType::CLASS {
+                if elements.join(".").contains("Command") {
+                    println!("here");
+                }
                 self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::WARNING),

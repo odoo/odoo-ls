@@ -1,4 +1,0 @@
-include setup.py pyproject.toml tox.ini MANIFEST.in Makefile
-include LICENSE README.md
-recursive-include lxml-stubs *.pyi
-recursive-include test-data *.yml

@@ -57,6 +57,9 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn new(name: String, sym_type: SymType) -> Self {
+        if name == "Command" && sym_type == SymType::FILE {
+            println!("HO");
+        }
         Symbol{
             name: name.clone(),
             sym_type: sym_type,

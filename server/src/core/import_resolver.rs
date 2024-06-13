@@ -68,19 +68,21 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
             let (mut name_symbol, fallback_sym) = _get_or_create_symbol(
                 odoo,
                 from_symbol.as_ref().unwrap().clone(),
-                &name.split(".").map(str::to_string).collect(),
+                &vec![name.split(".").map(str::to_string).next().unwrap()],
                 source_file_symbol.clone(),
                 None,
                 &alias.range);
             if name_symbol.is_none() {
                 if !name.contains(".") {
-                    name_symbol = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name.split(".").map(str::to_string).collect()));
+                    //TODO WTF?
+                    name_symbol = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], vec![name.clone()]));
                 }
                 if name_symbol.is_none() {
                     result[name_index as usize].symbol = fallback_sym.clone();
                     continue;
                 }
             }
+            result[name_index as usize].name = name.split(".").map(str::to_string).next().unwrap();
             result[name_index as usize].found = true;
             result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
         }

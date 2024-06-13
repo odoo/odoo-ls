@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::TextRange;
+use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use weak_table::traits::WeakElement;
@@ -17,6 +17,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
+use crate::S;
 
 use super::import_resolver::ImportResult;
 use super::symbols::class_symbol::ClassSymbol;
@@ -132,9 +133,9 @@ impl PythonArchBuilder {
 
             } else {
                 let var_name = if import_name.asname.is_none() {
-                    import_name.name.clone()
+                    S!(import_name.name.split(".").next().unwrap().clone())
                 } else {
-                    import_name.asname.as_ref().unwrap().clone()
+                    import_name.asname.as_ref().unwrap().clone().to_string()
                 };
                 let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE);
                 variable.is_import_variable = true;

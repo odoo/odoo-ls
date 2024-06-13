@@ -1,7 +1,8 @@
+use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 use ruff_text_size::TextRange;
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{GotoDefinitionResponse, Location, Range};
+use tower_lsp::lsp_types::{GotoDefinitionResponse, Location, Position, Range};
 
 use crate::constants::SymType;
 use crate::core::evaluation::AnalyzeAstResult;
@@ -36,10 +37,20 @@ impl DefinitionFeature {
         let file = sym.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
         if let Some(file) = file {
             for path in file.upgrade().unwrap().borrow().paths.iter() {
-                links.push(Location{
-                    uri: FileMgr::pathname2uri(path),
-                    range: odoo.get_file_mgr().borrow_mut().text_range_to_range(odoo, path, &sym.range.unwrap())
-                });
+                match sym.sym_type {
+                    SymType::PACKAGE => {
+                        links.push(Location{
+                            uri: FileMgr::pathname2uri(&PathBuf::from(path).join("__init__.py").to_str().unwrap().to_string()),
+                            range: Range::default()
+                        });
+                    },
+                    _ => {
+                        links.push(Location{
+                            uri: FileMgr::pathname2uri(path),
+                            range: odoo.get_file_mgr().borrow_mut().text_range_to_range(odoo, path, &sym.range.unwrap())
+                        });
+                    }
+                }
             }
         }
         Ok(Some(GotoDefinitionResponse::Array(links)))
