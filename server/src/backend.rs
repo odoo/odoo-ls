@@ -43,7 +43,7 @@ impl LanguageServer for Backend {
             }),
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
-                    change: Some(TextDocumentSyncKind::FULL),
+                    change: Some(TextDocumentSyncKind::INCREMENTAL),
                     ..TextDocumentSyncOptions::default()
                 })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -81,7 +81,7 @@ impl LanguageServer for Backend {
         };
         let textDocumentChangeRegistrationOptions = TextDocumentChangeRegistrationOptions {
             document_selector: None,
-            sync_kind: 1, //TextDocumentSyncKind::FULL
+            sync_kind: 2, //TextDocumentSyncKind::FULL
         };
         match self.client.register_capability(vec![
             Registration {
@@ -225,9 +225,7 @@ impl LanguageServer for Backend {
         tokio::time::sleep(Duration::from_millis(delay)).await;
         let path = params.text_document.uri.to_file_path().unwrap();
         let version = params.text_document.version;
-        //TODO get source by keeping diff?
-        let source = params.content_changes[0].text.clone();
-        odoo.reload_file(&self.client, path, source, version).await;
+        odoo.reload_file(&self.client, path, params.content_changes, version).await;
     }
 
     async fn shutdown(&self) -> Result<()> {

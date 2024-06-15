@@ -687,14 +687,14 @@ impl Odoo {
         }).await.unwrap();
     }
 
-    pub async fn reload_file(&mut self, client: &Client, path: PathBuf, content: String, version: i32) {
+    pub async fn reload_file(&mut self, client: &Client, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             client.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version)).await;
             let _odoo = self.odoo.clone();
             tokio::task::spawn_blocking(move || {
                 let mut sync_odoo = _odoo.lock().unwrap();
                 let odoo = &mut sync_odoo;
-                let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(content), Some(version));
+                let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(&content), Some(version));
                 let mut mut_file_info = file_info.borrow_mut();
                 mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
                 drop(mut_file_info);

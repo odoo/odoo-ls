@@ -1,7 +1,7 @@
 use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, TextDocumentContentChangeEvent};
 use std::{collections::HashMap, fs};
 use crate::core::odoo::SyncOdoo;
 use crate::core::messages::{Msg, MsgDiagnostic};
@@ -32,13 +32,14 @@ impl FileInfo {
             diagnostics: HashMap::new(),
         }
     }
-    pub fn update(&mut self, odoo: &SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) {
+    pub fn update(&mut self, odoo: &SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>) {
         // update the file info with the given information.
         // uri: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
         // version: if the version is provided, the file_info wil be updated only if the new version is higher.
         // -100 can be given as version number to indicates that the file has not been opened yet, and that we have to load it ourself
         // See https://github.com/Microsoft/language-server-protocol/issues/177
+        // Return true if the update has been done and not discarded
         if let Some(version) = version {
             if version == -100 {
                 self.version = 1;
@@ -52,24 +53,29 @@ impl FileInfo {
             //if no version is provided and a versionned version exists, discard the update
             return;
         }
+        self.diagnostics.clear();
         if let Some(content) = content {
-            self.text_rope = Some(ropey::Rope::from(content.as_str()));
-            self._build_ast(&content, uri);
+            for change in content.iter() {
+                self.apply_change(change);
+            }
+            self._build_ast();
         } else {
             match fs::read_to_string(uri) {
                 Ok(content) => {
                     self.text_rope = Some(ropey::Rope::from(content.as_str()));
-                    self._build_ast(&content, uri)
+                    self._build_ast()
                 },
                 Err(_) => odoo.msg_sender.send(Msg::LOG_ERROR(format!("Failed to read file {}", uri))),
             };
         }
     }
 //"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
-    pub fn _build_ast(&mut self, content: &str, content_path: &str) {
+    pub fn _build_ast(&mut self) {
         //let ast = ast::Suite::parse(&content, content_path);
         let mut diagnostics = vec![];
-        let ast = ruff_python_parser::parse(&content, Mode::Module);
+        let content = &self.text_rope.as_ref().unwrap().slice(..);
+        let source = content.to_string(); //cast to string to get a version with all changes
+        let ast = ruff_python_parser::parse(source.as_str(), Mode::Module);
         match ast {
             Ok(module) => {
                 match module {
@@ -83,6 +89,7 @@ impl FileInfo {
                 }
             },
             Err(err) => {
+                self.ast = None;
                 diagnostics.push(Diagnostic::new(
                     Range{ start: Position::new(err.location.start().to_u32(), 0),
                         end: Position::new(err.location.end().to_u32(), 0)},
@@ -148,6 +155,20 @@ impl FileInfo {
         let rope = self.text_rope.as_ref().expect("no rope provided");
         FileInfo::position_to_offset_with_rope(rope, line, char)
     }
+
+    fn apply_change(&mut self, change: &TextDocumentContentChangeEvent) {
+        //TODO a desync can occur if updates come while the initialization (did_open missing?)
+        if change.range.is_none() {
+            self.text_rope = Some(ropey::Rope::from_str(&change.text));
+            return;
+        }
+        let start_idx = self.text_rope.as_ref().unwrap().try_line_to_char(change.range.unwrap().start.line as usize).expect("Unable to get char position of line");
+        let start_idx = start_idx + change.range.unwrap().start.character as usize;
+        let end_idx = self.text_rope.as_ref().unwrap().try_line_to_char(change.range.unwrap().end.line as usize).expect("Unable to get char position of line");
+        let end_idx = end_idx + change.range.unwrap().end.character as usize;
+        self.text_rope.as_mut().unwrap().remove(start_idx .. end_idx);
+        self.text_rope.as_mut().unwrap().insert(start_idx, &change.text);
+    }
 }
 
 #[derive(Debug)]
@@ -200,11 +221,10 @@ impl FileMgr {
         Range::default()
     }
 
-    pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<String>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
+    pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         let mut file_info_mut = (*return_info).borrow_mut();
-        file_info_mut.diagnostics.clear();
         file_info_mut.update(sync_odoo, uri, content, version);
         drop(file_info_mut);
         return_info
