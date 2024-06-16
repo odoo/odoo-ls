@@ -32,7 +32,7 @@ impl FileInfo {
             diagnostics: HashMap::new(),
         }
     }
-    pub fn update(&mut self, odoo: &SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>) {
+    pub fn update(&mut self, odoo: &SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) {
         // update the file info with the given information.
         // uri: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -44,13 +44,12 @@ impl FileInfo {
             if version == -100 {
                 self.version = 1;
             } else {
-                if version <= self.version {
+                if version <= self.version && !force {
                     return;
                 }
                 self.version = version;
             }
-        } else if self.version != 0 {
-            //if no version is provided and a versionned version exists, discard the update
+        } else if self.version != 0 && !force {
             return;
         }
         self.diagnostics.clear();
@@ -221,11 +220,11 @@ impl FileMgr {
         Range::default()
     }
 
-    pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>) -> Rc<RefCell<FileInfo>> {
+    pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> Rc<RefCell<FileInfo>> {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         let mut file_info_mut = (*return_info).borrow_mut();
-        file_info_mut.update(sync_odoo, uri, content, version);
+        file_info_mut.update(sync_odoo, uri, content, version, force);
         drop(file_info_mut);
         return_info
     }

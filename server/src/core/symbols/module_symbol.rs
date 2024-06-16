@@ -45,7 +45,7 @@ impl ModuleSymbol {
         if !manifest_path.exists() {
             return None;
         }
-        let manifest_file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, manifest_path.as_os_str().to_str().unwrap(), None, None);
+        let manifest_file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, manifest_path.as_os_str().to_str().unwrap(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.ast.is_none() {
             return None;

@@ -212,9 +212,22 @@ impl LanguageServer for Backend {
         Ok(None)
     }
 
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
+        // that we use the same base version of the file for future incrementation.
+        let mut odoo = self.odoo.lock().await;
+        let path = params.text_document.uri.to_file_path().unwrap();
+        self.client.log_message(MessageType::INFO, format!("File opened: {}", path.as_os_str().to_str().unwrap())).await;
+        odoo.reload_file(&self.client, path, vec![TextDocumentContentChangeEvent{
+            range: None,
+            range_length: None,
+            text: params.text_document.text}],
+        params.text_document.version, true).await;
+    }
+
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let mut odoo = self.odoo.lock().await;
-        let mut delay = 1000;
+        let delay;
         {
             let sync_odoo = odoo.odoo.lock().unwrap();
             if sync_odoo.config.refresh_mode != RefreshMode::AfterDelay {
@@ -224,8 +237,9 @@ impl LanguageServer for Backend {
         }
         tokio::time::sleep(Duration::from_millis(delay)).await;
         let path = params.text_document.uri.to_file_path().unwrap();
+        self.client.log_message(MessageType::INFO, format!("File changed: {}", path.as_os_str().to_str().unwrap())).await;
         let version = params.text_document.version;
-        odoo.reload_file(&self.client, path, params.content_changes, version).await;
+        odoo.reload_file(&self.client, path, params.content_changes, version, false).await;
     }
 
     async fn shutdown(&self) -> Result<()> {

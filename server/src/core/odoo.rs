@@ -554,9 +554,9 @@ impl SyncOdoo {
         let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let mut need_rebuild = false;
         for s in self.not_found_symbols.iter() {
-            let mut index = 0;
-            while index < s.borrow().not_found_paths.len() {
-                let (step, not_found_tree) = s.borrow().not_found_paths[index].clone();
+            let mut index: i32 = 0; //i32 sa we could go in negative values
+            while (index as usize) < s.borrow().not_found_paths.len() {
+                let (step, not_found_tree) = s.borrow().not_found_paths[index as usize].clone();
                 if flat_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] == not_found_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] {
                     need_rebuild = true;
                     match step {
@@ -574,7 +574,7 @@ impl SyncOdoo {
                         },
                         _ => {}
                     }
-                    s.borrow_mut().not_found_paths.remove(index);
+                    s.borrow_mut().not_found_paths.remove(index as usize);
                     index -= 1;
                 }
                 index += 1;
@@ -687,14 +687,14 @@ impl Odoo {
         }).await.unwrap();
     }
 
-    pub async fn reload_file(&mut self, client: &Client, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32) {
+    pub async fn reload_file(&mut self, client: &Client, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, force: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             client.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version)).await;
             let _odoo = self.odoo.clone();
             tokio::task::spawn_blocking(move || {
                 let mut sync_odoo = _odoo.lock().unwrap();
                 let odoo = &mut sync_odoo;
-                let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(&content), Some(version));
+                let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, &path.as_os_str().to_str().unwrap().to_string(), Some(&content), Some(version), force);
                 let mut mut_file_info = file_info.borrow_mut();
                 mut_file_info.publish_diagnostics(odoo); //To push potential syntax errors or refresh previous one
                 drop(mut_file_info);
