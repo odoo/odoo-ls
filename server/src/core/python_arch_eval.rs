@@ -290,7 +290,12 @@ impl PythonArchEval {
         let tree = symbol.get_tree();
         let tree = vec![tree.0.clone(), vec![var_name.to_string()]].concat();
         symbol.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
-        odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
+        if symbol.parent.is_some() {
+            //TODO why this check is needed?
+            odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
+        } else {
+            println!("invalid symbol: {:?}", symbol);
+        }
         self.diagnostics.push(Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::WARNING),
