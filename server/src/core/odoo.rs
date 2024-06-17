@@ -137,8 +137,8 @@ impl SyncOdoo {
     }
 
     pub fn load_builtins(&mut self) {
-        let path = std::env::current_dir().unwrap();
-        let builtins_path = path.join("typeshed").join("stdlib").join("builtins.pyi");
+        let path = PathBuf::from(&self.stdlib_dir);
+        let builtins_path = path.join("builtins.pyi");
         if !builtins_path.exists() {
             self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to find builtins.pyi")));
             println!("Unable to find builtins at: {}", builtins_path.as_os_str().to_str().unwrap());
