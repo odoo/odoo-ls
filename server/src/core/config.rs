@@ -74,6 +74,7 @@ pub struct Config {
     pub python_path: String,
     pub no_typeshed: bool,
     pub additional_stubs: Vec<String>,
+    pub stdlib: String,
 }
 
 impl Config {
@@ -88,6 +89,7 @@ impl Config {
             python_path: "python3".to_string(),
             no_typeshed: false,
             additional_stubs: vec![],
+            stdlib: "".to_string(),
         }
     }
 }

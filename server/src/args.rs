@@ -35,4 +35,8 @@ pub struct Cli {
     //Remove Typeshed stubs. Useful if you want to provide your own version of stubs. It does not remove stdlib stubs however (they are required), only stubs of external packages
     #[arg(long)]
     pub no_typeshed: bool,
+
+    //give an alternative path to stdlib stubs. 
+    #[arg(long)]
+    pub stdlib: Option<String>
 }

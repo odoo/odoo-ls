@@ -50,6 +50,7 @@ impl CliBackend {
         config.diag_missing_imports = DiagMissingImportsMode::All;
         config.no_typeshed = self.cli.no_typeshed;
         config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]);
+        config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
         server.init(config);
 
         let output_path = self.cli.output.clone().unwrap_or(S!("output.json"));

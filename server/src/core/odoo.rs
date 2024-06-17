@@ -78,14 +78,6 @@ impl SyncOdoo {
             msg_sender,
             load_odoo_addons: true
         };
-        for stub in sync_odoo.stubs_dirs.iter() {
-            let path = Path::new(stub);
-            let found = match path.exists() {
-                true  => "found",
-                false => "not found",
-            };
-            println!("stub {:?} - {}", stub, found)
-        }
         sync_odoo
     }
 
@@ -97,6 +89,18 @@ impl SyncOdoo {
         }
         for stub in self.config.additional_stubs.iter() {
             self.stubs_dirs.push(stub.clone());
+        }
+        if !self.config.stdlib.is_empty() {
+            self.stdlib_dir = self.config.stdlib.clone();
+        }
+        println!("Using stdlib path: {}", self.stdlib_dir);
+        for stub in self.stubs_dirs.iter() {
+            let path = Path::new(stub);
+            let found = match path.exists() {
+                true  => "found",
+                false => "not found",
+            };
+            println!("stub {:?} - {}", stub, found)
         }
         {
             let mut root_symbol = self.symbols.as_ref().unwrap().borrow_mut();
@@ -137,6 +141,7 @@ impl SyncOdoo {
         let builtins_path = path.join("typeshed").join("stdlib").join("builtins.pyi");
         if !builtins_path.exists() {
             self.msg_sender.send(Msg::LOG_ERROR(String::from("Unable to find builtins.pyi")));
+            println!("Unable to find builtins at: {}", builtins_path.as_os_str().to_str().unwrap());
             return;
         };
         let _builtins_rc_symbol = Symbol::create_from_path(self, &builtins_path, self.symbols.as_ref().unwrap().clone(), false);
