@@ -37,10 +37,7 @@ pub fn is_file_cs(path: String) -> bool {
 pub fn is_file_cs(path: String) -> bool {
     let p = Path::new(&path);
     if p.exists() && p.is_file() {
-        match p.file_name().and_then(OsStr::to_str) {
-            Some(name) => name == path,
-            None => false
-        }
+        true
     } else {
         false
     }
@@ -76,10 +73,7 @@ pub fn is_dir_cs(path: String) -> bool {
 pub fn is_dir_cs(path: String) -> bool {
     let p = Path::new(&path);
     if p.exists() && p.is_dir() {
-        match p.file_name().and_then(OsStr::to_str) {
-            Some(name) => name == path,
-            None => false
-        }
+        true
     } else {
         false
     }

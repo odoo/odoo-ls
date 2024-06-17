@@ -209,6 +209,10 @@ impl SyncOdoo {
         //search common odoo addons path
         let addon_symbol = self.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
         if addon_symbol.is_none() {
+            let odoo = self.get_symbol(&tree(vec!["odoo"], vec![]));
+            if odoo.is_none() {
+                panic!("Not able to find odoo. Please check your configuration");
+            }
             panic!("Not able to find odoo/addons. Please check your configuration");
         }
         if odoo_addon_path.exists() {
