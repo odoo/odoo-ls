@@ -10,6 +10,7 @@ use server::S;
 
 pub fn setup_server() -> SyncOdoo {
     let community_path = env::var("COMMUNITY_PATH").expect("Please provide COMMUNITY_PATH environment variable with a valid path to your Odoo Community folder");
+    println!("Community path: {:?}", community_path);
     let sync_channel = SyncChannel { messages: RefCell::new(Vec::new()) };
     let msg_handler = MsgHandler::SYNC_CHANNEL(sync_channel);
     let mut server = SyncOdoo::new(msg_handler);
