@@ -11,7 +11,7 @@ use weak_table::PtrWeakHashSet;
 use std::process::Command;
 use std::str::FromStr;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::env;
 use std::cmp;
 use regex::Regex;
@@ -78,6 +78,14 @@ impl SyncOdoo {
             msg_sender,
             load_odoo_addons: true
         };
+        for stub in sync_odoo.stubs_dirs.iter() {
+            let path = Path::new(stub);
+            let found = match path.exists() {
+                true  => "found",
+                false => "not found",
+            };
+            println!("stub {:?} - {}", stub, found)
+        }
         sync_odoo
     }
 
