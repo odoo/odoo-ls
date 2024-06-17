@@ -33,7 +33,6 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
         odoo,
         odoo.symbols.as_ref().unwrap().clone(),
         &file_tree,
-        source_file_symbol.clone(),
         None,
         from_range);
     let mut result = vec![];
@@ -69,7 +68,6 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
                 odoo,
                 from_symbol.as_ref().unwrap().clone(),
                 &vec![name.split(".").map(str::to_string).next().unwrap()],
-                source_file_symbol.clone(),
                 None,
                 &alias.range);
             if name_symbol.is_none() {
@@ -95,7 +93,6 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
             odoo,
             from_symbol.as_ref().unwrap().clone(),
             &name_first_part,
-            source_file_symbol.clone(),
             None,
             &alias.range);
         if next_symbol.is_none() {
@@ -107,7 +104,6 @@ pub fn resolve_import_stmt(odoo: &mut SyncOdoo, source_file_symbol: &Rc<RefCell<
             odoo,
             next_symbol.as_ref().unwrap().clone(),
             &name_last_name,
-            source_file_symbol.clone(),
             None,
             &alias.range);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
@@ -178,8 +174,7 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
     first_part_tree
 }
 
-fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names: &Vec<String>, file_symbol: Rc<RefCell<Symbol>>, asname: Option<String>, range: &TextRange) -> (Option<Rc<RefCell<Symbol>>>, Rc<RefCell<Symbol>>) {
-    //TODO get arc from parent
+fn _get_or_create_symbol(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, names: &Vec<String>, asname: Option<String>, range: &TextRange) -> (Option<Rc<RefCell<Symbol>>>, Rc<RefCell<Symbol>>) {
     let mut sym: Option<Rc<RefCell<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {

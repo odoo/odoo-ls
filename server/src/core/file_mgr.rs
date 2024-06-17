@@ -156,7 +156,6 @@ impl FileInfo {
     }
 
     fn apply_change(&mut self, change: &TextDocumentContentChangeEvent) {
-        //TODO a desync can occur if updates come while the initialization (did_open missing?)
         if change.range.is_none() {
             self.text_rope = Some(ropey::Rope::from_str(&change.text));
             return;
