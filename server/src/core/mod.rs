@@ -1,5 +1,6 @@
 pub mod config;
 pub mod evaluation;
+pub mod event_queue;
 pub mod file_mgr;
 pub mod import_resolver;
 pub	mod messages;

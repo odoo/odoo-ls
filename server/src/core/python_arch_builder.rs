@@ -261,9 +261,8 @@ impl PythonArchBuilder {
                     let parent = parent.unwrap();
                     let eval = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                     variable.evaluation = eval.0;
-                    //TODO publish diags in eval.1
+                    self.diagnostics.extend(eval.1);
                     if variable.evaluation.is_some() {
-                        //TODO add dependency
                         if (*self.sym_stack.last().unwrap()).borrow().is_external {
                             // external packages often import symbols from compiled files
                             // or with meta programmation like globals["var"] = __get_func().
@@ -292,6 +291,8 @@ impl PythonArchBuilder {
                                         },
                                         _ => {}
                                     }
+                                } else {
+                                    println!("__all__ symbol to analyze");
                                 }
                             }
                         }
