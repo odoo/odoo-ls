@@ -311,6 +311,8 @@ export class ConfigurationWebView {
             this._context.globalState.update('Odoo.configsVersion', versions);
             let configs: any = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
             configs[this.configId]["odooPath"] = odoo.path;
+            configs[this.configId]["rawOdooPath"] = rawOdooPath;
+
             workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
             displayOdooVersion(odoo.version);
         }else{
