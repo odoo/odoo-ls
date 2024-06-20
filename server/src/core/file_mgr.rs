@@ -1,10 +1,11 @@
+use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
 use ruff_python_ast::Mod;
-use ruff_python_parser::{Mode, Parsed};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, TextDocumentContentChangeEvent};
+use ruff_python_parser::Mode;
+use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use std::str::FromStr;
 use std::{collections::HashMap, fs};
-use crate::core::odoo::SyncOdoo;
-use crate::core::messages::{Msg, MsgDiagnostic};
+use crate::threads::SessionInfo;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::S;
@@ -32,7 +33,7 @@ impl FileInfo {
             diagnostics: HashMap::new(),
         }
     }
-    pub fn update(&mut self, odoo: &SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) {
+    pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) {
         // update the file info with the given information.
         // uri: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -64,7 +65,7 @@ impl FileInfo {
                     self.text_rope = Some(ropey::Rope::from(content.as_str()));
                     self._build_ast()
                 },
-                Err(_) => odoo.msg_sender.send(Msg::LOG_ERROR(format!("Failed to read file {}", uri))),
+                Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", uri)),
             };
         }
     }
@@ -114,7 +115,7 @@ impl FileInfo {
         diagnostic
     }
 
-    pub fn publish_diagnostics(&mut self, odoo: &SyncOdoo) {
+    pub fn publish_diagnostics(&mut self, session: &mut SessionInfo) {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
@@ -123,11 +124,11 @@ impl FileInfo {
                     all_diagnostics.push(self.update_range(d.clone()));
                 }
             }
-            let _ = odoo.msg_sender.send(Msg::DIAGNOSTIC(MsgDiagnostic{
-                uri: url::Url::parse(&format!("file://{}", self.uri)).expect("Failed to parse manifest uri"),
-                diags: all_diagnostics,
+            session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
+                uri: lsp_types::Uri::from_str(&format!("file://{}", self.uri)).expect("Unable to parse uri"),
+                diagnostics: all_diagnostics,
                 version: Some(self.version),
-            }));
+            });
             self.need_push = false;
         }
     }
@@ -197,7 +198,7 @@ impl FileMgr {
         }
     }
 
-    pub fn text_range_to_range(&mut self, odoo: &mut SyncOdoo, path: &String, range: &TextRange) -> Range {
+    pub fn text_range_to_range(&mut self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
         let file = self.files.get(path);
         if let Some(file) = file {
             return Range {
@@ -214,21 +215,21 @@ impl FileMgr {
                     end: FileInfo::offset_to_position_with_rope(&rope, range.end().to_usize())
                 };
             },
-            Err(_) => odoo.msg_sender.send(Msg::LOG_ERROR(format!("Failed to read file {}", path)))
+            Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))
         };
         Range::default()
     }
 
-    pub fn update_file_info(&mut self, sync_odoo: &mut SyncOdoo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> Rc<RefCell<FileInfo>> {
+    pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> Rc<RefCell<FileInfo>> {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         let mut file_info_mut = (*return_info).borrow_mut();
-        file_info_mut.update(sync_odoo, uri, content, version, force);
+        file_info_mut.update(session, uri, content, version, force);
         drop(file_info_mut);
         return_info
     }
 
-    pub fn delete_path(&mut self, odoo: &SyncOdoo, uri: &String) {
+    pub fn delete_path(&mut self, session: &mut SessionInfo, uri: &String) {
         let to_del = self.files.remove(uri);
         if let Some(to_del) = to_del {
             if self.is_in_workspace(uri) {
@@ -238,7 +239,7 @@ impl FileMgr {
                 to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
                 to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
                 to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                to_del.publish_diagnostics(odoo)
+                to_del.publish_diagnostics(session)
             }
         }
     }
@@ -263,8 +264,8 @@ impl FileMgr {
         false
     }
 
-    pub fn pathname2uri(s: &String) -> url::Url {
-        if let Ok(url) = url::Url::from_file_path(s) {
+    pub fn pathname2uri(s: &String) -> lsp_types::Uri {
+        if let Ok(url) = lsp_types::Uri::from_str(s) {
             return url;
         }
         panic!("unable to transform pathname to uri: {s}")

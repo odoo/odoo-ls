@@ -1,15 +1,13 @@
 use ruff_text_size::TextRange;
-use serde_json::Value;
-use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, Position, Range};
+use lsp_types::{Hover, HoverContents, MarkupContent, Range};
 use weak_table::traits::WeakElement;
 use crate::core::evaluation::AnalyzeAstResult;
-use crate::core::file_mgr::{FileInfo, FileMgr};
-use tower_lsp::jsonrpc::{ErrorCode, Result};
+use crate::core::file_mgr::FileInfo;
+use crate::threads::SessionInfo;
 use std::path::PathBuf;
 use std::rc::Rc;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
-use crate::core::odoo::SyncOdoo;
 use crate::features::ast_utils::AstUtils;
 use crate::S;
 use std::cell::RefCell;
@@ -18,34 +16,34 @@ pub struct HoverFeature {}
 
 impl HoverFeature {
 
-    pub fn get_hover(odoo: &mut SyncOdoo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Result<Option<Hover>> {
+    pub fn get_hover(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, range): (AnalyzeAstResult, Option<TextRange>) = AstUtils::get_symbols(odoo, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, range): (AnalyzeAstResult, Option<TextRange>) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
         let Some(evaluation) = analyse_ast_result.symbol.as_ref() else {
-            return Ok(None);
+            return None;
         };
-        let symbol = evaluation.symbol.get_symbol(odoo, &mut None, &mut vec![]).0;
+        let symbol = evaluation.symbol.get_symbol(session, &mut None, &mut vec![]).0;
         if symbol.is_expired() {
             println!("symbol expired");
-            return Ok(None);
+            return None;
         }
         let symbol = symbol.upgrade().unwrap();
-        let (type_ref, _) = Symbol::follow_ref(symbol.clone(), odoo, &mut None, true, false, &mut vec![]);
+        let (type_ref, _) = Symbol::follow_ref(symbol.clone(), session, &mut None, true, false, &mut vec![]);
         let type_ref = type_ref.upgrade().unwrap();
         let mut type_str = S!("Any");
         if !Rc::ptr_eq(&type_ref, &symbol) && (type_ref.borrow().sym_type != SymType::VARIABLE || type_ref.borrow().is_type_alias()) {
             type_str = type_ref.borrow().name.clone();
         }
         if analyse_ast_result.factory.is_some() && analyse_ast_result.effective_sym.is_some() {
-            type_str = Symbol::follow_ref(analyse_ast_result.effective_sym.unwrap().upgrade().unwrap(), odoo, &mut None, true, false, &mut vec![]).0.upgrade().unwrap().borrow().name.clone();
+            type_str = Symbol::follow_ref(analyse_ast_result.effective_sym.unwrap().upgrade().unwrap(), session, &mut None, true, false, &mut vec![]).0.upgrade().unwrap().borrow().name.clone();
         }
         let mut type_sym = symbol.borrow().sym_type.to_string().to_lowercase();
         if symbol.borrow().is_type_alias() {
             type_sym = S!("type alias");
-            let mut type_alias_ref = Symbol::next_ref(&type_ref.borrow(), odoo, &mut None, &mut vec![]);
+            let mut type_alias_ref = Symbol::next_ref(&type_ref.borrow(), session, &mut None, &mut vec![]);
             if let Some(mut type_alias_ref) = type_alias_ref {
                 if !Rc::ptr_eq(&type_alias_ref.upgrade().unwrap(), &type_ref) {
-                    type_alias_ref = Symbol::follow_ref(type_alias_ref.upgrade().unwrap(), odoo, &mut None, true, false, &mut vec![]).0;
+                    type_alias_ref = Symbol::follow_ref(type_alias_ref.upgrade().unwrap(), session, &mut None, true, false, &mut vec![]).0;
                     type_str = type_alias_ref.upgrade().unwrap().borrow().name.clone();
                 }
             }
@@ -86,13 +84,13 @@ impl HoverFeature {
             start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
             end: file_info.borrow().offset_to_position(range.unwrap().end().to_usize())
         });
-        return Ok(Some(Hover { contents:
+        return Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
-                kind: tower_lsp::lsp_types::MarkupKind::Markdown,
+                kind: lsp_types::MarkupKind::Markdown,
                 value: value
             }),
             range: range
-        }));
+        });
     }
 
     fn build_block_1(symbol: &Rc<RefCell<Symbol>>, type_sym: &String, infered_type: &String) -> String {

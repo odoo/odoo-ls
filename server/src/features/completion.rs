@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{CompletionItem, CompletionList, CompletionResponse};
+use lsp_types::{CompletionItem, CompletionList, CompletionResponse};
 
+use crate::threads::SessionInfo;
 use crate::S;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
@@ -13,15 +13,15 @@ pub struct CompletionFeature;
 
 impl CompletionFeature {
 
-    pub fn autocomplete(odoo: &mut SyncOdoo,
+    pub fn autocomplete(session: &mut SessionInfo,
         file_symbol: &Rc<RefCell<Symbol>>,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
-    ) -> Result<Option<CompletionResponse>> {
+    ) -> Option<CompletionResponse> {
 
 
-        Ok(Some(CompletionResponse::List(CompletionList {
+        Some(CompletionResponse::List(CompletionList {
             is_incomplete: false,
             items: vec![
                 CompletionItem {
@@ -29,6 +29,6 @@ impl CompletionFeature {
                     ..Default::default()
                 }
             ]
-        })))
+        }))
     }
 }

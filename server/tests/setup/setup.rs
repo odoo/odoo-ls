@@ -3,17 +3,14 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
-use tower_lsp::{LspService, Server};
-use server::{backend::Backend, core::{config::{Config, DiagMissingImportsMode}, messages::SyncChannel, odoo::SyncOdoo}};
+use server::{core::{config::{Config, DiagMissingImportsMode}, messages::SyncChannel, odoo::SyncOdoo}, threads::SessionInfo};
 use server::core::messages::MsgHandler;
 use server::S;
 
 pub fn setup_server() -> SyncOdoo {
     let community_path = env::var("COMMUNITY_PATH").expect("Please provide COMMUNITY_PATH environment variable with a valid path to your Odoo Community folder");
     println!("Community path: {:?}", community_path);
-    let sync_channel = SyncChannel { messages: RefCell::new(Vec::new()) };
-    let msg_handler = MsgHandler::SYNC_CHANNEL(sync_channel);
-    let mut server = SyncOdoo::new(msg_handler);
+    let mut server = SyncOdoo::new();
     server.load_odoo_addons = false;
 
     let mut test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -27,7 +24,10 @@ pub fn setup_server() -> SyncOdoo {
     config.refresh_mode = server::core::config::RefreshMode::Off;
     config.diag_missing_imports = DiagMissingImportsMode::All;
     config.no_typeshed = false;
-    server.init(config);
+
+    let (s, r) = crossbeam_channel::unbounded();
+    let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
+    SyncOdoo::init(&mut session, config);
 
     server
 }

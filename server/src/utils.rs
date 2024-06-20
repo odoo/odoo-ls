@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fs, path::{Path, PathBuf}};
+use std::{ffi::OsStr, fs, ops::Deref, path::{Path, PathBuf}, str::FromStr};
 
 #[macro_export]
 macro_rules! S {
@@ -89,4 +89,17 @@ pub fn is_symlink_cs(path: String) -> bool {
             return false;
         }
     }
+}
+
+pub trait ToFilePath {
+    fn to_file_path(&self) -> Result<PathBuf, ()>;
+}
+
+impl ToFilePath for lsp_types::Uri {
+
+    fn to_file_path(&self) -> Result<PathBuf, ()> {
+        let url = url::Url::from_str(self.as_str()).map_err(|_| ())?;
+        url.to_file_path()
+    }
+
 }

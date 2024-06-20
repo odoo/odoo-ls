@@ -4,17 +4,17 @@ use std::vec;
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
-use crate::core::file_mgr::FileMgr;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
+use crate::threads::SessionInfo;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
@@ -40,7 +40,7 @@ impl PythonArchEval {
         }
     }
 
-    pub fn eval_arch(&mut self, odoo: &mut SyncOdoo) {
+    pub fn eval_arch(&mut self, session: &mut SessionInfo) {
         //println!("eval arch");
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         if symbol.arch_eval_status != BuildStatus::PENDING {
@@ -56,19 +56,19 @@ impl PythonArchEval {
             path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
         }
         drop(symbol);
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
+        let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
             for (index, stmt) in file_info.ast.as_ref().unwrap().iter().enumerate() {
                 self.ast_indexes.push(index as u16);
-                self.visit_stmt(odoo, stmt);
+                self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
         }
         drop(file_info);
         let mut file_info = (*file_info_rc).borrow_mut();
         file_info.replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-        PythonArchEvalHooks::on_file_eval(odoo, self.sym_stack.first().unwrap().clone());
+        PythonArchEvalHooks::on_file_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         symbol.arch_eval_status = BuildStatus::DONE;
         if symbol.is_external {
@@ -76,38 +76,38 @@ impl PythonArchEval {
                 sym.borrow_mut().ast_indexes = None;
             }
             drop(file_info);
-            odoo.get_file_mgr().borrow_mut().delete_path(odoo, &path);
+            session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &path);
         } else {
             drop(symbol);
-            odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
+            session.sync_odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
         }
     }
 
-    fn visit_stmt(&mut self, odoo: &mut SyncOdoo, stmt: &Stmt) {
+    fn visit_stmt(&mut self, session: &mut SessionInfo, stmt: &Stmt) {
         match stmt {
             Stmt::Import(import_stmt) => {
-                self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
+                self.eval_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)
             },
             Stmt::ImportFrom(import_from_stmt) => {
-                self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)
+                self.eval_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
-                self.visit_class_def(odoo, class_stmt, stmt);
+                self.visit_class_def(session, class_stmt, stmt);
             },
             Stmt::FunctionDef(func_stmt) => {
-                self.visit_func_def(odoo, func_stmt);
+                self.visit_func_def(session, func_stmt);
             },
             Stmt::AnnAssign(ann_assign_stmt) => {
-                self._visit_ann_assign(odoo, ann_assign_stmt);
+                self._visit_ann_assign(session, ann_assign_stmt);
             },
             Stmt::Assign(assign_stmt) => {
-                self._visit_assign(odoo, assign_stmt);
+                self._visit_assign(session, assign_stmt);
             },
             Stmt::If(if_stmt) => {
-                self._visit_if(odoo, if_stmt);
+                self._visit_if(session, if_stmt);
             },
             Stmt::Try(try_stmt) => {
-                self._visit_try(odoo, try_stmt);
+                self._visit_try(session, try_stmt);
             }
             _ => {}
         }
@@ -130,12 +130,12 @@ impl PythonArchEval {
         false
     }
 
-    fn eval_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
+    fn eval_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
         let import_results: Vec<ImportResult> = resolve_import_stmt(
-            odoo,
+            session,
             &self.sym_stack.first().unwrap(),
             &self.sym_stack.last().unwrap(),
             from_stmt,
@@ -150,7 +150,7 @@ impl PythonArchEval {
             }
             if _import_result.found {
                 //resolve the symbol and build necessary evaluations
-                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, false, &mut self.diagnostics);
+                let (mut _sym, mut instance): (Weak<RefCell<Symbol>>, bool) = Symbol::follow_ref(_import_result.symbol.clone(), session, &mut None, false, false, &mut self.diagnostics);
                 let mut old_ref: Option<Weak<RefCell<Symbol>>> = None;
                 let mut arc_sym = _sym.upgrade().unwrap();
                 let mut sym = arc_sym.borrow_mut();
@@ -160,11 +160,11 @@ impl PythonArchEval {
                     drop(sym);
                     if file_sym.is_some() {
                         let arc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if arc_file_sym.borrow_mut().arch_eval_status == BuildStatus::PENDING && odoo.is_in_rebuild(&arc_file_sym, BuildSteps::ARCH_EVAL) {
-                            odoo.remove_from_rebuild_arch_eval(&arc_file_sym);
+                        if arc_file_sym.borrow_mut().arch_eval_status == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&arc_file_sym, BuildSteps::ARCH_EVAL) {
+                            session.sync_odoo.remove_from_rebuild_arch_eval(&arc_file_sym);
                             let mut builder = PythonArchEval::new(arc_file_sym);
-                            builder.eval_arch(odoo);
-                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), odoo, &mut None, false, false, &mut self.diagnostics);
+                            builder.eval_arch(session);
+                            (_sym, instance) = Symbol::follow_ref(_import_result.symbol.clone(), session, &mut None, false, false, &mut self.diagnostics);
                             arc_sym = _sym.upgrade().unwrap();
                             sym = arc_sym.borrow_mut();
                         } else {
@@ -182,8 +182,8 @@ impl PythonArchEval {
                     let mut file_tree = vec![_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
                     file_tree.extend(_import_result.name.split(".").map(str::to_string));
                     self.sym_stack.first().unwrap().borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
-                    odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
-                    if self._match_diag_config(odoo, &_import_result.symbol) {
+                    session.sync_odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
+                    if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
@@ -204,8 +204,8 @@ impl PythonArchEval {
                 }
                 if !self.safe_import.last().unwrap() {
                     self.sym_stack.first().unwrap().borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, file_tree.clone()));
-                    odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
-                    if self._match_diag_config(odoo, &_import_result.symbol) {
+                    session.sync_odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
+                    if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
@@ -221,7 +221,7 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_ann_assign(&mut self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
+    fn _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
         let assigns = match ann_assign_stmt.value.as_ref() {
             Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
@@ -231,11 +231,11 @@ impl PythonArchEval {
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
+                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
                     variable.borrow_mut().evaluation = eval;
                     self.diagnostics.extend(diags);
                 } else if assign.value.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
+                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
                     variable.borrow_mut().evaluation = eval;
                     self.diagnostics.extend(diags);
                 } else {
@@ -259,13 +259,13 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_assign(&mut self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
+    fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable) = variable {
                 let parent = variable.borrow().parent.as_ref().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
+                let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                 variable.borrow_mut().evaluation = eval;
                 self.diagnostics.extend(diags);
                 let mut v_mut = variable.borrow_mut();
@@ -286,13 +286,13 @@ impl PythonArchEval {
         }
     }
 
-    fn create_diagnostic_base_not_found(&mut self, odoo: &mut SyncOdoo, symbol: &mut Symbol, var_name: &str, range: &TextRange) {
+    fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, symbol: &mut Symbol, var_name: &str, range: &TextRange) {
         let tree = symbol.get_tree();
         let tree = vec![tree.0.clone(), vec![var_name.to_string()]].concat();
         symbol.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
         if symbol.parent.is_some() {
             //TODO why this check is needed?
-            odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
+            session.sync_odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
         } else {
             println!("invalid symbol: {:?}", symbol);
         }
@@ -307,7 +307,7 @@ impl PythonArchEval {
         ));
     }
 
-    fn load_base_classes(&mut self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
+    fn load_base_classes(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
             let (full_base, range) = PythonArchEval::extract_base_name(base);
             if range.is_none() {
@@ -316,14 +316,14 @@ impl PythonArchEval {
             let range = range.unwrap();
             let elements = full_base.split(".").collect::<Vec<&str>>();
             let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
-            let iter_element = Symbol::infer_name(odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range.start()));
+            let iter_element = Symbol::infer_name(session.sync_odoo, &parent, &elements.first().unwrap().to_string(), Some(class_stmt.range.start()));
             if iter_element.is_none() {
                 let mut parent = parent.borrow_mut();
-                self.create_diagnostic_base_not_found(odoo, &mut parent, elements[0], range);
+                self.create_diagnostic_base_not_found(session, &mut parent, elements[0], range);
                 continue;
             }
             let iter_element = iter_element.unwrap();
-            let mut iter_element = Symbol::follow_ref(iter_element, odoo, &mut None, false, false, &mut self.diagnostics).0;
+            let mut iter_element = Symbol::follow_ref(iter_element, session, &mut None, false, false, &mut self.diagnostics).0;
             let mut previous_element = iter_element.clone();
             let mut found: bool = true;
             let mut compiled: bool = false;
@@ -335,19 +335,19 @@ impl PythonArchEval {
                     compiled = true;
                 }
                 previous_element = iter_element.clone();
-                let next_iter_element = iter_up.borrow().get_member_symbol(odoo, &base_element.to_string(), None, false, true, false, &mut self.diagnostics);
+                let next_iter_element = iter_up.borrow().get_member_symbol(session, &base_element.to_string(), None, false, true, false, &mut self.diagnostics);
                 if next_iter_element.len() == 0 {
                     found = false;
                     break;
                 }
                 let iter_element_rc = next_iter_element.first().unwrap();
-                iter_element = Symbol::follow_ref(iter_element_rc.clone(), odoo, &mut None, false, false, &mut self.diagnostics).0;
+                iter_element = Symbol::follow_ref(iter_element_rc.clone(), session, &mut None, false, false, &mut self.diagnostics).0;
             }
             if compiled {
                 continue;
             }
             if !found {
-                self.create_diagnostic_base_not_found(odoo, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, range);
+                self.create_diagnostic_base_not_found(session, &mut (*previous_element.upgrade().unwrap()).borrow_mut(), last_element, range);
                 continue
             }
             if (*iter_element.upgrade().unwrap()).borrow().sym_type != SymType::CLASS {
@@ -384,23 +384,23 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, class_stmt: &StmtClassDef, stmt: &Stmt) {
+    fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef, stmt: &Stmt) {
         let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
         if variable.is_none() {
             panic!("Class not found");
         }
         variable.as_ref().unwrap().borrow_mut().ast_indexes = Some(self.ast_indexes.clone());
-        self.load_base_classes(odoo, variable.as_ref().unwrap(), class_stmt);
+        self.load_base_classes(session, variable.as_ref().unwrap(), class_stmt);
         self.sym_stack.push(variable.unwrap());
         for (index, stmt) in class_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
-            self.visit_stmt(odoo, stmt);
+            self.visit_stmt(session, stmt);
             self.ast_indexes.pop();
         }
         self.sym_stack.pop();
     }
 
-    fn visit_func_def(&mut self, odoo: &mut SyncOdoo, func_stmt: &StmtFunctionDef) {
+    fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
         let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
         if variable.is_none() {
             panic!("Function symbol not found");
@@ -436,16 +436,16 @@ impl PythonArchEval {
             self.ast_indexes.push(index as u16);
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    self.visit_func_def(odoo, f);
+                    self.visit_func_def(session, f);
                 },
                 Stmt::ClassDef(c) => {
-                    self.visit_class_def(odoo, c, stmt);
+                    self.visit_class_def(session, c, stmt);
                 },
                 Stmt::If(if_stmt) => {
-                    self._visit_if(odoo, if_stmt);
+                    self._visit_if(session, if_stmt);
                 },
                 Stmt::Try(try_stmt) => {
-                    self._visit_try(odoo, try_stmt);
+                    self._visit_try(session, try_stmt);
                 }
                 _ => {}
             }
@@ -454,12 +454,12 @@ impl PythonArchEval {
         self.sym_stack.pop();
     }
 
-    fn _visit_if(&mut self, odoo: &mut SyncOdoo, if_stmt: &StmtIf) {
+    fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         //TODO eval test (walrus op)
         self.ast_indexes.push(0 as u16);//0 for body
         for (index, stmt) in if_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
-            self.visit_stmt(odoo, stmt);
+            self.visit_stmt(session, stmt);
             self.ast_indexes.pop();
         }
         self.ast_indexes.pop();
@@ -468,14 +468,14 @@ impl PythonArchEval {
             self.ast_indexes.push((index+1) as u16);//0 for body, so index + 1
             for (index_stmt, stmt) in elif_clause.body.iter().enumerate() {
                 self.ast_indexes.push(index_stmt as u16);
-                self.visit_stmt(odoo, stmt);
+                self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
             self.ast_indexes.pop();
         }
     }
 
-    fn _visit_try(&mut self, odoo: &mut SyncOdoo, try_stmt: &StmtTry) {
+    fn _visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) {
         let mut safe = false;
         for handler in try_stmt.handlers.iter() {
             let handler = handler.as_except_handler().unwrap();
@@ -489,7 +489,7 @@ impl PythonArchEval {
         self.ast_indexes.push(0 as u16);
         for (index, stmt) in try_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
-            self.visit_stmt(odoo, stmt);
+            self.visit_stmt(session, stmt);
             self.ast_indexes.pop();
         }
         self.ast_indexes.pop();
@@ -497,14 +497,14 @@ impl PythonArchEval {
         self.ast_indexes.push(1 as u16);
         for (index, stmt) in try_stmt.orelse.iter().enumerate() {
             self.ast_indexes.push(index as u16);
-            self.visit_stmt(odoo, stmt);
+            self.visit_stmt(session, stmt);
             self.ast_indexes.pop();
         }
         self.ast_indexes.pop();
         self.ast_indexes.push(2 as u16);
         for (index, stmt) in try_stmt.finalbody.iter().enumerate() {
             self.ast_indexes.push(index as u16);
-            self.visit_stmt(odoo, stmt);
+            self.visit_stmt(session, stmt);
             self.ast_indexes.pop();
         }
         self.ast_indexes.pop();

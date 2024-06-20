@@ -16,4 +16,3 @@ pub mod python_validator;
 pub mod python_utils;
 pub mod symbol;
 pub mod symbols;
-pub mod text_document;

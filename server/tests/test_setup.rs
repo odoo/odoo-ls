@@ -19,7 +19,6 @@ fn test_setup() {
 fn test_start_odoo_server() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
     let odoo = setup::setup::setup_server();
-    let sync_channel = &odoo.msg_sender;
 
     /* Let's ensure that the architecture is loaded */
     assert!(odoo.get_symbol(&(vec![S!("odoo")], vec![])).is_some());

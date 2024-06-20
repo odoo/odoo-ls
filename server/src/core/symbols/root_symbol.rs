@@ -1,5 +1,5 @@
+use crate::threads::SessionInfo;
 use crate::{constants::SymType, core::symbol::Symbol};
-use crate::core::odoo::SyncOdoo;
 use std::cell::RefMut;
 
 #[derive(Debug)]
@@ -9,7 +9,7 @@ pub struct RootSymbol {
 
 impl RootSymbol {
 
-    pub fn add_symbol(&self, odoo: &SyncOdoo, _self_symbol: &Symbol, symbol: &mut RefMut<Symbol>) {
+    pub fn add_symbol(&self, session: &mut SessionInfo, _self_symbol: &Symbol, symbol: &mut RefMut<Symbol>) {
         match symbol.sym_type {
             SymType::FILE | SymType::PACKAGE => {
                 for path in symbol.paths.iter() {
@@ -22,8 +22,8 @@ impl RootSymbol {
                             return;
                         }
                     }
-                    for stub in odoo.stubs_dirs.iter() {
-                        if path.starts_with(stub) || path.starts_with(&odoo.stdlib_dir) {
+                    for stub in session.sync_odoo.stubs_dirs.iter() {
+                        if path.starts_with(stub) || path.starts_with(&session.sync_odoo.stdlib_dir) {
                             symbol.is_external = true;
                             return;
                         }

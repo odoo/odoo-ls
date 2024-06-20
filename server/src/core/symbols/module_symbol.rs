@@ -1,4 +1,4 @@
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::HashSet;
@@ -9,6 +9,7 @@ use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::EXTENSION_NAME;
+use crate::threads::SessionInfo;
 use crate::S;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -27,7 +28,7 @@ pub struct ModuleSymbol {
 
 impl ModuleSymbol {
 
-    pub fn new(odoo: &mut SyncOdoo, dir_path: &PathBuf) -> Option<Self> {
+    pub fn new(session: &mut SessionInfo, dir_path: &PathBuf) -> Option<Self> {
         let mut module = ModuleSymbol {
             root_path: dir_path.as_os_str().to_str().unwrap().to_string(),
             loaded: false,
@@ -45,23 +46,23 @@ impl ModuleSymbol {
         if !manifest_path.exists() {
             return None;
         }
-        let manifest_file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, manifest_path.as_os_str().to_str().unwrap(), None, None, false);
+        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.as_os_str().to_str().unwrap(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.ast.is_none() {
             return None;
         }
         let diags = module._load_manifest(&manifest_file_info);
-        if odoo.modules.contains_key(&module.dir_name) {
+        if session.sync_odoo.modules.contains_key(&module.dir_name) {
             //TODO: handle multiple modules with the same name
         }
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diags);
-        manifest_file_info.publish_diagnostics(odoo);
+        manifest_file_info.publish_diagnostics(session);
         drop(manifest_file_info);
         println!("End building new module: {:?}", dir_path);
         Some(module)
     }
 
-    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<String> {
+    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<String> {
         {
             let _symbol = symbol.borrow();
             let module = _symbol._module.as_ref().expect("Module must be set to call load_module_info");
@@ -69,19 +70,19 @@ impl ModuleSymbol {
                 return vec![];
             }
         }
-        let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), odoo, odoo_addons);
-        diagnostics.append(&mut ModuleSymbol::_load_data(symbol.clone(), odoo));
-        diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), odoo));
+        let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), session, odoo_addons);
+        diagnostics.append(&mut ModuleSymbol::_load_data(symbol.clone(), session.sync_odoo));
+        diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
         {
             let mut _symbol = symbol.borrow_mut();
             let module = _symbol._module.as_mut().expect("Module must be set to call load_module_info");
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
-            let manifest_file_info = odoo.get_file_mgr().borrow_mut().get_file_info(&S!(manifest_path.as_os_str().to_str().unwrap())).expect("file not found in cache").clone();
+            let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&S!(manifest_path.as_os_str().to_str().unwrap())).expect("file not found in cache").clone();
             let mut manifest_file_info = (*manifest_file_info).borrow_mut();
             manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
-            manifest_file_info.publish_diagnostics(odoo);
+            manifest_file_info.publish_diagnostics(session);
         }
         loaded
     }
@@ -208,16 +209,16 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol: &mut Symbol, odoo: &mut SyncOdoo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
+    fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
         let module = symbol._module.as_ref().expect("Module must be set to call _load_depends");
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<String> = vec![];
         for depend in module.depends.clone().iter() {
             //TODO: raise an error on dependency cycle
-            if !odoo.modules.contains_key(depend) {
-                let module = find_module(odoo, odoo_addons.clone(), depend);
+            if !session.sync_odoo.modules.contains_key(depend) {
+                let module = find_module(session, odoo_addons.clone(), depend);
                 if module.is_none() {
-                    odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
+                    session.sync_odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
                     symbol.not_found_paths.push((BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]));
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
@@ -235,7 +236,7 @@ impl ModuleSymbol {
                     symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH);
                 }
             } else {
-                let module = odoo.modules.get(depend).unwrap().upgrade().unwrap();
+                let module = session.sync_odoo.modules.get(depend).unwrap().upgrade().unwrap();
                 let mut module = (*module).borrow_mut();
                 symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
             }
@@ -247,20 +248,20 @@ impl ModuleSymbol {
         vec![]
     }
 
-    fn _load_arch(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+    fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
         let root_path = (*symbol).borrow()._module.as_ref().expect("Module must be set to call _load_depends").root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
-            let _arc_symbol = Symbol::create_from_path(odoo, &tests_path, symbol, false);
+            let _arc_symbol = Symbol::create_from_path(session, &tests_path, symbol, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                odoo.add_to_rebuild_arch(_arc_symbol);
+                session.sync_odoo.add_to_rebuild_arch(_arc_symbol);
             }
         }
         vec![]
     }
 
-    pub fn is_in_deps(odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
+    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
         if symbol.borrow()._module.as_ref().unwrap().dir_name == *dir_name || symbol.borrow()._module.as_ref().unwrap().depends.contains(dir_name) {
             return true;
         }
@@ -271,13 +272,13 @@ impl ModuleSymbol {
             if acc.as_ref().unwrap().contains(dep) {
                 continue;
             }
-            let dep_module = odoo.modules.get(dep);
+            let dep_module = session.sync_odoo.modules.get(dep);
             if let Some(dep_module) = dep_module {
                 let dep_module = dep_module.upgrade();
                 if dep_module.is_none() {
                     continue;
                 }
-                if ModuleSymbol::is_in_deps(odoo, dep_module.as_ref().unwrap(), dir_name, acc) {
+                if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), dir_name, acc) {
                     return true;
                 }
                 acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone());

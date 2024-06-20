@@ -1,4 +1,4 @@
-use tower_lsp::lsp_types::Diagnostic;
+use lsp_types::Diagnostic;
 
 #[derive(Debug)]
 pub struct FunctionSymbol {

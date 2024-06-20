@@ -14,7 +14,6 @@ mod setup;
 fn test_structure() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
     let odoo = setup::setup::setup_server();
-    let sync_channel = &odoo.msg_sender;
 
     assert!(odoo.get_symbol(&(vec![S!("odoo")], vec![])).is_some());
     assert!(odoo.get_symbol(&(vec![S!("odoo"), S!("addons")], vec![])).is_some());
