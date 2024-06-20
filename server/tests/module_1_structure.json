@@ -1,0 +1,308 @@
+{
+    "name": "module_1",
+    "type": "PACKAGE",
+    "module_symbols": [
+        {
+            "name": "constants",
+            "type": "PACKAGE",
+            "module_symbols": [
+                {
+                    "name": "data",
+                    "type": "PACKAGE",
+                    "module_symbols": [
+                        {
+                            "name": "constants",
+                            "type": "FILE",
+                            "module_symbols": [],
+                            "symbols": [
+                                {
+                                    "name": "__all__",
+                                    "type": "VARIABLE",
+                                    "value": ["CONSTANT_1", "CONSTANT_2"]
+                                },
+                                {
+                                    "name": "CONSTANT_1",
+                                    "type": "VARIABLE",
+                                    "value": "1"
+                                },
+                                {
+                                    "name": "CONSTANT_2",
+                                    "type": "VARIABLE",
+                                    "value": "2"
+                                },
+                                {
+                                    "name": "CONSTANT_3",
+                                    "type": "VARIABLE",
+                                    "value": "3"
+                                }
+                            ],
+                            "local_symbols": []
+                        }
+                    ],
+                    "symbols": [
+                        {
+                            "name": "CONSTANT_1",
+                            "type": "VARIABLE",
+                            "value": "1"
+                        },
+                        {
+                            "name": "CONSTANT_2",
+                            "type": "VARIABLE",
+                            "value": "22"
+                        }
+                    ],
+                    "local_symbols": [
+                        {
+                            "name": "CONSTANT_2",
+                            "type": "VARIABLE",
+                            "value": "2",
+                            "index": 0
+                        }
+                    ]
+                }
+            ],
+            "symbols": [
+                {
+                    "name": "CONSTANT_1",
+                    "type": "VARIABLE",
+                    "value": "1"
+                },
+                {
+                    "name": "CONSTANT_2",
+                    "type": "VARIABLE",
+                    "value": "22"
+                }
+            ],
+            "local_symbols": []
+        },
+        {
+            "name": "models",
+            "type": "PACKAGE",
+            "module_symbols": [
+                {
+                    "name": "base_test_models",
+                    "type": "FILE",
+                    "module_symbols": [],
+                    "symbols": [
+                        {
+                            "name": "api",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "fields",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "models",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "_",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "tools",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "CONSTANT_1",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "CONSTANT_2",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "BaseTestModel",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "BaseOtherName",
+                            "type": "VARIABLE",
+                            "value": "3"
+                        },
+                        {
+                            "name": "baseInstance1",
+                            "type": "VARIABLE",
+                            "value": "3"
+                        },
+                        {
+                            "name": "baseInstance2",
+                            "type": "VARIABLE",
+                            "value": "3"
+                        },
+                        {
+                            "name": "ref_funcBase1",
+                            "type": "VARIABLE",
+                            "value": "3"
+                        },
+                        {
+                            "name": "ref_funcBase2",
+                            "type": "VARIABLE",
+                            "value": "3"
+                        },
+                        {
+                            "name": "return_funcBase2",
+                            "type": "VARIABLE",
+                            "value": "3"
+                        }
+                    ],
+                    "local_symbols": []
+                },
+                {
+                    "name": "models",
+                    "type": "FILE",
+                    "module_symbols": [],
+                    "symbols": [
+                        {
+                            "name": "models",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "fields",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "model_model",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_transient",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name_inh_python",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name_inherit",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name_inherit_no_name",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name_inherit_diff_name",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name_2",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_name_inherit_comb_name",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_no_name",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_no_register",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_register",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_no_register_inherit",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_inherits",
+                            "type": "CLASS"
+                        }
+                    ],
+                    "local_symbols": []
+                },
+                {
+                    "name": "to_complete",
+                    "type": "FILE",
+                    "module_symbols": [],
+                    "symbols": [
+                        {
+                            "name": "api",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "fields",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "models",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "_",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "tools",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "TestModel",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "ExtraTestModel",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "SuperExtraTestModel",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "testModel",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "extraTestModel",
+                            "type": "VARIABLE"
+                        },
+                        {
+                            "name": "superExtraTestModel",
+                            "type": "VARIABLE"
+                        }
+                    ],
+                    "local_symbols": []
+                }
+            ],
+            "symbols": [
+                {
+                    "name": "base_test_models",
+                    "type": "VARIABLE"
+                },
+                {
+                    "name": "models",
+                    "type": "VARIABLE"
+                },
+                {
+                    "name": "to_complete",
+                    "type": "VARIABLE"
+                }
+            ],
+            "local_symbols": []
+        }
+    ],
+    "symbols": [
+        {
+            "name": "models",
+            "type": "VARIABLE",
+            "value": {
+                "link": [["module_1", "models"], []]
+            }
+        },
+        {
+            "name": "data",
+            "type": "VARIABLE"
+        }
+    ],
+    "local_symbols": []
+}
