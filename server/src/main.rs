@@ -33,7 +33,6 @@ async fn main() {
                 event_queue: EventQueue::new(1000)
             })
                 .custom_method("Odoo/configurationChanged", Backend::client_config_changed)
-                .custom_method("Odoo/clientReady", Backend::client_ready)
                 .finish();
             let server = Server::new(reader, writer, messages);
             server.serve(service).await;
@@ -54,7 +53,6 @@ async fn main() {
                 event_queue: EventQueue::new(1000)
             })
                 .custom_method("Odoo/configurationChanged", Backend::client_config_changed)
-                .custom_method("Odoo/clientReady", Backend::client_ready)
                 .finish();
             Server::new(stdin, stdout, socket).serve(service).await;
         }

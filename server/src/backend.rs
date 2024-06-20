@@ -123,6 +123,7 @@ impl LanguageServer for Backend {
             let mut msg_receiver = msg_receiver.lock().await;
             handle_msgs(&mut msg_receiver, &client).await;
         });
+        self.client_ready().await;
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -265,17 +266,13 @@ impl LanguageServer for Backend {
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct ReadyParams { //it seems that javascript impl of LSP on vscode need a value to work (if no parameter is provided, send null instead of nothing)
-    value1: u32,
-}
 
 impl Backend {
     pub async fn client_config_changed(&self) {
         
     }
 
-    pub async fn client_ready(&self, params: ReadyParams) {
+    pub async fn client_ready(&self) {
         self.client.log_message(MessageType::INFO, format!("Client ready !")).await;
         let mut odoo = self.odoo.lock().await;
         odoo.init(&self.client).await;

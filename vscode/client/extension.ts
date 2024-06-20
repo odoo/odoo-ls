@@ -137,6 +137,10 @@ function isExtensionUpdated(context: ExtensionContext) {
 }
 
 async function displayUpdatedNotification(context: ExtensionContext) {
+    if(context.extensionMode === ExtensionMode.Development){
+        return
+    }
+
     const selection = await window.showInformationMessage(
         "The Odoo extension has been updated.",
         "Show changelog",
@@ -313,7 +317,6 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
         global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","\\\\")};
         if (autoStart) {
             await client.start();
-            await client.sendNotification("Odoo/clientReady");
         }
         return client;
     } catch (error) {
@@ -501,9 +504,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                         }
                         if (client.needsStart()) {
                             await client.start();
-                            await client.sendNotification(
-                                "Odoo/clientReady",
-                            );
                         } else {
                             if (client.diagnostics) client.diagnostics.clear();
                             await client.sendNotification("Odoo/configurationChanged");
@@ -553,9 +553,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     }
                     if (client.needsStart()) {
                         await client.start();
-                        await client.sendNotification(
-                            "Odoo/clientReady",
-                        );
                     } else {
                         if (client.diagnostics) client.diagnostics.clear();
                         await client.sendNotification("Odoo/configurationChanged");
@@ -770,9 +767,6 @@ export async function activate(context: ExtensionContext): Promise<void> {
 
             global.STATUS_BAR.text = `Odoo (${config["name"]})`
             await global.LSCLIENT.start();
-            await global.LSCLIENT.sendNotification(
-                "Odoo/clientReady",
-            );
         }
     }
     catch (error) {
