@@ -197,7 +197,7 @@ impl PythonValidator {
                     self._resolve_import(odoo, None, &i.names, None, &i.range);
                 },
                 Stmt::ImportFrom(i) => {
-                    self._resolve_import(odoo, i.module.as_ref(), &i.names, i.level, &i.range);
+                    self._resolve_import(odoo, i.module.as_ref(), &i.names, Some(i.level), &i.range);
                 },
                 Stmt::Assign(a) => {
                     self.visit_assign(odoo, a);
