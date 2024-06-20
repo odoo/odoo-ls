@@ -89,7 +89,7 @@ impl PythonArchEval {
                 self.eval_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)
             },
             Stmt::ImportFrom(import_from_stmt) => {
-                self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
+                self.eval_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
                 self.visit_class_def(odoo, class_stmt, stmt);

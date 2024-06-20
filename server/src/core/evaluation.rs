@@ -392,8 +392,8 @@ impl Evaluation {
                 res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
                 res.instance = true;
                 let mut values: Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> = Vec::new();
-                for (index, e) in expr.keys.iter().enumerate() {
-                    let dict_value = expr.values.get(index).unwrap();
+                for (index, e) in expr.iter_keys().enumerate() {
+                    let dict_value = &expr.items.get(index).unwrap().value;
                     match e {
                         Some(key) => {
                             if key.is_literal_expr() && dict_value.is_literal_expr() {

@@ -1,6 +1,6 @@
 use ropey::Rope;
 use ruff_python_ast::Mod;
-use ruff_python_parser::Mode;
+use ruff_python_parser::{Mode, Parsed};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, TextDocumentContentChangeEvent};
 use std::{collections::HashMap, fs};
 use crate::core::odoo::SyncOdoo;
@@ -77,7 +77,7 @@ impl FileInfo {
         let ast = ruff_python_parser::parse(source.as_str(), Mode::Module);
         match ast {
             Ok(module) => {
-                match module {
+                match module.into_syntax() {
                     Mod::Expression(_expr) => {
                         println!("[Warning] No support for expression-file only");
                         self.ast = None

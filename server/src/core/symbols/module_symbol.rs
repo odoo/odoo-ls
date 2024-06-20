@@ -116,10 +116,10 @@ impl ModuleSymbol {
             return res;
         }
         let dict = &ast[0].as_expr_stmt().unwrap().value.clone().dict_expr().unwrap();
-        for (index, key) in dict.keys.iter().enumerate() {
+        for (index, key) in dict.iter_keys().enumerate() {
             match key {
                 Some(key) => {
-                    let value = dict.values.get(index).unwrap();
+                    let value = &dict.items.get(index).unwrap().value;
                     match key {
                         Expr::StringLiteral(key_literal) => {
                             let key_str = key_literal.value.to_string();

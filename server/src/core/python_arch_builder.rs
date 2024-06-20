@@ -156,7 +156,7 @@ impl PythonArchBuilder {
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
-                        self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
+                        self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
                     }
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
