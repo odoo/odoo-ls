@@ -9,25 +9,6 @@ from typing import List
 
 import nox  # pylint: disable=import-error
 
-
-def _install_bundle(session: nox.Session) -> None:
-    session.install(
-        "-t",
-        "../server/libs",
-        "--no-cache-dir",
-        "--implementation",
-        "py",
-        "--no-deps",
-        "--upgrade",
-        "-r",
-        "./requirements.txt",
-    )
-
-
-def _update_pip_packages(session: nox.Session) -> None:
-    session.run("pip-compile", "--generate-hashes", "--resolver=backtracking", "--upgrade", "./requirements.in")
-
-
 def _get_package_data(package):
     json_uri = f"https://registry.npmjs.org/{package}"
     with url_lib.urlopen(json_uri) as response:
@@ -73,70 +54,10 @@ def _update_npm_packages(session: nox.Session) -> None:
 
 
 def _setup_template_environment(session: nox.Session) -> None:
-    session.install("wheel", "pip-tools")
-    session.run("pip-compile", "--generate-hashes", "--resolver=backtracking", "--upgrade", "./requirements.in")
     session.install("dirsync")
-    '''
-    session.run(
-        "pip-compile",
-        "--generate-hashes",
-        "--resolver=backtracking",
-        "--upgrade",
-        "./src/test/python_tests/requirements.in",
-    )
-    '''
-    _install_bundle(session)
 
-
-@nox.session()
-def setup(session: nox.Session) -> None:
-    """Sets up the template for development."""
-    _setup_template_environment(session)
-
-
-@nox.session()
-def tests(session: nox.Session) -> None:
-    """Runs all the tests for the extension."""
-    pass
-    '''
-    session.install("-r", "src/test/python_tests/requirements.txt")
-    session.run("pytest", "src/test/python_tests")
-    '''
-
-
-@nox.session()
-def lint(session: nox.Session) -> None:
-    """Runs linter and formatter checks on python files."""
-    session.install("-r", "./requirements.txt")
-    # session.install("-r", "src/test/python_tests/requirements.txt")
-
-    # check formatting using black
-    session.install("black")
-    session.run("black", "--check", "./server/")
-    # session.run("black", "--check", "./src/test/python_tests")
-    session.run("black", "--check", "noxfile.py")
-
-    # check import sorting using isort
-    session.install("isort")
-    session.run("isort", "--check", "./server/")
-    # session.run("isort", "--check", "./src/test/python_tests")
-    session.run("isort", "--check", "noxfile.py")
-
-    session.install("pylint")
-    session.run("pylint", "-d", "W0511", "--ignore=./server/tests/data" , "./server/")
-    '''
-    session.run(
-        "pylint",
-        "-d",
-        "W0511",
-        "--ignore=./src/test/python_tests/test_data",
-        "./src/test/python_tests",
-    )
-    '''
-    session.run("pylint", "-d", "W0511", "noxfile.py")
-
-    # check typescript code
-    session.run("npm", "run", "lint", external=True)
+def copy_dir(session: nox.Session, from_path, to_path):
+    session.run("python3", "-c", "from dirsync import sync; sync(\'" + from_path + "\', \'" + to_path + "\', \'sync\', purge=True, create=True)")
 
 
 @nox.session()
@@ -144,7 +65,10 @@ def build_package(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
-    session.run("python3", "-c", "from dirsync import sync; sync(\'../server\', \'server\', \'sync\', purge=True, create=True)")
+    copy_dir(session, "../server/typeshed", "server/typeshed")
+    copy_dir(session, "../server/additional_stubs", "server/additional_stubs")
+    session.run("cp", "../server/target/release/server", "server/server", external=True)
+    session.run("cp", "../server/target/release/server.exe", "server/server.exe", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", external=True)
     session.run("rm", "-r", "server", external=True)
@@ -155,7 +79,10 @@ def build_package_prerelease(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
-    session.run("python3", "-c", "from dirsync import sync; sync(\'../server\', \'server\', \'sync\', purge=True, create=True)")
+    copy_dir(session, "../server/typeshed", "server/typeshed")
+    copy_dir(session, "../server/additional_stubs", "server/additional_stubs")
+    session.run("cp", "../server/target/release/server", "server/server", external=True)
+    session.run("cp", "../server/target/release/server.exe", "server/server.exe", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", "--pre-release", external=True)
     session.run("rm", "-r", "server", external=True)
@@ -163,7 +90,5 @@ def build_package_prerelease(session: nox.Session) -> None:
 
 @nox.session()
 def update_packages(session: nox.Session) -> None:
-    """Update pip and npm packages."""
-    session.install("wheel", "pip-tools")
-    _update_pip_packages(session)
+    """Update npm packages."""
     _update_npm_packages(session)

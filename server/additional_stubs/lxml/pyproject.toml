@@ -1,0 +1,112 @@
+#:schema https://json.schemastore.org/pyproject.json
+
+[build-system]
+requires = ['pdm-backend ~= 2.3']
+build-backend = 'pdm.backend'
+
+[project]
+name = 'types-lxml'
+dynamic = ['version']
+description = 'Complete lxml external type annotation'
+readme = 'README.md'
+requires-python = '>=3.8'
+license = {text = 'Apache-2.0'}
+dependencies = [
+    'types-beautifulsoup4 ~= 4.12',
+    'typing_extensions ~= 4.5',
+    'cssselect ~= 1.2'  # cssselect uses inline annotation
+]
+keywords = ['lxml', 'typing', 'stubs', 'annotation']
+authors = [
+    { name = 'Abel Cheung', email = 'abelcheung@gmail.com' }
+]
+classifiers = [
+    'Development Status :: 5 - Production/Stable',
+    'Programming Language :: Python',
+    'Intended Audience :: Developers',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Typing :: Stubs Only',
+]
+
+[project.urls]
+homepage = 'https://github.com/abelcheung/types-lxml'
+
+[project.optional-dependencies]
+test = [
+    'tox ~= 4.0',
+    'mypy >= 1.9, < 1.11',
+    'pyright >= 1.1.289',
+    'typeguard >= 3.0, < 5',
+    'pytest >= 7.0, < 9',
+    'html5lib == 1.1',
+    'pytest-mypy-plugins >= 2.0',
+    'lxml >= 4.9',
+    'beautifulsoup4 ~= 4.8'
+]
+
+[tool.pdm.version]
+source = 'scm'
+
+[tool.pdm.build]
+includes = [
+    'lxml-stubs/',
+]
+excludes = [
+    '**/*.bak',
+    '*.patch',
+    '*.py',
+    '**/.mypy_cache',
+    '**/.pytest_cache',
+]
+source-includes = [
+    'requirements.txt',
+    'test-rt/',
+    'test-stub/',
+    'tox.ini',
+]
+
+[tool.setuptools_scm]
+
+[tool.isort]
+profile = 'black'
+combine_as_imports = true
+skip = [".git", ".github", ".venv", ".tox"]
+extra_standard_library = [
+    "typing_extensions",
+    "_typeshed",
+]
+
+[tool.pyright]
+include = ['lxml-stubs']
+reportPrivateUsage = false
+reportUnnecessaryIsInstance = false
+typeCheckingMode = 'strict'
+
+[tool.mypy]
+packages = 'lxml-stubs'
+strict = true
+show_error_context = true
+pretty = true
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["I"]
+task-tags = [
+    "BUG",
+    "FIXME",
+    "HACK",
+    "TODO",
+    "XXX",
+]
+
+[tool.ruff.lint.isort]
+# doesn't work
+# known-first-party = ["typing_extensions", "_typeshed"]
+combine-as-imports = true
