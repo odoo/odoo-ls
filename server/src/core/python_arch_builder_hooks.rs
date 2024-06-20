@@ -1,15 +1,15 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
+use crate::threads::SessionInfo;
 use crate::S;
 
 pub struct PythonArchBuilderHooks {}
 
 impl PythonArchBuilderHooks {
 
-    pub fn on_class_def(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
+    pub fn on_class_def(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         let mut sym = symbol.borrow_mut();
         let name = &sym.name;
         match name.as_str() {
@@ -25,7 +25,7 @@ impl PythonArchBuilderHooks {
                         } else {
                             env.range = sym.range.clone();
                         }
-                        let env = sym.add_symbol(odoo, env);
+                        let env = sym.add_symbol(session, env);
                     }
                 }
             },
@@ -39,22 +39,22 @@ impl PythonArchBuilderHooks {
                     // ----------- env.cr ------------
                     let mut cr_sym = Symbol::new(S!("cr"), SymType::VARIABLE);
                     cr_sym.range = range.clone();
-                    sym.add_symbol(odoo, cr_sym);
+                    sym.add_symbol(session, cr_sym);
                     // ----------- env.uid ------------
                     let mut uid_sym = Symbol::new(S!("uid"), SymType::VARIABLE);
                     uid_sym.range = range.clone();
                     uid_sym.doc_string = Some(S!("The current user id (for access rights checks)"));
-                    sym.add_symbol(odoo, uid_sym);
+                    sym.add_symbol(session, uid_sym);
                     // ----------- env.context ------------
                     let mut context_sym = Symbol::new(S!("context"), SymType::VARIABLE);
                     context_sym.range = range.clone();
                     context_sym.doc_string = Some(S!("The current context"));
-                    sym.add_symbol(odoo, context_sym);
+                    sym.add_symbol(session, context_sym);
                     // ----------- env.su ------------
                     let mut su_sym = Symbol::new(S!("su"), SymType::VARIABLE);
                     su_sym.range = range.clone();
                     su_sym.doc_string = Some(S!("whether in superuser mode"));
-                    sym.add_symbol(odoo, su_sym);
+                    sym.add_symbol(session, su_sym);
                 }
             },
             "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
@@ -69,7 +69,7 @@ impl PythonArchBuilderHooks {
                     if get_sym.is_none() {
                         let mut get_sym = Symbol::new(S!("__get__"), SymType::FUNCTION);
                         get_sym.range = sym.range.clone();
-                        sym.add_symbol(odoo, get_sym);
+                        sym.add_symbol(session, get_sym);
                     }
                 }
             }

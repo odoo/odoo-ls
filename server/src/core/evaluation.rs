@@ -1,6 +1,6 @@
 use ruff_python_ast::{Identifier, Expr, Operator};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use tower_lsp::lsp_types::Diagnostic;
+use lsp_types::Diagnostic;
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use crate::constants::*;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
+use crate::threads::SessionInfo;
 use crate::S;
 
 use super::python_validator::PythonValidator;
@@ -99,7 +100,7 @@ impl ContextValue {
 
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (odoo: &mut SyncOdoo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool);
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool);
 
 #[derive(Debug, Default)]
 pub struct EvaluationSymbol {
@@ -205,14 +206,14 @@ impl Evaluation {
         }
     }
 
-    pub fn follow_ref_and_get_value(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
+    pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
         } else {
-            let symbol = self.symbol.get_symbol(odoo, context, diagnostics).0;
+            let symbol = self.symbol.get_symbol(session, context, diagnostics).0;
             let symbol = symbol.upgrade();
             if symbol.is_some() {
-                let symbol = Symbol::follow_ref(symbol.unwrap(), odoo, context, false, true, diagnostics);
+                let symbol = Symbol::follow_ref(symbol.unwrap(), session, context, false, true, diagnostics);
                 let symbol = symbol.0.upgrade();
                 if symbol.is_some() {
                     let symbol = symbol.unwrap();
@@ -257,17 +258,17 @@ impl Evaluation {
     //Build an evaluation from an ast node that can be associated to a symbol
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
-    pub fn eval_from_ast(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Option<Evaluation>, Vec<Diagnostic>) {
-        let analyze_result = Evaluation::analyze_ast(odoo, &ExprOrIdent::Expr(ast), parent, max_infer);
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Option<Evaluation>, Vec<Diagnostic>) {
+        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
         return (analyze_result.symbol, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    fn expr_to_str(odoo: &mut SyncOdoo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
-        let value = Evaluation::analyze_ast(odoo, &ExprOrIdent::Expr(ast), parent, max_infer);
+    fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
+        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
         if value.symbol.is_some() {
             let eval = value.symbol.unwrap();
-            let v = eval.follow_ref_and_get_value(odoo, &mut None, diagnostics);
+            let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
             if let Some(v) = v {
                 match v {
                     EvaluationValue::CONSTANT(v) => {
@@ -320,7 +321,8 @@ impl Evaluation {
         Definition -> symbol
         Autocompletion -> effective_sym
      */
-    pub fn analyze_ast(odoo: &mut SyncOdoo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
+    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
+        let odoo = &mut session.sync_odoo;
         let mut res = EvaluationSymbol::default();
         let mut effective_sym = None;
         let mut factory = None;
@@ -411,12 +413,12 @@ impl Evaluation {
                 res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_dict(odoo, values));
             },
             ExprOrIdent::Expr(Expr::Call(expr)) => {
-                let (base_eval, diags) = Evaluation::eval_from_ast(odoo, &expr.func, parent, max_infer);
+                let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent, max_infer);
                 diagnostics.extend(diags);
                 if base_eval.is_none() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let (base_sym, instance) = base_eval.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics);
+                let (base_sym, instance) = base_eval.as_ref().unwrap().symbol.get_symbol(session, &mut None, &mut diagnostics);
                 let base_sym = base_sym.upgrade();
                 if let Some(base_sym) = base_sym {
                     if base_sym.borrow().sym_type == SymType::CLASS {
@@ -437,11 +439,11 @@ impl Evaluation {
                         if base_sym.borrow().evaluation.is_none() {
                             if base_sym.borrow().odoo_status == BuildStatus::DONE {
                                 let mut v = PythonValidator::new(base_sym.clone());
-                                v.validate(odoo);
+                                v.validate(session);
                             }
                         }
                         if let Some(evaluation) = base_sym.borrow().evaluation.as_ref() {
-                            (res.symbol, res.instance) = evaluation.symbol.get_symbol(odoo, &mut None, &mut diagnostics);
+                            (res.symbol, res.instance) = evaluation.symbol.get_symbol(session, &mut None, &mut diagnostics);
                         }
                     } else {
                         println!("not able to do a call on {:?}", base_sym.borrow().sym_type);
@@ -449,17 +451,17 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
-                let (eval, diags) = Evaluation::eval_from_ast(odoo, &expr.value, parent, max_infer);
+                let (eval, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer);
                 diagnostics.extend(diags);
-                if eval.is_none() || eval.as_ref().unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics).0.upgrade().is_none() {
+                if eval.is_none() || eval.as_ref().unwrap().symbol.get_symbol(session, &mut None, &mut diagnostics).0.upgrade().is_none() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = eval.unwrap().symbol.get_symbol(odoo, &mut None, &mut diagnostics).0.upgrade();
+                let base = eval.unwrap().symbol.get_symbol(session, &mut None, &mut diagnostics).0.upgrade();
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, false, &mut diagnostics);
+                let (base, _) = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
                 let attribute = base.upgrade().unwrap();
                 let attribute = (*attribute).borrow();
-                let attribute = attribute.get_member_symbol(odoo, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
+                let attribute = attribute.get_member_symbol(session, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
                 if attribute.len() == 0 {
                     /*diagnostics.push(Diagnostic::new(
                             FileMgr::textRange_to_temporary_Range(&expr.range),
@@ -504,16 +506,16 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
-                let (eval_left, diags) = Evaluation::eval_from_ast(odoo, &sub.value, parent.clone(), max_infer);
+                let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
                 if eval_left.is_none() || eval_left.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = eval_left.unwrap().symbol.symbol.upgrade();
                 let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, odoo, &mut None, false, false, &mut diagnostics);
+                let (base, _) = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
                 let base = base.upgrade().unwrap();
-                let value = Evaluation::expr_to_str(odoo, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
+                let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 let base = base.borrow();
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
@@ -526,7 +528,7 @@ impl Evaluation {
                                 let old_range = context.remove(&S!("range"));
                                 context.insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
                                 let mut ctxt = Some(context);
-                                let hook_result = hook(odoo, &get_item_eval.symbol, &mut ctxt, &mut diagnostics);
+                                let hook_result = hook(session, &get_item_eval.symbol, &mut ctxt, &mut diagnostics);
                                 if !hook_result.0.is_expired() {
                                     res.symbol = hook_result.0;
                                     res.instance = hook_result.1;
@@ -574,10 +576,10 @@ impl EvaluationSymbol {
         }
     }
 
-    pub fn get_symbol(&self, odoo:&mut SyncOdoo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
-            return hook(odoo, self, context, diagnostics);
+            return hook(session, self, context, diagnostics);
         }
         (self.symbol.clone(), self.instance)
     }

@@ -6,6 +6,7 @@ use crate::core::evaluation::{Context, Evaluation};
 use crate::core::odoo::SyncOdoo;
 use crate::core::model::ModelData;
 use crate::core::python_arch_eval::PythonArchEval;
+use crate::threads::SessionInfo;
 use crate::S;
 use core::panic;
 use std::collections::{HashMap, VecDeque};
@@ -14,7 +15,7 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::vec;
-use tower_lsp::lsp_types::Diagnostic;
+use lsp_types::Diagnostic;
 
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
@@ -294,7 +295,7 @@ impl Symbol {
         return parent.borrow_mut().is_symbol_in_parents(symbol);
     }
 
-    pub fn invalidate(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
+    pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
         //signals that a change occured to this symbol. "step" indicates which level of change occured.
         //It will trigger rebuild on all dependencies
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
@@ -306,13 +307,13 @@ impl Symbol {
                         for sym in hashset {
                             if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
                                 if index == BuildSteps::ARCH as usize {
-                                    odoo.add_to_rebuild_arch(sym.clone());
+                                    session.sync_odoo.add_to_rebuild_arch(sym.clone());
                                 } else if index == BuildSteps::ARCH_EVAL as usize {
-                                    odoo.add_to_rebuild_arch_eval(sym.clone());
+                                    session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
                                 } else if index == BuildSteps::ODOO as usize {
-                                    odoo.add_to_init_odoo(sym.clone());
+                                    session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    odoo.add_to_validations(sym.clone());
+                                    session.sync_odoo.add_to_validations(sym.clone());
                                 }
                             }
                         }
@@ -323,11 +324,11 @@ impl Symbol {
                         for sym in hashset {
                             if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
                                 if index == BuildSteps::ARCH_EVAL as usize {
-                                    odoo.add_to_rebuild_arch_eval(sym.clone());
+                                    session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
                                 } else if index == BuildSteps::ODOO as usize {
-                                    odoo.add_to_init_odoo(sym.clone());
+                                    session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    odoo.add_to_validations(sym.clone());
+                                    session.sync_odoo.add_to_validations(sym.clone());
                                 }
                             }
                         }
@@ -338,9 +339,9 @@ impl Symbol {
                         for sym in hashset {
                             if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
                                 if index == BuildSteps::ODOO as usize {
-                                    odoo.add_to_init_odoo(sym.clone());
+                                    session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    odoo.add_to_validations(sym.clone());
+                                    session.sync_odoo.add_to_validations(sym.clone());
                                 }
                             }
                         }
@@ -353,7 +354,7 @@ impl Symbol {
         }
     }
 
-    pub fn unload(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
+    pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         if symbol.borrow().sym_type == SymType::DIRTY {
             panic!("Can't unload dirty symbol");
@@ -383,11 +384,11 @@ impl Symbol {
             parent.remove_symbol(ref_to_unload.clone());
             let mut mut_symbol = ref_to_unload.borrow_mut();
             if mut_symbol._module.is_some() {
-                odoo.modules.remove(mut_symbol._module.as_ref().unwrap().dir_name.as_str());
+                session.sync_odoo.modules.remove(mut_symbol._module.as_ref().unwrap().dir_name.as_str());
             }
             mut_symbol.sym_type = SymType::DIRTY;
             if vec![SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
-                Symbol::invalidate(odoo, ref_to_unload.clone(), &BuildSteps::ARCH);
+                Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
         }
     }
@@ -438,21 +439,21 @@ impl Symbol {
         return None;
     }
 
-    pub fn next_ref(&self, odoo: &mut SyncOdoo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn next_ref(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<Weak<RefCell<Symbol>>> {
         if SymType::is_instance(&self.sym_type) &&
             self.evaluation.is_some() &&
-            self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context, diagnostics).0.upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(odoo, context, diagnostics).0.clone());
+            self.evaluation.as_ref().unwrap().symbol.get_symbol(session, context, diagnostics).0.upgrade().is_some() {
+            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(session, context, diagnostics).0.clone());
         }
         return None;
     }
 
-    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, odoo: &mut SyncOdoo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
         //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut sym = Rc::downgrade(&symbol);
         let mut _sym_upgraded = sym.upgrade().unwrap();
         let mut _sym = symbol.borrow();
-        let mut next_ref = _sym.next_ref(odoo, context, diagnostics);
+        let mut next_ref = _sym.next_ref(session, context, diagnostics);
         let can_eval_external = !_sym.is_external;
         let mut instance = SymType::is_instance(&_sym.sym_type);
         while next_ref.is_some() {
@@ -476,21 +477,21 @@ impl Symbol {
                     Some(file_symbol) => {
                         drop(_sym);
                         if file_symbol.upgrade().expect("invalid weak value").borrow().arch_eval_status == BuildStatus::PENDING &&
-                        odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                        session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                             let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
-                            builder.eval_arch(odoo);
+                            builder.eval_arch(session);
                         }
                         _sym = _sym_upgraded.borrow();
                     },
                     None => {}
                 }
             }
-            next_ref = _sym.next_ref(odoo, context, diagnostics);
+            next_ref = _sym.next_ref(session, context, diagnostics);
         }
         return (sym, instance)
     }
 
-    pub fn add_symbol(&mut self, odoo: &mut SyncOdoo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
+    pub fn add_symbol(&mut self, session: &mut SessionInfo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
         let symbol_name = symbol.name.clone();
         if self.is_external {
             symbol.is_external = true;
@@ -509,7 +510,7 @@ impl Symbol {
                 if range.is_some() && range.unwrap().start() < self.symbols[&symbol_name].borrow_mut().range.unwrap().start() {
                     self.local_symbols.push(rc.clone());
                 } else {
-                    Symbol::invalidate(odoo, self.symbols[&symbol_name].clone(), &BuildSteps::ARCH);
+                    Symbol::invalidate(session, self.symbols[&symbol_name].clone(), &BuildSteps::ARCH);
                     self.local_symbols.push(self.symbols[&symbol_name].clone());
                     self.symbols.insert(symbol_name.clone(), rc.clone());
                 }
@@ -520,10 +521,10 @@ impl Symbol {
             self.module_symbols.insert(symbol_name.clone(), rc.clone());
         }
         if self._root.is_some() {
-            self._root.as_ref().unwrap().add_symbol(odoo, &self, &mut locked_symbol);
+            self._root.as_ref().unwrap().add_symbol(session, &self, &mut locked_symbol);
         }
         if locked_symbol._module.is_some() {
-            odoo.modules.insert(locked_symbol._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&rc));
+            session.sync_odoo.modules.insert(locked_symbol._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&rc));
         }
         rc.clone()
     }
@@ -545,19 +546,19 @@ impl Symbol {
         rc.clone()
     }
 
-    pub fn create_from_path(odoo: &mut SyncOdoo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.to_str().unwrap().to_string();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             let mut symbol = Symbol::new(name, SymType::FILE);
             symbol.paths = vec![path_str.clone()];
-            let ref_sym = (*parent).borrow_mut().add_symbol(odoo, symbol);
+            let ref_sym = (*parent).borrow_mut().add_symbol(session, symbol);
             return Some(ref_sym);
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
                 let mut new_sym = Symbol::new(name, SymType::PACKAGE);
                 new_sym.paths = vec![path_str.clone()];
-                let ref_sym = (*parent).borrow_mut().add_symbol(odoo, new_sym);
+                let ref_sym = (*parent).borrow_mut().add_symbol(session, new_sym);
                 if path.join("__init__.py").exists() {
                     //?
                 } else {
@@ -565,12 +566,12 @@ impl Symbol {
                 }
                 if (*parent).borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
                     (*ref_sym).borrow_mut().paths = vec![path_str.clone()];
-                    let module = ModuleSymbol::new(odoo, path);
+                    let module = ModuleSymbol::new(session, path);
                     if module.is_some() {
                         (*ref_sym).borrow_mut()._module = module;
-                        ModuleSymbol::load_module_info(ref_sym.clone(), odoo, parent);
+                        ModuleSymbol::load_module_info(ref_sym.clone(), session, parent);
                         //as the symbol has been added to parent before module creation, it has not been added to modules
-                        odoo.modules.insert((*ref_sym).borrow()._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&ref_sym));
+                        session.sync_odoo.modules.insert((*ref_sym).borrow()._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&ref_sym));
                     } else {
                         return None;
                     }
@@ -582,7 +583,7 @@ impl Symbol {
             } else if !require_module{ //TODO should handle module with only __manifest__.py (see odoo/addons/test_data-module)
                 let mut symbol = Symbol::new(name, SymType::NAMESPACE);
                 symbol.paths = vec![path_str.clone()];
-                let ref_sym = (*parent).borrow_mut().add_symbol(odoo, symbol);
+                let ref_sym = (*parent).borrow_mut().add_symbol(session, symbol);
                 return Some(ref_sym);
             } else {
                 return None
@@ -746,7 +747,7 @@ impl Symbol {
         if not all, it will return the first found. If all, the all found symbols are returned, but the first one
         is the one that is overriding others.
         :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, odoo: &mut SyncOdoo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_local: bool, prevent_comodel: bool, all: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_local: bool, prevent_comodel: bool, all: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         if self.module_symbols.contains_key(name) {
             if all {
@@ -765,14 +766,14 @@ impl Symbol {
             }
         }
         if self._model.is_some() && !prevent_comodel {
-            let model = odoo.models.get(&self._model.as_ref().unwrap().name);
+            let model = session.sync_odoo.models.get(&self._model.as_ref().unwrap().name);
             if let Some(model) = model {
-                let symbols = model.clone().borrow().get_symbols(odoo, from_module.clone().unwrap_or(self.get_module_sym().expect("unable to find module")));
+                let symbols = model.clone().borrow().get_symbols(session, from_module.clone().unwrap_or(self.get_module_sym().expect("unable to find module")));
                 for sym in symbols {
                     if Rc::ptr_eq(&sym, &self.get_rc().unwrap()) {
                         continue;
                     }
-                    let attribut = sym.borrow().get_member_symbol(odoo, name, None, false, true, all, diagnostics);
+                    let attribut = sym.borrow().get_member_symbol(session, name, None, false, true, all, diagnostics);
                     if all {
                         result.extend(attribut);
                     } else {
@@ -786,7 +787,7 @@ impl Symbol {
         }
         if self._class.is_some() {
             for base in self._class.as_ref().unwrap().bases.iter() {
-                let s = base.borrow().get_member_symbol(odoo, name, from_module.clone(), prevent_local, prevent_comodel, all, diagnostics);
+                let s = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_local, prevent_comodel, all, diagnostics);
                 if s.len() != 0 {
                     if all {
                         result.extend(s);

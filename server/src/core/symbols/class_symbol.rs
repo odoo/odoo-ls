@@ -1,6 +1,4 @@
-
-use ruff_text_size::TextRange;
-use tower_lsp::lsp_types::Diagnostic;
+use lsp_types::Diagnostic;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;

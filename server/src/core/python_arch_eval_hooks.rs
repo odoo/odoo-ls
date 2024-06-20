@@ -2,16 +2,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::cell::RefCell;
-use tower_lsp::lsp_types::Diagnostic;
-use tower_lsp::lsp_types::DiagnosticSeverity;
-use tower_lsp::lsp_types::NumberOrString;
-use tower_lsp::lsp_types::Position;
-use tower_lsp::lsp_types::Range;
+use lsp_types::Diagnostic;
+use lsp_types::DiagnosticSeverity;
+use lsp_types::NumberOrString;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbol::Symbol;
-use crate::core::model::Model;
 use crate::constants::*;
+use crate::threads::SessionInfo;
 use crate::S;
 
 use super::evaluation::Evaluation;
@@ -144,7 +142,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_take_parent(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get_take_parent(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         todo!()
     }
@@ -228,14 +226,14 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_item(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if let Some(context) = context {
             let arg = context.get(&S!("args"));
             if let Some(arg) = arg {
                 match arg {
                     ContextValue::STRING(s) => {
-                        let model = odoo.models.get(s);
+                        let model = session.sync_odoo.models.get(s);
                         if let Some(model) = model {
                             let module = context.get(&S!("module"));
                             let from_module;
@@ -244,10 +242,10 @@ impl PythonArchEvalHooks {
                             } else {
                                 from_module = None;
                             }
-                            let symbols = model.clone().borrow().get_main_symbols(odoo, from_module.clone(), &mut None);
+                            let symbols = model.clone().borrow().get_main_symbols(session, from_module.clone(), &mut None);
                             if symbols.len() > 0 {
                                 for s in symbols.iter() {
-                                    if from_module.is_none() || ModuleSymbol::is_in_deps(odoo, &from_module.as_ref().unwrap(),&s.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name, &mut None) {
+                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name, &mut None) {
                                         return (Rc::downgrade(s), true);
                                     }
                                 }
@@ -286,10 +284,10 @@ impl PythonArchEvalHooks {
         (evaluation_sym.symbol.clone(), true)
     }
 
-    fn eval_test_cursor(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
-            let test_cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]));
+            let test_cursor_sym = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]));
             match test_cursor_sym {
                 Some(test_cursor_sym) => {
                     return (Rc::downgrade(&test_cursor_sym), true);
@@ -369,7 +367,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() {
             let parent_instance = context.as_ref().unwrap().get(&S!("parent_instance"));
@@ -421,7 +419,7 @@ impl PythonArchEvalHooks {
         get_sym.as_ref().unwrap().borrow_mut().evaluation.as_mut().unwrap().symbol.get_symbol_hook = Some(PythonArchEvalHooks::eval_get);
     }
 
-    fn eval_relational(odoo: &mut SyncOdoo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_none() {
             return (evaluation_sym.symbol.clone(), evaluation_sym.instance);

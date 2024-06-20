@@ -1,11 +1,10 @@
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use lsp_types::Diagnostic;
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
@@ -13,10 +12,10 @@ use std::path::PathBuf;
 use crate::constants::{SymType, BuildStatus, BuildSteps};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
+use crate::threads::SessionInfo;
 use crate::S;
 
 use super::import_resolver::ImportResult;
@@ -40,7 +39,7 @@ impl PythonArchBuilder {
         }
     }
 
-    pub fn load_arch(&mut self, odoo: &mut SyncOdoo) -> Result<(), Error> {
+    pub fn load_arch(&mut self, session: &mut SessionInfo) -> Result<(), Error> {
         //println!("load arch");
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.arch_status = BuildStatus::IN_PROGRESS;
@@ -55,31 +54,31 @@ impl PythonArchBuilder {
         symbol.in_workspace = (symbol.parent.is_some() &&
             symbol.parent.as_ref().unwrap().upgrade().is_some() &&
             symbol.parent.as_ref().unwrap().upgrade().unwrap().borrow().in_workspace) ||
-            odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
+            session.sync_odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
         drop(symbol);
-        let file_info = odoo.get_file_mgr().borrow_mut().update_file_info(odoo, path.as_str(), None, None, false); //create ast if not in cache
+        let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
         let mut file_info = (*file_info).borrow_mut();
         file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         if file_info.ast.is_some() {
-            self.visit_node(odoo, &file_info.ast.as_ref().unwrap())?;
-            self._resolve_all_symbols(odoo);
-            odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+            self.visit_node(session, &file_info.ast.as_ref().unwrap())?;
+            self._resolve_all_symbols(session);
+            session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
         } else {
-            file_info.publish_diagnostics(odoo);
+            file_info.publish_diagnostics(session);
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.arch_status = BuildStatus::DONE;
         Ok(())
     }
 
-    fn create_local_symbols_from_import_stmt(&mut self, odoo: &mut SyncOdoo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
                     continue;
                 }
                 let import_result: ImportResult = resolve_import_stmt(
-                    odoo,
+                    session,
                     self.sym_stack.last().unwrap(),
                     self.sym_stack.last().unwrap(),
                     from_stmt,
@@ -87,7 +86,7 @@ impl PythonArchBuilder {
                     level,
                     range).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    odoo.not_found_symbols.insert(self.sym_stack[0].clone());
+                    session.sync_odoo.not_found_symbols.insert(self.sym_stack[0].clone());
                     let file_tree_flattened = vec![import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
                     self.sym_stack[0].borrow_mut().not_found_paths.push((BuildSteps::ARCH, file_tree_flattened));
                     continue;
@@ -96,7 +95,7 @@ impl PythonArchBuilder {
                 let mut name_filter: Vec<String> = vec![];
                 if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
                     let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
-                    let all = Symbol::follow_ref(all, odoo, &mut None, false, false, &mut self.diagnostics).0;
+                    let all = Symbol::follow_ref(all, session, &mut None, false, false, &mut self.diagnostics).0;
                     if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() ||
                         !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
                             println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
@@ -121,13 +120,13 @@ impl PythonArchBuilder {
                         if variable.evaluation.is_some() {
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated_type = &evaluation.symbol;
-                            let evaluated_type = evaluated_type.get_symbol(odoo, &mut None, &mut self.diagnostics).0.upgrade();
+                            let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade();
                             if evaluated_type.is_some() {
                                 let evaluated_type = evaluated_type.unwrap();
                                 self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
                             }
                         }
-                        self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+                        self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
                     }
                 }
 
@@ -140,46 +139,46 @@ impl PythonArchBuilder {
                 let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE);
                 variable.is_import_variable = true;
                 variable.range = Some(import_name.range.clone());
-                self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+                self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
             }
         }
         Ok(())
     }
 
-    fn visit_node(&mut self, odoo: &mut SyncOdoo, nodes: &Vec<Stmt>) -> Result<(), Error> {
+    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) -> Result<(), Error> {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
-                        self.create_local_symbols_from_import_stmt(odoo, None, &import_stmt.names, None, &import_stmt.range)?
+                        self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
                     }
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
-                        self.create_local_symbols_from_import_stmt(odoo, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
+                        self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
                     }
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
-                        self._visit_ann_assign(odoo, ann_assign_stmt);
+                        self._visit_ann_assign(session, ann_assign_stmt);
                     }
                 },
                 Stmt::Assign(assign_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().sym_type != SymType::FUNCTION {
-                        self._visit_assign(odoo, assign_stmt);
+                        self._visit_assign(session, assign_stmt);
                     }
                 },
                 Stmt::FunctionDef(function_def_stmt) => {
-                    self.visit_func_def(odoo, function_def_stmt)?;
+                    self.visit_func_def(session, function_def_stmt)?;
                 },
                 Stmt::ClassDef(class_def_stmt) => {
-                    self.visit_class_def(odoo, class_def_stmt)?;
+                    self.visit_class_def(session, class_def_stmt)?;
                 },
                 Stmt::If(if_stmt) => {
-                    self.visit_if(odoo, if_stmt);
+                    self.visit_if(session, if_stmt);
                 },
                 Stmt::Try(try_stmt) => {
-                    self.visit_try(odoo, try_stmt);
+                    self.visit_try(session, try_stmt);
                 }
                 _ => {}
             }
@@ -234,7 +233,7 @@ impl PythonArchBuilder {
         (vec, parse_error)
     }
 
-    fn _visit_ann_assign(&mut self, odoo: &mut SyncOdoo, ann_assign_stmt: &StmtAnnAssign) {
+    fn _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
         let assigns = match ann_assign_stmt.value.as_ref() {
             Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
@@ -243,23 +242,23 @@ impl PythonArchBuilder {
             let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
             variable.range = Some(assign.target.range.clone());
             variable.evaluation = None;
-            self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+            self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
         }
     }
 
-    fn _visit_assign(&mut self, odoo: &mut SyncOdoo, assign_stmt: &StmtAssign) {
+    fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
             let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
             variable.range = Some(assign.target.range.clone());
             variable.evaluation = None;
-            let variable = self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, variable);
+            let variable = self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
             let mut variable = variable.borrow_mut();
             if variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
                 let parent = variable.parent.as_ref().unwrap().upgrade();
                 if parent.is_some() {
                     let parent = parent.unwrap();
-                    let eval = Evaluation::eval_from_ast(odoo, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
+                    let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                     variable.evaluation = eval.0;
                     self.diagnostics.extend(eval.1);
                     if variable.evaluation.is_some() {
@@ -270,7 +269,7 @@ impl PythonArchBuilder {
                             // as symbols to not raise any error.
                             let evaluation = variable.evaluation.as_ref().unwrap();
                             let evaluated = &evaluation.symbol;
-                            let evaluated = evaluated.get_symbol(odoo, &mut None, &mut self.diagnostics).0.upgrade();
+                            let evaluated = evaluated.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade();
                             if evaluated.is_some() {
                                 let evaluated = evaluated.unwrap();
                                 let evaluated = evaluated.borrow();
@@ -302,7 +301,7 @@ impl PythonArchBuilder {
         }
     }
 
-    fn visit_func_def(&mut self, odoo: &mut SyncOdoo, func_def: &StmtFunctionDef) -> Result<(), Error> {
+    fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
         let mut sym = Symbol::new(func_def.name.to_string(), SymType::FUNCTION);
         sym.range = Some(func_def.range.clone());
         sym._function = Some(FunctionSymbol{
@@ -324,21 +323,21 @@ impl PythonArchBuilder {
                 sym.doc_string = Some(s.value.to_string())
             }
         }
-        let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(odoo, sym);
+        let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(session, sym);
         //add params
         for arg in func_def.parameters.args.iter() {
             let mut param = Symbol::new(arg.parameter.name.id.clone(), SymType::VARIABLE);
             param.range = Some(arg.range);
-            sym.borrow_mut().add_symbol_to_locals(odoo, param);
+            sym.borrow_mut().add_symbol_to_locals(session.sync_odoo, param);
         }
         //visit body
         self.sym_stack.push(sym);
-        self.visit_node(odoo, &func_def.body)?;
+        self.visit_node(session, &func_def.body)?;
         self.sym_stack.pop();
         Ok(())
     }
 
-    fn visit_class_def(&mut self, odoo: &mut SyncOdoo, class_def: &StmtClassDef) -> Result<(), Error> {
+    fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
         let mut sym = Symbol::new(class_def.name.to_string(), SymType::CLASS);
         sym._class = Some(ClassSymbol {
             bases: PtrWeakHashSet::new(),
@@ -355,35 +354,35 @@ impl PythonArchBuilder {
             }
         }
         sym.evaluation = None;
-        let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(odoo, sym);
+        let sym = (*self.sym_stack.last().unwrap()).borrow_mut().add_symbol(session, sym);
         self.sym_stack.push(sym.clone());
-        self.visit_node(odoo, &class_def.body)?;
+        self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
-        PythonArchBuilderHooks::on_class_def(odoo, sym);
+        PythonArchBuilderHooks::on_class_def(session, sym);
         Ok(())
     }
 
-    fn _resolve_all_symbols(&mut self, odoo: &mut SyncOdoo) {
+    fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
         for symbol in self.__all_symbols_to_add.drain(..) {
             if !self.sym_stack.last().unwrap().borrow().symbols.contains_key(&symbol.name) {
-                self.sym_stack.last().unwrap().borrow_mut().add_symbol(odoo, symbol);
+                self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, symbol);
             }
         }
     }
 
-    fn visit_if(&mut self, odoo: &mut SyncOdoo, if_stmt: &StmtIf) -> Result<(), Error> {
+    fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
-        self.visit_node(odoo, &if_stmt.body)?;
+        self.visit_node(session, &if_stmt.body)?;
         for else_clause in if_stmt.elif_else_clauses.iter() {
-            self.visit_node(odoo, &else_clause.body)?;
+            self.visit_node(session, &else_clause.body)?;
         }
         Ok(())
     }
 
-    fn visit_try(&mut self, odoo: &mut SyncOdoo, try_stmt: &StmtTry) -> Result<(), Error> {
-        self.visit_node(odoo, &try_stmt.body)?;
-        self.visit_node(odoo, &try_stmt.orelse)?;
-        self.visit_node(odoo, &try_stmt.finalbody)?;
+    fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) -> Result<(), Error> {
+        self.visit_node(session, &try_stmt.body)?;
+        self.visit_node(session, &try_stmt.orelse)?;
+        self.visit_node(session, &try_stmt.finalbody)?;
         Ok(())
     }
 }

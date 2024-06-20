@@ -5,7 +5,7 @@ use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
 use crate::core::symbol::Symbol;
-use crate::core::odoo::SyncOdoo;
+use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
 
@@ -79,19 +79,19 @@ impl Model {
         self.symbols.insert(symbol);
     }
 
-    pub fn get_symbols(&self, odoo: &mut SyncOdoo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
+    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().get_module_sym();
             let module = module.expect("Module not found for model symbol");
-            if ModuleSymbol::is_in_deps(odoo, &from_module, &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) {
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) {
                 symbol.push(s);
             }
         }
         symbol.into_iter()
     }
 
-    pub fn get_main_symbols(&self, odoo: &mut SyncOdoo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<Symbol>>> {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -103,7 +103,7 @@ impl Model {
                 } else {
                     let dir_name = sym.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone();
                     if (acc.is_some() && acc.as_ref().unwrap().contains(&dir_name)) ||
-                    ModuleSymbol::is_in_deps(odoo, from_module.as_ref().unwrap(), &dir_name, acc) {
+                    ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name, acc) {
                         res.push(sym);
                         acc.as_mut().unwrap().insert(dir_name);
                     }

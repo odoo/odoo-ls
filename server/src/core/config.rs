@@ -1,8 +1,8 @@
 use std::str::FromStr;
-use tower_lsp::lsp_types::request::Request;
+use lsp_types::request::Request;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum RefreshMode {
     AfterDelay,
     OnSave,
@@ -23,7 +23,7 @@ impl FromStr for RefreshMode {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DiagMissingImportsMode {
     None,
     OnlyOdoo,
@@ -63,7 +63,7 @@ impl Request for ConfigRequest {
     const METHOD: &'static str = "Odoo/getConfiguration";
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub refresh_mode: RefreshMode,
     pub auto_save_delay: u64,

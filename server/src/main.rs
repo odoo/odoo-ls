@@ -1,13 +1,10 @@
-use server::{args::Cli, cli_backend::CliBackend, core::event_queue::EventQueue};
+use server::{args::Cli, cli_backend::CliBackend, server::Server};
 use clap::Parser;
-use server::backend::Backend;
 use server::core::odoo::Odoo;
 use std::env;
 use std::sync::Arc;
-use tower_lsp::{LspService, Server};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env::set_var("RUST_BACKTRACE", "full");
     let cli = Cli::parse();
     let debug = true;
@@ -19,42 +16,14 @@ async fn main() {
     } else {
         if debug {
             println!("starting server (debug mode)");
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:2087").await.unwrap();
-
-            //loop {
-            let (stream, _) = listener.accept().await.unwrap();
-            let (reader, writer) = tokio::io::split(stream);
-            let (sx, rx) = tokio::sync::mpsc::channel(1000);
-            let odoo = Arc::new(tokio::sync::Mutex::new(Odoo::new(sx)));
-            let (service, messages) = LspService::build(|client| Backend {
-                client,
-                odoo:odoo,
-                msg_receiver: Arc::new(tokio::sync::Mutex::new(rx)),
-                event_queue: EventQueue::new(1000)
-            })
-                .custom_method("Odoo/configurationChanged", Backend::client_config_changed)
-                .finish();
-            let server = Server::new(reader, writer, messages);
-            server.serve(service).await;
-                // tokio::spawn(async move {
-                //     server.serve(service).await;
-                // });
-            //}
+            let mut serv = Server::new_tcp().expect("Unable to start tcp connection");
+            serv.initialize().expect("Error while initializing server");
+            serv.run();
         } else {
             println!("starting server");
-            let stdin = tokio::io::stdin();
-            let stdout = tokio::io::stdout();
-
-            let (sx, rx) = tokio::sync::mpsc::channel(1000);
-            let (service, socket) = LspService::build(|client| Backend {
-                client,
-                odoo:Arc::new(tokio::sync::Mutex::new(Odoo::new(sx))),
-                msg_receiver: Arc::new(tokio::sync::Mutex::new(rx)),
-                event_queue: EventQueue::new(1000)
-            })
-                .custom_method("Odoo/configurationChanged", Backend::client_config_changed)
-                .finish();
-            Server::new(stdin, stdout, socket).serve(service).await;
+            let mut serv = Server::new_stdio();
+            serv.initialize().expect("Error while initializing server");
+            serv.run();
         }
     }
 }
