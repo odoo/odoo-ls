@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, sync::{Arc, Mutex, RwLock, RwLockR
 
 use crossbeam_channel::{Receiver, Sender};
 use lsp_server::{Message, RequestId, Response, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage, Notification}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown}, CompletionResponse, Hover, HoverParams, LogMessageParams, MessageType};
+use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage, Notification}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown}, CompletionResponse, Hover, HoverParams, LogMessageParams, MessageType};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
@@ -126,6 +126,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     DidSaveTextDocument::METHOD => { Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap()); }
                     DidRenameFiles::METHOD => {}
                     DidCreateFiles::METHOD => {}
+                    DidChangeWatchedFiles::METHOD => {}
                     "custom/server/register_capabilities" => { Odoo::register_capabilities(&mut session); }
                     "custom/server/init" => { Odoo::init(&mut session); }
                     Shutdown::METHOD => { println!("Main thread - got shutdown."); break;}
