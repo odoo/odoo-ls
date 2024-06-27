@@ -4,6 +4,8 @@ use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
 use serde_json::to_value;
+#[cfg(target_os = "linux")]
+use nix;
 
 use crate::{core::{file_mgr::FileMgr, odoo::{Odoo, SyncOdoo}}, threads::{message_processor_thread_main, message_processor_thread_read}, S};
 
@@ -17,7 +19,7 @@ const THREAD_REACTIVE_COUNT: u16 = 1;
  * 
  */
 pub struct Server {
-    connection: Connection,
+    connection: Option<Connection>,
     io_threads: IoThreads,
     receivers_w_to_s: Vec<Receiver<Message>>,
     msg_id: i32,
@@ -113,7 +115,7 @@ impl Server {
         //     }));
         // }
         Self {
-            connection: conn,
+            connection: Some(conn),
             io_threads: io_threads,
             id_list: HashMap::new(),
             msg_id: 0,
@@ -130,7 +132,7 @@ impl Server {
 
     pub fn initialize(&mut self) -> Result<(), ServerError> {
         println!("Waiting for a connection...");
-        let (id, params) = self.connection.initialize_start()?;
+        let (id, params) = self.connection.as_ref().unwrap().initialize_start()?;
         println!("Starting connection initialization");
 
         let initialize_params: InitializeParams = serde_json::from_value(params)?;
@@ -191,25 +193,30 @@ impl Server {
             ..Default::default()
         };
 
-        self.connection.initialize_finish(id, serde_json::to_value(initialize_data).unwrap())?;
+        self.connection.as_ref().unwrap().initialize_finish(id, serde_json::to_value(initialize_data).unwrap())?;
         println!("End of connection initalization.");
         self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null })).unwrap();
         self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null })).unwrap();
         Ok(())
     }
 
-    pub fn run(mut self) {
+    pub fn run(mut self, client_pid: Option<i32>) {
         let mut select = Select::new();
-        let receiver_clone = self.connection.receiver.clone();
+        let receiver_clone = self.connection.as_ref().unwrap().receiver.clone();
         select.recv(&receiver_clone);
         let receivers_w_to_s_clone = self.receivers_w_to_s.clone();
         for receiver in receivers_w_to_s_clone.iter() {
             select.recv(receiver);
+        };
+        let mut pid_thread = None;
+        if let Some(pid) = client_pid {
+            let sender_to_main = self.sender_s_to_main.clone();
+            pid_thread = Some(self.spawn_pid_thread(pid, sender_to_main));
         }
         loop {
             let index = select.ready();
             let res = if index == 0 {
-                self.connection.receiver.try_recv()
+                self.connection.as_ref().unwrap().receiver.try_recv()
             } else {
                 self.receivers_w_to_s.get(index-1).unwrap().try_recv()
             };
@@ -229,12 +236,19 @@ impl Server {
 
             if index == 0 { //comes from client
                 if let Message::Request(r) = &msg {
-                    if r.method == Shutdown::METHOD {
-                        self.connection.sender.send(Message::Response(Response{
-                            id: r.id.clone(),
-                            result: Some(serde_json::Value::Null),
-                            error: None,
-                        })).unwrap();
+                    if self.connection.as_ref().unwrap().handle_shutdown(r).unwrap_or(false) {
+                        for _ in 0..self.senders_s_to_main.len() {
+                            self.sender_s_to_main.send(Message::Notification(lsp_server::Notification{
+                                method: Shutdown::METHOD.to_string(),
+                                params: serde_json::Value::Null,
+                            })).unwrap(); //sent as notification as we already handled the request for the client
+                        }
+                        for _ in 0..self.senders_s_to_read.len() {
+                            self.sender_s_to_read.send(Message::Notification(lsp_server::Notification{
+                                method: Shutdown::METHOD.to_string(),
+                                params: serde_json::Value::Null,
+                            })).unwrap(); //sent as notification as we already handled the request for the client
+                        }
                         println!("Got shutdown request. Exiting.");
                         break;
                     }
@@ -246,18 +260,25 @@ impl Server {
                         r.id = RequestId::from(self.msg_id);
                         self.msg_id += 1;
                         self.id_list.insert(r.id.clone(), index as u16);
-                        self.connection.sender.send(Message::Request(r)).unwrap();
+                        self.connection.as_ref().unwrap().sender.send(Message::Request(r)).unwrap();
                     },
                     Message::Notification(n) => {
-                        self.connection.sender.send(Message::Notification(n)).unwrap();
+                        self.connection.as_ref().unwrap().sender.send(Message::Notification(n)).unwrap();
                     },
                     Message::Response(r) => {
-                        self.connection.sender.send(Message::Response(r)).unwrap();
+                        self.connection.as_ref().unwrap().sender.send(Message::Response(r)).unwrap();
                     }
                 }
             }
         }
+        for thread in self.threads {
+            thread.join().unwrap();
+        }
+        self.connection = None; //drop connection before joining threads
         self.io_threads.join().unwrap();
+        if let Some(pid_join_handle) = pid_thread {
+            pid_join_handle.join().unwrap();
+        }
     }
 
     /* address a message to the right thread. */
@@ -315,5 +336,45 @@ impl Server {
                 }
             }
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn spawn_pid_thread(&self, pid: i32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
+        use std::process::exit;
+        println!("Got PID to lisen: {}", pid);
+
+        std::thread::spawn(move || {
+            let pid = nix::unistd::Pid::from_raw(pid);
+            loop {
+                match nix::sys::wait::waitpid(pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG)) {
+                    Ok(nix::sys::wait::WaitStatus::Exited(_, status)) => {
+                        println!("Process {} exited with status {} - killing extension in 10 secs", pid, status);
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                        exit(1);
+                    }
+                    Ok(nix::sys::wait::WaitStatus::Signaled(_, signal, _)) => {
+                        println!("Process {} was killed by signal {:?} - killing extension in 10 secs", pid, signal);
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                        exit(1);
+                    }
+                    Ok(nix::sys::wait::WaitStatus::StillAlive) => {
+                        // Le processus est toujours en cours d'exécution, attendez un peu avant de réessayer
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                    Ok(_) => {
+                        // Autres statuts peuvent être ignorés
+                    }
+                    Err(err) => {
+                        eprintln!("Error waiting for process {}: {}", pid, err);
+                        break;
+                    }
+                }
+            }
+        })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn spawn_pid_thread(&self, pid: i32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
+        std::thread::spawn(move || {})
     }
 }
