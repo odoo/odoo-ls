@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
+use lsp_types::notification::ShowMessage;
+use lsp_types::MessageType;
 use ruff_python_ast::Expr;
-use lsp_types::Diagnostic;
+use lsp_types::{Diagnostic, ShowMessageParams, notification::Notification};
 
 use crate::constants::{BuildSteps, BuildStatus, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
@@ -283,7 +285,11 @@ impl PythonOdooBuilder {
         let model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("Model")]));
         let transient = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("TransientModel")]));
         if base_model.is_none() || model.is_none() || transient.is_none() {
-            panic!("Odoo models not found. This should not happen");
+            session.send_notification(ShowMessage::METHOD, ShowMessageParams{
+                typ: MessageType::ERROR,
+                message: "Odoo base models are not found. OdooLS will be unable to generate valid diagnostics".to_string()
+            });
+            return false;
         }
         let base_model = base_model.unwrap();
         let model = model.unwrap();

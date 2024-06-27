@@ -893,23 +893,19 @@ impl Odoo {
 
     pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, force: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
+            let tree = session.sync_odoo.tree_from_path(&path);
+            if let Err(e) = tree { //is not part of odoo (or not in addons path)
+                return;
+            }
+            let tree = tree.unwrap().clone();
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.as_os_str().to_str().unwrap().to_string(), Some(&content), Some(version), force);
             let mut mut_file_info = file_info.borrow_mut();
             mut_file_info.publish_diagnostics(session); //To push potential syntax errors or refresh previous one
             drop(mut_file_info);
-            let parent = SyncOdoo::_unload_path(session, &path, false);
-            if parent.is_err() {
-                println!("An error occured while reloading file. Ignoring");
-                return;
-            }
-            let parent = parent.unwrap();
-            //build new
-            let result = SyncOdoo::create_new_symbol(session, path.clone(), parent, false);
-            if let Some((symbol, tree)) = result {
-                //search for missing symbols
-                session.sync_odoo.search_symbols_to_rebuild(&tree);
-            }
+            let _ = SyncOdoo::_unload_path(session, &path, false);
+            //build new by searching for missing symbols
+            session.sync_odoo.search_symbols_to_rebuild(&tree);
             SyncOdoo::process_rebuilds(session);
         }
     }

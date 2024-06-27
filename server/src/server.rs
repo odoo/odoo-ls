@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Error, sync::{mpsc::RecvTimeoutError, Arc, M
 
 use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, Response, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
+use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
 use serde_json::to_value;
 #[cfg(target_os = "linux")]
 use nix;
@@ -185,6 +185,18 @@ impl Server {
                                 },
                             }]
                         }),
+                        did_rename: Some(FileOperationRegistrationOptions {
+                            filters: vec![
+                                FileOperationFilter {
+                                    scheme: Some(S!("file")),
+                                    pattern: FileOperationPattern {
+                                        glob: S!("**"),
+                                        matches: None,
+                                        options: None,
+                                    },
+                                }
+                            ]
+                        }),
                         ..WorkspaceFileOperationsServerCapabilities::default()
                     })
                 }),
@@ -289,7 +301,7 @@ impl Server {
                     HoverRequest::METHOD | GotoDefinition::METHOD | Completion::METHOD => {
                         self.sender_s_to_read.send(Message::Request(r)).unwrap();
                     }
-                    _ => {panic!("Not handled Message Id: {}", r.method)}
+                    _ => {panic!("Not handled Request Id: {}", r.method)}
                 }
             },
             Message::Response(r) => {
@@ -323,14 +335,14 @@ impl Server {
                 match n.method.as_str() {
                     DidOpenTextDocument::METHOD | DidChangeConfiguration::METHOD | DidChangeWorkspaceFolders::METHOD |
                     DidChangeTextDocument::METHOD | DidCloseTextDocument::METHOD | DidSaveTextDocument::METHOD |
-                    DidRenameFiles::METHOD | DidCreateFiles::METHOD => {
+                    DidRenameFiles::METHOD | DidCreateFiles::METHOD | DidChangeWatchedFiles::METHOD => {
                         self.sender_s_to_main.send(Message::Notification(n)).unwrap();
                     }
                     _ => {
                         if n.method.starts_with("$/") {
                             println!("Not handled message id: {}", n.method);
                         } else {
-                            panic!("Not handled Message Id: {}", n.method)
+                            panic!("Not handled Notification Id: {}", n.method)
                         }
                     }
                 }

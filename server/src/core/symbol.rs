@@ -284,15 +284,16 @@ impl Symbol {
         None
     }
 
-    pub fn is_symbol_in_parents(&self, symbol: &Rc<RefCell<Symbol>>) -> bool {
-        if Rc::ptr_eq(&symbol, &self.get_rc().unwrap()) {
+    //return true if to_test is in parents of symbol or equal to it.
+    pub fn is_symbol_in_parents(symbol: &Rc<RefCell<Symbol>>, to_test: &Rc<RefCell<Symbol>>) -> bool {
+        if Rc::ptr_eq(symbol, to_test) {
             return true;
         }
-        if self.parent.is_none() {
+        if symbol.borrow().parent.is_none() {
             return false;
         }
-        let parent = self.parent.as_ref().unwrap().upgrade().unwrap();
-        return parent.borrow_mut().is_symbol_in_parents(symbol);
+        let parent = symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
+        return Symbol::is_symbol_in_parents(&parent, to_test);
     }
 
     pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
@@ -300,12 +301,12 @@ impl Symbol {
         //It will trigger rebuild on all dependencies
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
-            let mut_symbol = ref_to_inv.borrow_mut();
-            if [SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
+            let sym_to_inv = ref_to_inv.borrow();
+            if [SymType::FILE, SymType::PACKAGE].contains(&sym_to_inv.sym_type) {
                 if *step == BuildSteps::ARCH {
-                    for (index, hashset) in mut_symbol.dependents[BuildSteps::ARCH as usize].iter().enumerate() {
+                    for (index, hashset) in sym_to_inv.dependents[BuildSteps::ARCH as usize].iter().enumerate() {
                         for sym in hashset {
-                            if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
+                            if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
                                 if index == BuildSteps::ARCH as usize {
                                     session.sync_odoo.add_to_rebuild_arch(sym.clone());
                                 } else if index == BuildSteps::ARCH_EVAL as usize {
@@ -320,9 +321,9 @@ impl Symbol {
                     }
                 }
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) {
-                    for (index, hashset) in mut_symbol.dependents[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
+                    for (index, hashset) in sym_to_inv.dependents[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
                         for sym in hashset {
-                            if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
+                            if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
                                 if index == BuildSteps::ARCH_EVAL as usize {
                                     session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
                                 } else if index == BuildSteps::ODOO as usize {
@@ -335,9 +336,9 @@ impl Symbol {
                     }
                 }
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO].contains(step) {
-                    for (index, hashset) in mut_symbol.dependents[BuildSteps::ODOO as usize].iter().enumerate() {
+                    for (index, hashset) in sym_to_inv.dependents[BuildSteps::ODOO as usize].iter().enumerate() {
                         for sym in hashset {
-                            if !Rc::ptr_eq(&sym, &symbol) && !sym.borrow().is_symbol_in_parents(&symbol) {
+                            if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
                                 if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
@@ -348,7 +349,7 @@ impl Symbol {
                     }
                 }
             }
-            for sym in mut_symbol.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
+            for sym in sym_to_inv.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
                 vec_to_invalidate.push_back(sym.clone());
             }
         }
@@ -382,14 +383,14 @@ impl Symbol {
             let mut parent = parent.borrow_mut();
             drop(mut_symbol);
             parent.remove_symbol(ref_to_unload.clone());
+            if vec![SymType::FILE, SymType::PACKAGE].contains(&ref_to_unload.borrow().sym_type) {
+                Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
+            }
             let mut mut_symbol = ref_to_unload.borrow_mut();
             if mut_symbol._module.is_some() {
                 session.sync_odoo.modules.remove(mut_symbol._module.as_ref().unwrap().dir_name.as_str());
             }
             mut_symbol.sym_type = SymType::DIRTY;
-            if vec![SymType::FILE, SymType::PACKAGE].contains(&mut_symbol.sym_type) {
-                Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
-            }
         }
     }
 
