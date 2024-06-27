@@ -38,5 +38,9 @@ pub struct Cli {
 
     //give an alternative path to stdlib stubs. 
     #[arg(long)]
-    pub stdlib: Option<String>
+    pub stdlib: Option<String>,
+
+    //Provide a pid (unix only) that the server will listen and kill itself if the process stop.
+    #[arg(long)]
+    pub clientProcessId: Option<i32>
 }

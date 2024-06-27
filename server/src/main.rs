@@ -18,12 +18,12 @@ fn main() {
             println!("starting server (debug mode)");
             let mut serv = Server::new_tcp().expect("Unable to start tcp connection");
             serv.initialize().expect("Error while initializing server");
-            serv.run();
+            serv.run(cli.clientProcessId);
         } else {
             println!("starting server");
             let mut serv = Server::new_stdio();
             serv.initialize().expect("Error while initializing server");
-            serv.run();
+            serv.run(cli.clientProcessId);
         }
     }
 }
