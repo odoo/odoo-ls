@@ -1,4 +1,5 @@
 use std::{ffi::OsStr, fs, ops::Deref, path::{Path, PathBuf}, str::FromStr};
+use path_slash::{PathBufExt, PathExt};
 
 #[macro_export]
 macro_rules! S {
@@ -102,4 +103,44 @@ impl ToFilePath for lsp_types::Uri {
         url.to_file_path()
     }
 
+}
+
+pub trait PathSanitizer {
+    fn sanitize(&self) -> String;
+}
+
+impl PathSanitizer for PathBuf {
+
+    fn sanitize(&self) -> String {
+        let mut path = self.to_slash_lossy().to_string();
+
+        #[cfg(windows)]
+        {
+            // Check if path begin with a letter + ':'
+            if path.len() > 2 && path.chars().nth(1) == Some(':') {
+                let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
+                path.replace_range(0..1, &disk_letter.to_string());
+            }
+        }
+
+        path
+    }
+}
+
+impl PathSanitizer for Path {
+
+    fn sanitize(&self) -> String {
+        let mut path = self.to_slash_lossy().to_string();
+
+        #[cfg(windows)]
+        {
+            // Check if path begin with a letter + ':'
+            if path.len() > 2 && path.chars().nth(1) == Some(':') {
+                let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
+                path.replace_range(0..1, &disk_letter.to_string());
+            }
+        }
+
+        path
+    }
 }

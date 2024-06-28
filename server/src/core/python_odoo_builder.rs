@@ -10,6 +10,7 @@ use crate::constants::{BuildSteps, BuildStatus, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::EvaluationValue;
@@ -37,7 +38,7 @@ impl PythonOdooBuilder {
         if vec![SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED].contains(&symbol.sym_type) {
             return;
         } else if symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__").with_extension(S!("py") + symbol.i_ext.as_str()).to_str().unwrap().to_string();
+            path = PathBuf::from(path).join("__init__").with_extension(S!("py") + symbol.i_ext.as_str()).sanitize();
         }
         symbol.odoo_status = BuildStatus::IN_PROGRESS;
         symbol.validation_status = BuildStatus::PENDING;

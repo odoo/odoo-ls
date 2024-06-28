@@ -16,6 +16,7 @@ use crate::core::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::import_resolver::ImportResult;
@@ -49,7 +50,7 @@ impl PythonArchBuilder {
         let mut path = symbol.paths[0].clone();
         //println!("load arch path: {}", path);
         if symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
+            path = PathBuf::from(path).join("__init__.py").sanitize() + symbol.i_ext.as_str();
         }
         symbol.in_workspace = (symbol.parent.is_some() &&
             symbol.parent.as_ref().unwrap().upgrade().is_some() &&

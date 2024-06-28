@@ -15,6 +15,7 @@ use crate::core::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
@@ -53,7 +54,7 @@ impl PythonArchEval {
         let mut path = symbol.paths[0].clone();
         //println!("eval path: {}", path);
         if symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + symbol.i_ext.as_str();
+            path = PathBuf::from(path).join("__init__.py").sanitize() + symbol.i_ext.as_str();
         }
         drop(symbol);
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
@@ -351,9 +352,6 @@ impl PythonArchEval {
                 continue
             }
             if (*iter_element.upgrade().unwrap()).borrow().sym_type != SymType::CLASS {
-                if elements.join(".").contains("Command") {
-                    println!("here");
-                }
                 self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::WARNING),

@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
-use server::{core::{config::{Config, DiagMissingImportsMode}, messages::SyncChannel, odoo::SyncOdoo}, threads::SessionInfo};
+use server::{core::{config::{Config, DiagMissingImportsMode}, messages::SyncChannel, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
 use server::core::messages::MsgHandler;
 use server::S;
 
@@ -18,7 +18,7 @@ pub fn setup_server() -> SyncOdoo {
     println!("Test addons path: {:?}", test_addons_path);
 
     let mut config = Config::new();
-    config.addons = vec![test_addons_path.to_str().unwrap().to_string()];
+    config.addons = vec![test_addons_path.sanitize()];
     config.odoo_path = community_path;
     config.python_path = S!("python3");
     config.refresh_mode = server::core::config::RefreshMode::Off;

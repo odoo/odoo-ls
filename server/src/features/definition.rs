@@ -10,6 +10,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::features::ast_utils::AstUtils;
+use crate::utils::PathSanitizer as _;
 
 
 
@@ -40,7 +41,7 @@ impl DefinitionFeature {
                 match sym.sym_type {
                     SymType::PACKAGE => {
                         links.push(Location{
-                            uri: FileMgr::pathname2uri(&PathBuf::from(path).join("__init__.py").to_str().unwrap().to_string()),
+                            uri: FileMgr::pathname2uri(&PathBuf::from(path).join("__init__.py").sanitize()),
                             range: Range::default()
                         });
                     },
