@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use lsp_server::{Message, ResponseError};
 use crossbeam_channel::Sender;
 use lsp_types::*;
+use path_slash::PathBufExt;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 
 use std::collections::HashSet;
@@ -32,7 +33,7 @@ use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::python_odoo_builder::PythonOdooBuilder;
 use crate::core::python_validator::PythonValidator;
 use crate::core::messages::{Msg, MsgHandler};
-use crate::utils::ToFilePath as _;
+use crate::utils::{PathSanitizer, ToFilePath as _};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
 
@@ -72,9 +73,9 @@ impl SyncOdoo {
             config: Config::new(),
             symbols: Some(symbols),
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
-            stubs_dirs: vec![env::current_dir().unwrap().join("typeshed").join("stubs").to_str().unwrap().to_string(),
-            env::current_dir().unwrap().join("additional_stubs").to_str().unwrap().to_string()],
-            stdlib_dir: env::current_dir().unwrap().join("typeshed").join("stdlib").to_str().unwrap().to_string(),
+            stubs_dirs: vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
+            env::current_dir().unwrap().join("additional_stubs").sanitize()],
+            stdlib_dir: env::current_dir().unwrap().join("typeshed").join("stdlib").sanitize(),
             modules: HashMap::new(),
             models: HashMap::new(),
             rebuild_arch: PtrWeakHashSet::new(),
@@ -94,10 +95,10 @@ impl SyncOdoo {
             session.sync_odoo.stubs_dirs.clear();
         }
         for stub in session.sync_odoo.config.additional_stubs.iter() {
-            session.sync_odoo.stubs_dirs.push(stub.clone());
+            session.sync_odoo.stubs_dirs.push(PathBuf::from(stub.clone()).sanitize());
         }
         if !session.sync_odoo.config.stdlib.is_empty() {
-            session.sync_odoo.stdlib_dir = session.sync_odoo.config.stdlib.clone();
+            session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib.clone()).sanitize();
         }
         println!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
         for stub in session.sync_odoo.stubs_dirs.iter() {
@@ -114,23 +115,19 @@ impl SyncOdoo {
             for stub_dir in session.sync_odoo.stubs_dirs.iter() {
                 root_symbol.paths.push(stub_dir.clone());
             }
-            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; print(sys.path)"]).output().expect("Can't exec python3");
+            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output().expect("Can't exec python3");
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 session.log_message(MessageType::INFO, format!("Detected sys.path: {}", stdout));
-                // extract vec of string from output
-                if stdout.len() > 5 {
-                    let values = String::from((stdout[2..stdout.len()-3]).to_string());
-                    for value in values.split("', '") {
-                        let value = value.to_string();
-                        if value.len() > 0 {
-                            let pathbuf = PathBuf::from(value.clone());
-                            if pathbuf.is_dir() {
-                                session.log_message(MessageType::INFO, format!("Adding sys.path: {}", stdout));
-                                root_symbol.paths.push(value.clone());
-                                root_symbol._root.as_mut().unwrap().sys_path.push(value.clone());
-                            }
-                        }
+                let paths: Vec<String> = serde_json::from_str(&stdout).expect("Unable to get paths with json of sys.path output");
+                for path in paths.iter() {
+                    let path = path.replace("\\\\", "\\");
+                    let pathbuf = PathBuf::from(path);
+                    if pathbuf.is_dir() {
+                        let final_path = pathbuf.sanitize();
+                        session.log_message(MessageType::INFO, format!("Adding sys.path: {}", final_path));
+                        root_symbol.paths.push(final_path.clone());
+                        root_symbol._root.as_mut().unwrap().sys_path.push(final_path.clone());
                     }
                 }
             } else {
@@ -147,7 +144,7 @@ impl SyncOdoo {
         let builtins_path = path.join("builtins.pyi");
         if !builtins_path.exists() {
             session.log_message(MessageType::ERROR, String::from("Unable to find builtins.pyi"));
-            println!("Unable to find builtins at: {}", builtins_path.as_os_str().to_str().unwrap());
+            println!("Unable to find builtins at: {}", builtins_path.sanitize());
             return;
         };
         let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, session.sync_odoo.symbols.as_ref().unwrap().clone(), false);
@@ -237,19 +234,19 @@ impl SyncOdoo {
         if odoo_addon_path.exists() {
             if session.sync_odoo.load_odoo_addons {
                 addon_symbol.as_ref().unwrap().borrow_mut().paths.push(
-                    odoo_addon_path.to_str().unwrap().to_string()
+                    odoo_addon_path.sanitize()
                 );
             }
         } else {
             let odoo_addon_path = PathBuf::from(odoo_path.clone()).join("addons");
-            session.log_message(MessageType::ERROR, format!("Unable to find odoo addons path at {}", odoo_addon_path.to_str().unwrap().to_string()));
+            session.log_message(MessageType::ERROR, format!("Unable to find odoo addons path at {}", odoo_addon_path.sanitize()));
             return false;
         }
         for addon in session.sync_odoo.config.addons.iter() {
             let addon_path = PathBuf::from(addon);
             if addon_path.exists() {
                 addon_symbol.as_ref().unwrap().borrow_mut().paths.push(
-                    addon_path.to_str().unwrap().to_string()
+                    addon_path.sanitize()
                 );
             }
         }
@@ -546,7 +543,7 @@ impl SyncOdoo {
         if clean_cache {
             let file_mgr = session.sync_odoo.file_mgr.clone();
             let mut file_mgr = file_mgr.borrow_mut();
-            file_mgr.delete_path(session, &path.as_os_str().to_str().unwrap().to_string());
+            file_mgr.delete_path(session, &path.sanitize());
             let mut to_del = Vec::from_iter(path_symbol.borrow_mut().module_symbols.values().map(|x| x.clone()));
             let mut index = 0;
             while index < to_del.len() {
@@ -858,7 +855,7 @@ impl Odoo {
         //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
         // that we use the same base version of the file for future incrementation.
         let path = params.text_document.uri.to_file_path().unwrap();
-        session.log_message(MessageType::INFO, format!("File opened: {}", path.as_os_str().to_str().unwrap()));
+        session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
         Odoo::reload_file(session, path, vec![TextDocumentContentChangeEvent{
             range: None,
             range_length: None,
@@ -873,7 +870,7 @@ impl Odoo {
         let delay = session.sync_odoo.config.auto_save_delay;
         //tokio::time::sleep(Duration::from_millis(delay)).await;
         let path = params.text_document.uri.to_file_path().unwrap();
-        session.log_message(MessageType::INFO, format!("File changed: {}", path.as_os_str().to_str().unwrap()));
+        session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
         Odoo::reload_file(session, path, params.content_changes, version, false);
     }
@@ -883,7 +880,7 @@ impl Odoo {
             return
         }
         let path = params.text_document.uri.to_file_path().unwrap();
-        session.log_message(MessageType::INFO, format!("File saved: {}", path.as_os_str().to_str().unwrap()));
+        session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
         Odoo::reload_file(session, path, vec![TextDocumentContentChangeEvent{
             range: None,
             range_length: None,
@@ -899,7 +896,7 @@ impl Odoo {
             }
             let tree = tree.unwrap().clone();
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.as_os_str().to_str().unwrap().to_string(), Some(&content), Some(version), force);
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), Some(&content), Some(version), force);
             let mut mut_file_info = file_info.borrow_mut();
             mut_file_info.publish_diagnostics(session); //To push potential syntax errors or refresh previous one
             drop(mut_file_info);

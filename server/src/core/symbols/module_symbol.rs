@@ -10,6 +10,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::constants::EXTENSION_NAME;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use crate::S;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -30,7 +31,7 @@ impl ModuleSymbol {
 
     pub fn new(session: &mut SessionInfo, dir_path: &PathBuf) -> Option<Self> {
         let mut module = ModuleSymbol {
-            root_path: dir_path.as_os_str().to_str().unwrap().to_string(),
+            root_path: dir_path.sanitize(),
             loaded: false,
             module_name: String::new(),
             dir_name: String::new(),
@@ -46,7 +47,7 @@ impl ModuleSymbol {
         if !manifest_path.exists() {
             return None;
         }
-        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.as_os_str().to_str().unwrap(), None, None, false);
+        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.ast.is_none() {
             return None;
@@ -79,7 +80,7 @@ impl ModuleSymbol {
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
-            let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&S!(manifest_path.as_os_str().to_str().unwrap())).expect("file not found in cache").clone();
+            let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
             let mut manifest_file_info = (*manifest_file_info).borrow_mut();
             manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
             manifest_file_info.publish_diagnostics(session);

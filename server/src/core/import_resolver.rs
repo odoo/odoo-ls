@@ -8,7 +8,7 @@ use ruff_python_ast::{Identifier, Alias};
 use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
-use crate::utils::{is_dir_cs, is_file_cs};
+use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
 use crate::S;
 
 use super::odoo::SyncOdoo;
@@ -129,7 +129,7 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
     let paths = (*odoo_addons).borrow().paths.clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name);
-        if is_dir_cs(full_path.as_os_str().to_str().unwrap().to_string()) {
+        if is_dir_cs(full_path.sanitize()) {
             let _arc_symbol = Symbol::create_from_path(session, &full_path, odoo_addons.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
@@ -214,7 +214,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 full_path = full_path.join(name);
             }
         }
-        if is_dir_cs(full_path.to_str().unwrap().to_string()) {
+        if is_dir_cs(full_path.sanitize()) {
             // if is_dir_cs(full_path.to_str().unwrap().to_string() + "-stubs") {
             //     full_path.set_file_name(full_path.file_name().unwrap().to_str().unwrap().to_string() + "-stubs");
             // }
@@ -224,14 +224,14 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
                 return Ok(_arc_symbol);
             }
-        } else if is_file_cs(full_path.with_extension("py").to_str().unwrap().to_string()) {
+        } else if is_file_cs(full_path.with_extension("py").sanitize()) {
             let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("py"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
                 return Ok(_arc_symbol);
             }
-        } else if is_file_cs(full_path.with_extension("pyi").to_str().unwrap().to_string()) {
+        } else if is_file_cs(full_path.with_extension("pyi").sanitize()) {
             let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("pyi"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
@@ -240,7 +240,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
             }
         } else if !(*parent).borrow().get_tree().0.is_empty() {
             if cfg!(windows) {
-                for entry in glob((full_path.as_os_str().to_str().unwrap().to_owned() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
+                for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
@@ -250,7 +250,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                     }
                 }
             } else if cfg!(linux) {
-                for entry in glob((full_path.as_os_str().to_str().unwrap().to_owned() + "*.so").as_str()).expect("Failed to read glob pattern") {
+                for entry in glob((full_path.sanitize() + "*.so").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
                             let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);

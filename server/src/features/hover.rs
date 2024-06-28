@@ -4,6 +4,7 @@ use weak_table::traits::WeakElement;
 use crate::core::evaluation::AnalyzeAstResult;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use std::path::PathBuf;
 use std::rc::Rc;
 use crate::core::symbol::Symbol;
@@ -72,7 +73,7 @@ impl HoverFeature {
                     println!("no range defined");
                 } else {
                     value += "  \n***  \n";
-                    value += format!("See also: [{}]({}#{})  \n", type_ref.borrow().name.as_str(), path.to_str().unwrap(), type_ref.borrow().range.unwrap().start().to_usize()).as_str();
+                    value += format!("See also: [{}]({}#{})  \n", type_ref.borrow().name.as_str(), path.sanitize(), type_ref.borrow().range.unwrap().start().to_usize()).as_str();
                 }
             }
         }

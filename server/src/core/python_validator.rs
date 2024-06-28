@@ -10,6 +10,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::{Evaluation, EvaluationValue};
@@ -44,7 +45,7 @@ impl PythonValidator {
         let file_symbol = file_symbol.borrow();
         let mut path = file_symbol.paths[0].clone();
         if file_symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").as_os_str().to_str().unwrap().to_owned() + file_symbol.i_ext.as_str();
+            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.i_ext.as_str();
         }
         let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         file_info_rc

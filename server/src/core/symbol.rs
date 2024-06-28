@@ -7,6 +7,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::model::ModelData;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer as _;
 use crate::S;
 use core::panic;
 use std::collections::{HashMap, VecDeque};
@@ -549,7 +550,7 @@ impl Symbol {
 
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-        let path_str = path.to_str().unwrap().to_string();
+        let path_str = path.sanitize();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             let mut symbol = Symbol::new(name, SymType::FILE);
             symbol.paths = vec![path_str.clone()];
