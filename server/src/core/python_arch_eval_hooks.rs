@@ -30,7 +30,7 @@ impl PythonArchEvalHooks {
                 if tree == (vec![S!("odoo"), S!("models")], vec!()) {
                     let base_model = symbol.borrow().get_symbol(&(vec![], vec![S!("BaseModel")]));
                     if base_model.is_some() {
-                        PythonArchEvalHooks::on_base_model_eval(odoo, base_model.unwrap())
+                        PythonArchEvalHooks::on_base_model_eval(odoo, base_model.unwrap(), symbol)
                     }
                 }
             },
@@ -38,7 +38,7 @@ impl PythonArchEvalHooks {
                 if tree == (vec![S!("odoo"), S!("api")], vec!()) {
                     let env = symbol.borrow().get_symbol(&(vec![], vec![S!("Environment")]));
                     if env.is_some() {
-                        PythonArchEvalHooks::on_env_eval(odoo, env.unwrap())
+                        PythonArchEvalHooks::on_env_eval(odoo, env.unwrap(), symbol)
                     }
                 }
             },
@@ -50,7 +50,7 @@ impl PythonArchEvalHooks {
                     }
                     let transaction_class = symbol.borrow().get_symbol(&(vec![], vec![S!("TransactionCase")]));
                     if transaction_class.is_some() {
-                        PythonArchEvalHooks::on_transaction_class_eval(odoo, transaction_class.unwrap());
+                        PythonArchEvalHooks::on_transaction_class_eval(odoo, transaction_class.unwrap(), symbol);
                     }
                 }
             },
@@ -147,7 +147,7 @@ impl PythonArchEvalHooks {
         todo!()
     }
 
-    fn on_base_model_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
+    fn on_base_model_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, file_symbol: Rc<RefCell<Symbol>>) {
         let sym = symbol.borrow();
         // ----------- __iter__ ------------
         let mut iter = sym.get_symbol(&(vec![], vec![S!("__iter__")]));
@@ -159,6 +159,7 @@ impl PythonArchEvalHooks {
         }
         // ----------- env ------------
         let env = sym.get_symbol(&(vec![], vec![S!("env")]));
+        let env_file = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![]));
         let env_class = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![S!("Environment")]));
         if env.is_some() && env_class.is_some() {
             let env = env.unwrap();
@@ -177,7 +178,7 @@ impl PythonArchEvalHooks {
                 ),
                 value: None
             });
-            env.add_dependency(&mut env_class.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            file_symbol.borrow_mut().add_dependency(&mut env_file.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             env.doc_string = Some(S!(""));
         }
         // ------------ ids ------------
@@ -300,7 +301,7 @@ impl PythonArchEvalHooks {
         return (evaluation_sym.symbol.clone(), true); //TODO really true?
     }
 
-    fn on_env_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
+    fn on_env_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, file_symbol: Rc<RefCell<Symbol>>) {
         let mut get_item = symbol.borrow().get_symbol(&(vec![], vec![S!("__getitem__")]));
         if get_item.is_some() {
             let mut get_item = get_item.as_mut().unwrap().borrow_mut();
@@ -316,6 +317,7 @@ impl PythonArchEvalHooks {
             });
         }
         let mut cr = symbol.borrow().get_symbol(&(vec![], vec![S!("cr")]));
+        let curosor_file = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![]));
         let cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("Cursor")]));
         if cursor_sym.is_some() && cr.is_some() {
             let mut cr_mut = cr.as_mut().unwrap().borrow_mut();
@@ -331,7 +333,7 @@ impl PythonArchEvalHooks {
                 ),
                 value: None
             });
-            cr_mut.add_dependency(&mut cursor_sym.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            file_symbol.borrow_mut().add_dependency(&mut curosor_file.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }
 
@@ -339,11 +341,12 @@ impl PythonArchEvalHooks {
         if odoo.full_version < S!("16.3") {
             return;
         }
-        let file = symbol.borrow().get_in_parents(&vec![SymType::FILE], false);
+        let file = symbol.borrow().get_file();
         todo!()
     }
 
-    fn on_transaction_class_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>) {
+    fn on_transaction_class_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, file_symbol: Rc<RefCell<Symbol>>) {
+        let env_file = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![]));
         let env_model = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![S!("Environment")]));
         let env_var = symbol.borrow().get_symbol(&(vec![], vec![S!("env")]));
         if env_model.is_some() && env_var.is_some() {
@@ -363,7 +366,7 @@ impl PythonArchEvalHooks {
                 ),
                 value: None
             });
-            env_var.add_dependency(&mut env_model.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            file_symbol.borrow_mut().add_dependency(&mut env_file.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }
 

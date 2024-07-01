@@ -269,6 +269,12 @@ impl Symbol {
                 panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
             }
         }
+        if self.sym_type != SymType::FILE && self.sym_type != SymType::PACKAGE {
+            panic!("Dependencies should be only on files");
+        }
+        if symbol.sym_type != SymType::FILE && symbol.sym_type != SymType::PACKAGE {
+            panic!("Dependencies should be only on files");
+        }
         let step_i = step as usize;
         let level_i = dep_level as usize;
         self.dependencies[step_i][level_i].insert(symbol.get_rc().unwrap());
@@ -376,7 +382,7 @@ impl Symbol {
             } else {
                 vec_to_unload.pop_front();
             }
-            if DEBUG_MEMORY {
+            if DEBUG_MEMORY && (mut_symbol.sym_type == SymType::FILE || mut_symbol.sym_type == SymType::PACKAGE) {
                 println!("Unloading symbol {:?} at {:?}", mut_symbol.name, mut_symbol.paths);
             }
             //unload symbol
@@ -384,6 +390,7 @@ impl Symbol {
             let mut parent = parent.borrow_mut();
             drop(mut_symbol);
             parent.remove_symbol(ref_to_unload.clone());
+            drop(parent);
             if vec![SymType::FILE, SymType::PACKAGE].contains(&ref_to_unload.borrow().sym_type) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
@@ -441,6 +448,16 @@ impl Symbol {
         return None;
     }
 
+    pub fn get_file(&self) -> Option<Weak<RefCell<Symbol>>> {
+        if self.sym_type == SymType::FILE || self.sym_type == SymType::PACKAGE {
+            return self.weak_self.clone();
+        }
+        if self.parent.is_some() {
+            return self.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().get_file();
+        }
+        return None;
+    }
+
     pub fn next_ref(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<Weak<RefCell<Symbol>>> {
         if SymType::is_instance(&self.sym_type) &&
             self.evaluation.is_some() &&
@@ -474,7 +491,7 @@ impl Symbol {
             _sym_upgraded = sym.upgrade().unwrap();
             _sym = _sym_upgraded.borrow();
             if _sym.evaluation.is_none() && (!_sym.is_external || can_eval_external) {
-                let file_symbol = sym.upgrade().unwrap().borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+                let file_symbol = sym.upgrade().unwrap().borrow().get_file();
                 match file_symbol {
                     Some(file_symbol) => {
                         drop(_sym);

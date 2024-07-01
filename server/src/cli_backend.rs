@@ -3,6 +3,7 @@ use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
 use lsp_types::{DiagnosticSeverity, LogMessageParams, PublishDiagnosticsParams};
 
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer;
 use crate::{args::Cli, core::messages::Msg};
 use std::io::Write;
 use std::{path::PathBuf};
@@ -42,7 +43,7 @@ impl CliBackend {
         println!("Using tracked folders: {:?}", workspace_folders);
 
         for tracked_folder in workspace_folders {
-            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(tracked_folder);
+            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(PathBuf::from(tracked_folder).sanitize());
         }
 
         let mut config = Config::new();

@@ -441,22 +441,46 @@ impl SyncOdoo {
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
         //println!("ADDED TO ARCH - {}", symbol.borrow().paths.first().unwrap());
-        self.rebuild_arch.insert(symbol);
+        if symbol.borrow().arch_status != BuildStatus::IN_PROGRESS {
+            let sym_clone = symbol.clone();
+            let mut sym_borrowed = sym_clone.borrow_mut();
+            sym_borrowed.arch_status = BuildStatus::PENDING;
+            sym_borrowed.arch_eval_status = BuildStatus::PENDING;
+            sym_borrowed.odoo_status = BuildStatus::PENDING;
+            sym_borrowed.validation_status = BuildStatus::PENDING;
+            self.rebuild_arch.insert(symbol);
+        }
     }
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
         //println!("ADDED TO EVAL - {}", symbol.borrow().paths.first().unwrap());
-        self.rebuild_arch_eval.insert(symbol);
+        if symbol.borrow().arch_eval_status != BuildStatus::IN_PROGRESS {
+            let sym_clone = symbol.clone();
+            let mut sym_borrowed = sym_clone.borrow_mut();
+            sym_borrowed.arch_eval_status = BuildStatus::PENDING;
+            sym_borrowed.odoo_status = BuildStatus::PENDING;
+            sym_borrowed.validation_status = BuildStatus::PENDING;
+            self.rebuild_arch_eval.insert(symbol);
+        }
     }
 
     pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
         //println!("ADDED TO ODOO - {}", symbol.borrow().paths.first().unwrap());
-        self.rebuild_odoo.insert(symbol);
+        if symbol.borrow().odoo_status != BuildStatus::IN_PROGRESS {
+            let sym_clone = symbol.clone();
+            let mut sym_borrowed = sym_clone.borrow_mut();
+            sym_borrowed.odoo_status = BuildStatus::PENDING;
+            sym_borrowed.validation_status = BuildStatus::PENDING;
+            self.rebuild_odoo.insert(symbol);
+        }
     }
 
     pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
         //println!("ADDED TO VALIDATION - {}", symbol.borrow().paths.first().unwrap());
-        self.rebuild_validation.insert(symbol);
+        if symbol.borrow().validation_status != BuildStatus::IN_PROGRESS {
+            symbol.borrow_mut().validation_status = BuildStatus::PENDING;
+            self.rebuild_validation.insert(symbol);
+        }
     }
 
     pub fn remove_from_rebuild_arch(&mut self, symbol: &Rc<RefCell<Symbol>>) {
@@ -554,7 +578,7 @@ impl SyncOdoo {
             }
         }
         drop(symbol);
-        Symbol::unload(session, path_symbol);
+        Symbol::unload(session, path_symbol.clone());
         Ok(parent)
     }
 
@@ -578,6 +602,7 @@ impl SyncOdoo {
         let flat_tree = vec![tree.0.clone(), tree.1.clone()].concat();
         let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let mut need_rebuild = false;
+        let mut to_add = vec![vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
         for s in self.not_found_symbols.iter() {
             let mut index: i32 = 0; //i32 sa we could go in negative values
             while (index as usize) < s.borrow().not_found_paths.len() {
@@ -586,16 +611,16 @@ impl SyncOdoo {
                     need_rebuild = true;
                     match step {
                         BuildSteps::ARCH => {
-                            self.rebuild_arch.insert(s.clone());
+                            to_add[0].push(s.clone());
                         },
                         BuildSteps::ARCH_EVAL => {
-                            self.rebuild_arch_eval.insert(s.clone());
+                            to_add[1].push(s.clone());
                         },
                         BuildSteps::ODOO => {
-                            self.rebuild_odoo.insert(s.clone());
+                            to_add[2].push(s.clone());
                         },
                         BuildSteps::VALIDATION => {
-                            self.rebuild_validation.insert(s.clone());
+                            to_add[3].push(s.clone());
                         },
                         _ => {}
                     }
@@ -607,6 +632,18 @@ impl SyncOdoo {
             if s.borrow().not_found_paths.len() == 0 {
                 found_sym.insert(s.clone());
             }
+        }
+        for s in to_add[0].iter() {
+            self.add_to_rebuild_arch(s.clone());
+        }
+        for s in to_add[1].iter() {
+            self.add_to_rebuild_arch_eval(s.clone());
+        }
+        for s in to_add[2].iter() {
+            self.add_to_init_odoo(s.clone());
+        }
+        for s in to_add[3].iter() {
+            self.add_to_validations(s.clone());
         }
         for sym in found_sym.iter() {
             self.not_found_symbols.remove(&sym);
@@ -861,6 +898,47 @@ impl Odoo {
             range_length: None,
             text: params.text_document.text}],
         params.text_document.version, true);
+    }
+
+    pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
+        for f in params.files.iter() {
+            let old_path = FileMgr::uri2pathname(&f.old_uri);
+            let new_path = FileMgr::uri2pathname(&f.new_uri);
+            session.log_message(MessageType::INFO, format!("Renaming {} to {}", old_path, new_path));
+            //1 - delete old uri
+            let _ = SyncOdoo::_unload_path(session, &PathBuf::from(&old_path), false);
+            session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &old_path);
+            //2 - create new document
+            let tree = session.sync_odoo.tree_from_path(&PathBuf::from(new_path));
+            if let Ok(tree) = tree {
+                session.sync_odoo.search_symbols_to_rebuild(&tree);
+            }
+            SyncOdoo::process_rebuilds(session);
+        }
+    }
+
+    pub fn handle_did_create(session: &mut SessionInfo, params: CreateFilesParams) {
+        for f in params.files.iter() {
+            let path = FileMgr::uri2pathname(&f.uri);
+            session.log_message(MessageType::INFO, format!("Creating {}", path));
+            //1 - delete old uri
+            let tree = session.sync_odoo.tree_from_path(&PathBuf::from(path));
+            if let Ok(tree) = tree {
+                session.sync_odoo.search_symbols_to_rebuild(&tree);
+            }
+        }
+        SyncOdoo::process_rebuilds(session);
+    }
+
+    pub fn handle_did_delete(session: &mut SessionInfo, params: DeleteFilesParams) {
+        for f in params.files.iter() {
+            let path = FileMgr::uri2pathname(&f.uri);
+            session.log_message(MessageType::INFO, format!("Deleting {}", path));
+            //1 - delete old uri
+            let _ = SyncOdoo::_unload_path(session, &PathBuf::from(&path), false);
+            session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &path);
+        }
+        SyncOdoo::process_rebuilds(session);
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
