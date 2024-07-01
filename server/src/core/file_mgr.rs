@@ -3,9 +3,11 @@ use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
 use crate::threads::SessionInfo;
+use crate::utils::PathSanitizer;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::S;
@@ -125,7 +127,7 @@ impl FileInfo {
                 }
             }
             session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                uri: lsp_types::Uri::from_str(&format!("file://{}", self.uri)).expect("Unable to parse uri"),
+                uri: lsp_types::Uri::from_str(&format!("file:///{}", self.uri)).expect("Unable to parse uri"),
                 diagnostics: all_diagnostics,
                 version: Some(self.version),
             });
@@ -245,8 +247,9 @@ impl FileMgr {
     }
 
     pub fn add_workspace_folder(&mut self, path: String) {
-        if !self.workspace_folder.contains(&path) {
-            self.workspace_folder.push(path);
+        let sanitized = PathBuf::from(path).sanitize();
+        if !self.workspace_folder.contains(&sanitized) {
+            self.workspace_folder.push(sanitized);
         }
     }
 
@@ -274,7 +277,7 @@ impl FileMgr {
     pub fn uri2pathname(s: &str) -> String {
         if let Ok(url) = url::Url::parse(s) {
             if let Ok(url) = url.to_file_path() {
-                return S!(url.to_str().unwrap());
+                return url.sanitize();
             }
         }
         println!("Unable to extract path from uri: {s}");

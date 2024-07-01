@@ -41,7 +41,7 @@ impl PythonValidator {
     }
 
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
-        let file_symbol = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true).unwrap().upgrade().unwrap();
+        let file_symbol = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
         let file_symbol = file_symbol.borrow();
         let mut path = file_symbol.paths[0].clone();
         if file_symbol.sym_type == SymType::PACKAGE {
@@ -236,7 +236,7 @@ impl PythonValidator {
     }
 
     fn _resolve_import(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
-        let file_symbol = self.symbol.borrow().get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+        let file_symbol = self.symbol.borrow().get_file();
         let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
         let import_results = resolve_import_stmt(
             session,

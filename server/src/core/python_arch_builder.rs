@@ -94,8 +94,8 @@ impl PythonArchBuilder {
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
-                if import_result.symbol.borrow_mut().symbols.contains_key("__all__") {
-                    let all = import_result.symbol.borrow_mut().symbols["__all__"].clone();
+                if import_result.symbol.borrow().symbols.contains_key("__all__") {
+                    let all = import_result.symbol.borrow().symbols["__all__"].clone();
                     let all = Symbol::follow_ref(all, session, &mut None, false, false, &mut self.diagnostics).0;
                     if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() ||
                         !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
@@ -112,7 +112,8 @@ impl PythonArchBuilder {
                         all_name_allowed = false;
                     }
                 }
-                for s in import_result.symbol.borrow_mut().symbols.values() {
+                let _import_result_sub_symbol = import_result.symbol.borrow().symbols.clone();
+                for s in _import_result_sub_symbol.values() {
                     if all_name_allowed || name_filter.contains(&s.borrow().name) {
                         let mut variable = Symbol::new(s.borrow_mut().name.clone(), SymType::VARIABLE);
                         variable.is_import_variable = true;
@@ -124,7 +125,10 @@ impl PythonArchBuilder {
                             let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade();
                             if evaluated_type.is_some() {
                                 let evaluated_type = evaluated_type.unwrap();
-                                self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                                let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
+                                if !Rc::ptr_eq(&self.sym_stack[0], &evaluated_type_file) {
+                                    self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                                }
                             }
                         }
                         self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);

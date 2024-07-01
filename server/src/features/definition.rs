@@ -35,7 +35,7 @@ impl DefinitionFeature {
             return None;
         }
         let sym = sym.as_ref().unwrap().borrow();
-        let file = sym.get_in_parents(&vec![SymType::FILE, SymType::PACKAGE], true);
+        let file = sym.get_file();
         if let Some(file) = file {
             for path in file.upgrade().unwrap().borrow().paths.iter() {
                 match sym.sym_type {
