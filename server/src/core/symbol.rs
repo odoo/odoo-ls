@@ -1,5 +1,6 @@
 use ruff_text_size::{TextSize, TextRange};
 use serde_json::{Value, json};
+use tracing::info;
 
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
@@ -59,9 +60,6 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn new(name: String, sym_type: SymType) -> Self {
-        if name == "Command" && sym_type == SymType::FILE {
-            println!("HO");
-        }
         Symbol{
             name: name.clone(),
             sym_type: sym_type,
@@ -383,7 +381,7 @@ impl Symbol {
                 vec_to_unload.pop_front();
             }
             if DEBUG_MEMORY && (mut_symbol.sym_type == SymType::FILE || mut_symbol.sym_type == SymType::PACKAGE) {
-                println!("Unloading symbol {:?} at {:?}", mut_symbol.name, mut_symbol.paths);
+                info!("Unloading symbol {:?} at {:?}", mut_symbol.name, mut_symbol.paths);
             }
             //unload symbol
             let parent = mut_symbol.parent.as_ref().unwrap().upgrade().unwrap().clone();
@@ -681,7 +679,7 @@ impl Symbol {
     }
 
     pub fn debug_print_graph(&self) -> String {
-        println!("starting log");
+        info!("starting log");
         let mut res: String = String::new();
         self._debug_print_graph_node(&mut res, 0);
         res

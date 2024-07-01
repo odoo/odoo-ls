@@ -5,6 +5,7 @@ use anyhow::Error;
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::Diagnostic;
+use tracing::{error, info, warn};
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
@@ -99,14 +100,14 @@ impl PythonArchBuilder {
                     let all = Symbol::follow_ref(all, session, &mut None, false, false, &mut self.diagnostics).0;
                     if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() ||
                         !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
-                            println!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                            warn!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
                     } else {
                         let all = all.upgrade().unwrap();
                         let all = (*all).borrow();
                         let value = &all.evaluation.as_ref().unwrap().value;
                         let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                         if parse_error {
-                            println!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                            warn!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
                         }
                         name_filter = nf;
                         all_name_allowed = false;
@@ -296,7 +297,7 @@ impl PythonArchBuilder {
                                         _ => {}
                                     }
                                 } else {
-                                    println!("__all__ symbol to analyze");
+                                    info!("__all__ symbol not handled to analyze");
                                 }
                             }
                         }

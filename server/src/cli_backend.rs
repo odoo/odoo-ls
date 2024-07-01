@@ -1,6 +1,7 @@
 use lsp_server::Message;
 use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
 use lsp_types::{DiagnosticSeverity, LogMessageParams, PublishDiagnosticsParams};
+use tracing::{error, info};
 
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
@@ -37,10 +38,10 @@ impl CliBackend {
         session.sync_odoo.load_odoo_addons = false;
 
         let addons_paths = self.cli.addons.clone().unwrap_or(vec![]);
-        println!("Using addons path: {:?}", addons_paths);
+        info!("Using addons path: {:?}", addons_paths);
 
         let workspace_folders = self.cli.tracked_folders.clone().unwrap_or(vec![]);
-        println!("Using tracked folders: {:?}", workspace_folders);
+        info!("Using tracked folders: {:?}", workspace_folders);
 
         for tracked_folder in workspace_folders {
             session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(PathBuf::from(tracked_folder).sanitize());
@@ -88,23 +89,23 @@ impl CliBackend {
                                         "diagnostics": diagnostics
                                     }));
                                 },
-                                _ => {println!("not handled method: {}", n.method)}
+                                _ => {error!("not handled method: {}", n.method)}
                             }
                         },
                         Message::Request(r) => {
-                            println!("No request should be sent to client as we are in cli mode.");
+                            error!("No request should be sent to client as we are in cli mode.");
                         },
                         Message::Response(r) => {
-                            println!("No response should be sent to client as we are in cli mode.");
+                            error!("No response should be sent to client as we are in cli mode.");
                         }
                     }
                 } else {
-                    println!("Unable to recv a message");
+                    error!("Unable to recv a message");
                 }
             }
             let json_string = json!({"events": events});
             if let Err(e) = file.write_all(serde_json::to_string_pretty(&json_string).unwrap().as_bytes()) {
-                println!("Unable to write to {}: {}", output_path, e)
+                error!("Unable to write to {}: {}", output_path, e)
             }
         }
     }

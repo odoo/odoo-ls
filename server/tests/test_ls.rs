@@ -7,6 +7,7 @@ use std::io::{BufReader, BufRead};
 use serde_json::Value;
 
 use server::{S, core::symbol::Symbol, constants::SymType};
+use tracing::error;
 
 mod setup;
 
@@ -74,7 +75,7 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                                 "VARIABLE" => SymType::VARIABLE,
                                 "CONSTANT" => SymType::CONSTANT,
                                 _ => {
-                                    println!("Invalid sym_type in json file: {}", value.as_str().unwrap());
+                                    error!("Invalid sym_type in json file: {}", value.as_str().unwrap());
                                     SymType::ROOT
                                 }
                             }
@@ -86,7 +87,7 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                                 let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
                                 let mod_sym = sym.module_symbols.get(val_mod_sym_name);
                                 if mod_sym.is_none() {
-                                    println!("Module symbol not found: {}", val_mod_sym_name);
+                                    error!("Module symbol not found: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
                                     module_symbols.push((mod_sym.unwrap().clone(), val_mod_sym.clone()));
@@ -101,7 +102,7 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                                 let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
                                 let sym = sym.symbols.get(val_mod_sym_name);
                                 if sym.is_none() {
-                                    println!("Symbol not found: {}", val_mod_sym_name);
+                                    error!("Symbol not found: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
                                     symbols.push((sym.unwrap().clone(), val_mod_sym.clone()));
@@ -127,7 +128,7 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                                     }
                                 }
                                 if loc_sym.is_none() {
-                                    println!("Local symbol not found: {}", val_mod_sym_name);
+                                    error!("Local symbol not found: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
                                     local_symbols.push((loc_sym.unwrap().clone(), val_mod_sym.clone()));
@@ -142,14 +143,14 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                             true //used at top level
                         }
                         default => {
-                            println!("Invalid json format - key {} unknown", default);
+                            error!("Invalid json format - key {} unknown", default);
                             false
                         }
                     }
                 }
             },
             _ => {
-                println!("Invalid json format: it should be an object");
+                error!("Invalid json format: it should be an object");
             }
         }
     }

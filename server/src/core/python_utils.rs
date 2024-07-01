@@ -1,4 +1,5 @@
 use ruff_python_ast::{Expr, ExprName};
+use tracing::error;
 
 #[derive(Debug, Clone)]
 pub struct Assign {
@@ -11,7 +12,7 @@ pub struct Assign {
 fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
     let mut res: Vec<Assign> = Vec::new();
     if targets.len() != values.len() {
-        println!("Invalid stmt: can't unpack a tuple with a different number of elements");
+        error!("Invalid stmt: can't unpack a tuple with a different number of elements");
         return res;
     }
     for (index, target) in targets.iter().enumerate() {
@@ -125,7 +126,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
                 // if we have a tuple, we want to untuple the value if possible. If not or because we don't know
                 // the type of the value, we return the value with an index
                 if value.is_none() {
-                    println!("Invalid stmt: can't annotate a tuple");
+                    error!("Invalid stmt: can't annotate a tuple");
                     continue;
                 }
                 let value = value.unwrap();
@@ -152,7 +153,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
             Expr::List(expr) => {
                 // Same code than for Tuple
                 if value.is_none() {
-                    println!("Invalid stmt: can't annotate a List");
+                    error!("Invalid stmt: can't annotate a List");
                     continue;
                 }
                 let value = value.unwrap();

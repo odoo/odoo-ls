@@ -1,6 +1,7 @@
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
+use tracing::info;
 use std::collections::HashSet;
 
 use crate::constants::*;
@@ -38,7 +39,7 @@ impl ModuleSymbol {
             depends: vec!("base".to_string()),
             data: Vec::new(),
         };
-        println!("building new module: {:?}", dir_path);
+        info!("building new module: {:?}", dir_path);
         if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
             module.depends.clear();
         }
@@ -59,7 +60,7 @@ impl ModuleSymbol {
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diags);
         manifest_file_info.publish_diagnostics(session);
         drop(manifest_file_info);
-        println!("End building new module: {:?}", dir_path);
+        info!("End building new module: {:?}", dir_path);
         Some(module)
     }
 

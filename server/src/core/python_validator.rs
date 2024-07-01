@@ -1,5 +1,6 @@
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtTry};
 use ruff_text_size::{Ranged, TextRange};
+use tracing::{trace, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -138,7 +139,7 @@ impl PythonValidator {
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     }
                 } else {
-                    println!("no ast found on file info");
+                    warn!("no ast found on file info");
                 }
             },
             _ => {panic!("Only File, function or class can be validated")}
@@ -214,7 +215,7 @@ impl PythonValidator {
                     self.validate_body(session, &i.body);
                 },
                 _ => {
-                    println!("Stmt not handled");
+                    trace!("Stmt not handled");
                 }
             }
         }
@@ -329,7 +330,7 @@ impl PythonValidator {
                             }
                         },
                         _ => {
-                            println!("Error: wrong _inherit value");
+                            warn!("wrong _inherit value");
                         }
                     }
                 }

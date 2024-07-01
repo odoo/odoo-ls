@@ -5,6 +5,7 @@ use lsp_types::notification::ShowMessage;
 use lsp_types::MessageType;
 use ruff_python_ast::Expr;
 use lsp_types::{Diagnostic, ShowMessageParams, notification::Notification};
+use tracing::{error, info};
 
 use crate::constants::{BuildSteps, BuildStatus, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
@@ -43,7 +44,7 @@ impl PythonOdooBuilder {
         symbol.odoo_status = BuildStatus::IN_PROGRESS;
         symbol.validation_status = BuildStatus::PENDING;
         if DEBUG_ODOO_BUILDER {
-            println!("Loading Odoo content for: {}", path);
+            info!("Loading Odoo content for: {}", path);
         }
         let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         if file_info.borrow().ast.is_none() {
@@ -114,14 +115,14 @@ impl PythonOdooBuilder {
                             }
                         },
                         _ => {
-                            println!("Error: wrong _inherit value");
+                            error!("wrong _inherit value");
                         }
                     }
                 } else {
-                    println!("Error: wrong _inherit value");
+                    error!("wrong _inherit value");
                 }
             } else {
-                println!("Error: wrong _inherit structure");
+                error!("wrong _inherit structure");
             }
         }
     }
@@ -135,7 +136,7 @@ impl PythonOdooBuilder {
                     return S!(s.value.to_str());
                 }
             }
-            println!("unable to parse model name");
+            error!("unable to parse model name");
             return "".to_string();
         }
         if let Some(inherit_name) = symbol._model.as_ref().unwrap().inherit.first() {
@@ -166,11 +167,11 @@ impl PythonOdooBuilder {
                         if let (Expr::StringLiteral(k), Expr::StringLiteral(v)) = (k,v) {
                             symbol._model.as_mut().unwrap().inherits.push((S!(k.value.to_str()), S!(v.value.to_str())));
                         } else {
-                            println!("Error: wrong _inherits value");
+                            error!("wrong _inherits value");
                         }
                     }
                 } else {
-                    println!("Error: wrong _inherits value");
+                    error!("wrong _inherits value");
                 }
             }
         }

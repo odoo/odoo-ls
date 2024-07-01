@@ -5,6 +5,7 @@ use lsp_server::{Message, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage, Notification}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown}, CompletionResponse, Hover, HoverParams, LogMessageParams, MessageType};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
+use tracing::{error, info, warn};
 
 use crate::{core::odoo::{Odoo, SyncOdoo}, server::{Server, ServerError}, S};
 
@@ -27,7 +28,7 @@ impl <'a> SessionInfo<'a> {
     pub fn send_notification<T: Serialize>(&self, method: &str, params: T) {
         let param = serde_json::to_value(params);
         let Ok(param) = param else {
-            println!("Unable to serialize parameters for method {}", method);
+            error!("Unable to serialize parameters for method {}", method);
             return;
         };
         self.sender.send(
@@ -48,9 +49,9 @@ impl <'a> SessionInfo<'a> {
         match self.receiver.recv() {
             Ok(Message::Response(r)) => {
                 //We can't check the response ID because it is set by Server. This is the reason Server must check that the id is correct.
-                if let Some(error) = r.error {
-                    println!("Got error for response of {}: {}", method, error.message);
-                    return Err(ServerError::ResponseError(error));
+                if let Some(resp_error) = r.error {
+                    error!("Got error for response of {}: {}", method, resp_error.message);
+                    return Err(ServerError::ResponseError(resp_error));
                 } else {
                     match r.result {
                         Some(res) => {
@@ -96,7 +97,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
     loop {
         let msg = generic_receiver.recv();
         if let Err(e) = msg {
-            println!("Got an RecvError, exiting thread");
+            error!("Got an RecvError, exiting thread");
             break;
         }
         let msg = msg.unwrap();
@@ -108,7 +109,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
         match msg {
             Message::Request(r) => {
                 let (value, error) = match r.method.as_str() {
-                    _ => {println!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
+                    _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
                         code: 1,
                         message: S!("Request not handled by the server"),
                         data: None
@@ -130,12 +131,12 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     DidChangeWatchedFiles::METHOD => {}
                     "custom/server/register_capabilities" => { Odoo::register_capabilities(&mut session); }
                     "custom/server/init" => { Odoo::init(&mut session); }
-                    Shutdown::METHOD => { println!("Main thread - got shutdown."); break;}
-                    _ => {println!("Notification not handled by main thread: {}", n.method)}
+                    Shutdown::METHOD => { warn!("Main thread - got shutdown."); break;}
+                    _ => {error!("Notification not handled by main thread: {}", n.method)}
                 }
             },
             Message::Response(r) => {
-                println!("Error: Responses should not arrives in generic channel. Exiting thread");
+                error!("Error: Responses should not arrives in generic channel. Exiting thread");
                 break;
             }
         }
@@ -146,7 +147,7 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
     loop {
         let msg = generic_receiver.recv();
         if let Err(e) = msg {
-            println!("Got an RecvError, exiting thread");
+            error!("Got an RecvError, exiting thread");
             break;
         }
         let msg = msg.unwrap();
@@ -167,7 +168,7 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     Completion::METHOD => {
                         to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
                     },
-                    _ => {println!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
+                    _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
                         code: 1,
                         message: S!("Request not handled by the server"),
                         data: None
@@ -177,12 +178,12 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             },
             Message::Notification(r) => {
                 match r.method.as_str() {
-                    Shutdown::METHOD => { println!("Read thread - got shutdown."); break;}
-                    _ => {println!("Notification not handled by read thread: {}", r.method)}
+                    Shutdown::METHOD => { warn!("Read thread - got shutdown."); break;}
+                    _ => {error!("Notification not handled by read thread: {}", r.method)}
                 }
             },
             Message::Response(r) => {
-                println!("Error: Responses should not arrives in generic channel. Exiting thread");
+                error!("Error: Responses should not arrives in generic channel. Exiting thread");
                 break;
             }
         }

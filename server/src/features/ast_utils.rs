@@ -8,6 +8,7 @@ use crate::threads::SessionInfo;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
 use ruff_python_ast::{Identifier, Expr, Stmt, Alias, ExceptHandler, Parameter, Keyword, PatternKeyword, TypeParam, Pattern};
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use tracing::warn;
 
 pub struct AstUtils {}
 
@@ -24,7 +25,7 @@ impl AstUtils {
             }
         }
         if expr.is_none() {
-            println!("expr not found");
+            warn!("expr not found");
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();

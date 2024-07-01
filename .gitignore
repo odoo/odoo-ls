@@ -6,6 +6,7 @@ client/server
 .vscode/settings.json
 server/libs/
 server/target/
+server/logs/
 env
 *.pyc
 *.log
