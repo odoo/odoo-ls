@@ -1,4 +1,5 @@
 use glob::glob;
+use tracing::error;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::Path;
@@ -157,7 +158,7 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
         } else {
             let tree = file_tree;
             if lvl > tree.0.len() as u32 {
-                println!("Level is too high and going out of scope");
+                error!("Level is too high and going out of scope");
                 first_part_tree = vec![];
             } else {
                 first_part_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());

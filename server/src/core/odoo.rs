@@ -13,6 +13,7 @@ use crossbeam_channel::Sender;
 use lsp_types::*;
 use path_slash::PathBufExt;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
+use tracing::{error, info, trace};
 
 use std::collections::HashSet;
 use weak_table::PtrWeakHashSet;
@@ -89,7 +90,7 @@ impl SyncOdoo {
     }
 
     pub fn init(session: &mut SessionInfo, config: Config) {
-        println!("Initializing odoo");
+        info!("Initializing odoo");
         session.sync_odoo.config = config;
         if session.sync_odoo.config.no_typeshed {
             session.sync_odoo.stubs_dirs.clear();
@@ -100,14 +101,14 @@ impl SyncOdoo {
         if !session.sync_odoo.config.stdlib.is_empty() {
             session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib.clone()).sanitize();
         }
-        println!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
+        info!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
         for stub in session.sync_odoo.stubs_dirs.iter() {
             let path = Path::new(stub);
             let found = match path.exists() {
                 true  => "found",
                 false => "not found",
             };
-            println!("stub {:?} - {}", stub, found)
+            info!("stub {:?} - {}", stub, found)
         }
         {
             let mut root_symbol = session.sync_odoo.symbols.as_ref().unwrap().borrow_mut();
@@ -132,7 +133,7 @@ impl SyncOdoo {
                 }
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                println!("{}", stderr);
+                error!("{}", stderr);
             }
         }
         SyncOdoo::load_builtins(session);
@@ -144,7 +145,7 @@ impl SyncOdoo {
         let builtins_path = path.join("builtins.pyi");
         if !builtins_path.exists() {
             session.log_message(MessageType::ERROR, String::from("Unable to find builtins.pyi"));
-            println!("Unable to find builtins at: {}", builtins_path.sanitize());
+            error!("Unable to find builtins at: {}", builtins_path.sanitize());
             return;
         };
         let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, session.sync_odoo.symbols.as_ref().unwrap().clone(), false);
@@ -258,7 +259,7 @@ impl SyncOdoo {
             let addons_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![])).expect("Unable to find odoo addons symbol");
             let addons_path = addons_symbol.borrow_mut().paths.clone();
             for addon_path in addons_path.iter() {
-                println!("searching modules in {}", addon_path);
+                info!("searching modules in {}", addon_path);
                 if PathBuf::from(addon_path).exists() {
                     //browse all dir in path
                     for item in PathBuf::from(addon_path).read_dir().expect("Unable to find odoo addons path") {
@@ -280,7 +281,7 @@ impl SyncOdoo {
         SyncOdoo::process_rebuilds(session);
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
         //fs::write("out_architecture.json", self.get_symbol(&tree(vec!["odoo", "addons", "module_1"], vec![])).as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
-        println!("End building modules");
+        info!("End building modules");
         session.log_message(MessageType::INFO, String::from("End building modules."));
     }
 
@@ -377,12 +378,12 @@ impl SyncOdoo {
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
         while !session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_odoo.is_empty() || !session.sync_odoo.rebuild_validation.is_empty(){
-            println!("remains: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+            trace!("remains: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
             if let Some(sym_rc) = sym {
                 let tree = sym_rc.borrow().get_tree();
                 if already_arch_rebuilt.contains(&tree) {
-                    println!("Already arch rebuilt, skipping");
+                    info!("Already arch rebuilt, skipping");
                     continue;
                 }
                 already_arch_rebuilt.insert(tree);
@@ -395,7 +396,7 @@ impl SyncOdoo {
             if let Some(sym_rc) = sym {
                 let tree = sym_rc.borrow().get_tree();
                 if already_arch_eval_rebuilt.contains(&tree) {
-                    println!("Already arch eval rebuilt, skipping");
+                    info!("Already arch eval rebuilt, skipping");
                     continue;
                 }
                 already_arch_eval_rebuilt.insert(tree);
@@ -408,7 +409,7 @@ impl SyncOdoo {
             if let Some(sym_rc) = sym {
                 let tree = sym_rc.borrow().get_tree();
                 if already_odoo_rebuilt.contains(&tree) {
-                    println!("Already odoo rebuilt, skipping");
+                    info!("Already odoo rebuilt, skipping");
                     continue;
                 }
                 already_odoo_rebuilt.insert(tree);
@@ -421,7 +422,7 @@ impl SyncOdoo {
             if let Some(sym_rc) = sym {
                 let tree = sym_rc.borrow_mut().get_tree();
                 if already_validation_rebuilt.contains(&tree) {
-                    println!("Already validation rebuilt, skipping");
+                    info!("Already validation rebuilt, skipping");
                     continue;
                 }
                 already_validation_rebuilt.insert(tree);
@@ -657,7 +658,7 @@ impl SyncOdoo {
         if let Ok(tree) = tree {
             return symbol.get_symbol(tree);
         } else {
-            println!("Path {} not found", path.to_str().expect("unable to stringify path"));
+            error!("Path {} not found", path.to_str().expect("unable to stringify path"));
             None
         }
     }
@@ -808,7 +809,7 @@ impl Odoo {
         if let Err(e) = result {
             panic!("Capabilities registration went wrong: {:?}", e);
         }
-        println!("Registered Capabilities");
+        info!("Registered Capabilities");
     }
 
     pub fn handle_hover(session: &mut SessionInfo, params: HoverParams) -> Result<Option<Hover>, ResponseError> {

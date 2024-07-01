@@ -3,6 +3,7 @@ use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use tracing::{error, warn};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
@@ -82,7 +83,7 @@ impl FileInfo {
             Ok(module) => {
                 match module.into_syntax() {
                     Mod::Expression(_expr) => {
-                        println!("[Warning] No support for expression-file only");
+                        warn!("No support for expression-file only");
                         self.ast = None
                     },
                     Mod::Module(module) => {
@@ -280,7 +281,7 @@ impl FileMgr {
                 return url.sanitize();
             }
         }
-        println!("Unable to extract path from uri: {s}");
+        error!("Unable to extract path from uri: {s}");
         S!(s)
     }
 }

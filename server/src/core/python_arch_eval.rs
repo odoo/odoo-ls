@@ -5,6 +5,7 @@ use std::vec;
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use tracing::{error, warn};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
@@ -264,7 +265,7 @@ impl PythonArchEval {
                     }
                 }
             } else {
-                println!("Symbol not found");
+                warn!("Symbol not found");
             }
         }
     }
@@ -294,7 +295,7 @@ impl PythonArchEval {
                     }
                 }
             } else {
-                println!("Symbol not found");
+                warn!("Symbol not found");
             }
         }
     }
@@ -307,7 +308,7 @@ impl PythonArchEval {
             //TODO why this check is needed?
             session.sync_odoo.not_found_symbols.insert(symbol.get_rc().unwrap());
         } else {
-            println!("invalid symbol: {:?}", symbol);
+            error!("invalid symbol: {:?}", symbol);
         }
         self.diagnostics.push(Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),

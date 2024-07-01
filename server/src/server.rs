@@ -6,6 +6,7 @@ use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, Di
 use serde_json::to_value;
 #[cfg(target_os = "linux")]
 use nix;
+use tracing::{error, info, warn};
 
 use crate::{core::{file_mgr::FileMgr, odoo::{Odoo, SyncOdoo}}, threads::{message_processor_thread_main, message_processor_thread_read}, S};
 
@@ -131,9 +132,9 @@ impl Server {
 
 
     pub fn initialize(&mut self) -> Result<(), ServerError> {
-        println!("Waiting for a connection...");
+        info!("Waiting for a connection...");
         let (id, params) = self.connection.as_ref().unwrap().initialize_start()?;
-        println!("Starting connection initialization");
+        info!("Starting connection initialization");
 
         let initialize_params: InitializeParams = serde_json::from_value(params)?;
         if let Some(workspace_folders) = initialize_params.workspace_folders {
@@ -218,7 +219,7 @@ impl Server {
         };
 
         self.connection.as_ref().unwrap().initialize_finish(id, serde_json::to_value(initialize_data).unwrap())?;
-        println!("End of connection initalization.");
+        info!("End of connection initalization.");
         self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null })).unwrap();
         self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null })).unwrap();
         Ok(())
@@ -252,7 +253,7 @@ impl Server {
                     continue;
                 }
                 if e.is_disconnected() {
-                    println!("Channel disconnected. Exiting program.");
+                    warn!("Channel disconnected. Exiting program.");
                     break;
                 }
             }
@@ -273,7 +274,7 @@ impl Server {
                                 params: serde_json::Value::Null,
                             })).unwrap(); //sent as notification as we already handled the request for the client
                         }
-                        println!("Got shutdown request. Exiting.");
+                        info!("Got shutdown request. Exiting.");
                         break;
                     }
                 }
@@ -352,9 +353,9 @@ impl Server {
                     }
                     _ => {
                         if n.method.starts_with("$/") {
-                            println!("Not handled message id: {}", n.method);
+                            warn!("Not handled message id: {}", n.method);
                         } else {
-                            panic!("Not handled Notification Id: {}", n.method)
+                            error!("Not handled Notification Id: {}", n.method)
                         }
                     }
                 }
@@ -365,19 +366,19 @@ impl Server {
     #[cfg(target_os = "linux")]
     fn spawn_pid_thread(&self, pid: i32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
         use std::process::exit;
-        println!("Got PID to lisen: {}", pid);
+        info!("Got PID to listen: {}", pid);
 
         std::thread::spawn(move || {
             let pid = nix::unistd::Pid::from_raw(pid);
             loop {
                 match nix::sys::wait::waitpid(pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG)) {
                     Ok(nix::sys::wait::WaitStatus::Exited(_, status)) => {
-                        println!("Process {} exited with status {} - killing extension in 10 secs", pid, status);
+                        warn!("Process {} exited with status {} - killing extension in 10 secs", pid, status);
                         std::thread::sleep(std::time::Duration::from_secs(10));
                         exit(1);
                     }
                     Ok(nix::sys::wait::WaitStatus::Signaled(_, signal, _)) => {
-                        println!("Process {} was killed by signal {:?} - killing extension in 10 secs", pid, signal);
+                        warn!("Process {} was killed by signal {:?} - killing extension in 10 secs", pid, signal);
                         std::thread::sleep(std::time::Duration::from_secs(10));
                         exit(1);
                     }

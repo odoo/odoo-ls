@@ -1,5 +1,6 @@
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
+use tracing::warn;
 use weak_table::traits::WeakElement;
 use crate::core::evaluation::AnalyzeAstResult;
 use crate::core::file_mgr::FileInfo;
@@ -25,7 +26,7 @@ impl HoverFeature {
         };
         let symbol = evaluation.symbol.get_symbol(session, &mut None, &mut vec![]).0;
         if symbol.is_expired() {
-            println!("symbol expired");
+            warn!("symbol expired");
             return None;
         }
         let symbol = symbol.upgrade().unwrap();
@@ -70,7 +71,7 @@ impl HoverFeature {
                     let t = type_ref.borrow();
                     let t2 = t.sym_type;
                     let t3 = t.name.clone();
-                    println!("no range defined");
+                    warn!("no range defined");
                 } else {
                     value += "  \n***  \n";
                     value += format!("See also: [{}]({}#{})  \n", type_ref.borrow().name.as_str(), path.sanitize(), type_ref.borrow().range.unwrap().start().to_usize()).as_str();
