@@ -3,7 +3,7 @@ use std::{collections::HashMap, io::Error, sync::{mpsc::RecvTimeoutError, Arc, M
 use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
-use serde_json::to_value;
+use serde_json::{json, to_value};
 #[cfg(target_os = "linux")]
 use nix;
 use tracing::{error, info, warn};
@@ -20,7 +20,8 @@ const THREAD_REACTIVE_COUNT: u16 = 1;
  * 
  */
 pub struct Server {
-    connection: Option<Connection>,
+    pub connection: Option<Connection>,
+    client_process_id: u32,
     io_threads: IoThreads,
     receivers_w_to_s: Vec<Receiver<Message>>,
     msg_id: i32,
@@ -117,6 +118,7 @@ impl Server {
         // }
         Self {
             connection: Some(conn),
+            client_process_id: 0,
             io_threads: io_threads,
             id_list: HashMap::new(),
             msg_id: 0,
@@ -137,6 +139,9 @@ impl Server {
         info!("Starting connection initialization");
 
         let initialize_params: InitializeParams = serde_json::from_value(params)?;
+        if let Some(initialize_params) = initialize_params.process_id {
+            self.client_process_id = initialize_params;
+        }
         if let Some(workspace_folders) = initialize_params.workspace_folders {
             let mut sync_odoo = self.sync_odoo.lock().unwrap();
             let file_mgr = sync_odoo.get_file_mgr();
@@ -219,13 +224,19 @@ impl Server {
         };
 
         self.connection.as_ref().unwrap().initialize_finish(id, serde_json::to_value(initialize_data).unwrap())?;
+        let _ = self.connection.as_ref().unwrap().sender.send(Message::Notification(lsp_server::Notification {
+            method: "$Odoo/setPid".to_string(),
+            params: json!({
+                "server_pid": std::process::id(),
+            })
+        }));
         info!("End of connection initalization.");
         self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null })).unwrap();
         self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null })).unwrap();
         Ok(())
     }
 
-    pub fn run(mut self, client_pid: Option<i32>) {
+    pub fn run(mut self, client_pid: Option<u32>) {
         let mut select = Select::new();
         let receiver_clone = self.connection.as_ref().unwrap().receiver.clone();
         select.recv(&receiver_clone);
@@ -234,7 +245,8 @@ impl Server {
             select.recv(receiver);
         };
         let mut pid_thread = None;
-        if let Some(pid) = client_pid {
+        let pid = client_pid.unwrap_or(self.client_process_id);
+        if pid != 0 {
             let sender_to_main = self.sender_s_to_main.clone();
             pid_thread = Some(self.spawn_pid_thread(pid, sender_to_main));
         }
@@ -364,7 +376,7 @@ impl Server {
     }
 
     #[cfg(target_os = "linux")]
-    fn spawn_pid_thread(&self, pid: i32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
+    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
         use std::process::exit;
         info!("Got PID to listen: {}", pid);
 
@@ -399,7 +411,40 @@ impl Server {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn spawn_pid_thread(&self, pid: i32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
-        std::thread::spawn(move || {})
+    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
+        use std::process::exit;
+        use winapi::um::processthreadsapi::OpenProcess;
+        use winapi::um::winnt::PROCESS_QUERY_INFORMATION;
+        use winapi::um::winbase::WAIT_OBJECT_0;
+        use winapi::um::synchapi::WaitForSingleObject;
+        use winapi::um::handleapi::CloseHandle;
+        info!("Got PID to listen: {}", pid);
+
+        std::thread::spawn(move || {
+            unsafe {
+                let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+                if process_handle.is_null() {
+                    error!("Failed to open process with PID: {}", pid);
+                    return;
+                }
+    
+                loop {
+                    let wait_result = WaitForSingleObject(process_handle, 1000); // Attendre 1 seconde
+    
+                    match wait_result {
+                        WAIT_OBJECT_0 => {
+                            info!("Process {} exited - killing extension in 10 secs", pid);
+                            std::thread::sleep(std::time::Duration::from_secs(10));
+                            CloseHandle(process_handle);
+                            exit(1);
+                        }
+                        _ => {
+                            // Le processus est toujours en cours d'exécution, attendez un peu avant de réessayer
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                        }
+                    }
+                }
+            }
+        })
     }
 }
