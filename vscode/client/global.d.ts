@@ -8,7 +8,7 @@ declare global {
    var STATUS_BAR: StatusBarItem;
    var OUTPUT_CHANNEL: OutputChannel;
    var IS_LOADING: boolean;
-   var DEBUG_FILE: string;
+   var SERVER_PID: number;
    var CLIENT_IS_STOPPING: boolean;
    var CLIENT_IS_SAVING: boolean;
    var CAN_QUEUE_CONFIG_CHANGE: boolean;

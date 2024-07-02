@@ -42,5 +42,8 @@ pub struct Cli {
 
     //Provide a pid (unix only) that the server will listen and kill itself if the process stop.
     #[arg(long)]
-    pub clientProcessId: Option<i32>
+    pub clientProcessId: Option<u32>,
+
+    #[arg(long)]
+    pub use_tcp: bool,
 }

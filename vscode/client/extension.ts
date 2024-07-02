@@ -107,7 +107,7 @@ function validateState(context: ExtensionContext) {
     }
     catch (error) {
         global.LSCLIENT.error(error);
-        displayCrashMessage(context, error, 'func.validateState')
+        displayCrashMessage(context, error, global.SERVER_PID, 'func.validateState')
     }
 }
 
@@ -236,7 +236,33 @@ async function changeSelectedConfig(context: ExtensionContext, configId: Number)
     selectedConfigurationChange.fire(oldConfig);
 }
 
-async function displayCrashMessage(context: ExtensionContext, crashInfo: string, command: string = null, outputChannel = global.LSCLIENT.outputChannel) {
+async function find_last_log_file(pid: number) {
+    let prefix = "odoo_logs_" + pid + ".log";
+    let directory = "./logs";
+    const files = fs.readdirSync(directory);
+
+    // filter files with format 'prefix-yyyy-MM-dd-HH'
+    const logFiles = files.filter(file => {
+        const regex = new RegExp(`^${prefix}\.\\d{4}-\\d{2}-\\d{2}-\\d{2}$`);
+        return regex.test(file);
+    });
+
+    if (logFiles.length === 0) {
+        return null;
+    }
+
+    // Sort files by date
+    logFiles.sort((a, b) => {
+        const dateA = a.slice(prefix.length + 1); // delete prefix and dot
+        const dateB = b.slice(prefix.length + 1);
+        return dateB.localeCompare(dateA);
+    });
+
+    // Retourner le chemin complet du dernier fichier de log
+    return path.join(directory, logFiles[0]);
+}
+
+async function displayCrashMessage(context: ExtensionContext, crashInfo: string, pid = 0, command: string = null, outputChannel = global.LSCLIENT.outputChannel) {
     // Capture the content of the file active when the crash happened
     let activeFile: TextDocument;
     if (window.activeTextEditor) {
@@ -251,9 +277,11 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
         "Cancel"
     );
 
+    let log_file = await find_last_log_file(pid);
+
     switch (selection) {
         case ("Send crash report"):
-            CrashReportWebView.render(context, activeFile, crashInfo, command, global.DEBUG_FILE);
+            CrashReportWebView.render(context, activeFile, crashInfo, command, log_file);
             break
         case ("Open logs"):
             outputChannel.show();
@@ -264,17 +292,20 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
     let client : LanguageClient;
     try {
-        const pythonPath = await getPythonPath(context);
+        global.SERVER_PID = 0;
+        let serverPath = "server/server.exe";
+        if (process.platform !== 'win32') {
+            serverPath = "server/server"
+        }
 
         if (context.extensionMode === ExtensionMode.Development) {
             // Development - Run the server manually
             await commands.executeCommand('setContext', 'odoo.showCrashNotificationCommand', true);
             client = startLangServerTCP(2087, outputChannel);
-            global.DEBUG_FILE = 'pygls.log';
         } else {
             // Production - Client is going to run the server (for use within `.vsix` package)
             const cwd = path.join(__dirname, "..", "..");
-            client = startLangServer(pythonPath, ["-m", "server", "--log", global.DEBUG_FILE, "--id", "clean-odoo-lsp"], cwd, outputChannel);
+            client = startLangServer(serverPath, [], cwd, outputChannel);
         }
 
         context.subscriptions.push(
@@ -288,6 +319,9 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                         break;
                 }
                 await setStatusConfig(context);
+            }),
+            client.onNotification("$Odoo/setPid", async(params) => {
+                global.SERVER_PID = params["server_pid"];
             }),
             client.onRequest("Odoo/getConfiguration", async (params) => {
                 return await getCurrentConfig(context);
@@ -322,12 +356,12 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
     } catch (error) {
         outputChannel.appendLine("Couldn't Start Language server.");
         outputChannel.appendLine(error);
-        await displayCrashMessage(context, error, 'initLanguageServer' , outputChannel);
+        await displayCrashMessage(context, error, global.SERVER_PID, 'initLanguageServer', outputChannel);
     }
 }
 
 function deleteOldFiles(context: ExtensionContext) {
-    const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('pygls-') && fn.endsWith('.log'));
+    const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('odoo_log_'));
     for (const file of files) {
         let dateLimit = new Date();
         dateLimit.setDate(dateLimit.getDate() - 2);
@@ -516,7 +550,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 }
                 catch (error) {
                     global.LSCLIENT.error(error);
-                    await displayCrashMessage(context, error, 'event.selectedConfigurationChange');
+                    await displayCrashMessage(context, error, global.SERVER_PID, 'event.selectedConfigurationChange');
                 }
             })
         }
@@ -565,7 +599,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
             catch (error) {
                 global.LSCLIENT.error(error);
-                await displayCrashMessage(context, error, 'event.selectedConfigurationChange');
+                await displayCrashMessage(context, error, global.SERVER_PID, 'event.selectedConfigurationChange');
             }
         })
     );
@@ -600,7 +634,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
             catch (error) {
                 global.LSCLIENT.error(error)
-                await displayCrashMessage(context, error, 'odoo.openWelcomeView')
+                await displayCrashMessage(context, error, global.SERVER_PID, 'odoo.openWelcomeView')
             }
         })
     );
@@ -621,7 +655,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
             catch (error) {
                 global.LSCLIENT.error(error);
-                await displayCrashMessage(context, error, 'odoo.clearState');
+                await displayCrashMessage(context, error, global.SERVER_PID, 'odoo.clearState');
             }
         }));
 
@@ -679,7 +713,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                             ConfigurationWebView.render(context, config);
                         } catch (error) {
                             global.LSCLIENT.error(error);
-                            await displayCrashMessage(context, error, 'render.ConfigurationWebView');
+                            await displayCrashMessage(context, error, global.SERVER_PID, 'render.ConfigurationWebView');
                         }
                     }
                 });
@@ -691,7 +725,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                         }
                         catch (error) {
                             global.LSCLIENT.error(error)
-                            await displayCrashMessage(context, error, 'render.ConfigurationWebView')
+                            await displayCrashMessage(context, error, global.SERVER_PID, 'render.ConfigurationWebView')
                         }
                     }
                     else if (selectedConfiguration == disabledItem) {
@@ -707,7 +741,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
             catch (error) {
                 global.LSCLIENT.error(error)
-                await displayCrashMessage(context, error, 'odoo.clickStatusBar')
+                await displayCrashMessage(context, error, global.SERVER_PID, 'odoo.clickStatusBar')
             }
         })
     );
@@ -730,7 +764,6 @@ function handleMigration(context){
 export async function activate(context: ExtensionContext): Promise<void> {
     try {
         global.CAN_QUEUE_CONFIG_CHANGE = true;
-        global.DEBUG_FILE = `pygls-${new Date().toISOString().replaceAll(":","_")}.log`;
         global.OUTPUT_CHANNEL = window.createOutputChannel('Odoo', 'python');
         global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
         // Initialize some settings on the extension's launch if they're missing from the state.
@@ -771,7 +804,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     }
     catch (error) {
         global.LSCLIENT.error(error);
-        displayCrashMessage(context, error, 'odoo.activate');
+        displayCrashMessage(context, error, global.SERVER_PID, 'odoo.activate');
     }
 }
 

@@ -6,7 +6,7 @@
             "name": "Launch Server (lldb)",
             "type": "lldb",
             "request": "launch",
-            "args": [],
+            "args": ["--use-tcp"],
             "cargo": {
                 "args": [
                     "build"
@@ -20,7 +20,7 @@
             "type": "lldb",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/deps/test_ls-7a1baaf6ea83c2e3",
-            "args": [],
+            "args": ["--use-tcp"],
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal"
         },
@@ -29,18 +29,20 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/server.exe",
-            "args": [],
+            "args": ["--use-tcp"],
             "cwd": "${workspaceFolder}",
-            "console": "externalTerminal"
+            "console": "externalTerminal",
+            "preLaunchTask": "cargo build"
         },
         {
             "name": "Debug Test (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/deps/test_ls-41ae513a18d41487.exe",
-            "args": [],
+            "args": ["--use-tcp"],
             "cwd": "${workspaceFolder}",
-            "console": "externalTerminal"
+            "console": "externalTerminal",
+            "preLaunchTask": "cargo build"
         },
     ]
 }

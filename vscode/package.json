@@ -137,10 +137,12 @@
           "default": "off",
           "description": "Traces the communication between VS Code and the language server."
         },
-        "Odoo.configurations" :{
+        "Odoo.configurations": {
           "scope": "application",
-          "type":"object",
-          "default":{"0":{}},
+          "type": "object",
+          "default": {
+            "0": {}
+          },
           "description": "The list containing all the configurations, edit at your own risks",
           "patternProperties": {
             ".*": {
@@ -169,22 +171,22 @@
                 "pythonPath": {
                   "type": "string",
                   "default": "python3",
-                  "description":"the python that will be used if you don't have the python extension"
+                  "description": "the python that will be used if you don't have the python extension"
                 },
                 "addonsPath": {
-                  "type":"array",
+                  "type": "array",
                   "default": [],
                   "description": "paths of addons",
                   "items": {
-                    "type":"string",
-                    "default":""
+                    "type": "string",
+                    "default": ""
                   }
                 }
               }
             }
           }
         },
-        "Odoo.selectedConfiguration" :{
+        "Odoo.selectedConfiguration": {
           "scope": "window",
           "type": "integer",
           "default": 0,
