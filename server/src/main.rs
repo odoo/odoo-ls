@@ -13,10 +13,7 @@ use std::sync::Arc;
 fn main() {
     env::set_var("RUST_BACKTRACE", "full");
     let cli = Cli::parse();
-    let mut debug = false;
-    if cli.use_tcp {
-        debug = true;
-    }
+    let use_debug = cli.use_tcp;
 
     let file_appender = RollingFileAppender::builder()
         .max_log_files(5) // only the most recent 5 log files will be kept
@@ -25,14 +22,19 @@ fn main() {
         .build("./logs")
         .expect("failed to initialize rolling file appender");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    let file_subscriber = fmt::layer().with_writer(file_writer).with_ansi(false);
     let subscriber = FmtSubscriber::builder()
         .with_thread_ids(true)
         .with_file(false)
         .with_max_level(Level::TRACE)
-        .with_ansi(true)
-        .finish().with(file_subscriber);
-    tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");
+        .with_ansi(false)
+        .with_writer(file_writer)
+        .finish();
+    if cli.parse || use_debug {
+        let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
+        tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber)).expect("Unable to set default tracing subscriber");
+    } else {
+        tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");
+    }
 
     info!(">>>>>>>>>>>>>>>>>> New Session <<<<<<<<<<<<<<<<<<");
 
@@ -41,7 +43,7 @@ fn main() {
         let backend = CliBackend::new(cli);
         backend.run();
     } else {
-        if debug {
+        if use_debug {
             info!(tag = "test", "starting server (debug mode)");
             let mut serv = Server::new_tcp().expect("Unable to start tcp connection");
             serv.initialize().expect("Error while initializing server");

@@ -189,9 +189,9 @@ function startLangServer(
     outputChannel: OutputChannel
 ): LanguageClient {
     const serverOptions: ServerOptions = {
-        args,
         command,
-        options: { cwd },
+        args,
+        options: { cwd, env: process.env },
     };
     const clientOptions: LanguageClientOptions = getClientOptions();
     clientOptions.outputChannel = outputChannel;
@@ -293,9 +293,9 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
     let client : LanguageClient;
     try {
         global.SERVER_PID = 0;
-        let serverPath = "server/server.exe";
+        let serverPath = "./server.exe";
         if (process.platform !== 'win32') {
-            serverPath = "server/server"
+            serverPath = "./server"
         }
 
         if (context.extensionMode === ExtensionMode.Development) {

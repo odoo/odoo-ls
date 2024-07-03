@@ -127,8 +127,13 @@ impl FileInfo {
                     all_diagnostics.push(self.update_range(d.clone()));
                 }
             }
+            let mut slash = "";
+            if cfg!(windows) {
+                slash = "/";
+            }
+            let uri = format!("file://{}{}", slash, self.uri);
             session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                uri: lsp_types::Uri::from_str(&format!("file:///{}", self.uri)).expect("Unable to parse uri"),
+                uri: lsp_types::Uri::from_str(&uri).expect("Unable to parse uri"),
                 diagnostics: all_diagnostics,
                 version: Some(self.version),
             });

@@ -378,10 +378,10 @@ impl Server {
     #[cfg(target_os = "linux")]
     fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
         use std::process::exit;
-        info!("Got PID to listen: {}", pid);
+        info!("Got PID to watch: {}", pid);
 
         std::thread::spawn(move || {
-            let pid = nix::unistd::Pid::from_raw(pid);
+            let pid = nix::unistd::Pid::from_raw(pid as i32);
             loop {
                 match nix::sys::wait::waitpid(pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG)) {
                     Ok(nix::sys::wait::WaitStatus::Exited(_, status)) => {
@@ -418,7 +418,7 @@ impl Server {
         use winapi::um::winbase::WAIT_OBJECT_0;
         use winapi::um::synchapi::WaitForSingleObject;
         use winapi::um::handleapi::CloseHandle;
-        info!("Got PID to listen: {}", pid);
+        info!("Got PID to watch: {}", pid);
 
         std::thread::spawn(move || {
             unsafe {
