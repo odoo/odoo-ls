@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Error, sync::{mpsc::RecvTimeoutError, Arc, M
 
 use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, Response, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
+use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
 use serde_json::{json, to_value};
 #[cfg(target_os = "linux")]
 use nix;
@@ -325,6 +325,9 @@ impl Server {
                 match r.method.as_str() {
                     HoverRequest::METHOD | GotoDefinition::METHOD | Completion::METHOD => {
                         self.sender_s_to_read.send(Message::Request(r)).unwrap();
+                    }
+                    ResolveCompletionItem::METHOD => {
+                        info!("Got ignored CompletionItem/resolve")
                     }
                     _ => {panic!("Not handled Request Id: {}", r.method)}
                 }
