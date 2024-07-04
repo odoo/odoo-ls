@@ -86,6 +86,7 @@ impl SyncOdoo {
 
     pub fn init(session: &mut SessionInfo, config: Config) {
         info!("Initializing odoo");
+        session.send_notification("Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
         if session.sync_odoo.config.no_typeshed {
             session.sync_odoo.stubs_dirs.clear();
@@ -133,6 +134,7 @@ impl SyncOdoo {
         }
         SyncOdoo::load_builtins(session);
         SyncOdoo::build_database(session);
+        session.send_notification("Odoo/loadingStatusUpdate", "stop");
     }
 
     pub fn load_builtins(session: &mut SessionInfo) {
