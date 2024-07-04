@@ -48,6 +48,7 @@ import { execSync } from "child_process";
 import {
     migrateConfigToSettings
 } from "./migration/migrateConfig";
+import { constants } from "fs/promises";
 
 
 function getClientOptions(): LanguageClientOptions {
@@ -370,16 +371,20 @@ function extractDateFromFileName(fileName: string): Date | null {
 
 function deleteOldFiles(context: ExtensionContext) {
     const logDir = Uri.joinPath(context.extensionUri, 'logs');
-    const files = fs.readdirSync(logDir.fsPath).filter(fn => fn.startsWith('odoo_logs_'));
-    let dateLimit = new Date();
-    dateLimit.setDate(dateLimit.getDate() - 2);
-
-    for (const file of files) {
-        const date = extractDateFromFileName(file);
-        if (date && date < dateLimit) {
-            fs.unlinkSync(Uri.joinPath(logDir, file).fsPath);
+    fs.access(logDir.fsPath, constants.W_OK, (err) => {
+        if (!err) {
+            const files = fs.readdirSync(logDir.fsPath).filter(fn => fn.startsWith('odoo_logs_'));
+            let dateLimit = new Date();
+            dateLimit.setDate(dateLimit.getDate() - 2);
+        
+            for (const file of files) {
+                const date = extractDateFromFileName(file);
+                if (date && date < dateLimit) {
+                    fs.unlinkSync(Uri.joinPath(logDir, file).fsPath);
+                }
+            }
         }
-    }
+    });
 }
 
 async function checkAddons(context: ExtensionContext) {

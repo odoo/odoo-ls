@@ -316,6 +316,7 @@ impl Server {
         for thread in self.threads {
             thread.join().unwrap();
         }
+        drop(select);
         drop(receiver_clone);
         self.connection = None; //drop connection before joining threads
         self.io_threads.join().unwrap();
