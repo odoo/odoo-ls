@@ -4,15 +4,8 @@ use core::fmt;
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "0.2.5";
 
-pub const DEBUG_MODE:bool = true;
-
-pub const DEBUG_BUILD_ONLY_BASE: bool = false;
-pub const DEBUG_ARCH_BUILDER: bool = false;
-pub const DEBUG_ARCH_EVAL: bool = false;
 pub const DEBUG_ODOO_BUILDER: bool = false;
-pub const DEBUG_VALIDATION: bool = false;
-pub const DEBUG_MEMORY: bool = true;
-pub const DEBUG_REBUILD: bool = false;
+pub const DEBUG_MEMORY: bool = false;
 
 pub type Tree = (Vec<String>, Vec<String>);
 

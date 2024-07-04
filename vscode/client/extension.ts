@@ -356,14 +356,28 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
     }
 }
 
+function extractDateFromFileName(fileName: string): Date | null {
+    const regex = /^odoo_logs_\d{1,7}\.(\d{4})-(\d{2})-(\d{2})-(\d{2})\.log$/;
+    const match = fileName.match(regex);
+
+    if (match) {
+        const [_, year, month, day] = match;
+        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+
+    return null;
+}
+
 function deleteOldFiles(context: ExtensionContext) {
-    const files = fs.readdirSync(context.extensionUri.fsPath).filter(fn => fn.startsWith('odoo_log_'));
+    const logDir = Uri.joinPath(context.extensionUri, 'logs');
+    const files = fs.readdirSync(logDir.fsPath).filter(fn => fn.startsWith('odoo_logs_'));
+    let dateLimit = new Date();
+    dateLimit.setDate(dateLimit.getDate() - 2);
+
     for (const file of files) {
-        let dateLimit = new Date();
-        dateLimit.setDate(dateLimit.getDate() - 2);
-        let date = new Date(file.slice(6, -4).replaceAll("_",":"));
-        if (date < dateLimit) {
-            fs.unlinkSync(Uri.joinPath(context.extensionUri, file).fsPath);
+        const date = extractDateFromFileName(file);
+        if (date && date < dateLimit) {
+            fs.unlinkSync(Uri.joinPath(logDir, file).fsPath);
         }
     }
 }

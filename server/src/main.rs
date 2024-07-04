@@ -1,6 +1,6 @@
 use lsp_server::Notification;
 use serde_json::json;
-use server::{args::{Cli, LogLevel}, cli_backend::CliBackend, server::Server};
+use server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -27,7 +27,8 @@ fn main() {
     let file_appender = RollingFileAppender::builder()
         .max_log_files(5) // only the most recent 5 log files will be kept
         .rotation(Rotation::HOURLY)
-        .filename_prefix(format!("odoo_logs_{}.log", std::process::id()))
+        .filename_prefix(format!("odoo_logs_{}", std::process::id()))
+        .filename_suffix("log")
         .build("./logs")
         .expect("failed to initialize rolling file appender");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
@@ -46,6 +47,10 @@ fn main() {
     }
 
     info!(">>>>>>>>>>>>>>>>>> New Session <<<<<<<<<<<<<<<<<<");
+    info!("Server version: {}", EXTENSION_VERSION);
+    info!("Compiled setting: DEBUG_ODOO_BUILDER: {}", DEBUG_ODOO_BUILDER);
+    info!("Compiled setting: DEBUG_MEMORY: {}", DEBUG_MEMORY);
+    info!("");
 
     if cli.parse {
         info!("starting server (single parse mode)");
