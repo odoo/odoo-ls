@@ -305,7 +305,8 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
         } else {
             // Production - Client is going to run the server (for use within `.vsix` package)
             const cwd = path.join(__dirname, "..", "..");
-            client = startLangServer(serverPath, [], cwd, outputChannel);
+            let log_level = String(workspace.getConfiguration().get("Odoo.serverLogLevel"));
+            client = startLangServer(serverPath, ["--log-level", log_level], cwd, outputChannel);
         }
 
         context.subscriptions.push(

@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -46,4 +46,16 @@ pub struct Cli {
 
     #[arg(long)]
     pub use_tcp: bool,
+
+    #[arg(value_enum, long, default_value="trace")]
+    pub log_level: LogLevel,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum LogLevel {
+    TRACE,
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR,
 }

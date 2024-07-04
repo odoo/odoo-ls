@@ -747,6 +747,9 @@ impl Odoo {
                         if let Some(value_str) = value.as_str() {
                             selected_configuration = value_str.to_string();
                         }
+                    },
+                    "serverLogLevel" => {
+                        //Too late, set it with command line
                     }
                     _ => {
                         session.log_message(MessageType::ERROR, format!("Unknown config key: {}", key));

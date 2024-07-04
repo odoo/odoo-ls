@@ -1,6 +1,6 @@
 use lsp_server::Notification;
 use serde_json::json;
-use server::{args::Cli, cli_backend::CliBackend, server::Server};
+use server::{args::{Cli, LogLevel}, cli_backend::CliBackend, server::Server};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -13,7 +13,16 @@ use std::env;
 fn main() {
     env::set_var("RUST_BACKTRACE", "full");
     let cli = Cli::parse();
+
     let use_debug = cli.use_tcp;
+    let log_level = &cli.log_level;
+    let log_level = match log_level {
+        LogLevel::TRACE => Level::TRACE,
+        LogLevel::DEBUG => Level::DEBUG,
+        LogLevel::INFO => Level::INFO,
+        LogLevel::WARN => Level::WARN,
+        LogLevel::ERROR => Level::ERROR,
+    };
 
     let file_appender = RollingFileAppender::builder()
         .max_log_files(5) // only the most recent 5 log files will be kept
@@ -25,7 +34,7 @@ fn main() {
     let subscriber = FmtSubscriber::builder()
         .with_thread_ids(true)
         .with_file(false)
-        .with_max_level(Level::TRACE)
+        .with_max_level(log_level)
         .with_ansi(false)
         .with_writer(file_writer)
         .finish();

@@ -5,7 +5,7 @@ use std::vec;
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use tracing::{error, warn};
+use tracing::{debug, error};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
@@ -264,7 +264,7 @@ impl PythonArchEval {
                     }
                 }
             } else {
-                warn!("Symbol not found");
+                debug!("Symbol not found");
             }
         }
     }
@@ -294,7 +294,7 @@ impl PythonArchEval {
                     }
                 }
             } else {
-                warn!("Symbol not found");
+                debug!("Symbol not found");
             }
         }
     }

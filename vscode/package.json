@@ -126,6 +126,19 @@
           ],
           "description": "Define for which missing import a diagnostic should be raised"
         },
+        "Odoo.serverLogLevel": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Filter logs saved to file by the server. Does not impact log displayed in the output window"
+        },
         "odooServer.trace.server": {
           "scope": "window",
           "type": "string",
