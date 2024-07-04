@@ -1,6 +1,4 @@
 use std::str::FromStr;
-use lsp_types::request::Request;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RefreshMode {
@@ -42,25 +40,6 @@ impl FromStr for DiagMissingImportsMode {
             _      => Err(()),
         }
     }
-}
-
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConfigRequestResult {
-    pub addons: Vec<String>,
-    pub id: u32,
-    pub name: String,
-    pub odoo_path: String,
-    pub python_path: String,
-}
-
-#[derive(Debug)]
-pub enum ConfigRequest {}
-
-impl Request for ConfigRequest {
-    type Params = ();
-    type Result = ConfigRequestResult;
-    const METHOD: &'static str = "Odoo/getConfiguration";
 }
 
 #[derive(Debug, Clone)]

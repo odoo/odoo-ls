@@ -323,9 +323,6 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
             }),
-            client.onRequest("Odoo/getConfiguration", async (params) => {
-                return await getCurrentConfig(context);
-            }),
             client.onNotification("Odoo/displayCrashNotification", async (params) => {
                 await displayCrashMessage(context, params["crashInfo"]);
             }),
@@ -339,13 +336,11 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                 await checkOdooPath(context);
                 await checkAddons(context);
                 if (client.diagnostics) client.diagnostics.clear();
-                
 
                 if (!global.IS_PYTHON_EXTENSION_READY){
                     await checkStandalonePythonVersion(context);
                     onDidChangePythonInterpreterEvent.fire(currentConfig["pythonPath"]);
                 }
-                await client.sendNotification("Odoo/configurationChanged");
             })
         );
         global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","\\\\")};
@@ -496,7 +491,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                         onDidChangePythonInterpreterEvent.fire(changes["pythonPath"]);
                         return
                     }
-                    await client.sendNotification("Odoo/configurationChanged");
                 }
             }
             catch (error) {
@@ -540,7 +534,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                             await client.start();
                         } else {
                             if (client.diagnostics) client.diagnostics.clear();
-                            await client.sendNotification("Odoo/configurationChanged");
                         }
                     } else {
                         if (client?.isRunning()) await stopClient();
@@ -589,7 +582,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                         await client.start();
                     } else {
                         if (client.diagnostics) client.diagnostics.clear();
-                        await client.sendNotification("Odoo/configurationChanged");
                     }
                 } else {
                     if (client?.isRunning()) await stopClient();
@@ -603,7 +595,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
         })
     );
-    
+
     // Listen to changes to Python Interpreter
     context.subscriptions.push(
         onDidChangePythonInterpreter(async (e: IInterpreterDetails) => {

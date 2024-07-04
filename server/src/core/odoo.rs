@@ -1,4 +1,4 @@
-use crate::core::config::{Config, ConfigRequest};
+use crate::core::config::Config;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -21,7 +21,7 @@ use std::env;
 use std::cmp;
 use regex::Regex;
 use crate::constants::*;
-use super::config::{ConfigRequestResult, DiagMissingImportsMode, RefreshMode};
+use super::config::{DiagMissingImportsMode, RefreshMode};
 use super::file_mgr::FileMgr;
 use super::symbol::Symbol;
 use crate::core::model::Model;
@@ -685,7 +685,6 @@ pub struct Odoo {}
 impl Odoo {
 
     fn update_configuration(session: &mut SessionInfo) -> Config {
-        let odoo_config = session.send_request::<(), ConfigRequestResult>(ConfigRequest::METHOD, ()).unwrap().unwrap();
         let configuration_item = ConfigurationItem{
             scope_uri: None,
             section: Some("Odoo".to_string()),
@@ -704,6 +703,8 @@ impl Odoo {
         let mut _refresh_mode : RefreshMode = RefreshMode::OnSave;
         let mut _auto_save_delay : u64 = 2000;
         let mut _diag_missing_imports : DiagMissingImportsMode = DiagMissingImportsMode::All;
+        let mut selected_configuration: String = S!("");
+        let mut configurations = serde_json::Map::new();
         if let Some(map) = config.as_object() {
             for (key, value) in map {
                 match key.as_str() {
@@ -737,6 +738,16 @@ impl Odoo {
                             };
                         }
                     },
+                    "configurations" => {
+                        if let Some(values)= value.as_object() {
+                            configurations = values.clone();
+                        }
+                    },
+                    "selectedConfiguration" => {
+                        if let Some(value_str) = value.as_str() {
+                            selected_configuration = value_str.to_string();
+                        }
+                    }
                     _ => {
                         session.log_message(MessageType::ERROR, format!("Unknown config key: {}", key));
                     },
@@ -744,12 +755,23 @@ impl Odoo {
             }
         }
         let mut config = Config::new();
-        config.addons = odoo_config.addons.clone();
-        config.odoo_path = odoo_config.odoo_path.clone();
-        config.python_path = odoo_config.python_path.clone();
+        if configurations.contains_key(&selected_configuration) {
+            let odoo_conf = configurations.get(&selected_configuration).unwrap();
+            let odoo_conf = odoo_conf.as_object().unwrap();
+            config.addons = odoo_conf.get("addons").expect("An odoo config must contains a addons value")
+                .as_array().expect("the addons value must be an array")
+                .into_iter().map(|v| v.to_string()).collect();
+            config.odoo_path = odoo_conf.get("odooPath").expect("odooPath must exist").as_str().expect("odooPath must be a String").to_string();
+            config.python_path = odoo_conf.get("pythonPath").expect("pythonPath must exist").as_str().expect("pythonPath must be a String").to_string();
+        } else {
+            config.addons = vec![];
+            config.odoo_path = S!("");
+            config.python_path = S!("");
+        }
         config.refresh_mode = _refresh_mode;
         config.auto_save_delay = _auto_save_delay;
         config.diag_missing_imports = _diag_missing_imports;
+
         config
     }
 
