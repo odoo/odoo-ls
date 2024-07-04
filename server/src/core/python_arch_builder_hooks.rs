@@ -25,7 +25,7 @@ impl PythonArchBuilderHooks {
                         } else {
                             env.range = sym.range.clone();
                         }
-                        let env = sym.add_symbol(session, env);
+                        let _env = sym.add_symbol(session, env);
                     }
                 }
             },

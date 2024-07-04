@@ -1,10 +1,10 @@
 use std::env;
-use std::cell::RefCell;
+
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::Arc;
-use server::{core::{config::{Config, DiagMissingImportsMode}, messages::SyncChannel, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
-use server::core::messages::MsgHandler;
+
+
+use server::{core::{config::{Config, DiagMissingImportsMode}, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
+
 use server::S;
 use tracing::info;
 

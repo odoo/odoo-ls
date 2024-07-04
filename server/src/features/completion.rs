@@ -3,7 +3,6 @@ use lsp_types::{CompletionItem, CompletionList, CompletionResponse};
 
 use crate::threads::SessionInfo;
 use crate::S;
-use crate::core::odoo::SyncOdoo;
 use crate::core::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 

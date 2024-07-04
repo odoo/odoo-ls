@@ -10,7 +10,6 @@ use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
-use crate::S;
 
 use super::odoo::SyncOdoo;
 
@@ -22,7 +21,7 @@ pub struct ImportResult {
     pub range: TextRange,
 }
 
-pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, parent_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, from_range: &TextRange) -> Vec<ImportResult> {
+pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, from_range: &TextRange) -> Vec<ImportResult> {
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(

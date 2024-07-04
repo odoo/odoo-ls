@@ -5,7 +5,7 @@ use anyhow::Error;
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::Diagnostic;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
@@ -82,7 +82,6 @@ impl PythonArchBuilder {
                 let import_result: ImportResult = resolve_import_stmt(
                     session,
                     self.sym_stack.last().unwrap(),
-                    self.sym_stack.last().unwrap(),
                     from_stmt,
                     name_aliases,
                     level,
@@ -138,7 +137,7 @@ impl PythonArchBuilder {
 
             } else {
                 let var_name = if import_name.asname.is_none() {
-                    S!(import_name.name.split(".").next().unwrap().clone())
+                    S!(import_name.name.split(".").next().unwrap())
                 } else {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
@@ -205,7 +204,7 @@ impl PythonArchBuilder {
                             _ => {parse_error = true; vec![]}
                         }
                     },
-                    EvaluationValue::DICT(d) => {
+                    EvaluationValue::DICT(_d) => {
                         parse_error = true; vec![]
                     },
                     EvaluationValue::LIST(l) => {

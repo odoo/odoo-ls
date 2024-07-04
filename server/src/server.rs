@@ -1,14 +1,19 @@
-use std::{collections::HashMap, io::Error, sync::{mpsc::RecvTimeoutError, Arc, Mutex, RwLock}, thread::JoinHandle};
+use std::{collections::HashMap, io::Error, sync::{Arc, Mutex}, thread::JoinHandle};
 
-use crossbeam_channel::{Receiver, RecvError, Select, Sender};
-use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, Response, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, GotoDefinition, HoverRequest, RegisterCapability, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DidChangeWatchedFilesRegistrationOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, FileSystemWatcher, GlobPattern, HoverProviderCapability, InitializeParams, InitializeResult, MessageType, OneOf, Registration, RegistrationParams, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentChangeRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WatchKind, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
-use serde_json::{json, to_value};
+use crossbeam_channel::{Receiver, Select, Sender};
+use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
+use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument,
+    DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification},
+    request::{Completion, GotoDefinition, HoverRequest, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions,
+    FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult,
+    OneOf, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
+use serde_json::json;
 #[cfg(target_os = "linux")]
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{core::{file_mgr::FileMgr, odoo::{Odoo, SyncOdoo}}, threads::{message_processor_thread_main, message_processor_thread_read}, S};
+use crate::{core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{message_processor_thread_main, message_processor_thread_read}, S};
 
 const THREAD_MAIN_COUNT: u16 = 1;
 const THREAD_READ_COUNT: u16 = 1;
@@ -17,7 +22,7 @@ const THREAD_REACTIVE_COUNT: u16 = 1;
 /**
  * Server handle connection between the client and the extension.
  * It can create a connection through io or tcp.
- * 
+ *
  */
 pub struct Server {
     pub connection: Option<Connection>,

@@ -3,15 +3,11 @@ use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
-use crate::server::Server;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use std::sync::{Arc, Mutex, RwLock};
-use lsp_server::{Message, ResponseError};
-use crossbeam_channel::Sender;
+use lsp_server::ResponseError;
 use lsp_types::*;
-use path_slash::PathBufExt;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use tracing::{error, info, trace};
 
@@ -33,7 +29,6 @@ use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::python_odoo_builder::PythonOdooBuilder;
 use crate::core::python_validator::PythonValidator;
-use crate::core::messages::{Msg, MsgHandler};
 use crate::utils::{PathSanitizer, ToFilePath as _};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
@@ -946,7 +941,7 @@ impl Odoo {
         if session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay {
             return
         }
-        let delay = session.sync_odoo.config.auto_save_delay;
+        //let delay = session.sync_odoo.config.auto_save_delay;
         //tokio::time::sleep(Duration::from_millis(delay)).await;
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
@@ -970,7 +965,7 @@ impl Odoo {
     pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, force: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
-            if let Err(e) = tree { //is not part of odoo (or not in addons path)
+            if let Err(_e) = tree { //is not part of odoo (or not in addons path)
                 return;
             }
             let tree = tree.unwrap().clone();

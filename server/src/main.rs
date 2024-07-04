@@ -2,13 +2,13 @@ use lsp_server::Notification;
 use serde_json::json;
 use server::{args::Cli, cli_backend::CliBackend, server::Server};
 use clap::Parser;
-use tracing::{info, Level, error};
+use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
-use server::core::odoo::Odoo;
+
 use std::env;
-use std::sync::Arc;
+
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "full");
@@ -42,40 +42,38 @@ fn main() {
         info!("starting server (single parse mode)");
         let backend = CliBackend::new(cli);
         backend.run();
+    } else if use_debug {
+        info!(tag = "test", "starting server (debug mode)");
+        let mut serv = Server::new_tcp().expect("Unable to start tcp connection");
+        serv.initialize().expect("Error while initializing server");
+        let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            panic_hook(panic_info);
+            let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
+                method: "Odoo/displayCrashNotification".to_string(),
+                params: json!({
+                    "crashInfo": format!("{panic_info}"),
+                    "pid": std::process::id()
+                })
+            }));
+        }));
+        serv.run(cli.clientProcessId);
     } else {
-        if use_debug {
-            info!(tag = "test", "starting server (debug mode)");
-            let mut serv = Server::new_tcp().expect("Unable to start tcp connection");
-            serv.initialize().expect("Error while initializing server");
-            let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
-            std::panic::set_hook(Box::new(move |panic_info| {
-                panic_hook(panic_info);
-                let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
-                    method: "Odoo/displayCrashNotification".to_string(),
-                    params: json!({
-                        "crashInfo": format!("{panic_info}"),
-                        "pid": std::process::id()
-                    })
-                }));
+        info!("starting server");
+        let mut serv = Server::new_stdio();
+        serv.initialize().expect("Error while initializing server");
+        let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            panic_hook(panic_info);
+            let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
+                method: "Odoo/displayCrashNotification".to_string(),
+                params: json!({
+                    "crashInfo": format!("{panic_info}"),
+                    "pid": std::process::id()
+                })
             }));
-            serv.run(cli.clientProcessId);
-        } else {
-            info!("starting server");
-            let mut serv = Server::new_stdio();
-            serv.initialize().expect("Error while initializing server");
-            let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
-            std::panic::set_hook(Box::new(move |panic_info| {
-                panic_hook(panic_info);
-                let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
-                    method: "Odoo/displayCrashNotification".to_string(),
-                    params: json!({
-                        "crashInfo": format!("{panic_info}"),
-                        "pid": std::process::id()
-                    })
-                }));
-            }));
-            serv.run(cli.clientProcessId);
-        }
+        }));
+        serv.run(cli.clientProcessId);
     }
     info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
 }

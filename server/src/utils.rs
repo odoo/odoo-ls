@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fs, ops::Deref, path::{Path, PathBuf}, str::FromStr};
+use std::{fs, path::{Path, PathBuf}, str::FromStr};
 use path_slash::{PathBufExt, PathExt};
 
 #[macro_export]

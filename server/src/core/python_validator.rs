@@ -242,7 +242,6 @@ impl PythonValidator {
         let import_results = resolve_import_stmt(
             session,
             &file_symbol,
-            &self.symbol,
             from_stmt,
             name_aliases,
             level,

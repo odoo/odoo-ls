@@ -1,20 +1,17 @@
 use lsp_server::Message;
 use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
-use lsp_types::{DiagnosticSeverity, LogMessageParams, PublishDiagnosticsParams};
+use lsp_types::{LogMessageParams, PublishDiagnosticsParams};
 use tracing::{error, info};
 
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
-use crate::{args::Cli, core::messages::Msg};
+use crate::args::Cli;
 use std::io::Write;
-use std::{path::PathBuf};
-use std::cell::RefCell;
+use std::path::PathBuf;
 use std::fs::File;
 use serde_json::json;
-use crate::{core::{config::{Config, DiagMissingImportsMode}, messages::SyncChannel, odoo::SyncOdoo}};
-use crate::core::messages::MsgHandler;
+use crate::core::{config::{Config, DiagMissingImportsMode}, odoo::SyncOdoo};
 use crate::S;
-use crate::core::file_mgr::FileMgr;
 
 
 /// Basic backend that is used for a single parse execution

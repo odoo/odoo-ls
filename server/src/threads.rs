@@ -1,13 +1,16 @@
-use std::{collections::HashMap, error::Error, sync::{Arc, Mutex, RwLock, RwLockReadGuard}, thread::JoinHandle};
+use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::{Receiver, Sender};
 use lsp_server::{Message, RequestId, Response, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage, Notification}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown}, CompletionResponse, Hover, HoverParams, LogMessageParams, MessageType};
+use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+    DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
+    Notification}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown},
+    CompletionResponse, Hover, LogMessageParams, MessageType};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
-use crate::{core::odoo::{Odoo, SyncOdoo}, server::{Server, ServerError}, S};
+use crate::{core::odoo::{Odoo, SyncOdoo}, server::ServerError, S};
 
 pub struct SessionInfo<'a> {
     sender: Sender<Message>,

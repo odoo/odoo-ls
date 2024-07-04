@@ -3,10 +3,9 @@ use std::cell::RefCell;
 use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
 use crate::core::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
-use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
-use ruff_python_ast::{Identifier, Expr, Stmt, Alias, ExceptHandler, Parameter, Keyword, PatternKeyword, TypeParam, Pattern};
+use ruff_python_ast::{Expr, Stmt, Alias, ExceptHandler, Parameter, Keyword, PatternKeyword, TypeParam, Pattern};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::warn;
 

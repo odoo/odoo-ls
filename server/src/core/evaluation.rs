@@ -53,7 +53,7 @@ impl ExprOrIdent<'_> {
             ExprOrIdent::Expr(e) => {
                 e
             },
-            ExprOrIdent::Ident(i) => {
+            ExprOrIdent::Ident(_) => {
                 panic!("ExprOrIdent is not an expr")
             }
         }
@@ -174,16 +174,16 @@ impl Evaluation {
 
     pub fn new_constant(odoo: &mut SyncOdoo, values: Expr) -> Evaluation {
         let tree_value = match &values {
-            Expr::StringLiteral(s) => {
+            Expr::StringLiteral(_s) => {
                 (vec![S!("builtins")], vec![S!("str")])
             },
-            Expr::BooleanLiteral(b) => {
+            Expr::BooleanLiteral(_b) => {
                 (vec![S!("builtins")], vec![S!("bool")])
             },
-            Expr::NumberLiteral(n) => {
+            Expr::NumberLiteral(_n) => {
                 (vec![S!("builtins")], vec![S!("int")]) //TODO
             },
-            Expr::BytesLiteral(b) => {
+            Expr::BytesLiteral(_b) => {
                 (vec![S!("builtins")], vec![S!("bytes")])
             }
             _ => {(vec![S!("builtins")], vec![S!("object")])}
@@ -325,8 +325,8 @@ impl Evaluation {
     pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
         let odoo = &mut session.sync_odoo;
         let mut res = EvaluationSymbol::default();
-        let mut effective_sym = None;
-        let mut factory = None;
+        let effective_sym = None;
+        let factory = None;
         let mut diagnostics = vec![];
         let from_module;
         if let Some(module) = parent.borrow().get_module_sym() {
@@ -479,7 +479,7 @@ impl Evaluation {
                 res.instance = (**attribute.first().unwrap()).borrow().sym_type == SymType::VARIABLE;
             },
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) => {
-                let mut infered_sym: Option<Rc<RefCell<Symbol>>> = match ast {
+                let infered_sym: Option<Rc<RefCell<Symbol>>> = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
                         Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
                     },

@@ -139,7 +139,6 @@ impl PythonArchEval {
         let import_results: Vec<ImportResult> = resolve_import_stmt(
             session,
             &self.sym_stack.first().unwrap(),
-            &self.sym_stack.last().unwrap(),
             from_stmt,
             name_aliases,
             level,
