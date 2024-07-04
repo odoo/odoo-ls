@@ -316,6 +316,7 @@ impl Server {
         for thread in self.threads {
             thread.join().unwrap();
         }
+        drop(receiver_clone);
         self.connection = None; //drop connection before joining threads
         self.io_threads.join().unwrap();
         if let Some(pid_join_handle) = pid_thread {
@@ -435,10 +436,10 @@ impl Server {
                     error!("Failed to open process with PID: {}", pid);
                     return;
                 }
-    
+
                 loop {
                     let wait_result = WaitForSingleObject(process_handle, 1000); // Attendre 1 seconde
-    
+
                     match wait_result {
                         WAIT_OBJECT_0 => {
                             info!("Process {} exited - killing extension in 10 secs", pid);
