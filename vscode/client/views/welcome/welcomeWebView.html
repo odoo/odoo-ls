@@ -26,8 +26,8 @@
             <section>
                 If you see this message, it means that your extension is already installed. But to make it shine, it is better to ensure that no other linter is actually running concurrently with this extension.
                 <br/>
-                The extension is made to work alone, so to avoid double autocompletion and to remove wrong error diagnotics, it could be better to disable your actual Python linter for your workspace.
-                To do that, you can go in the "Extensions" tab, search for your linter and click on "Disable" or "Disable (workspace)".
+                The extension is made to work alone or with the Python Extension of VsCode (ms-python.python). If you have another Python linter however, you should probably deactivate it
+                to avoid double autocompletion and to remove wrong error diagnotics. To do that, you can go in the "Extensions" tab, search for your linter and click on "Disable" or "Disable (workspace)".
             </section>
             <h2> How to use the extension ? </h2>
             <section>
@@ -51,6 +51,14 @@
                     When your configuration is ready, select it for your panel. This selection will run for the current workspace.<br/>
                     While the wheel next to the Odoo button is spinning, the extension is loading the configuration. When it's done, the wheel will stop spinning and the extension will start to help you in your work.<br/>
                     You can use your vscode while the extension is loading, but no feature will be available until the configuration is ready.
+                </p>
+            </section>
+            <h2> Advanced configuration </h2>
+            <section>
+                <p>
+                    If you want to edit manually your configurations or script the setup, you can edit them by modifying the settings.json of your
+                    workspace. Be cautious however, as you can break the extension by doing that. Follow carefully the helpers and type annotations.
+                    You can find more information about settings on our github: https://github.com/odoo/odoo-ls/wiki/Edit-settings.json
                 </p>
             </section>
         </div>

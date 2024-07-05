@@ -1,15 +1,29 @@
 # Changelog
 
-## 0.2.5 - 2024/03/27
+## 0.4.0 - 2024/03/27
+### Rustpocalypse
 
-This update brings some changes to the vscode integration of the language server. There is no update to the server itself as we are
-currently rewritting it in a different language (Rust). It will bring a lot of performances and save memory. No new feature to the server
-is planned while the translation is not done.
+This update bring a completely new rewritten version of the extension.
+The whole server has been rewritten in Rust for performance reasons, and the vscode extension has been remade to work as a Python Extension.
+This version is a first public test, but is not complete yet.
+It implies that some features disappeared (temporarily), but there is some new in comparison with the python version.
+
+### Server
+
+You should expect the same features than the python version (diagnostics, hover and gotodefinition), but:
+- autocompletion is not available for now, but will come back really soon
+- Due the new performances, the extension is now able to parse the content of functions, where Python were only parsing code structure, and is still way faster.
+- logs level are editable, and a rotation is set.
+
+As this is a first version, there is some known issues:
+- Windows version is way slower than linux one. This is (probably) due to Windows defender and the way Windows handle small allocations.
+- afterDelay setting is not working, and any edit is directly processed.
+- Memory usage is quite the same than the python version, but we should improve that later.
 
 ### VsCode
 
 - allowing odooPath to contain ${workspaceFolder} and ${userHome}
-- configurations are now editable in settings.json
+- configurations are now editable in settings.json (see https://github.com/odoo/odoo-ls/wiki/Edit-settings.json)
 - current configuration is now stored in the workspace settings
 - allowing the extension to work with the python VS code extension or in standalone mode
 - heavy refactoring, improved stability
