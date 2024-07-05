@@ -40,6 +40,12 @@ impl HoverFeature {
             type_str = Symbol::follow_ref(analyse_ast_result.effective_sym.unwrap().upgrade().unwrap(), session, &mut None, true, false, &mut vec![]).0.upgrade().unwrap().borrow().name.clone();
         }
         let mut type_sym = symbol.borrow().sym_type.to_string().to_lowercase();
+        if symbol.borrow().is_import_variable && symbol.borrow().next_ref(session, &mut None, &mut vec![]).is_some() {
+            let next_ref = symbol.borrow().next_ref(session, &mut None, &mut vec![]).unwrap().upgrade();
+            if let Some(next_ref) = next_ref {
+                type_sym = next_ref.borrow().sym_type.to_string().to_lowercase();
+            }
+        }
         if symbol.borrow().is_type_alias() {
             type_sym = S!("type alias");
             let mut type_alias_ref = Symbol::next_ref(&type_ref.borrow(), session, &mut None, &mut vec![]);
