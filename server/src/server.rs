@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Error, sync::{Arc, Mutex}, thread::JoinHandle};
+use std::{collections::HashMap, io::Error, panic, sync::{Arc, Mutex}, thread::JoinHandle};
 
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
@@ -249,11 +249,12 @@ impl Server {
         for receiver in receivers_w_to_s_clone.iter() {
             select.recv(receiver);
         };
+        let (stop_sender, stop_receiver) = crossbeam_channel::unbounded();
         let mut pid_thread = None;
         let pid = client_pid.unwrap_or(self.client_process_id);
         if pid != 0 {
             let sender_to_main = self.sender_s_to_main.clone();
-            pid_thread = Some(self.spawn_pid_thread(pid, sender_to_main));
+            pid_thread = Some(self.spawn_pid_thread(pid, sender_to_main, stop_receiver));
         }
         loop {
             let index = select.ready();
@@ -313,16 +314,19 @@ impl Server {
                 }
             }
         }
-        for thread in self.threads {
-            thread.join().unwrap();
-        }
         drop(select);
         drop(receiver_clone);
+        let hook = panic::take_hook(); //drop sender stored in panic
+        drop(hook);
+        let _ = stop_sender.send(());
         self.connection = None; //drop connection before joining threads
-        self.io_threads.join().unwrap();
         if let Some(pid_join_handle) = pid_thread {
             pid_join_handle.join().unwrap();
         }
+        for thread in self.threads {
+            thread.join().unwrap();
+        }
+        self.io_threads.join().unwrap();
     }
 
     /* address a message to the right thread. */
@@ -386,13 +390,17 @@ impl Server {
     }
 
     #[cfg(target_os = "linux")]
-    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
+    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>, stop_channel: Receiver<()>) -> JoinHandle<()> {
         use std::process::exit;
         info!("Got PID to watch: {}", pid);
 
         std::thread::spawn(move || {
             let pid = nix::unistd::Pid::from_raw(pid as i32);
             loop {
+                if stop_channel.recv_timeout(std::time::Duration::from_millis(10)).is_ok() {
+                    break;
+                }
+
                 match nix::sys::wait::waitpid(pid, Some(nix::sys::wait::WaitPidFlag::WNOHANG)) {
                     Ok(nix::sys::wait::WaitStatus::Exited(_, status)) => {
                         warn!("Process {} exited with status {} - killing extension in 10 secs", pid, status);
@@ -421,7 +429,7 @@ impl Server {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>) -> JoinHandle<()> {
+    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>, stop_channel: Receiver<()>) -> JoinHandle<()> {
         use std::process::exit;
         use winapi::um::processthreadsapi::OpenProcess;
         use winapi::um::winnt::PROCESS_QUERY_INFORMATION;
@@ -439,6 +447,9 @@ impl Server {
                 }
 
                 loop {
+                    if stop_channel.recv_timeout(std::time::Duration::from_millis(10)).is_ok() {
+                        break;
+                    }
                     let wait_result = WaitForSingleObject(process_handle, 1000); // Attendre 1 seconde
 
                     match wait_result {
