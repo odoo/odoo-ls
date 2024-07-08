@@ -204,8 +204,8 @@
         },
         "Odoo.selectedConfiguration": {
           "scope": "window",
-          "type": "integer",
-          "default": 0,
+          "type": "string",
+          "default": "0",
           "description": "Configuration active in this workspace"
         }
       }
