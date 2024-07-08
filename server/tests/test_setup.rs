@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-use server::S;
+use odoo_ls_server::S;
 
 mod setup;
 

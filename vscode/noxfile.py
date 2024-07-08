@@ -4,6 +4,7 @@
 import json
 import os
 import pathlib
+import platform
 import urllib.request as url_lib
 from typing import List
 
@@ -67,16 +68,16 @@ def build_package(session: nox.Session) -> None:
     session.run("npm", "install", external=True)
     copy_dir(session, "../server/typeshed", "typeshed")
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
-    if os.name == 'posix':
-        session.run("cp", "../server/target/release/server", "server", external=True)
-    elif os.name =='nt':
-        session.run("cp", "../server/target/release/server.exe", "server.exe", external=True)
+    if os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower():
+        session.run("cp", "../server/target/release/odoo_ls_server", "odoo_ls_server", external=True)
+    elif os.name =='nt' or 'microsoft' in platform.uname()[2].lower():
+        session.run("cp", "../server/target/release/odoo_ls_server.exe", "odoo_ls_server.exe", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", external=True)
-    if os.name == 'posix':
-        session.run("rm", "-r", "server", external=True)
-    elif os.name =='nt':
-        session.run("rm", "-r", "server.exe", external=True)
+    if os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower():
+        session.run("rm", "-r", "odoo_ls_server", external=True)
+    elif os.name =='nt' or 'microsoft' in platform.uname()[2].lower():
+        session.run("rm", "-r", "odoo_ls_server.exe", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "CHANGELOG.md", external=True)
@@ -88,16 +89,16 @@ def build_package_prerelease(session: nox.Session) -> None:
     session.run("npm", "install", external=True)
     copy_dir(session, "../server/typeshed", "typeshed")
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
-    if os.name == 'posix':
-        session.run("cp", "../server/target/release/server", "server", external=True)
-    elif os.name =='nt':
-        session.run("cp", "../server/target/release/server.exe", "server.exe", external=True)
+    if os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower():
+        session.run("cp", "../server/target/release/odoo_ls_server", "odoo_ls_server", external=True)
+    elif os.name =='nt' or 'microsoft' in platform.uname()[2].lower():
+        session.run("cp", "../server/target/release/odoo_ls_server.exe", "odoo_ls_server.exe", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", "--pre-release", external=True)
-    if os.name == 'posix':
-        session.run("rm", "-r", "server", external=True)
-    elif os.name =='nt':
-        session.run("rm", "-r", "server.exe", external=True)
+    if os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower():
+        session.run("rm", "-r", "odoo_ls_server", external=True)
+    elif os.name =='nt' or 'microsoft' in platform.uname()[2].lower():
+        session.run("rm", "-r", "odoo_ls_server.exe", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "CHANGELOG.md", external=True)

@@ -35,7 +35,7 @@ impl AstUtils {
 
 }
 
-struct ExprFinderVisitor<'a> {
+pub struct ExprFinderVisitor<'a> {
     offset: TextSize,
     expr: Option<ExprOrIdent<'a>>,
 }

@@ -294,9 +294,9 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
     let client : LanguageClient;
     try {
         global.SERVER_PID = 0;
-        let serverPath = "./server.exe";
+        let serverPath = "./odoo_ls_server.exe";
         if (process.platform !== 'win32') {
-            serverPath = "./server"
+            serverPath = "./odoo_ls_server"
         }
 
         if (context.extensionMode === ExtensionMode.Development) {
@@ -311,7 +311,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
         }
 
         context.subscriptions.push(
-            client.onNotification("Odoo/loadingStatusUpdate", async (state: String) => {
+            client.onNotification("$Odoo/loadingStatusUpdate", async (state: String) => {
                 switch (state) {
                     case "start":
                         global.IS_LOADING = true;
@@ -324,6 +324,11 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             }),
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
+            }),
+            client.onNotification("$Odoo/invalid_python_path", async(params) => {
+                await window.showErrorMessage(
+                    "The Odoo extension is unable to start Python with the path you provided. Verify your configuration"
+                );
             }),
             client.onNotification("Odoo/displayCrashNotification", async (params) => {
                 await displayCrashMessage(context, params["crashInfo"]);

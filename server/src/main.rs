@@ -1,6 +1,6 @@
 use lsp_server::Notification;
 use serde_json::json;
-use server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server};
+use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -45,6 +45,11 @@ fn main() {
     } else {
         tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");
     }
+    ctrlc::set_handler(move || {
+        info!("Received ctrl-c signal");
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
 
     info!(">>>>>>>>>>>>>>>>>> New Session <<<<<<<<<<<<<<<<<<");
     info!("Server version: {}", EXTENSION_VERSION);

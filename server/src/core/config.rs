@@ -4,6 +4,7 @@ use std::str::FromStr;
 pub enum RefreshMode {
     AfterDelay,
     OnSave,
+    Adaptive,
     Off
 }
 
@@ -15,6 +16,7 @@ impl FromStr for RefreshMode {
         match input {
             "afterDelay"  => Ok(RefreshMode::AfterDelay),
             "onSave"  => Ok(RefreshMode::OnSave),
+            "adaptive" => Ok(RefreshMode::Adaptive),
             "off"  => Ok(RefreshMode::Off),
             _      => Err(()),
         }
@@ -59,7 +61,7 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         Self {
-            refresh_mode: RefreshMode::AfterDelay,
+            refresh_mode: RefreshMode::Adaptive,
             auto_save_delay: 1000,
             diag_missing_imports: DiagMissingImportsMode::All,
             diag_only_opened_files: false,

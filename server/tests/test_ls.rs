@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::BufReader;
 use serde_json::Value;
 
-use server::{S, core::symbol::Symbol, constants::SymType};
+use odoo_ls_server::{S, core::symbol::Symbol, constants::SymType};
 use tracing::error;
 
 mod setup;

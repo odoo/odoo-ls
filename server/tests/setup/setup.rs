@@ -3,9 +3,9 @@ use std::env;
 use std::path::PathBuf;
 
 
-use server::{core::{config::{Config, DiagMissingImportsMode}, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
+use odoo_ls_server::{core::{config::{Config, DiagMissingImportsMode}, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
 
-use server::S;
+use odoo_ls_server::S;
 use tracing::info;
 
 pub fn setup_server() -> SyncOdoo {
@@ -22,12 +22,12 @@ pub fn setup_server() -> SyncOdoo {
     config.addons = vec![test_addons_path.sanitize()];
     config.odoo_path = community_path;
     config.python_path = S!("python3");
-    config.refresh_mode = server::core::config::RefreshMode::Off;
+    config.refresh_mode = odoo_ls_server::core::config::RefreshMode::Off;
     config.diag_missing_imports = DiagMissingImportsMode::All;
     config.no_typeshed = false;
 
     let (s, r) = crossbeam_channel::unbounded();
-    let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
+    let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server, None);
     SyncOdoo::init(&mut session, config);
 
     server

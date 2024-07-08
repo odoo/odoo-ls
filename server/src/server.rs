@@ -13,7 +13,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{message_processor_thread_main, message_processor_thread_read}, S};
+use crate::{core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
 
 const THREAD_MAIN_COUNT: u16 = 1;
 const THREAD_READ_COUNT: u16 = 1;
@@ -30,12 +30,15 @@ pub struct Server {
     io_threads: IoThreads,
     receivers_w_to_s: Vec<Receiver<Message>>,
     msg_id: i32,
-    id_list: HashMap<RequestId, u16>,
+    id_list: HashMap<RequestId, u16>, //map each request to its thread. firsts ids for main thread, nexts for read ones, last for delayed_process thread
     threads: Vec<JoinHandle<()>>,
     senders_s_to_main: Vec<Sender<Message>>, // specific channel to threads, to handle responses
     sender_s_to_main: Sender<Message>, //unique channel server to all main threads. Will handle new request message
     senders_s_to_read: Vec<Sender<Message>>, // specific channel to threads, to handle responses
     sender_s_to_read: Sender<Message>, //unique channel server to all read threads
+    delayed_process_thread: JoinHandle<()>,
+    sender_s_to_delayed: Sender<Message>, //unique channel server to delayed_process_thread
+    sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
 }
 
@@ -81,6 +84,7 @@ impl Server {
         let sync_odoo = Arc::new(Mutex::new(SyncOdoo::new()));
         let mut receivers_w_to_s = vec![];
         let mut senders_s_to_main = vec![];
+        let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
         let (generic_sender_s_to_main, generic_receiver_s_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
         for i in 0..THREAD_MAIN_COUNT {
             let (sender_s_to_main, receiver_s_to_main) = crossbeam_channel::unbounded();
@@ -91,8 +95,9 @@ impl Server {
             threads.push({
                 let sync_odoo = sync_odoo.clone();
                 let generic_receiver_s_to_main = generic_receiver_s_to_main.clone();
+                let sender_to_delayed_process = sender_to_delayed_process.clone();
                 std::thread::spawn(move || {
-                    message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone());
+                    message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone(), sender_to_delayed_process);
                 })
             });
         }
@@ -112,6 +117,14 @@ impl Server {
                 })
             });
         }
+
+        let (sender_s_to_delayed, receiver_s_to_delayed) = crossbeam_channel::unbounded();
+        let (sender_delayed_to_s, receiver_delayed_to_s) = crossbeam_channel::unbounded();
+        receivers_w_to_s.push(receiver_delayed_to_s);
+        let so = sync_odoo.clone();
+        let delayed_process_thread = std::thread::spawn(move || {
+            delayed_changes_process_thread(sender_delayed_to_s, receiver_s_to_delayed, receiver_delayed_process, so)
+        });
 
         // let (sender_to_server, receiver_to_server) = crossbeam_channel::unbounded();
         // let (sender_from_server_reactive, receiver_from_server) = crossbeam_channel::unbounded();
@@ -133,6 +146,9 @@ impl Server {
             sender_s_to_main: generic_sender_s_to_main,
             senders_s_to_read: senders_s_to_read,
             sender_s_to_read: generic_sender_s_to_read,
+            sender_s_to_delayed: sender_s_to_delayed,
+            sender_to_delayed_process: sender_to_delayed_process,
+            delayed_process_thread,
             sync_odoo: sync_odoo
         }
     }
@@ -318,6 +334,7 @@ impl Server {
         drop(receiver_clone);
         let hook = panic::take_hook(); //drop sender stored in panic
         drop(hook);
+        let _ = self.sender_to_delayed_process.send(DelayedProcessingMessage::EXIT);
         let _ = stop_sender.send(());
         self.connection = None; //drop connection before joining threads
         if let Some(pid_join_handle) = pid_thread {
@@ -327,6 +344,7 @@ impl Server {
             thread.join().unwrap();
         }
         self.io_threads.join().unwrap();
+        self.delayed_process_thread.join().unwrap();
     }
 
     /* address a message to the right thread. */

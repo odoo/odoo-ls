@@ -28,7 +28,7 @@
             "name": "Launch Server (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/server.exe",
+            "program": "${workspaceRoot}/target/debug/odoo_ls_server.exe",
             "args": ["--use-tcp"],
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal",

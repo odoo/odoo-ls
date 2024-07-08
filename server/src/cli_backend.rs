@@ -31,7 +31,7 @@ impl CliBackend {
         let community_path = self.cli.community_path.clone().expect("Please provide a Community path");
         let mut server = SyncOdoo::new();
         let (s, r) = crossbeam_channel::unbounded();
-        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), &mut server);
+        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), &mut server, None);
         session.sync_odoo.load_odoo_addons = false;
 
         let addons_paths = self.cli.addons.clone().unwrap_or(vec![]);

@@ -50,6 +50,7 @@ pub struct SyncOdoo {
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub is_init: bool,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub load_odoo_addons: bool //indicate if we want to load odoo addons or not
 }
@@ -78,6 +79,7 @@ impl SyncOdoo {
             rebuild_arch_eval: PtrWeakHashSet::new(),
             rebuild_odoo: PtrWeakHashSet::new(),
             rebuild_validation: PtrWeakHashSet::new(),
+            is_init: false,
             not_found_symbols: PtrWeakHashSet::new(),
             load_odoo_addons: true
         };
@@ -86,7 +88,8 @@ impl SyncOdoo {
 
     pub fn init(session: &mut SessionInfo, config: Config) {
         info!("Initializing odoo");
-        session.send_notification("Odoo/loadingStatusUpdate", "start");
+        session.sync_odoo.is_init = false;
+        session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
         if session.sync_odoo.config.no_typeshed {
             session.sync_odoo.stubs_dirs.clear();
@@ -112,7 +115,14 @@ impl SyncOdoo {
             for stub_dir in session.sync_odoo.stubs_dirs.iter() {
                 root_symbol.paths.push(stub_dir.clone());
             }
-            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output().expect("Can't exec python3");
+            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output();
+            if let Err(output) = &output {
+                error!("Wrong python command: {}", session.sync_odoo.config.python_path.clone());
+                session.send_notification("$Odoo/invalid_python_path", ());
+                session.send_notification("$Odoo/loadingStatusUpdate", "stop");
+                return;
+            }
+            let output = output.unwrap();
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 session.log_message(MessageType::INFO, format!("Detected sys.path: {}", stdout));
@@ -134,7 +144,9 @@ impl SyncOdoo {
         }
         SyncOdoo::load_builtins(session);
         SyncOdoo::build_database(session);
-        session.send_notification("Odoo/loadingStatusUpdate", "stop");
+        session.sync_odoo.is_init = true;
+        session.send_notification("$Odoo/-
+        ", "stop");
     }
 
     pub fn load_builtins(session: &mut SessionInfo) {
@@ -369,7 +381,7 @@ impl SyncOdoo {
         }
     }
 
-    fn process_rebuilds(session: &mut SessionInfo) {
+    pub fn process_rebuilds(session: &mut SessionInfo) {
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
@@ -676,6 +688,9 @@ impl SyncOdoo {
         SyncOdoo::process_rebuilds(session);
     }
 
+    pub fn get_rebuild_queue_size(&self) -> usize {
+        return self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_odoo.len() + self.rebuild_validation.len()
+    }
 
 }
 
@@ -693,6 +708,7 @@ impl Odoo {
             items: vec![configuration_item],
         };
         let config = session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params).unwrap().unwrap();
+        
         let config = config.get(0);
         if !config.is_some() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
@@ -744,8 +760,8 @@ impl Odoo {
                         }
                     },
                     "selectedConfiguration" => {
-                        if let Some(value_str) = value.as_str() {
-                            selected_configuration = value_str.to_string();
+                        if let Some(value_int) = value.as_i64() {
+                            selected_configuration = value_int.to_string();
                         }
                     },
                     "serverLogLevel" => {
@@ -757,6 +773,8 @@ impl Odoo {
                 }
             }
         }
+        info!("{:?}", configurations);
+        info!("{:?}", selected_configuration);
         let mut config = Config::new();
         if configurations.contains_key(&selected_configuration) {
             let odoo_conf = configurations.get(&selected_configuration).unwrap();
@@ -775,6 +793,7 @@ impl Odoo {
         config.auto_save_delay = _auto_save_delay;
         config.diag_missing_imports = _diag_missing_imports;
 
+        info!("{:?}", config);
         config
     }
 
@@ -835,6 +854,9 @@ impl Odoo {
     }
 
     pub fn handle_hover(session: &mut SessionInfo, params: HoverParams) -> Result<Option<Hover>, ResponseError> {
+        if !session.sync_odoo.is_init {
+            return Ok(None);
+        }
         session.log_message(MessageType::INFO, format!("Hover requested on {} at {} - {}",
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
@@ -854,6 +876,9 @@ impl Odoo {
     }
 
     pub fn handle_goto_definition(session: &mut SessionInfo, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>, ResponseError> {
+        if !session.sync_odoo.is_init {
+            return Ok(None);
+        }
         session.log_message(MessageType::INFO, format!("GoToDefinition requested on {} at {} - {}",
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
@@ -873,6 +898,9 @@ impl Odoo {
     }
 
     pub fn handle_autocomplete(session: &mut SessionInfo ,params: CompletionParams) -> Result<Option<CompletionResponse>, ResponseError> {
+        if !session.sync_odoo.is_init {
+            return Ok(None);
+        }
         session.log_message(MessageType::INFO, format!("Completion requested at {}:{}-{}",
             params.text_document_position.text_document.uri.as_str(),
             params.text_document_position.position.line,
@@ -898,6 +926,9 @@ impl Odoo {
         if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
             SyncOdoo::refresh_evaluations(session);
         }
+        if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
+            session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
+        }
     }
 
     pub fn handle_did_change_workspace_folders(session: &mut SessionInfo, params: DidChangeWorkspaceFoldersParams) {
@@ -914,6 +945,9 @@ impl Odoo {
     pub fn handle_did_open(session: &mut SessionInfo, params: DidOpenTextDocumentParams) {
         //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
         // that we use the same base version of the file for future incrementation.
+        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || !session.sync_odoo.is_init {
+            return
+        }
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
         Odoo::reload_file(session, path, vec![TextDocumentContentChangeEvent{
@@ -924,6 +958,9 @@ impl Odoo {
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
+        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || !session.sync_odoo.is_init {
+            return
+        }
         for f in params.files.iter() {
             let old_path = FileMgr::uri2pathname(&f.old_uri);
             let new_path = FileMgr::uri2pathname(&f.new_uri);
@@ -941,6 +978,9 @@ impl Odoo {
     }
 
     pub fn handle_did_create(session: &mut SessionInfo, params: CreateFilesParams) {
+        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || !session.sync_odoo.is_init {
+            return
+        }
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
             session.log_message(MessageType::INFO, format!("Creating {}", path));
@@ -954,6 +994,9 @@ impl Odoo {
     }
 
     pub fn handle_did_delete(session: &mut SessionInfo, params: DeleteFilesParams) {
+        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || !session.sync_odoo.is_init {
+            return
+        }
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
             session.log_message(MessageType::INFO, format!("Deleting {}", path));
@@ -965,11 +1008,9 @@ impl Odoo {
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
-        if session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay {
+        if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || !session.sync_odoo.is_init {
             return
         }
-        //let delay = session.sync_odoo.config.auto_save_delay;
-        //tokio::time::sleep(Duration::from_millis(delay)).await;
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
@@ -977,7 +1018,7 @@ impl Odoo {
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
-        if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave {
+        if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave || !session.sync_odoo.is_init {
             return
         }
         let path = params.text_document.uri.to_file_path().unwrap();
@@ -989,7 +1030,7 @@ impl Odoo {
             1, true);
     }
 
-    pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, force: bool) {
+    pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, is_save: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
             if let Err(_e) = tree { //is not part of odoo (or not in addons path)
@@ -997,14 +1038,22 @@ impl Odoo {
             }
             let tree = tree.unwrap().clone();
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), Some(&content), Some(version), force);
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), Some(&content), Some(version), is_save);
             let mut mut_file_info = file_info.borrow_mut();
             mut_file_info.publish_diagnostics(session); //To push potential syntax errors or refresh previous one
             drop(mut_file_info);
             let _ = SyncOdoo::_unload_path(session, &path, false);
             //build new by searching for missing symbols
             session.sync_odoo.search_symbols_to_rebuild(&tree);
-            SyncOdoo::process_rebuilds(session);
+            if is_save {
+                if session.sync_odoo.config.refresh_mode == RefreshMode::OnSave {
+                    SyncOdoo::process_rebuilds(session);
+                }
+            } else {
+                if session.sync_odoo.config.refresh_mode == RefreshMode::AfterDelay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
+                    SessionInfo::request_process(session);
+                }
+            }
         }
     }
 
