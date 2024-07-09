@@ -87,39 +87,55 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                                 let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
                                 let mod_sym = sym.module_symbols.get(val_mod_sym_name);
                                 if mod_sym.is_none() {
-                                    error!("Module symbol not found: {}", val_mod_sym_name);
+                                    error!("Module symbol not found in tree: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
                                     module_symbols.push((mod_sym.unwrap().clone(), val_mod_sym.clone()));
+                                }
+                            }
+                            for mod_sym in sym.module_symbols.keys() {
+                                if value.as_array().unwrap().iter().filter(|x| {x.as_object().unwrap().get("name").unwrap() == mod_sym}).next().is_none() {
+                                    error!("Module symbol not found in json: {}", mod_sym);
+                                    res = false;
                                 }
                             }
                             res
                         },
                         "symbols" => {
                             let mut res = true;
-                            for val_mod_sym in value.as_array().expect("module_symbols key should hold an array").iter() {
-                                let val_mod_sym_data = val_mod_sym.as_object().expect("module_symbols array should hold objects");
-                                let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
+                            for val_mod_sym in value.as_array().expect("symbols key should hold an array").iter() {
+                                let val_mod_sym_data = val_mod_sym.as_object().expect("symbols array should hold objects");
+                                let val_mod_sym_name = val_mod_sym_data.get("name").expect("symbols object should have a name key").as_str().expect("name key should be a string");
                                 let sym = sym.symbols.get(val_mod_sym_name);
                                 if sym.is_none() {
-                                    error!("Symbol not found: {}", val_mod_sym_name);
+                                    error!("Symbol not found in tree: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
                                     symbols.push((sym.unwrap().clone(), val_mod_sym.clone()));
+                                }
+                            }
+                            for symbol in sym.symbols.keys() {
+                                if value.as_array().unwrap().iter().filter(|x| {x.as_object().unwrap().get("name").unwrap() == symbol}).next().is_none() {
+                                    error!("Symbol not found in json: {}", symbol);
+                                    res = false;
                                 }
                             }
                             res
                         },
                         "local_symbols" => {
                             let mut res = true;
-                            for val_mod_sym in value.as_array().expect("module_symbols key should hold an array").iter() {
-                                let val_mod_sym_data = val_mod_sym.as_object().expect("module_symbols array should hold objects");
-                                let val_mod_sym_name = val_mod_sym_data.get("name").expect("module_symbols object should have a name key").as_str().expect("name key should be a string");
+                            if sym.local_symbols.len() != value.as_array().expect("local_symbols key should hold an array").iter().count() {
+                                error!("Tree do not contains the same amount of local symbols than json");
+                                res = false;
+                            }
+                            for (json_index, val_mod_sym) in value.as_array().expect("local_symbols key should hold an array").iter().enumerate() {
+                                let val_mod_sym_data = val_mod_sym.as_object().expect("local_symbols array should hold objects");
+                                let val_mod_sym_name = val_mod_sym_data.get("name").expect("local_symbols object should have a name key").as_str().expect("name key should be a string");
                                 let mut loc_sym = None;
                                 let mut index = 0;
                                 for s in sym.local_symbols.iter() {
                                     if s.borrow().name == val_mod_sym_name {
-                                        if index == val_mod_sym_data.get("index").expect("local_symbols object should have an index key").as_u64().expect("index key should be an integer") {
+                                        if index == json_index {
                                             loc_sym = Some(s.clone());
                                             break;
                                         } else {
@@ -128,7 +144,7 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                                     }
                                 }
                                 if loc_sym.is_none() {
-                                    error!("Local symbol not found: {}", val_mod_sym_name);
+                                    error!("Local symbol not found in json: {}", val_mod_sym_name);
                                     res = false;
                                 } else {
                                     local_symbols.push((loc_sym.unwrap().clone(), val_mod_sym.clone()));

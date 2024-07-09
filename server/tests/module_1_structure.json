@@ -55,8 +55,7 @@
                         {
                             "name": "CONSTANT_2",
                             "type": "VARIABLE",
-                            "value": "2",
-                            "index": 0
+                            "value": "2"
                         }
                     ]
                 }
@@ -164,6 +163,10 @@
                         },
                         {
                             "name": "model_model",
+                            "type": "CLASS"
+                        },
+                        {
+                            "name": "model_abstract",
                             "type": "CLASS"
                         },
                         {
