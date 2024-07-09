@@ -1,4 +1,4 @@
-use crate::core::config::Config;
+use crate::core::config::{Config, PythonPathRequest, PythonPathRequestResult};
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -9,7 +9,7 @@ use std::rc::{Rc, Weak};
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 
 use std::collections::HashSet;
 use weak_table::PtrWeakHashSet;
@@ -708,7 +708,19 @@ impl Odoo {
             items: vec![configuration_item],
         };
         let config = session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params).unwrap().unwrap();
-        
+        let python_path = session.send_request::<(), PythonPathRequestResult>(PythonPathRequest::METHOD, ());
+        if let Err(_e) = python_path {
+            session.log_message(MessageType::ERROR, S!("Unable to get PythonPath. Be sure that your editor support the route Odoo/getPythonPath"));
+            std::process::exit(1);
+        }
+        let python_path = python_path.unwrap();
+        let mut python_path = match python_path {
+            Some(p) => {p.python_path},
+            None => {
+                session.log_message(MessageType::WARNING, S!("No PythonPath provided. Be sure that your editor support the route Odoo/getPythonPath and that route always return a result. Using 'python3' instead"));
+                S!("python3")
+            }
+        };
         let config = config.get(0);
         if !config.is_some() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
@@ -773,8 +785,8 @@ impl Odoo {
                 }
             }
         }
-        info!("{:?}", configurations);
-        info!("{:?}", selected_configuration);
+        debug!("configurations: {:?}", configurations);
+        debug!("selected_configuration: {:?}", selected_configuration);
         let mut config = Config::new();
         if configurations.contains_key(&selected_configuration) {
             let odoo_conf = configurations.get(&selected_configuration).unwrap();
@@ -783,17 +795,17 @@ impl Odoo {
                 .as_array().expect("the addons value must be an array")
                 .into_iter().map(|v| v.to_string()).collect();
             config.odoo_path = odoo_conf.get("odooPath").expect("odooPath must exist").as_str().expect("odooPath must be a String").to_string();
-            config.python_path = odoo_conf.get("pythonPath").expect("pythonPath must exist").as_str().expect("pythonPath must be a String").to_string();
         } else {
             config.addons = vec![];
             config.odoo_path = S!("");
-            config.python_path = S!("");
+            session.log_message(MessageType::ERROR, S!("Unable to find selected configuration. No odoo path has been found."));
         }
+        config.python_path = python_path.clone();
         config.refresh_mode = _refresh_mode;
         config.auto_save_delay = _auto_save_delay;
         config.diag_missing_imports = _diag_missing_imports;
 
-        info!("{:?}", config);
+        debug!("Final config: {:?}", config);
         config
     }
 
