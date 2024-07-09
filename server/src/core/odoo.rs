@@ -699,7 +699,7 @@ pub struct Odoo {}
 
 impl Odoo {
 
-    fn update_configuration(session: &mut SessionInfo) -> Config {
+    fn update_configuration(session: &mut SessionInfo) -> Result<Config, String> {
         let configuration_item = ConfigurationItem{
             scope_uri: None,
             section: Some("Odoo".to_string()),
@@ -711,7 +711,7 @@ impl Odoo {
         let python_path = session.send_request::<(), PythonPathRequestResult>(PythonPathRequest::METHOD, ());
         if let Err(_e) = python_path {
             session.log_message(MessageType::ERROR, S!("Unable to get PythonPath. Be sure that your editor support the route Odoo/getPythonPath"));
-            std::process::exit(1);
+            return Err(format!("{:?}", _e));
         }
         let python_path = python_path.unwrap();
         let mut python_path = match python_path {
@@ -724,7 +724,7 @@ impl Odoo {
         let config = config.get(0);
         if !config.is_some() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
-            std::process::exit(1);
+            return Err(S!("no config found for Odoo"));
         }
         let config = config.unwrap();
         //values for sync block
@@ -806,17 +806,25 @@ impl Odoo {
         config.diag_missing_imports = _diag_missing_imports;
 
         debug!("Final config: {:?}", config);
-        config
+        Ok(config)
     }
 
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
         let config = Odoo::update_configuration(session);
-        SyncOdoo::init(session, config);
-        session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
-            (std::time::Instant::now() - start).as_secs(),
-            session.sync_odoo.modules.len()))
+        match config {
+            Ok(config) => {
+                SyncOdoo::init(session, config);
+                session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
+                    (std::time::Instant::now() - start).as_secs(),
+                    session.sync_odoo.modules.len()))
+            },
+            Err(e) => {
+                session.log_message(MessageType::ERROR, format!("Unable to load config: {}", e));
+                error!(e);
+            }
+        }
     }
 
     pub fn register_capabilities(session: &mut SessionInfo) {
@@ -938,12 +946,20 @@ impl Odoo {
 
     pub fn handle_did_change_configuration(session: &mut SessionInfo, params: DidChangeConfigurationParams) {
         let old_config = session.sync_odoo.config.clone();
-        session.sync_odoo.config = Odoo::update_configuration(session);
-        if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
-            SyncOdoo::refresh_evaluations(session);
-        }
-        if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
-            session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
+        match Odoo::update_configuration(session) {
+            Ok (config) => {
+                session.sync_odoo.config = config;
+                if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
+                    SyncOdoo::refresh_evaluations(session);
+                }
+                if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
+                    session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
+                }
+            },
+            Err(e) => {
+                session.log_message(MessageType::ERROR, format!("Unable to update config: {}", e));
+                error!("Unable to update configuration: {}", e);
+            }
         }
     }
 

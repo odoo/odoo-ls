@@ -326,7 +326,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             }),
             client.onRequest("Odoo/getPythonPath", async() => {
                 const config = await getCurrentConfig(context);
-                return config.pythonPath ? config.pythonPath :pythonPath
+                return {pythonPath: config.pythonPath ? config.pythonPath :pythonPath}
             }),
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
