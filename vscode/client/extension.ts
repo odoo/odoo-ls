@@ -293,6 +293,8 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
     let client : LanguageClient;
     try {
+        const pythonPath = await getPythonPath(context);
+
         global.SERVER_PID = 0;
         let serverPath = "./odoo_ls_server.exe";
         if (process.platform !== 'win32') {
@@ -321,6 +323,10 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                         break;
                 }
                 await setStatusConfig(context);
+            }),
+            client.onRequest("Odoo/getPythonPath", async() => {
+                const config = await getCurrentConfig(context);
+                return config.pythonPath ? config.pythonPath :pythonPath
             }),
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
