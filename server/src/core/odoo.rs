@@ -760,8 +760,8 @@ impl Odoo {
                         }
                     },
                     "selectedConfiguration" => {
-                        if let Some(value_int) = value.as_i64() {
-                            selected_configuration = value_int.to_string();
+                        if let Some(value_str) = value.as_str() {
+                            selected_configuration = value_str.to_string();
                         }
                     },
                     "serverLogLevel" => {
