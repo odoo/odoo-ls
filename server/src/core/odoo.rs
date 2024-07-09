@@ -86,6 +86,33 @@ impl SyncOdoo {
         sync_odoo
     }
 
+    pub fn reset(session: &mut SessionInfo, config: Config) {
+        let symbols = Rc::new(RefCell::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
+        symbols.borrow_mut().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
+        session.log_message(MessageType::INFO, S!("Resetting Database..."));
+        info!("Resetting database...");
+        session.sync_odoo.version_major = 0;
+        session.sync_odoo.version_minor = 0;
+        session.sync_odoo.version_micro = 0;
+        session.sync_odoo.full_version = "0.0.0".to_string();
+        session.sync_odoo.config = Config::new();
+        session.sync_odoo.symbols = Some(symbols);
+        session.sync_odoo.file_mgr.borrow_mut().files = HashMap::new(); //only reset files, as workspace folders didn't change
+        session.sync_odoo.stubs_dirs = vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
+            env::current_dir().unwrap().join("additional_stubs").sanitize()];
+        session.sync_odoo.stdlib_dir = env::current_dir().unwrap().join("typeshed").join("stdlib").sanitize();
+        session.sync_odoo.modules = HashMap::new();
+        session.sync_odoo.models = HashMap::new();
+        session.sync_odoo.rebuild_arch = PtrWeakHashSet::new();
+        session.sync_odoo.rebuild_arch_eval = PtrWeakHashSet::new();
+        session.sync_odoo.rebuild_odoo = PtrWeakHashSet::new();
+        session.sync_odoo.rebuild_validation = PtrWeakHashSet::new();
+        session.sync_odoo.is_init = false;
+        session.sync_odoo.not_found_symbols = PtrWeakHashSet::new();
+        session.sync_odoo.load_odoo_addons = true;
+        SyncOdoo::init(session, config);
+    }
+
     pub fn init(session: &mut SessionInfo, config: Config) {
         info!("Initializing odoo");
         session.sync_odoo.is_init = false;
@@ -145,8 +172,7 @@ impl SyncOdoo {
         SyncOdoo::load_builtins(session);
         SyncOdoo::build_database(session);
         session.sync_odoo.is_init = true;
-        session.send_notification("$Odoo/-
-        ", "stop");
+        session.send_notification("$Odoo/loadingStatusUpdate", "stop");
     }
 
     pub fn load_builtins(session: &mut SessionInfo) {
@@ -948,12 +974,19 @@ impl Odoo {
         let old_config = session.sync_odoo.config.clone();
         match Odoo::update_configuration(session) {
             Ok (config) => {
-                session.sync_odoo.config = config;
-                if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
-                    SyncOdoo::refresh_evaluations(session);
-                }
-                if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
-                    session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
+                session.sync_odoo.config = config.clone();
+                if config.odoo_path != old_config.odoo_path ||
+                    config.addons != old_config.addons ||
+                    config.additional_stubs != old_config.additional_stubs ||
+                    config.stdlib != old_config.stdlib {
+                        SyncOdoo::reset(session, config);
+                } else {
+                    if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
+                        SyncOdoo::refresh_evaluations(session);
+                    }
+                    if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
+                        session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
+                    }
                 }
             },
             Err(e) => {
