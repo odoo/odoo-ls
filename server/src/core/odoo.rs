@@ -798,9 +798,13 @@ impl Odoo {
     }
 
     pub fn init(session: &mut SessionInfo) {
+        let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
         let config = Odoo::update_configuration(session);
         SyncOdoo::init(session, config);
+        session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
+            (std::time::Instant::now() - start).as_secs(),
+            session.sync_odoo.modules.len()))
     }
 
     pub fn register_capabilities(session: &mut SessionInfo) {
