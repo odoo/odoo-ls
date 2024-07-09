@@ -51,7 +51,7 @@ export class CrashReportWebView {
      *
      * @param extensionUri The URI of the directory containing the extension.
      */
-    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null, debugFile='pygls.log') {
+    public static render(context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null, debugFile: string) {
         if (!CrashReportWebView.panels) {
             CrashReportWebView.panels = new Map();
         }

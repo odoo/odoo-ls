@@ -237,9 +237,13 @@ async function changeSelectedConfig(context: ExtensionContext, configId: Number)
     selectedConfigurationChange.fire(oldConfig);
 }
 
-async function find_last_log_file(pid: number) {
+async function find_last_log_file(context: ExtensionContext, pid: number) {
     let prefix = "odoo_logs_" + pid + ".log";
-    let directory = "./logs";
+    let cwd = path.join(__dirname, "..", "..");
+    if (context.extensionMode === ExtensionMode.Development) {
+        cwd = path.join(cwd, "..", "server");
+    }
+    let directory = path.join(cwd, "logs");
     const files = fs.readdirSync(directory);
 
     // filter files with format 'prefix-yyyy-MM-dd-HH'
@@ -278,7 +282,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
         "Cancel"
     );
 
-    let log_file = await find_last_log_file(pid);
+    let log_file = await find_last_log_file(context, pid);
 
     switch (selection) {
         case ("Send crash report"):
