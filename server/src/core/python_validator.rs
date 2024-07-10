@@ -214,6 +214,11 @@ impl PythonValidator {
                 Stmt::If(i) => {
                     self.validate_body(session, &i.body);
                 },
+                Stmt::Break(b) => {},
+                Stmt::Continue(c) => {},
+                Stmt::Delete(d) => {
+                    //TODO
+                },
                 _ => {
                     trace!("Stmt not handled");
                 }

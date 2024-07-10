@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - 2024/03/27
+## 0.2.5 - Beta Candidate - 2024/07/10
 ### Rustpocalypse
 
 This update bring a completely new rewritten version of the extension.

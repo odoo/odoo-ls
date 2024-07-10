@@ -33,8 +33,8 @@ export async function initializePython(disposables: Disposable[]): Promise<void>
                 }),
             );
 
-            console.log('Waiting for interpreter from python extension.');
-            onDidChangePythonInterpreterEvent.fire(await getInterpreterDetails());
+            //console.log('Waiting for interpreter from python extension.');
+            //onDidChangePythonInterpreterEvent.fire(await getInterpreterDetails());
         }
     } catch (error) {
         console.error('Error initializing python: ', error);

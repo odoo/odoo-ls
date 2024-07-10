@@ -1019,7 +1019,7 @@ impl Odoo {
             range: None,
             range_length: None,
             text: params.text_document.text}],
-        params.text_document.version, true);
+        params.text_document.version, true, true);
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
@@ -1079,7 +1079,7 @@ impl Odoo {
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
-        Odoo::reload_file(session, path, params.content_changes, version, false);
+        Odoo::reload_file(session, path, params.content_changes, version, false, false);
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
@@ -1092,10 +1092,10 @@ impl Odoo {
             range: None,
             range_length: None,
             text: params.text.expect("As required in the registered capabilities, a Save notification must contains the file content")}],
-            1, true);
+            1, true, false);
     }
 
-    pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, is_save: bool) {
+    pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Vec<TextDocumentContentChangeEvent>, version: i32, is_save: bool, is_open: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
             if let Err(_e) = tree { //is not part of odoo (or not in addons path)
@@ -1110,10 +1110,8 @@ impl Odoo {
             let _ = SyncOdoo::_unload_path(session, &path, false);
             //build new by searching for missing symbols
             session.sync_odoo.search_symbols_to_rebuild(&tree);
-            if is_save {
-                if session.sync_odoo.config.refresh_mode == RefreshMode::OnSave {
+            if is_open || (is_save && session.sync_odoo.config.refresh_mode == RefreshMode::OnSave) {
                     SyncOdoo::process_rebuilds(session);
-                }
             } else {
                 if session.sync_odoo.config.refresh_mode == RefreshMode::AfterDelay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
                     SessionInfo::request_process(session);
