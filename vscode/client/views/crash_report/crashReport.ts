@@ -25,7 +25,7 @@ export class CrashReportWebView {
      * @param panel A reference to the webview panel
      * @param extensionUri The URI of the directory containing the extension
      */
-    private constructor(panel: WebviewPanel, uid: String, context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null, debugFile: string = 'pygls.log') {
+    private constructor(panel: WebviewPanel, uid: String, context: vscode.ExtensionContext, document: vscode.TextDocument, error: String, command: String = null, debugFile: string) {
         this._panel = panel;
         this._context = context;
         this._document = document;
@@ -135,7 +135,11 @@ export class CrashReportWebView {
             switch (command) {
                 case "send_report":
                     const config = await getCurrentConfig(this._context);
-                    const version = await getPythonVersion();
+                    let version = "not_provided";
+                    try {
+                        let version_info = await getPythonVersion();
+                        version = `${version_info.major}.${version_info.minor}.${version_info.micro}`
+                    } catch {}
                     let configString = "";
                     if (config) {
                         configString += `Path: ${config.odooPath}\n`;
@@ -143,16 +147,20 @@ export class CrashReportWebView {
                     } else {
                         configString += "Path: None\nAddons: None";
                     }
+                    let server_logs = "no_file_provided";
+                    if (this._debugFile !== undefined) {
+                        server_logs = fs.readFileSync(this._debugFile, 'base64');
+                    }
                     axios.post('https://iap-services.odoo.com/api/odools/vscode/1/crash_report', {
                         data: {
                             uid: this.UID,
                             document: this._document ? this._document.getText() : null,
                             document_path: this._document ? this._document.uri.fsPath: null,
-                            pygls_log: fs.readFileSync(getUri(webview, this._context.extensionUri, [this._debugFile]).fsPath, 'base64'),
+                            pygls_log: server_logs,
                             error: this._error,
                             additional_info: message.additional_info,
                             version: this._context.extension.packageJSON.version,
-                            python_version: `${version.major}.${version.minor}.${version.micro}`,
+                            python_version: version,
                             configuration: configString,
                             command: this._command, 
                         }

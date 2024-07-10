@@ -238,7 +238,8 @@ async function changeSelectedConfig(context: ExtensionContext, configId: Number)
 }
 
 async function find_last_log_file(context: ExtensionContext, pid: number) {
-    let prefix = "odoo_logs_" + pid + ".log";
+    let prefix = "odoo_logs_" + pid;
+    let suffix = ".log"
     let cwd = path.join(__dirname, "..", "..");
     if (context.extensionMode === ExtensionMode.Development) {
         cwd = path.join(cwd, "..", "server");
@@ -248,7 +249,7 @@ async function find_last_log_file(context: ExtensionContext, pid: number) {
 
     // filter files with format 'prefix-yyyy-MM-dd-HH'
     const logFiles = files.filter(file => {
-        const regex = new RegExp(`^${prefix}\.\\d{4}-\\d{2}-\\d{2}-\\d{2}$`);
+        const regex = new RegExp(`^${prefix}\.\\d{4}-\\d{2}-\\d{2}-\\d{2}${suffix}$`);
         return regex.test(file);
     });
 
@@ -341,7 +342,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                 );
             }),
             client.onNotification("Odoo/displayCrashNotification", async (params) => {
-                await displayCrashMessage(context, params["crashInfo"]);
+                await displayCrashMessage(context, params["crashInfo"], params["pid"]);
             }),
             workspace.onDidChangeConfiguration(async (event)=>{
                 if(!event.affectsConfiguration("Odoo")|| global.CLIENT_IS_SAVING){
@@ -530,7 +531,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
             catch (error) {
                 global.LSCLIENT.error(error)
-                await displayCrashMessage(context, 'event.ConfigurationsChange')
+                await displayCrashMessage(context, 'event.ConfigurationsChange', global.SERVER_PID)
             }
         })
     );
@@ -777,7 +778,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
         context.subscriptions.push(
             commands.registerCommand(
                 "odoo.testCrashMessage", async () => {
-                    await displayCrashMessage(context, "Test crash message");
+                    await displayCrashMessage(context, "Test crash message", global.SERVER_PID);
                 }
             )
         );
@@ -866,7 +867,7 @@ async function getStandalonePythonPath(context: ExtensionContext) {
     return pythonPath
 }
 
-async function checkStandalonePythonVersion(context: ExtensionContext): Promise<boolean>{
+export async function getStandalonePythonVersion(context: ExtensionContext): Promise<semver.SemVer> {
     const currentConfig = await getCurrentConfig(context);
     let pythonPath = currentConfig["pythonPath"]
     if (!pythonPath) {
@@ -876,7 +877,12 @@ async function checkStandalonePythonVersion(context: ExtensionContext): Promise<
 
     const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
 
-    const pythonVersion = semver.parse(versionString)  
+    return semver.parse(versionString)  
+}
+
+async function checkStandalonePythonVersion(context: ExtensionContext): Promise<boolean>{
+    const currentConfig = await getCurrentConfig(context);
+    let pythonVersion = await getStandalonePythonVersion(context);
     if (!pythonVersion || semver.lt(pythonVersion, "3.8.0")) {
         window.showErrorMessage(
             `You must use python 3.8 or newer. Would you like to change it?`,
