@@ -74,15 +74,23 @@ impl <'a> SessionInfo<'a> {
         }
     }
 
-    pub fn request_process(session_info: &mut SessionInfo) {
-        if let Some(sender) = &session_info.delayed_process_sender {
-            if session_info.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session_info.sync_odoo.get_rebuild_queue_size() < 10 {
-                SyncOdoo::process_rebuilds(session_info);
+    pub fn request_process(session: &mut SessionInfo) {
+        if let Some(sender) = &session.delayed_process_sender {
+            if !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10 {
+                SyncOdoo::process_rebuilds(session);
             } else {
                 let _ = sender.send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
             }
         } else {
-            SyncOdoo::process_rebuilds(session_info);
+            SyncOdoo::process_rebuilds(session);
+        }
+    }
+
+    pub fn request_reload(session: &mut SessionInfo) {
+        if let Some(sender) = &session.delayed_process_sender {
+            let _ = sender.send(DelayedProcessingMessage::REBUILD(std::time::Instant::now()));
+        } else {
+            SyncOdoo::reset(session, session.sync_odoo.config.clone());
         }
     }
 
@@ -119,22 +127,28 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
 pub enum DelayedProcessingMessage {
     UPDATE_DELAY(u64),
     PROCESS(Instant),
+    REBUILD(Instant),
     EXIT,
 }
 
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>) {
     const MAX_DELAY: u64 = 15000;
-    let mut delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_save_delay, MAX_DELAY));
+    let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_save_delay, MAX_DELAY));
     loop {
+        let mut rebuild = false;
+        let mut delay = normal_delay;
         let msg = receiver.recv();
         match msg {
             Ok(DelayedProcessingMessage::EXIT) => {
                 return;
             },
             Ok(DelayedProcessingMessage::UPDATE_DELAY(duration)) => {
-                delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
+                normal_delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
             }
-            Ok(DelayedProcessingMessage::PROCESS(time)) => {
+            Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time)) => {
+                if matches!(msg, Ok(DelayedProcessingMessage::REBUILD(_))) {
+                    rebuild = true;
+                }
                 let mut last_time = time;
                 let mut to_wait = (time + delay) - std::time::Instant::now();
                 while to_wait.as_millis() > 0 {
@@ -153,6 +167,14 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                                     last_time = t;
                                 }
                             },
+                            Ok(DelayedProcessingMessage::REBUILD(t)) => {
+                                rebuild = true;
+                                delay = std::time::Duration::from_millis(std::cmp::max(normal_delay.as_millis() as u64, 4000));
+                                if t > last_time {
+                                    to_wait = (t + delay) - std::time::Instant::now();
+                                    last_time = t;
+                                }
+                            }
                             Err(TryRecvError::Empty) => {
                                 break;
                             }
@@ -167,7 +189,12 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                         sync_odoo: &mut sync_odoo.lock().unwrap(),
                         delayed_process_sender: None
                     };
-                    SyncOdoo::process_rebuilds(&mut session);
+                    if rebuild {
+                        let config = session.sync_odoo.config.clone();
+                        SyncOdoo::reset(&mut session, config);
+                    } else {
+                        SyncOdoo::process_rebuilds(&mut session);
+                    }
                 }
             }
             Err(e) => {
@@ -213,7 +240,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     DidRenameFiles::METHOD => { Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap()); }
                     DidCreateFiles::METHOD => { Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap()); }
                     DidDeleteFiles::METHOD => { Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidChangeWatchedFiles::METHOD => {}
+                    DidChangeWatchedFiles::METHOD => { Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap())}
                     "custom/server/register_capabilities" => { Odoo::register_capabilities(&mut session); }
                     "custom/server/init" => { Odoo::init(&mut session); }
                     Shutdown::METHOD => { warn!("Main thread - got shutdown."); break;}

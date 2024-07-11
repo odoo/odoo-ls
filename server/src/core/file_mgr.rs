@@ -4,6 +4,7 @@ use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
+use std::borrow::BorrowMut;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
@@ -250,6 +251,21 @@ impl FileMgr {
                 to_del.publish_diagnostics(session)
             }
         }
+    }
+
+    pub fn clear(&mut self, session: &mut SessionInfo) {
+        for file in self.files.values() {
+            if self.is_in_workspace(&file.borrow().uri) {
+                let mut to_del = (**file).borrow_mut();
+                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
+                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                to_del.publish_diagnostics(session)
+            }
+        }
+        self.files.clear();
     }
 
     pub fn add_workspace_folder(&mut self, path: String) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 - 2024/??/??
+
+### Server
+
+- Server now reacts to WorkspaceDidChangedWatchedFiles, and will restart automatically on Odoo version change
+
 ## 0.2.5 - Beta Candidate - 2024/07/10
 ### Rustpocalypse
 
@@ -14,10 +20,11 @@ You should expect the same features than the python version (diagnostics, hover 
 - autocompletion is not available for now, but will come back really soon
 - Due the new performances, the extension is now able to parse the content of functions, where Python were only parsing code structure, and is still way faster.
 - logs level are editable, and a rotation is set.
+- Alongside OnSave and AfterDelay modes to update diagnostics, Adaptive will now refresh the data immediatly or not depending on the size of the task queue.
+- New CLI mode, that allow you to generate a JSON with all diagnostics with a given source code
 
 As this is a first version, there is some known issues:
 - Windows version is way slower than linux one. This is (probably) due to Windows defender and the way Windows handle small allocations.
-- afterDelay setting is not working, and any edit is directly processed.
 - Memory usage is quite the same than the python version, but we should improve that later.
 
 ### VsCode

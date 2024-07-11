@@ -68,6 +68,7 @@ impl PythonArchBuilder {
         } else {
             file_info.publish_diagnostics(session);
         }
+        PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.arch_status = BuildStatus::DONE;
         Ok(())

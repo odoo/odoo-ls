@@ -1,9 +1,12 @@
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;
+
+use super::odoo::SyncOdoo;
 
 pub struct PythonArchBuilderHooks {}
 
@@ -74,6 +77,18 @@ impl PythonArchBuilderHooks {
                 }
             }
             _ => {}
+        }
+    }
+
+    pub fn on_done(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
+        let name = symbol.borrow().name.clone();
+        if name == "release" {
+            if symbol.borrow().get_tree() == (vec![S!("odoo"), S!("release")], vec![]) {
+                let (maj, min, mic) = SyncOdoo::read_version(session, PathBuf::from(symbol.borrow().paths[0].clone()));
+                if maj != session.sync_odoo.version_major || min != session.sync_odoo.version_minor || mic != session.sync_odoo.version_micro {
+                    session.sync_odoo.need_rebuild = true;
+                }
+            }
         }
     }
 }
