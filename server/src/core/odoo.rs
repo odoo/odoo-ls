@@ -1034,7 +1034,7 @@ impl Odoo {
         let mut to_delete = vec![];
         let mut to_change = vec![];
         for event in params.changes {
-            if event.uri.to_string().ends_with(".git") {
+            if event.uri.to_string().contains(".git") {
                 continue;
             }
             match event.typ {
