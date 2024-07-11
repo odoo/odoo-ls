@@ -55,6 +55,7 @@ fn main() {
     info!("Server version: {}", EXTENSION_VERSION);
     info!("Compiled setting: DEBUG_ODOO_BUILDER: {}", DEBUG_ODOO_BUILDER);
     info!("Compiled setting: DEBUG_MEMORY: {}", DEBUG_MEMORY);
+    info!("Operating system: {}", std::env::consts::OS);
     info!("");
 
     if cli.parse {
