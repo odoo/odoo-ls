@@ -2,51 +2,122 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, P
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::info;
-use std::collections::HashSet;
+use weak_table::PtrWeakHashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::constants::EXTENSION_NAME;
+use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
+
+use super::symbol_mgr::SectionRange;
 
 
 #[derive(Debug)]
 pub struct ModuleSymbol {
+    pub name: String,
+    pub path: String,
+    pub i_ext: String,
+    pub is_external: bool,
     root_path: String,
     loaded: bool,
     module_name: String,
     pub dir_name: String,
     depends: Vec<String>,
     data: Vec<String>, // TODO
+    pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
+    pub arch_status: BuildStatus,
+    pub arch_eval_status: BuildStatus,
+    pub odoo_status: BuildStatus,
+    pub validation_status: BuildStatus,
+    pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<Weak<RefCell<Symbol>>>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
+    pub in_workspace: bool,
+    pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
+    pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
+
+    //Trait SymbolMgr
+    pub sections: Vec<SectionRange>,
+    pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
 }
 
 impl ModuleSymbol {
 
-    pub fn new(session: &mut SessionInfo, dir_path: &PathBuf) -> Option<Self> {
+    pub fn new(session: &mut SessionInfo, name: String, dir_path: &PathBuf, is_external: bool) -> Option<Self> {
         let mut module = ModuleSymbol {
+            name,
+            path: dir_path.sanitize(),
+            i_ext: S!(""),
+            is_external,
+            not_found_paths: vec![],
+            in_workspace: false,
             root_path: dir_path.sanitize(),
             loaded: false,
             module_name: String::new(),
             dir_name: String::new(),
             depends: vec!("base".to_string()),
             data: Vec::new(),
+            weak_self: None,
+            parent: None,
+            module_symbols: HashMap::new(),
+            arch_status: BuildStatus::PENDING,
+            arch_eval_status: BuildStatus::PENDING,
+            odoo_status: BuildStatus::PENDING,
+            validation_status: BuildStatus::PENDING,
+            sections: vec![],
+            symbols: HashMap::new(),
+            dependencies: [
+                vec![ //ARCH
+                    PtrWeakHashSet::new() //ARCH
+                ],
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new() //ARCH
+                ],
+                vec![
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
+                ],
+                vec![
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
+                ]],
+            dependents: [
+                vec![ //ARCH
+                    PtrWeakHashSet::new(), //ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new(), //VALIDATION
+                ],
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new() //VALIDATION
+                ],
+                vec![ //ODOO
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new()  //VALIDATION
+                ]],
         };
-        info!("building new module: {:?}", dir_path);
+        module._init_symbol_mgr();
+        info!("building new module: {:?}", dir_path.sanitize());
         if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
             module.depends.clear();
         }
         module.dir_name = dir_path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let manifest_path = dir_path.join("__manifest__.py");
         if !manifest_path.exists() {
-            return None;
+            return None
         }
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
@@ -60,15 +131,20 @@ impl ModuleSymbol {
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diags);
         manifest_file_info.publish_diagnostics(session);
         drop(manifest_file_info);
-        info!("End building new module: {:?}", dir_path);
+        info!("End building new module: {:?}", dir_path.sanitize());
         Some(module)
+    }
+
+    pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        section_vec.push(content.clone());
     }
 
     pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<String> {
         {
             let _symbol = symbol.borrow();
-            let module = _symbol._module.as_ref().expect("Module must be set to call load_module_info");
-            if module.loaded {
+            if _symbol.as_module_package().loaded {
                 return vec![];
             }
         }
@@ -77,7 +153,7 @@ impl ModuleSymbol {
         diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
         {
             let mut _symbol = symbol.borrow_mut();
-            let module = _symbol._module.as_mut().expect("Module must be set to call load_module_info");
+            let module = _symbol.as_module_package_mut();
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
@@ -212,7 +288,7 @@ impl ModuleSymbol {
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
     fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
-        let module = symbol._module.as_ref().expect("Module must be set to call _load_depends");
+        let module = symbol.as_module_package();
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<String> = vec![];
         for depend in module.depends.clone().iter() {
@@ -220,14 +296,14 @@ impl ModuleSymbol {
             if !session.sync_odoo.modules.contains_key(depend) {
                 let module = find_module(session, odoo_addons.clone(), depend);
                 if module.is_none() {
-                    session.sync_odoo.not_found_symbols.insert(symbol.weak_self.as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
-                    symbol.not_found_paths.push((BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]));
+                    session.sync_odoo.not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
+                    symbol.not_found_paths_mut().push((BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]));
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
                         Some(DiagnosticSeverity::ERROR),
                         Some(NumberOrString::String(S!("OLS30210"))),
                         Some(EXTENSION_NAME.to_string()),
-                        format!("Module {} depends on {} which is not found. Please review your addons paths", symbol.name, depend),
+                        format!("Module {} depends on {} which is not found. Please review your addons paths", symbol.name(), depend),
                         None,
                         None,
                     ))
@@ -251,26 +327,26 @@ impl ModuleSymbol {
     }
 
     fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
-        let root_path = (*symbol).borrow()._module.as_ref().expect("Module must be set to call _load_depends").root_path.clone();
+        let root_path = (*symbol).borrow().as_module_package().root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
-            let _arc_symbol = Symbol::create_from_path(session, &tests_path, symbol, false);
-            if _arc_symbol.is_some() {
-                let _arc_symbol = _arc_symbol.unwrap();
-                session.sync_odoo.add_to_rebuild_arch(_arc_symbol);
+            let rc_symbol = Symbol::create_from_path(session, &tests_path, symbol, false);
+            if rc_symbol.is_some() && rc_symbol.as_ref().unwrap().borrow().typ() != SymType::NAMESPACE {
+                let rc_symbol = rc_symbol.unwrap();
+                session.sync_odoo.add_to_rebuild_arch(rc_symbol);
             }
         }
         vec![]
     }
 
     pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
-        if symbol.borrow()._module.as_ref().unwrap().dir_name == *dir_name || symbol.borrow()._module.as_ref().unwrap().depends.contains(dir_name) {
+        if symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().depends.contains(dir_name) {
             return true;
         }
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
-        for dep in symbol.borrow()._module.as_ref().unwrap().depends.iter() {
+        for dep in symbol.borrow().as_module_package().depends.iter() {
             if acc.as_ref().unwrap().contains(dep) {
                 continue;
             }
@@ -283,7 +359,7 @@ impl ModuleSymbol {
                 if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), dir_name, acc) {
                     return true;
                 }
-                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone());
+                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow().as_module_package().dir_name.clone());
             }
         }
         false

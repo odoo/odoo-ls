@@ -19,25 +19,14 @@ pub fn flatten_tree(tree: &Tree) -> Vec<String> {
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
-    DIRTY,
     ROOT,
     NAMESPACE,
     PACKAGE,
     FILE,
     COMPILED,
-    CLASS,
-    FUNCTION,
     VARIABLE,
-    CONSTANT,
-}
-
-impl SymType {
-    pub fn is_instance(sym_type: &SymType) -> bool {
-        match sym_type {
-            SymType::VARIABLE | SymType::CONSTANT => true,
-            _ => false,
-        }
-    }
+    CLASS,
+    FUNCTION
 }
 
 impl fmt::Display for SymType {
@@ -55,7 +44,7 @@ pub enum BuildSteps {
     VALIDATION = 3,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum BuildStatus {
     PENDING,
     IN_PROGRESS,

@@ -6,12 +6,12 @@ use std::path::Path;
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Identifier, Alias};
-use crate::core::symbol::Symbol;
-use crate::constants::*;
+use crate::{constants::*, S};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
 
 use super::odoo::SyncOdoo;
+use super::symbols::symbol::Symbol;
 
 pub struct ImportResult {
     pub name: String,
@@ -25,9 +25,9 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
-        &_source_file_symbol_lock.paths[0].clone(),
+        &_source_file_symbol_lock.paths()[0].clone(),
         &_source_file_symbol_lock.get_tree(),
-        &_source_file_symbol_lock.sym_type,
+        &_source_file_symbol_lock.typ(),
         level,
         from_stmt);
     drop(_source_file_symbol_lock);
@@ -75,7 +75,9 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             if name_symbol.is_none() {
                 if !name.contains(".") {
                     //TODO WTF?
-                    name_symbol = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], vec![name.clone()]));
+                    let name_symbol_vec = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], vec![name.clone()]), u32::MAX);
+                    //TODO what if multiple values?
+                    name_symbol = name_symbol_vec.get(0).cloned();
                 }
                 if name_symbol.is_none() {
                     result[name_index as usize].symbol = fallback_sym.clone();
@@ -85,6 +87,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             result[name_index as usize].name = name.split(".").map(str::to_string).next().unwrap();
             result[name_index as usize].found = true;
             result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
+            continue;
         }
         let name_split: Vec<String> = name.split(".").map(str::to_string).collect();
         let name_first_part: Vec<String> = Vec::from_iter(name_split[0..name_split.len()-1].iter().cloned());
@@ -109,7 +112,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             None,
             &alias.range);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
-            name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name));
+            //TODO what if multiple values?
+            name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
             if name_symbol.is_none() {
                 result[name_index as usize].symbol = fallback_sym.clone();
                 continue;
@@ -126,7 +130,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
 }
 
 pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &String) -> Option<Rc<RefCell<Symbol>>> {
-    let paths = (*odoo_addons).borrow().paths.clone();
+    let paths = (*odoo_addons).borrow().paths().clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name);
         if is_dir_cs(full_path.sanitize()) {
@@ -180,18 +184,19 @@ fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>,
     let mut sym: Option<Rc<RefCell<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {
-        let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]));
-        if next_symbol.is_none() {
+        let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
+        if next_symbol.is_empty() {
             next_symbol = match _resolve_new_symbol(session, sym.as_ref().unwrap().clone(), &branch, asname.clone(), range) {
-                Ok(v) => Some(v),
-                Err(_) => None
+                Ok(v) => vec![v],
+                Err(_) => vec![]
             }
         }
-        sym = next_symbol.clone();
-        if next_symbol.is_none() {
+        if next_symbol.is_empty() {
+            sym = None;
             break;
         }
-        last_symbol = next_symbol.unwrap().clone();
+        sym = Some(next_symbol[0].clone());
+        last_symbol = next_symbol[0].clone();
     }
     return (sym, last_symbol)
 }
@@ -201,12 +206,10 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
         Some(asname_inner) => asname_inner.clone(),
         None => name.clone()
     };
-    if (*parent).borrow().sym_type == SymType::COMPILED {
-        let mut compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-        compiled_sym.range = Some(range.clone());
-        return Ok((*parent).borrow_mut().add_symbol(session, compiled_sym));
+    if (*parent).borrow().typ() == SymType::COMPILED {
+        return Ok((*parent).borrow_mut().add_new_compiled(session, &sym_name, &S!("")));
     }
-    let paths = (*parent).borrow().paths.clone();
+    let paths = (*parent).borrow().paths().clone();
     for path in paths.iter() {
         let mut full_path = Path::new(path.as_str()).join(name);
         for stub in session.sync_odoo.stubs_dirs.iter() {
@@ -243,8 +246,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
-                            let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok((*parent).borrow_mut().add_symbol(session, compiled_sym));
+                            return Ok((*parent).borrow_mut().add_new_compiled(session, &sym_name, &_path.to_str().unwrap().to_string()));
                         }
                         Err(_) => {},
                     }
@@ -253,8 +255,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 for entry in glob((full_path.sanitize() + "*.so").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
-                            let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok((*parent).borrow_mut().add_symbol(session, compiled_sym));
+                            return Ok((*parent).borrow_mut().add_new_compiled(session, &sym_name, &_path.to_str().unwrap().to_string()));
                         }
                         Err(_) => {},
                     }
