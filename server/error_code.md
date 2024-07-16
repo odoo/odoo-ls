@@ -38,6 +38,11 @@ Be sure that the symbol is refering to a valid python class.
 The extension failed to evaluate a symbol. This occurs more specificaly when the extension detect a loop in the imports.
 If your code is working fine, it can happen if you use too many "import *" that can break the extension flow for now.
 
+### OLS20005
+
+"Multiple definition found for base class".
+The extension is unable to handle a base class that has multiple possible definitions. This warning should disappear in the future
+
 ### OLS20201
 
 "The active key is deprecated".

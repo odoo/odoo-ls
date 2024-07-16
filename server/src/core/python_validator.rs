@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use crate::constants::*;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -44,9 +44,9 @@ impl PythonValidator {
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
         let file_symbol = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
         let file_symbol = file_symbol.borrow();
-        let mut path = file_symbol.paths[0].clone();
-        if file_symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.i_ext.as_str();
+        let mut path = file_symbol.paths()[0].clone();
+        if file_symbol.typ() == SymType::PACKAGE {
+            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
         }
         let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         file_info_rc
@@ -95,12 +95,12 @@ impl PythonValidator {
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
         let mut symbol = self.symbol.borrow_mut();
-        self.current_module = symbol.get_module_sym();
-        if symbol.validation_status != BuildStatus::PENDING {
+        self.current_module = symbol.find_module();
+        if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
         }
-        symbol.validation_status = BuildStatus::IN_PROGRESS;
-        let sym_type = symbol.sym_type.clone();
+        symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+        let sym_type = symbol.typ().clone();
         drop(symbol);
         match sym_type {
             SymType::FILE | SymType::PACKAGE => {
@@ -118,7 +118,7 @@ impl PythonValidator {
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
-                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.symbol.borrow().ast_indexes.as_ref().expect("this node should contains an index vector"));
+                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.symbol.borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
@@ -131,10 +131,10 @@ impl PythonValidator {
                     self.validate_body(session, body);
                     match stmt {
                         Stmt::FunctionDef(s) => {
-                            self.symbol.borrow_mut()._function.as_mut().unwrap().diagnostics = self.diagnostics.clone();
+                            self.symbol.borrow_mut().as_func_mut().diagnostics = self.diagnostics.clone();
                         },
                         Stmt::ClassDef(s) => {
-                            self.symbol.borrow_mut()._class.as_mut().unwrap().diagnostics = self.diagnostics.clone();
+                            self.symbol.borrow_mut().as_class_sym_mut().diagnostics = self.diagnostics.clone();
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     }
@@ -145,10 +145,10 @@ impl PythonValidator {
             _ => {panic!("Only File, function or class can be validated")}
         }
         let mut symbol = self.symbol.borrow_mut();
-        symbol.validation_status = BuildStatus::DONE;
-        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.sym_type) {
-            if !symbol.in_workspace {
-                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &symbol.paths[0].to_string());
+        symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::DONE);
+        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.typ()) {
+            if !symbol.in_workspace() {
+                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &symbol.paths()[0].to_string());
             } else {
                 drop(symbol);
                 let file_info = self.get_file_info(session.sync_odoo);
@@ -164,14 +164,14 @@ impl PythonValidator {
                 Stmt::FunctionDef(f) => {
                     let sym = self.symbol.borrow().get_positioned_symbol(&f.name.to_string(), &f.range);
                     if let Some(sym) = sym {
-                        let val_status = sym.borrow().validation_status.clone();
+                        let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
                             let mut v = PythonValidator::new(sym.clone());
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
-                        self.diagnostics.append(&mut sym.borrow_mut()._function.as_mut().unwrap().diagnostics);
+                        self.diagnostics.append(&mut sym.borrow_mut().as_func_mut().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
                     }
@@ -179,7 +179,7 @@ impl PythonValidator {
                 Stmt::ClassDef(c) => {
                     let sym = self.symbol.borrow().get_positioned_symbol(&c.name.to_string(), &c.range);
                     if let Some(sym) = sym {
-                        let val_status = sym.borrow().validation_status.clone();
+                        let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
                             let mut v = PythonValidator::new(sym.clone());
                             v.validate(session);
@@ -187,7 +187,7 @@ impl PythonValidator {
                             panic!("cyclic validation detected... Aborting");
                         }
                         self._check_model(session, &sym);
-                        self.diagnostics.append(&mut sym.borrow_mut()._class.as_mut().unwrap().diagnostics);
+                        self.diagnostics.append(&mut sym.borrow_mut().as_class_sym_mut().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
                     }
@@ -253,15 +253,15 @@ impl PythonValidator {
             range);
         for import_result in import_results.iter() {
             if import_result.found && self.current_module.is_some() {
-                let module = import_result.symbol.borrow().get_module_sym();
+                let module = import_result.symbol.borrow().find_module();
                 if let Some(module) = module {
-                    if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
+                    if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30103"))),
                             Some(EXTENSION_NAME.to_string()),
-                            format!("{} is not in the dependencies of the module", module.borrow()._module.as_ref().unwrap().dir_name),
+                            format!("{} is not in the dependencies of the module", module.borrow().as_module_package().dir_name),
                             None,
                             None,
                         ))
@@ -302,17 +302,18 @@ impl PythonValidator {
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
         let cl = class.borrow();
-        let Some(model) = cl._model.as_ref() else {
+        let Some(model) = cl.as_class_sym()._model.as_ref() else {
             return;
         };
         if self.current_module.is_none() {
             return;
         }
         //Check inherit field
-        let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]));
-        if let Some(inherit) = inherit {
-            let inherit_eval = &inherit.borrow().evaluation;
-            if let Some(inherit_eval) = inherit_eval {
+        let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
+        if let Some(inherit) = inherit.last() {
+            let inherit = inherit.borrow();
+            let inherit_evals = &inherit.evaluations().unwrap();
+            for inherit_eval in inherit_evals.iter() {
                 let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {
                     match inherit_value {
@@ -352,9 +353,9 @@ impl PythonValidator {
                 let mut found_one = false;
                 for main_sym in borrowed_model.get_main_symbols(session, None, &mut None).iter() {
                     let main_sym = main_sym.borrow();
-                    let main_sym_module = main_sym.get_module_sym();
+                    let main_sym_module = main_sym.find_module();
                     if let Some(main_sym_module) = main_sym_module {
-                        let module_name = main_sym_module.borrow()._module.as_ref().unwrap().dir_name.clone();
+                        let module_name = main_sym_module.borrow().as_module_package().dir_name.clone();
                         main_modules.push(module_name.clone());
                         if ModuleSymbol::is_in_deps(session, &from, &module_name, &mut None) {
                             found_one = true;

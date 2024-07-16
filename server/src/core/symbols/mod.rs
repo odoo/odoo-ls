@@ -1,4 +1,11 @@
 pub mod class_symbol;
+pub mod compiled_symbol;
+pub mod file_symbol;
 pub mod function_symbol;
 pub mod module_symbol;
+pub mod namespace_symbol;
+pub mod package_symbol;
 pub mod root_symbol;
+pub mod symbol;
+pub mod symbol_mgr;
+pub mod variable_symbol;

@@ -1,9 +1,10 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
+use crate::S;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
 use ruff_python_ast::{Expr, Stmt, Alias, ExceptHandler, Parameter, Keyword, PatternKeyword, TypeParam, Pattern};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -28,9 +29,21 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol, &expr.range().end());
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end());
         (analyse_ast_result, Some(expr.range()))
 
+    }
+
+    pub fn flatten_expr(expr: &Expr) -> String {
+        match expr {
+            Expr::Name(n) => {
+                n.id.clone()
+            },
+            Expr::Attribute(a) => {
+                AstUtils::flatten_expr(&a.value) + &a.attr
+            },
+            _ => {S!("//Unhandled//")}
+        }
     }
 
 }

@@ -4,10 +4,10 @@ use std::rc::Weak;
 use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
-use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
+use super::symbols::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct ModelData {
@@ -82,9 +82,8 @@ impl Model {
     pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
-            let module = s.borrow().get_module_sym();
-            let module = module.expect("Module not found for model symbol");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) {
+            let module = s.borrow().find_module().expect("Model should be declared in a module");
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
                 symbol.push(s);
             }
         }
@@ -97,11 +96,11 @@ impl Model {
         }
         let mut res: Vec<Rc<RefCell<Symbol>>> = vec![];
         for sym in self.symbols.iter() {
-            if !sym.borrow()._model.as_ref().unwrap().inherit.contains(&sym.borrow()._model.as_ref().unwrap().name) {
-                if from_module.is_none() || sym.as_ref().borrow().get_module_sym().is_none() {
+            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
+                if from_module.is_none() || sym.as_ref().borrow().find_module().is_none() {
                     res.push(sym);
                 } else {
-                    let dir_name = sym.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone();
+                    let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
                     if (acc.is_some() && acc.as_ref().unwrap().contains(&dir_name)) ||
                     ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name, acc) {
                         res.push(sym);

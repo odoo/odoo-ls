@@ -4,7 +4,7 @@ use lsp_types::{CompletionItem, CompletionList, CompletionResponse};
 use crate::core::evaluation::ExprOrIdent;
 use crate::threads::SessionInfo;
 use crate::S;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 
 use super::ast_utils::ExprFinderVisitor;
@@ -26,7 +26,7 @@ impl CompletionFeature {
         let ast = file_info.ast.as_ref().unwrap();
         let mut expr: Option<ExprOrIdent> = None;
         for stmt in ast.iter() {
-            println!("{:?}", stmt);
+            //println!("{:?}", stmt);
             expr = ExprFinderVisitor::find_expr_at(stmt, offset as u32);
             if expr.is_some() {
                 break;
