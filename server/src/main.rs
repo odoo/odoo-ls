@@ -1,13 +1,13 @@
 use lsp_server::Notification;
 use serde_json::json;
-use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server};
+use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
-use std::env;
+use std::{env, path::PathBuf};
 
 
 fn main() {
@@ -24,12 +24,25 @@ fn main() {
         LogLevel::ERROR => Level::ERROR,
     };
 
+    let mut exe_dir = env::current_exe().expect("Unable to get binary directory... aborting");
+    exe_dir.pop();
+
+    let mut log_dir = exe_dir.join("logs").sanitize();
+    if let Some(log_directory) = cli.logs_directory.clone() {
+        let pathbuf = PathBuf::from(log_directory);
+        if pathbuf.exists() {
+            log_dir = pathbuf.sanitize();
+        } else {
+            println!("Given log directory path is invalid, fallbacking to default directory {}", log_dir);
+        }
+    }
+
     let file_appender = RollingFileAppender::builder()
         .max_log_files(5) // only the most recent 5 log files will be kept
         .rotation(Rotation::HOURLY)
         .filename_prefix(format!("odoo_logs_{}", std::process::id()))
         .filename_suffix("log")
-        .build("./logs")
+        .build(log_dir)
         .expect("failed to initialize rolling file appender");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
     let subscriber = FmtSubscriber::builder()

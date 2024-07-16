@@ -64,7 +64,6 @@ fn _test_symbol_with_json_value(symbol: Rc<RefCell<Symbol>>, json: Value) -> boo
                         },
                         "type" => {
                             sym.sym_type == match value.as_str().unwrap() {
-                                "DIRTY" => SymType::DIRTY,
                                 "ROOT" => SymType::ROOT,
                                 "NAMESPACE" => SymType::NAMESPACE,
                                 "PACKAGE" => SymType::PACKAGE,

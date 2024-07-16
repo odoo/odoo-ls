@@ -73,9 +73,8 @@ impl FileInfo {
             };
         }
     }
-//"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
+
     pub fn _build_ast(&mut self) {
-        //let ast = ast::Suite::parse(&content, content_path);
         let mut diagnostics = vec![];
         let content = &self.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
@@ -290,10 +289,16 @@ impl FileMgr {
     }
 
     pub fn pathname2uri(s: &String) -> lsp_types::Uri {
-        if let Ok(url) = lsp_types::Uri::from_str(s) {
-            return url;
+        let mut slash = "";
+        if cfg!(windows) {
+            slash = "/";
         }
-        panic!("unable to transform pathname to uri: {s}")
+        let url = lsp_types::Uri::from_str(&format!("file://{}{}", slash, s));
+        if let Ok(url) = url {
+            return url;
+        } else {
+            panic!("unable to transform pathname to uri: {s}, {}", url.err().unwrap());
+        }
     }
 
     pub fn uri2pathname(s: &str) -> String {
