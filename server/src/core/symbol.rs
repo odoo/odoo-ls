@@ -19,6 +19,7 @@ use std::cell::RefCell;
 use std::vec;
 use lsp_types::Diagnostic;
 
+use super::symbol_location::SymbolLocation;
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;
@@ -32,12 +33,11 @@ pub struct Symbol {
     //eval: Option<Evaluation>,
     pub i_ext: String,
     pub is_external: bool,
-    pub symbols: HashMap<String, Rc<RefCell<Symbol>>>,
+    pub symbols: Option<SymbolLocation>,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
-    pub local_symbols: Vec<Rc<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>, //parent can be None only on detached symbol, like proxys (super() for example)
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub evaluation: Option<Evaluation>,
+    pub evaluation: Vec<Vec<(u32, Evaluation)>>, //by sections, then by line assignation
     dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
     pub range: Option<TextRange>,
@@ -66,12 +66,11 @@ impl Symbol {
             paths: vec![],
             i_ext: String::new(),
             is_external: false,
-            symbols: HashMap::new(),
+            symbols: None,
             module_symbols: HashMap::new(),
-            local_symbols: Vec::new(),
             parent: None,
             weak_self: None,
-            evaluation: None,
+            evaluation: vec![],
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH

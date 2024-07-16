@@ -15,4 +15,5 @@ pub mod python_odoo_builder;
 pub mod python_validator;
 pub mod python_utils;
 pub mod symbol;
+pub mod symbol_location;
 pub mod symbols;
