@@ -6,73 +6,77 @@ use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;
 
+use super::localized_symbol::LocalizedSymbol;
 use super::odoo::SyncOdoo;
 
 pub struct PythonArchBuilderHooks {}
 
 impl PythonArchBuilderHooks {
 
-    pub fn on_class_def(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
-        let mut sym = symbol.borrow_mut();
-        let name = &sym.name;
+    pub fn on_class_def(session: &mut SessionInfo, localized_sym: Rc<RefCell<LocalizedSymbol>>) {
+        let mut loc = localized_sym.borrow_mut();
+        let mut symbol = loc.symbol.upgrade().unwrap().borrow_mut();
+        let name = &symbol.name;
         match name.as_str() {
             "BaseModel" => {
-                if sym.get_tree() == (vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]) {
+                if symbol.get_tree() == (vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]) {
                     // ----------- env ------------
-                    let env = sym.get_symbol(&(vec![], vec![S!("env")]));
+                    let env = symbol.get_symbol(&(vec![], vec![S!("env")]));
                     if env.is_none() {
-                        let mut env = Symbol::new(S!("env"), SymType::VARIABLE);
-                        let slots = sym.get_symbol(&(vec![], vec![S!("__slots__")]));
-                        if slots.is_some() {
-                            env.range = slots.unwrap().borrow().range.clone();
-                        } else {
-                            env.range = sym.range.clone();
+                        let mut env = symbol.create_or_get_symbol(session, "env", SymType::CONTENT);
+                        let mut range = loc.range.clone();
+                        let slots = symbol.get_symbol(&(vec![], vec![S!("__slots__")]));
+                        if let Some(slots) = slots {
+                            let slots = slots.borrow();
+                            let loc_slots = slots.get_loc_sym(u32::MAX);
+                            if loc_slots.len() == 1 {
+                                range = loc_slots[0].borrow().range;
+                            }
                         }
-                        let _env = sym.add_symbol(session, env);
+                        let loc_env = env.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
                     }
                 }
             },
             "Environment" => {
-                if sym.get_tree() == (vec![S!("odoo"), S!("api")], vec![S!("Environment")]) {
-                    let new_sym = sym.get_symbol(&(vec![], vec![S!("__new__")]));
-                    let mut range = sym.range.clone();
-                    if new_sym.is_some() {
-                        range = new_sym.unwrap().borrow().range.clone();
+                if symbol.get_tree() == (vec![S!("odoo"), S!("api")], vec![S!("Environment")]) {
+                    let new_sym = symbol.get_symbol(&(vec![], vec![S!("__new__")]));
+                    let mut range = loc.range.clone();
+                    if let Some(new_sym) = new_sym {
+                        let new_sym_borrowed = new_sym.borrow();
+                        let new_sym_loc = new_sym_borrowed.get_loc_sym(u32::MAX);
+                        if new_sym_loc.len() == 1 {
+                            range = new_sym_loc[0].borrow().range.clone();
+                        }
                     }
                     // ----------- env.cr ------------
-                    let mut cr_sym = Symbol::new(S!("cr"), SymType::VARIABLE);
-                    cr_sym.range = range.clone();
-                    sym.add_symbol(session, cr_sym);
+                    let mut cr_sym = symbol.create_or_get_symbol(session, "cr", SymType::CONTENT);
+                    cr_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
                     // ----------- env.uid ------------
-                    let mut uid_sym = Symbol::new(S!("uid"), SymType::VARIABLE);
-                    uid_sym.range = range.clone();
-                    uid_sym.doc_string = Some(S!("The current user id (for access rights checks)"));
-                    sym.add_symbol(session, uid_sym);
+                    let mut uid_sym = symbol.create_or_get_symbol(session, "uid", SymType::CONTENT);
+                    let uid_loc = uid_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    uid_loc.borrow_mut().doc_string = Some(S!("The current user id (for access rights checks)"));
                     // ----------- env.context ------------
-                    let mut context_sym = Symbol::new(S!("context"), SymType::VARIABLE);
-                    context_sym.range = range.clone();
-                    context_sym.doc_string = Some(S!("The current context"));
-                    sym.add_symbol(session, context_sym);
+                    let mut context_sym = symbol.create_or_get_symbol(session, "context", SymType::CONTENT);
+                    let context_loc = context_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    context_loc.borrow_mut().doc_string = Some(S!("The current context"));
                     // ----------- env.su ------------
-                    let mut su_sym = Symbol::new(S!("su"), SymType::VARIABLE);
-                    su_sym.range = range.clone();
-                    su_sym.doc_string = Some(S!("whether in superuser mode"));
-                    sym.add_symbol(session, su_sym);
+                    let mut su_sym = symbol.create_or_get_symbol(session, "su", SymType::CONTENT);
+                    let su_loc = su_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    su_loc.borrow_mut().doc_string = Some(S!("whether in superuser mode"));
                 }
             },
             "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
             "Binary" | "Image" | "Selection" | "Reference" | "Many2one" | "Many2oneReference" | "Json" |
             "Properties" | "PropertiesDefinition" | "One2many" | "Many2many" | "Id" => {
-                if sym.get_tree().0 == vec![S!("odoo"), S!("fields")] {
-                    if vec![S!("Many2one"), S!("Many2many"), S!("One2many")].contains(&sym.name) {
+                if symbol.get_tree().0 == vec![S!("odoo"), S!("fields")] {
+                    if vec![S!("Many2one"), S!("Many2many"), S!("One2many")].contains(&symbol.name) {
                         //TODO how to do this?
                     }
                     // ----------- __get__ ------------
-                    let get_sym = sym.get_symbol(&(vec![], vec![S!("__get__")]));
+                    let get_sym = symbol.get_symbol(&(vec![], vec![S!("__get__")]));
                     if get_sym.is_none() {
-                        let mut get_sym = Symbol::new(S!("__get__"), SymType::FUNCTION);
-                        get_sym.range = sym.range.clone();
-                        sym.add_symbol(session, get_sym);
+                        let mut get_sym = symbol.create_or_get_symbol(session, "__get__", SymType::CONTENT);
+                        let get_loc = get_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, loc.range.clone());
                     }
                 }
             }

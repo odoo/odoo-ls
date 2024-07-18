@@ -12,7 +12,53 @@ use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::S;
 
+use super::localized_symbol::LocalizedSymbol;
 use super::python_validator::PythonValidator;
+
+#[derive(Debug, Default, Clone)]
+pub struct SymbolRef {
+    symbol: Weak<RefCell<Symbol>>,
+    position: u32,
+}
+
+impl SymbolRef {
+    pub fn new(symbol: Rc<RefCell<Symbol>>, position: u32) -> Self {
+        Self {
+            symbol: Rc::downgrade(&symbol),
+            position
+        }
+    }
+    pub fn is_expired(&self) -> bool {
+        self.symbol.is_expired()
+    }
+    pub fn get_weak(&self) -> Weak<RefCell<Symbol>> {
+        self.symbol
+    }
+    pub fn get_symbol(&self) -> &Rc<RefCell<Symbol>> {
+        &self.symbol.upgrade().unwrap()
+    }
+    //return the linked localized Symbol if exists
+    pub fn get_localized_symbol(&self) -> &Option<Rc<RefCell<LocalizedSymbol>>> {
+        &self.symbol.upgrade().unwrap().borrow().get_loc_sym_at(self.position)
+    }
+}
+
+impl From<LocalizedSymbol> for SymbolRef {
+    fn from(value: LocalizedSymbol) -> Self {
+        Self {
+            symbol: value.symbol.clone(),
+            position: value.range.start().to_u32()
+        }
+    }
+}
+impl From<&LocalizedSymbol> for SymbolRef {
+    fn from(value: &LocalizedSymbol) -> Self {
+        Self {
+            symbol: value.symbol.clone(),
+            position: value.range.start().to_u32()
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -22,11 +68,12 @@ pub enum EvaluationValue {
     TUPLE(Vec<ruff_python_ast::Expr>) //expr is a literal
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Evaluation {
-    //symbol lead to type evaluation, while value evaluate the value if it is the evaluation of a CONSTANT Symbol.
+    //symbol lead to type evaluation, and value/range hold the evaluated value in case of a 'constant' value, like in "variable = 5".
     pub symbol: EvaluationSymbol,
-    pub value: Option<EvaluationValue>
+    pub value: Option<EvaluationValue>,
+    pub range: Option<TextRange>,
 }
 
 #[derive(Debug)]
@@ -101,21 +148,20 @@ impl ContextValue {
 
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool);
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (SymbolRef, bool);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct EvaluationSymbol {
-    pub symbol: Weak<RefCell<Symbol>>,
+    pub symbol: SymbolRef,
     pub instance: bool,
     pub context: Context,
-    pub _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>,
     pub factory: Option<Weak<RefCell<Symbol>>>,
     pub get_symbol_hook: Option<GetSymbolHook>,
 }
 
 #[derive(Default)]
 pub struct AnalyzeAstResult {
-    pub symbol: Option<Evaluation>,
+    pub symbols: Vec<Evaluation>,
     pub effective_sym: Option<Weak<RefCell<Symbol>>>,
     pub factory: Option<Weak<RefCell<Symbol>>>,
     pub context: Option<Context>,
@@ -124,55 +170,64 @@ pub struct AnalyzeAstResult {
 
 impl AnalyzeAstResult {
     pub fn from_only_diagnostics(diags: Vec<Diagnostic>) -> Self {
-        AnalyzeAstResult { symbol: None, effective_sym: None, factory: None, context: None, diagnostics: diags }
+        AnalyzeAstResult { symbols: vec![], effective_sym: None, factory: None, context: None, diagnostics: diags }
     }
 }
 
 impl Evaluation {
 
-    pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>) -> Evaluation {
+    pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")])).expect("builtins list not found")),
+                symbol: SymbolRef{
+                    symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")])).expect("builtins list not found")),
+                    position: u32::MAX
+                },
                 instance: true,
                 context: HashMap::new(),
-                _internal_hold_symbol: None,
                 factory: None,
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::LIST(values))
+            value: Some(EvaluationValue::LIST(values)),
+            range: Some(range),
         }
     }
 
-    pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>) -> Evaluation {
+    pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")])).expect("builtins list not found")),
+                symbol: SymbolRef{
+                    symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")])).expect("builtins list not found")),
+                    position: u32::MAX
+                },
                 instance: true,
                 context: HashMap::new(),
-                _internal_hold_symbol: None,
                 factory: None,
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::TUPLE(values))
+            value: Some(EvaluationValue::TUPLE(values)),
+            range: Some(range)
         }
     }
 
-    pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>) -> Evaluation {
+    pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")])).expect("builtins list not found")),
+                symbol: SymbolRef{
+                    symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")])).expect("builtins list not found")),
+                    position: u32::MAX
+                },
                 instance: true,
                 context: HashMap::new(),
-                _internal_hold_symbol: None,
                 factory: None,
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::DICT(values))
+            value: Some(EvaluationValue::DICT(values)),
+            range: Some(range)
         }
     }
 
-    pub fn new_constant(odoo: &mut SyncOdoo, values: Expr) -> Evaluation {
+    pub fn new_constant(odoo: &mut SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
         let tree_value = match &values {
             Expr::StringLiteral(_s) => {
                 (vec![S!("builtins")], vec![S!("str")])
@@ -196,14 +251,17 @@ impl Evaluation {
         }
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: symbol,
+                symbol: SymbolRef{
+                    symbol: symbol,
+                    position: u32::MAX
+                },
                 instance: true,
                 context: HashMap::new(),
-                _internal_hold_symbol: None,
                 factory: None,
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::CONSTANT(values))
+            value: Some(EvaluationValue::CONSTANT(values)),
+            range: Some(range)
         }
     }
 
@@ -231,35 +289,31 @@ impl Evaluation {
         }
     }
 
-    pub fn eval_from_symbol(symbol: &Rc<RefCell<Symbol>>) -> Evaluation{
+    //create an evaluation that is evaluating to the given symbol
+    pub fn eval_from_symbol(symbol: &SymbolRef) -> Evaluation{
         let mut instance = false;
-        if [SymType::VARIABLE, SymType::CONSTANT].contains(&symbol.borrow_mut().sym_type) {
-            instance = true
+        let _ls = symbol.get_localized_symbol();
+        if let Some(ls) = _ls {
+            if ls.borrow().loc_sym_type == LocSymType::VARIABLE {
+                instance = true;
+            }
         }
         Evaluation {
-            symbol: EvaluationSymbol {symbol: Rc::downgrade(symbol),
+            symbol: EvaluationSymbol {symbol: symbol.clone(),
                 instance: instance,
                 context: HashMap::new(),
-                _internal_hold_symbol: None,
                 factory: None,
                 get_symbol_hook: None
             },
             value: None,
+            range: None
         }
-    }
-
-    fn eval_literal(odoo: &mut SyncOdoo, eval_sym: &mut EvaluationSymbol, range: &TextRange, expr: &Expr) {
-        eval_sym._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_c".to_string(), SymType::CONSTANT))));
-        eval_sym.symbol = Rc::downgrade(eval_sym._internal_hold_symbol.as_ref().unwrap());
-        eval_sym.instance = true;
-        eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(*range);
-        eval_sym._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_constant(odoo, expr.clone()));
     }
 
     //Build an evaluation from an ast node that can be associated to a symbol
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Option<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
         return (analyze_result.symbol, analyze_result.diagnostics)
     }
@@ -324,7 +378,7 @@ impl Evaluation {
      */
     pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
         let odoo = &mut session.sync_odoo;
-        let mut res = EvaluationSymbol::default();
+        let mut evals = vec![];
         let effective_sym = None;
         let factory = None;
         let mut diagnostics = vec![];
@@ -342,28 +396,24 @@ impl Evaluation {
 
         match ast {
             ExprOrIdent::Expr(Expr::StringLiteral(expr)) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.expr());
+                evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             },
             ExprOrIdent::Expr(Expr::BytesLiteral(expr)) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.expr());
+                evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             },
             ExprOrIdent::Expr(Expr::NumberLiteral(expr)) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.expr());
+                evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             },
             ExprOrIdent::Expr(Expr::BooleanLiteral(expr)) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.expr());
+                evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             },
             ExprOrIdent::Expr(Expr::NoneLiteral(expr)) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.expr());
+                evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             },
             ExprOrIdent::Expr(Expr::EllipsisLiteral(expr)) => {
-                Evaluation::eval_literal(odoo, &mut res, &expr.range, ast.expr());
+                evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             }
             ExprOrIdent::Expr(Expr::List(expr)) => {
-                res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_l".to_string(), SymType::CONSTANT))));
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
-                res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
-                res.instance = true;
                 let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
                 for e in expr.elts.iter() {
                     if e.is_literal_expr() {
@@ -372,13 +422,9 @@ impl Evaluation {
                         values = Vec::new(); break;
                     }
                 }
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_list(odoo, values));
+                evals.push(Evaluation::new_list(odoo, values, expr.range));
             },
             ExprOrIdent::Expr(Expr::Tuple(expr)) => {
-                res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_t".to_string(), SymType::CONSTANT))));
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
-                res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
-                res.instance = true;
                 let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
                 for e in expr.elts.iter() {
                     if e.is_literal_expr() {
@@ -387,13 +433,9 @@ impl Evaluation {
                         values = Vec::new(); break;
                     }
                 }
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_tuple(odoo, values));
+                evals.push(Evaluation::new_tuple(odoo, values, expr.range));
             },
             ExprOrIdent::Expr(Expr::Dict(expr)) => {
-                res._internal_hold_symbol = Some(Rc::new(RefCell::new(Symbol::new("_d".to_string(), SymType::CONSTANT))));
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().range = Some(expr.range);
-                res.symbol = Rc::downgrade(res._internal_hold_symbol.as_ref().unwrap());
-                res.instance = true;
                 let mut values: Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> = Vec::new();
                 for (index, e) in expr.iter_keys().enumerate() {
                     let dict_value = &expr.items.get(index).unwrap().value;
@@ -411,40 +453,76 @@ impl Evaluation {
                         }
                     }
                 }
-                res._internal_hold_symbol.as_ref().unwrap().borrow_mut().evaluation = Some(Evaluation::new_dict(odoo, values));
+                evals.push(Evaluation::new_dict(odoo, values, expr.range));
             },
             ExprOrIdent::Expr(Expr::Call(expr)) => {
                 let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent, max_infer);
                 diagnostics.extend(diags);
-                if base_eval.is_none() {
+                //TODO actually we only evaluate if there is only one function behind the evaluation.
+                // we could evaluate the result of each function and filter results by signature matching.
+                /* example:
+                
+                def test():
+                    return "5"
+
+                def other_test():
+                    return 5
+
+                b = input()
+                if b:
+                    a = test
+                else:
+                    a = other_test
+
+                print(a)
+
+                c = a()
+
+                print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
+                */
+                if base_eval.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let (base_sym, instance) = base_eval.as_ref().unwrap().symbol.get_symbol(session, &mut None, &mut diagnostics);
-                let base_sym = base_sym.upgrade();
-                if let Some(base_sym) = base_sym {
-                    if base_sym.borrow().sym_type == SymType::CLASS {
-                        if instance {
-                            //TODO handle call on class instance
-                        } else {
-                            //TODO diagnostic __new__ call parameters
-                            res.symbol = Rc::downgrade(&base_sym);
-                            res.instance = true;
-                        }
-                    } else if base_sym.borrow().sym_type == SymType::FUNCTION {
-                        //function return evaluation can come from:
-                        //  - type annotation parsing (ARCH_EVAL step)
-                        //  - documentation parsing (Arch_eval and VALIDATION step)
-                        //  - function body inference (VALIDATION step)
-                        // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
-                        // We don't want to launch validation step while Arch evaluating the code.
-                        if base_sym.borrow().evaluation.is_none() {
-                            if base_sym.borrow().odoo_status == BuildStatus::DONE {
-                                let mut v = PythonValidator::new(base_sym.clone());
-                                v.validate(session);
+                let (base_sym_ref, instance) = base_eval[0].symbol.get_symbol(session, &mut None, &mut diagnostics);
+                if !base_sym_ref.is_expired() {
+                    let base_sym = base_sym_ref.get_symbol();
+                    let base_loc = base_sym_ref.get_localized_symbol();
+                    if let Some(base_loc) = base_loc {
+                        if base_loc.borrow().loc_sym_type == LocSymType::CLASS {
+                            if instance {
+                                //TODO handle call on class instance
+                            } else {
+                                //TODO diagnostic __new__ call parameters
+                                evals.push(Evaluation{
+                                    symbol: EvaluationSymbol {
+                                        symbol: base_sym_ref.clone(),
+                                        instance: true,
+                                        context: HashMap::new(),
+                                        factory: None,
+                                        get_symbol_hook: None,
+                                    },
+                                    value: None,
+                                    range: Some(expr.range)
+                                });
                             }
-                        }
-                        if let Some(evaluation) = base_sym.borrow().evaluation.as_ref() {
-                            (res.symbol, res.instance) = evaluation.symbol.get_symbol(session, &mut None, &mut diagnostics);
+                        } else if base_loc.borrow().loc_sym_type == LocSymType::FUNCTION {
+                            //function return evaluation can come from:
+                            //  - type annotation parsing (ARCH_EVAL step)
+                            //  - documentation parsing (Arch_eval and VALIDATION step)
+                            //  - function body inference (VALIDATION step)
+                            // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
+                            // We don't want to launch validation step while Arch evaluating the code.
+                            if base_loc.borrow().evaluations.len() == 0 {
+                                if base_sym.borrow().odoo_status == BuildStatus::DONE { //TODO update with new step validation to lower it to localized level
+                                    let mut v = PythonValidator::new(base_sym.clone());
+                                    v.validate(session);
+                                }
+                            }
+                            for eval in base_loc.borrow().evaluations.iter() {
+                                let mut e = eval.clone();
+                                e.range = Some(expr.range.clone());
+                                evals.push(e);
+                            }
                         }
                     } else {
                         debug!("not able to do a call on {:?}", base_sym.borrow().sym_type);
@@ -452,31 +530,23 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
-                let (eval, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer);
+                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer);
                 diagnostics.extend(diags);
-                if eval.is_none() || eval.as_ref().unwrap().symbol.get_symbol(session, &mut None, &mut diagnostics).0.upgrade().is_none() {
+                if base_evals.len() != 1 || evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0.is_expired() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = eval.unwrap().symbol.get_symbol(session, &mut None, &mut diagnostics).0.upgrade();
-                let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
-                let attribute = base.upgrade().unwrap();
-                let attribute = (*attribute).borrow();
-                let attribute = attribute.get_member_symbol(session, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
-                if attribute.len() == 0 {
-                    /*diagnostics.push(Diagnostic::new(
-                            FileMgr::textRange_to_temporary_Range(&expr.range),
-                            Some(DiagnosticSeverity::ERROR),
-                            None,
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("{} is unknown on {}", expr.attr.as_str(), base.upgrade().unwrap().borrow().name),
-                            None,
-                            None,
-                    ));*/
-                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                let base_ref = evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
+                let bases = Symbol::follow_ref(base_ref, session, &mut None, false, false, &mut diagnostics);
+                for ibase in bases.iter() {
+                    let base = ibase.0.get_symbol();
+                    let base_loc = ibase.0.get_localized_symbol();
+                    if let Some(base_loc) = base_loc {
+                        let attribute = base_loc.get_member_symbol(session, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
+                        //TODO finish this
+                        res.symbol = Rc::downgrade(attribute.first().unwrap());
+                        res.instance = (**attribute.first().unwrap()).borrow().sym_type == SymType::VARIABLE;
+                    }
                 }
-                res.symbol = Rc::downgrade(attribute.first().unwrap());
-                res.instance = (**attribute.first().unwrap()).borrow().sym_type == SymType::VARIABLE;
             },
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) => {
                 let infered_sym: Option<Rc<RefCell<Symbol>>> = match ast {
@@ -552,23 +622,20 @@ impl Evaluation {
             }
             _ => {}
         }
-        AnalyzeAstResult { symbol: Some(Evaluation {
-            symbol: res,
-            value: None,
-        }), effective_sym, factory, context: Some(context), diagnostics }
+        AnalyzeAstResult { symbols: evals, effective_sym, factory, context: Some(context), diagnostics }
     }
 }
 
 impl EvaluationSymbol {
 
-    pub fn new(symbol: Weak<RefCell<Symbol>>, instance: bool, context: Context, _internal_hold_symbol: Option<Rc<RefCell<Symbol>>>, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
-        Self { symbol, instance, context, _internal_hold_symbol, factory, get_symbol_hook }
+    pub fn new(symbol: SymbolRef, instance: bool, context: Context, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
+        Self { symbol, instance, context, factory, get_symbol_hook }
     }
-    
+
     pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
         let sym = Rc::new(RefCell::new(symbol));
         EvaluationSymbol {
-            symbol: Rc::downgrade(&sym),
+            symbol: SymbolRef{ symbol: Rc::downgrade(&sym), position: u32::MAX},
             instance: instance,
             context: context,
             _internal_hold_symbol: Some(sym),
@@ -577,11 +644,11 @@ impl EvaluationSymbol {
         }
     }
 
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (SymbolRef, bool) {
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
             return hook(session, self, context, diagnostics);
         }
-        (self.symbol.clone(), self.instance)
+        (self.symbol, self.instance)
     }
 }

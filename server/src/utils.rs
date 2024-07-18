@@ -1,5 +1,6 @@
 use std::{fs, path::{Path, PathBuf}, str::FromStr};
 use path_slash::{PathBufExt, PathExt};
+use ruff_text_size::TextSize;
 
 #[macro_export]
 macro_rules! S {
@@ -143,4 +144,12 @@ impl PathSanitizer for Path {
 
         path
     }
+}
+
+pub trait MaxTextSize {
+    const MAX: TextSize;
+}
+
+impl MaxTextSize for TextSize {
+    const MAX: TextSize = TextSize::new(u32::MAX);
 }

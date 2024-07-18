@@ -4,6 +4,7 @@ pub mod event;
 pub mod event_queue;
 pub mod file_mgr;
 pub mod import_resolver;
+pub mod localized_symbol;
 pub	mod messages;
 pub mod model;
 pub mod odoo;

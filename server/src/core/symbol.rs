@@ -5,10 +5,9 @@ use tracing::info;
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
 use crate::core::odoo::SyncOdoo;
-use crate::core::model::ModelData;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
-use crate::utils::PathSanitizer as _;
+use crate::utils::{MaxTextSize, PathSanitizer as _};
 use crate::S;
 use core::panic;
 use std::collections::{HashMap, VecDeque};
@@ -19,11 +18,13 @@ use std::cell::RefCell;
 use std::vec;
 use lsp_types::Diagnostic;
 
+use super::evaluation::SymbolRef;
+use super::localized_symbol::{LocalizedSymbol, LocalizedSymbolIter};
 use super::symbol_location::SymbolLocation;
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;
-use super::symbols::class_symbol::ClassSymbol;
+
 
 #[derive(Debug)]
 pub struct Symbol {
@@ -37,29 +38,22 @@ pub struct Symbol {
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>, //parent can be None only on detached symbol, like proxys (super() for example)
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub evaluation: Vec<Vec<(u32, Evaluation)>>, //by sections, then by line assignation
+    pub localized_sym: Vec<Vec<Rc<RefCell<LocalizedSymbol>>>>, //by sections, then by offset order
     dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
-    pub range: Option<TextRange>,
     pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
-    pub is_import_variable: bool,
-    pub doc_string: Option<String>,
-    pub ast_indexes: Option<Vec<u16>>, //list of index to reach the corresponding ast node from file ast
     pub in_workspace: bool,
 
     pub _root: Option<RootSymbol>,
-    pub _function: Option<FunctionSymbol>,
-    pub _class: Option<ClassSymbol>,
-    pub _module: Option<ModuleSymbol>,
-    pub _model: Option<ModelData>,
+    _module: Option<ModuleSymbol>,
 }
 
 impl Symbol {
-    pub fn new(name: String, sym_type: SymType) -> Self {
+    fn new(name: String, sym_type: SymType) -> Self {
         Symbol{
             name: name.clone(),
             sym_type: sym_type,
@@ -70,7 +64,7 @@ impl Symbol {
             module_symbols: HashMap::new(),
             parent: None,
             weak_self: None,
-            evaluation: vec![],
+            localized_sym: vec![],
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH
@@ -103,34 +97,21 @@ impl Symbol {
                     PtrWeakHashSet::new(), //ODOO
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
-            range: None,
             not_found_paths: Vec::new(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             odoo_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
-            is_import_variable: false,
-            doc_string: None,
-            ast_indexes: None,
             in_workspace: false,
 
             _root: None,
-            _function: None,
-            _class: None,
             _module: None,
-            _model: None,
         }
     }
 
     pub fn new_root(name: String, sym_type: SymType) -> Self {
         let mut new_sym = Symbol::new(name, sym_type);
         new_sym._root = Some(RootSymbol{sys_path: vec![]});
-        new_sym
-    }
-
-    pub fn new_class(name: String, sym_type: SymType) -> Self {
-        let mut new_sym = Symbol::new(name, sym_type);
-        new_sym._class = Some(ClassSymbol{bases: PtrWeakHashSet::new(), diagnostics: vec![]});
         new_sym
     }
 
@@ -154,7 +135,7 @@ impl Symbol {
             }
             if symbol_tree_content.len() != 0 {
                 for fk in symbol_tree_content.iter() {
-                    if let Some(s) = iter_sym.unwrap().borrow_mut().symbols.get(fk) {
+                    if let Some(s) = iter_sym.unwrap().borrow_mut().symbols.as_ref().unwrap().get(fk) {
                         iter_sym = Some(s.clone());
                     } else {
                         return None;
@@ -162,16 +143,16 @@ impl Symbol {
                 }
             }
         } else {
-            if symbol_tree_content.len() == 0 {
+            if symbol_tree_content.len() == 0 || self.symbols.is_none() {
                 return None;
             }
-            iter_sym = self.symbols.get(&symbol_tree_content[0]).cloned();
+            iter_sym = self.symbols.as_ref().unwrap().get(&symbol_tree_content[0]);
             if iter_sym.is_none() {
                 return None;
             }
             if symbol_tree_content.len() >1 {
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    if let Some(s) = iter_sym.unwrap().borrow_mut().symbols.get(fk) {
+                    if let Some(s) = iter_sym.unwrap().borrow_mut().symbols.as_ref().unwrap().get(fk) {
                         iter_sym = Some(s.clone());
                     } else {
                         return None;
@@ -353,7 +334,7 @@ impl Symbol {
                     }
                 }
             }
-            for sym in sym_to_inv.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
+            for sym in sym_to_inv.module_symbols.values() {
                 vec_to_invalidate.push_back(sym.clone());
             }
         }
@@ -401,28 +382,7 @@ impl Symbol {
 
     pub fn remove_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if symbol.borrow().is_file_content() {
-            let in_symbols = self.symbols.get(&symbol.borrow().name);
-            if in_symbols.is_some() && Rc::ptr_eq(&in_symbols.unwrap(), &symbol) {
-                self.symbols.remove(&symbol.borrow().name);
-                let mut last: Option<Rc<RefCell<Symbol>>> = None;
-                let mut pos: usize = 0;
-                for s in self.local_symbols.iter() {
-                    pos += 1;
-                    if Rc::ptr_eq(s, &symbol) {
-                        last = Some(s.clone());
-                    }
-                }
-                if let Some(last) = last {
-                    pos -= 1;
-                    self.symbols.insert(symbol.borrow().name.clone(), last.clone());
-                    self.local_symbols.remove(pos);
-                }
-            } else {
-                let position = self.local_symbols.iter().position(|x| Rc::ptr_eq(x, &symbol));
-                if let Some(pos) = position {
-                    self.local_symbols.remove(pos);
-                }
-            }
+            self.symbols.as_ref().unwrap().remove(&symbol.borrow().name);
         } else {
             let in_modules = self.module_symbols.get(&symbol.borrow().name);
             if in_modules.is_some() && Rc::ptr_eq(&in_modules.unwrap(), &symbol) {
@@ -455,126 +415,137 @@ impl Symbol {
         return None;
     }
 
-    pub fn next_ref(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<Weak<RefCell<Symbol>>> {
-        if SymType::is_instance(&self.sym_type) &&
-            self.evaluation.is_some() &&
-            self.evaluation.as_ref().unwrap().symbol.get_symbol(session, context, diagnostics).0.upgrade().is_some() {
-            return Some(self.evaluation.as_ref().unwrap().symbol.get_symbol(session, context, diagnostics).0.clone());
+    /*given a SymbolRef, give all the SymbolRef that are evaluated as valid evaluation for it.
+    example:
+    ====
+    a = 5
+    if X:
+        a = Test()
+    else:
+        a = Object()
+    print(a)
+    ====
+    next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
+    */
+    pub fn next_refs(session: &mut SessionInfo, sym_ref: &SymbolRef, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(SymbolRef, bool)> {
+        let mut res = VecDeque::new();
+        if !sym_ref.is_expired() {
+            let _lsym = sym_ref.get_localized_symbol();
+            if let Some(lsym) = _lsym {
+                let lsym = lsym.borrow();
+                if lsym.loc_sym_type == LocSymType::VARIABLE {
+                    for eval in lsym.evaluations.iter() {
+                        //TODO context is modified in each for loop, which is wrong !
+                        res.push_back(eval.symbol.get_symbol(session, context, diagnostics));
+                    }
+                }
+            }
         }
-        return None;
+        res
     }
 
-    pub fn follow_ref(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
-        //return a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut sym = Rc::downgrade(&symbol);
-        let mut _sym_upgraded = sym.upgrade().unwrap();
-        let mut _sym = symbol.borrow();
-        let mut next_ref = _sym.next_ref(session, context, diagnostics);
-        let can_eval_external = !_sym.is_external;
-        let mut instance = SymType::is_instance(&_sym.sym_type);
-        while next_ref.is_some() {
-            instance = _sym.evaluation.as_ref().unwrap().symbol.instance;
-            if _sym.evaluation.as_ref().unwrap().symbol.context.len() > 0 && context.is_some() {
-                context.as_mut().unwrap().extend(_sym.evaluation.as_ref().unwrap().symbol.context.clone());
+    pub fn follow_ref(symbol: SymbolRef, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<(SymbolRef, bool)> {
+        //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
+        let mut sym: &Rc<RefCell<Symbol>> = symbol.get_symbol();
+        let mut sym_loc = symbol.get_localized_symbol();
+        if sym_loc.is_none() {
+            return vec![];
+        }
+        let mut results = Symbol::next_refs(session, &symbol, &mut None, &mut vec![]);
+        let can_eval_external = !sym.borrow().is_external;
+
+        let mut index = 0;
+        while index < results.len() {
+            let (sym_ref, instance) = &results[index];
+            sym = sym_ref.get_symbol();
+            sym_loc = sym_ref.get_localized_symbol();
+            if sym_loc.is_none() {
+                continue;
             }
-            if stop_on_type && ! instance && !_sym.is_import_variable {
-                return (sym, instance)
+            let sym_loc_uw = sym_loc.unwrap();
+            if stop_on_type && !instance && !sym_loc_uw.borrow().is_import_variable {
+                continue;
             }
-            if stop_on_value && _sym.evaluation.as_ref().unwrap().value.is_some() {
-                return (sym, instance)
+            if stop_on_value && sym_loc_uw.borrow().evaluations.len() == 1 && sym_loc_uw.borrow().evaluations[0].value.is_some() {
+                continue;
             }
-            sym = next_ref.as_ref().unwrap().clone();
-            drop(_sym);
-            _sym_upgraded = sym.upgrade().unwrap();
-            _sym = _sym_upgraded.borrow();
-            if _sym.evaluation.is_none() && (!_sym.is_external || can_eval_external) {
-                let file_symbol = sym.upgrade().unwrap().borrow().get_file();
+            if sym_loc_uw.borrow().evaluations.len() == 0 {
+                //no evaluation? let's check that the file has been evaluated
+                let file_symbol = sym.borrow().get_file();
                 match file_symbol {
                     Some(file_symbol) => {
-                        drop(_sym);
                         if file_symbol.upgrade().expect("invalid weak value").borrow().arch_eval_status == BuildStatus::PENDING &&
                         session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                             let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
                             builder.eval_arch(session);
                         }
-                        _sym = _sym_upgraded.borrow();
                     },
                     None => {}
                 }
             }
-            next_ref = _sym.next_ref(session, context, diagnostics);
+            let mut next_sym_refs = Symbol::next_refs(session, sym_ref, &mut None, &mut vec![]);
+            if next_sym_refs.len() >= 1 {
+                results.pop_front();
+                index -= 1;
+                for next_results in next_sym_refs {
+                    results.push_back(next_results);
+                }
+            }
+            index += 1;
         }
-        return (sym, instance)
+        return Vec::from(results) // :'( a whole copy?
     }
 
-    pub fn add_symbol(&mut self, session: &mut SessionInfo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
-        let symbol_name = symbol.name.clone();
-        if self.is_external {
-            symbol.is_external = true;
+    pub fn create_or_get_symbol(&mut self, session: &mut SessionInfo, name: &str, sym_type: SymType) -> Rc<RefCell<Symbol>> {
+        if let Some(existing) = self.symbols().get(name) {
+            return existing;
         }
-        let symbol_range = symbol.range.clone();
-        let rc = Rc::new(RefCell::new(symbol));
+        let mut new_sym = Symbol::new(S!(name), sym_type);
+        if self.is_external {
+            new_sym.is_external = true;
+        }
+        let rc = Rc::new(RefCell::new(new_sym));
         let mut locked_symbol = rc.borrow_mut();
         locked_symbol.weak_self = Some(Rc::downgrade(&rc));
         locked_symbol.parent = match self.weak_self {
-            Some(ref weak_self) => Some(weak_self.clone()),
-            None => panic!("no weak_self set")
+            Some(s) => Some(s.clone()),
+            None => panic!("A parent must be set to create a new symbol")
         };
         if locked_symbol.is_file_content() {
-            if self.symbols.contains_key(&symbol_name) {
-                let range: &Option<TextRange> = &symbol_range;
-                if range.is_some() && range.unwrap().start() < self.symbols[&symbol_name].borrow_mut().range.unwrap().start() {
-                    self.local_symbols.push(rc.clone());
-                } else {
-                    Symbol::invalidate(session, self.symbols[&symbol_name].clone(), &BuildSteps::ARCH);
-                    self.local_symbols.push(self.symbols[&symbol_name].clone());
-                    self.symbols.insert(symbol_name.clone(), rc.clone());
-                }
-            } else {
-                self.symbols.insert(symbol_name.clone(), rc.clone());
-            }
+            self.symbols.unwrap().add_symbol(name, rc.clone());
         } else {
-            self.module_symbols.insert(symbol_name.clone(), rc.clone());
+            self.module_symbols.insert(S!(name), rc.clone());
         }
         if self._root.is_some() {
             self._root.as_ref().unwrap().add_symbol(session, &self, &mut locked_symbol);
         }
-        if locked_symbol._module.is_some() {
-            session.sync_odoo.modules.insert(locked_symbol._module.as_ref().unwrap().dir_name.clone(), Rc::downgrade(&rc));
-        }
         rc.clone()
     }
 
-    pub fn add_symbol_to_locals(&mut self, odoo: &mut SyncOdoo, mut symbol: Symbol) -> Rc<RefCell<Symbol>> {
-        let symbol_name = symbol.name.clone();
-        if self.is_external {
-            symbol.is_external = true;
-        }
-        let symbol_range = symbol.range.clone();
-        let rc = Rc::new(RefCell::new(symbol));
-        let mut locked_symbol = rc.borrow_mut();
-        locked_symbol.weak_self = Some(Rc::downgrade(&rc));
-        locked_symbol.parent = match self.weak_self {
-            Some(ref weak_self) => Some(weak_self.clone()),
-            None => panic!("no weak_self set")
-        };
-        self.local_symbols.push(rc.clone());
-        rc.clone()
+    pub fn set_module(&mut self, session: &mut SessionInfo, _module: ModuleSymbol ) {
+        self._module = Some(_module);
+        session.sync_odoo.modules.insert(_module.dir_name.clone(), self.weak_self.unwrap());
+    }
+
+    pub fn get_module(&self) -> &ModuleSymbol {
+        &self._module.expect("Module should be set before call 'get_module'")
+    }
+
+    pub fn get_module_mut(&self) -> &mut ModuleSymbol {
+        &mut self._module.expect("Module should be set before call 'get_module'")
     }
 
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.sanitize();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
-            let mut symbol = Symbol::new(name, SymType::FILE);
-            symbol.paths = vec![path_str.clone()];
-            let ref_sym = (*parent).borrow_mut().add_symbol(session, symbol);
+            let ref_sym = (*parent).borrow_mut().create_or_get_symbol(session, name.as_str(), SymType::FILE);
+            ref_sym.borrow_mut().paths = vec![path_str.clone()];
             return Some(ref_sym);
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                let mut new_sym = Symbol::new(name, SymType::PACKAGE);
-                new_sym.paths = vec![path_str.clone()];
-                let ref_sym = (*parent).borrow_mut().add_symbol(session, new_sym);
+                let ref_sym = (*parent).borrow_mut().create_or_get_symbol(session, name.as_str(), SymType::PACKAGE);
+                ref_sym.borrow_mut().paths = vec![path_str.clone()];
                 if path.join("__init__.py").exists() {
                     //?
                 } else {
@@ -597,9 +568,8 @@ impl Symbol {
                 }
                 return Some(ref_sym);
             } else if !require_module{ //TODO should handle module with only __manifest__.py (see odoo/addons/test_data-module)
-                let mut symbol = Symbol::new(name, SymType::NAMESPACE);
-                symbol.paths = vec![path_str.clone()];
-                let ref_sym = (*parent).borrow_mut().add_symbol(session, symbol);
+                let ref_sym = (*parent).borrow_mut().create_or_get_symbol(session, name.as_str(), SymType::NAMESPACE);
+                ref_sym.borrow_mut().paths = vec![path_str.clone()];
                 return Some(ref_sym);
             } else {
                 return None
@@ -607,15 +577,15 @@ impl Symbol {
         }
     }
 
-    pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Rc<RefCell<Symbol>>> {
-        if let Some(symbol) = self.symbols.get(name) {
-            if symbol.borrow_mut().range.unwrap().start() == range.start() {
-                return Some(symbol.clone());
-            }
-        }
-        for local_symbol in self.local_symbols.iter() {
-            if local_symbol.borrow_mut().range.unwrap().start() == range.start() {
-                return Some(local_symbol.clone());
+    //get a LocalizedSymbol that has the same given range and name
+    pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Rc<RefCell<LocalizedSymbol>>> {
+        if let Some(symbol) = self.symbols.unwrap().get(name) {
+            for section in symbol.borrow().localized_sym.iter() {
+                for loc in section.iter() {
+                    if loc.borrow().range.start() == range.start() {
+                        return Some(loc.clone());
+                    }
+                }
             }
         }
         None
@@ -626,6 +596,25 @@ impl Symbol {
             acc.push_str(" ");
         }
         acc.push_str(format!("{:?} {:?}\n", self.sym_type, self.name).as_str());
+        for section in self.localized_sym.iter() {
+            for local in section.iter() {
+                for _ in 0..level {
+                    acc.push_str(" ");
+                }
+                acc.push_str(format!("at {}", local.borrow().range.start().to_u32()).as_str());
+            }
+        }
+        if let Some(symbol_location) = self.symbols {
+            if symbol_location.symbols().len() > 0 {
+                for _ in 0..level {
+                    acc.push_str(" ");
+                }
+                acc.push_str("SYMBOLS:\n");
+                for sym in symbol_location.symbols().values() {
+                    sym.borrow()._debug_print_graph_node(acc, level + 1);
+                }
+            }
+        }
         if self.module_symbols.len() > 0 {
             for _ in 0..level {
                 acc.push_str(" ");
@@ -635,45 +624,29 @@ impl Symbol {
                 module.borrow_mut()._debug_print_graph_node(acc, level + 1);
             }
         }
-        if self.symbols.len() > 0 {
-            for _ in 0..level {
-                acc.push_str(" ");
-            }
-            acc.push_str("SYMBOLS:\n");
-            for (_, module) in self.symbols.iter() {
-                module.borrow_mut()._debug_print_graph_node(acc, level + 1);
-            }
-        }
-        if self.module_symbols.len() > 0 {
-            for _ in 0..level {
-                acc.push_str(" ");
-            }
-            acc.push_str("LOCALS:\n");
-            for symbol in self.local_symbols.iter() {
-                symbol.borrow_mut()._debug_print_graph_node(acc, level + 1);
-            }
-        }
     }
 
     pub fn debug_to_json(&self) -> Value {
         let mut modules = vec![];
         let mut symbols = vec![];
-        let mut locals = vec![];
+        let mut offsets = vec![];
+        for section in self.localized_sym.iter() {
+            for local in section.iter() {
+                offsets.push(local.borrow().range.start().to_u32());
+            }
+        }
         for s in self.module_symbols.values() {
             modules.push(s.borrow_mut().debug_to_json());
         }
-        for s in self.symbols.values() {
+        for s in self.symbols.unwrap().symbols().values() {
             symbols.push(s.borrow_mut().debug_to_json());
-        }
-        for s in self.local_symbols.iter() {
-            locals.push(s.borrow_mut().debug_to_json());
         }
         json!({
             "name": self.name,
             "type": self.sym_type.to_string(),
+            "offsets": offsets,
             "module_symbols": modules,
             "symbols": symbols,
-            "local_symbols": locals
         })
     }
 
@@ -684,25 +657,16 @@ impl Symbol {
         res
     }
 
-    pub fn all_symbols<'a>(&'a self, position:Option<TextRange>, include_inherits:bool) -> impl Iterator<Item= &'a Rc<RefCell<Symbol>>> + 'a {
-        //return an iterator on all symbols of self. If position is set, search in local_symbols too, otherwise only symbols in symbols and module_symbols will
-        //be returned. If include_inherits is set, symbols from parent will be included.
-        let mut iter: Vec<Box<dyn Iterator<Item = &Rc<RefCell<Symbol>>>>> = Vec::new();
-        if position.is_some() {
-            let pos = position.as_ref().unwrap().clone();
-            let iter = self.local_symbols.iter().filter(move |&x| (**x).borrow().range.unwrap().start() < pos.start());
-        }
-        if include_inherits {
-            //TODO inherits
-        }
-        if position.is_some() {
-            let pos = position.as_ref().unwrap().clone();
-            iter.push(Box::new(self.symbols.values().filter(move |&x| (**x).borrow().range.unwrap().start() < pos.start())));
-        } else {
-            iter.push(Box::new(self.symbols.values()));
-        }
-        iter.push(Box::new(self.module_symbols.values()));
-        iter.into_iter().flatten()
+    //create a new localized symbol on the last section for the given range
+    pub fn new_localized_symbol(&mut self, loc_sym_type: LocSymType, range: TextRange) -> Rc<RefCell<LocalizedSymbol>> {
+        let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.unwrap(), loc_sym_type, range)));
+        self.localized_sym.last().unwrap().push(sym.clone());
+        sym
+    }
+
+    pub fn iter_localized_symbols<'a>(&'a self, position: u32) -> impl Iterator<Item= &'a Rc<RefCell<LocalizedSymbol>>> + 'a {
+        //return an iterator on all last instanciation of symbols.
+        LocalizedSymbolIter::new(self.symbols(), position)
     }
 
     //infer a name, given a position
@@ -712,6 +676,7 @@ impl Symbol {
             //return self.doc; //TODO
         }
         if name == "super" { //build temporary super Symbol
+            //TODO must not be done with temporary symbol. Should use a container with reserved keywords, like isinstance, super, etc..
             let class = on_symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
             if let Some(class) = class {
                 let class = class.upgrade();
@@ -816,11 +781,17 @@ impl Symbol {
         result
     }
 
-    pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> {
-        let mut symbols: Vec<Rc<RefCell<Symbol>>> = Vec::new();
-        symbols.extend(self.local_symbols.iter().cloned());
-        symbols.extend(self.symbols.values().cloned());
-        symbols.sort_by_key(|s| s.borrow().range.unwrap().start());
+    pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<LocalizedSymbol>>> {
+        let mut symbols: Vec<Rc<RefCell<LocalizedSymbol>>> = Vec::new();
+        let syms = self.symbols.as_ref().unwrap().symbols().values();
+        for sym in syms {
+            for section in sym.borrow().localized_sym.iter() {
+                for loc in section.iter() {
+                    symbols.push(loc.clone());
+                }
+            }
+        }
+        symbols.sort_by_key(|s| s.borrow().range.start().to_u32());
         symbols.into_iter()
     }
 
@@ -834,20 +805,23 @@ impl Symbol {
         return None;
     }
 
-    /* return the symbol (class or function) the closest to the given offset */
-    pub fn get_scope_symbol(sym: Rc<RefCell<Symbol>>, offset: u32) -> Rc<RefCell<Symbol>> {
+    /* return the LocalizedSymbol (class or function) the closest to the given offset */
+    pub fn get_scope_symbol(sym: SymbolRef, offset: u32) -> SymbolRef {
         //TODO search in localSymbols too
-        let mut symbol = sym.clone();
-        for s in sym.borrow().symbols.values() {
-            if s.borrow().range.unwrap().start().to_u32() < offset && s.borrow().range.unwrap().end().to_u32() >= offset && vec![SymType::CLASS, SymType::FUNCTION].contains(&s.borrow().sym_type) {
-                symbol = Symbol::get_scope_symbol(s.clone(), offset);
-                break
+        let mut result = sym.clone();
+        let sym = sym.get_symbol();
+        for s in sym.borrow().symbols.unwrap().symbols().values() {
+            for section in sym.borrow().localized_sym.iter() {
+                for loc in section.iter() {
+                    if loc.borrow().range.start().to_u32() < offset &&
+                    loc.borrow().range.end().to_u32() >= offset &&
+                    vec![LocSymType::CLASS, LocSymType::FUNCTION].contains(&loc.borrow().loc_sym_type) {
+                        result = Symbol::get_scope_symbol(loc.borrow().to_symbol_ref(), offset);
+                        break
+                    }
+                }
             }
         }
-        return symbol
-    }
-
-    pub fn is_type_alias(&self) -> bool {
-        return self.evaluation.is_some() && !self.evaluation.as_ref().unwrap().symbol.instance && !self.is_import_variable;
+        return result
     }
 }

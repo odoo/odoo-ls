@@ -67,7 +67,7 @@ impl ModuleSymbol {
     pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<String> {
         {
             let _symbol = symbol.borrow();
-            let module = _symbol._module.as_ref().expect("Module must be set to call load_module_info");
+            let module = _symbol.get_module();
             if module.loaded {
                 return vec![];
             }
@@ -77,7 +77,7 @@ impl ModuleSymbol {
         diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
         {
             let mut _symbol = symbol.borrow_mut();
-            let module = _symbol._module.as_mut().expect("Module must be set to call load_module_info");
+            let module = _symbol.get_module_mut();
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
@@ -212,7 +212,7 @@ impl ModuleSymbol {
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
     fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
-        let module = symbol._module.as_ref().expect("Module must be set to call _load_depends");
+        let module = symbol.get_module();
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<String> = vec![];
         for depend in module.depends.clone().iter() {
@@ -251,7 +251,7 @@ impl ModuleSymbol {
     }
 
     fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
-        let root_path = (*symbol).borrow()._module.as_ref().expect("Module must be set to call _load_depends").root_path.clone();
+        let root_path = (*symbol).borrow().get_module().root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
             let _arc_symbol = Symbol::create_from_path(session, &tests_path, symbol, false);
@@ -264,13 +264,13 @@ impl ModuleSymbol {
     }
 
     pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
-        if symbol.borrow()._module.as_ref().unwrap().dir_name == *dir_name || symbol.borrow()._module.as_ref().unwrap().depends.contains(dir_name) {
+        if symbol.borrow().get_module().dir_name == *dir_name || symbol.borrow().get_module().depends.contains(dir_name) {
             return true;
         }
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
-        for dep in symbol.borrow()._module.as_ref().unwrap().depends.iter() {
+        for dep in symbol.borrow().get_module().depends.iter() {
             if acc.as_ref().unwrap().contains(dep) {
                 continue;
             }
@@ -283,7 +283,7 @@ impl ModuleSymbol {
                 if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), dir_name, acc) {
                     return true;
                 }
-                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow()._module.as_ref().unwrap().dir_name.clone());
+                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow().get_module().dir_name.clone());
             }
         }
         false

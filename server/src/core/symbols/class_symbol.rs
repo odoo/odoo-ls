@@ -3,18 +3,19 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
+use crate::core::localized_symbol::LocalizedSymbol;
 use crate::core::symbol::Symbol;
 
 
 #[derive(Debug)]
 pub struct ClassSymbol {
-    pub bases: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub bases: PtrWeakHashSet<Weak<RefCell<LocalizedSymbol>>>,
     pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others and stored on FileInfo
 }
 
 impl ClassSymbol {
 
-    pub fn inherits(&self, base: &Rc<RefCell<Symbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>) -> bool {
+    pub fn inherits(&self, base: &Rc<RefCell<LocalizedSymbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<LocalizedSymbol>>>>) -> bool {
         if checked.is_none() {
             *checked = Some(PtrWeakHashSet::new());
         }

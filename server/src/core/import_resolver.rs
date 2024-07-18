@@ -202,9 +202,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
         None => name.clone()
     };
     if (*parent).borrow().sym_type == SymType::COMPILED {
-        let mut compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-        compiled_sym.range = Some(range.clone());
-        return Ok((*parent).borrow_mut().add_symbol(session, compiled_sym));
+        return Ok((*parent).borrow_mut().create_or_get_symbol(session, &sym_name, SymType::COMPILED));
     }
     let paths = (*parent).borrow().paths.clone();
     for path in paths.iter() {
@@ -243,8 +241,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
-                            let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok((*parent).borrow_mut().add_symbol(session, compiled_sym));
+                            return Ok((*parent).borrow_mut().create_or_get_symbol(session, &sym_name, SymType::COMPILED));
                         }
                         Err(_) => {},
                     }
@@ -253,8 +250,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 for entry in glob((full_path.sanitize() + "*.so").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
-                            let compiled_sym = Symbol::new(sym_name, SymType::COMPILED);
-                            return Ok((*parent).borrow_mut().add_symbol(session, compiled_sym));
+                            return Ok((*parent).borrow_mut().create_or_get_symbol(session, &sym_name, SymType::COMPILED));
                         }
                         Err(_) => {},
                     }

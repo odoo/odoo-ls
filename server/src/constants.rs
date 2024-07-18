@@ -25,25 +25,20 @@ pub enum SymType{
     PACKAGE,
     FILE,
     COMPILED,
-    CLASS,
-    FUNCTION,
-    VARIABLE,
-    CONSTANT,
-}
-
-impl SymType {
-    pub fn is_instance(sym_type: &SymType) -> bool {
-        match sym_type {
-            SymType::VARIABLE | SymType::CONSTANT => true,
-            _ => false,
-        }
-    }
+    CONTENT
 }
 
 impl fmt::Display for SymType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+pub enum LocSymType {
+    CLASS,
+    FUNCTION,
+    VARIABLE
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]

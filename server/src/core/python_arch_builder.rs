@@ -10,7 +10,7 @@ use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 
-use crate::constants::{SymType, BuildStatus, BuildSteps};
+use crate::constants::{BuildStatus, BuildSteps, LocSymType, SymType};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbol::Symbol;
@@ -20,7 +20,9 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
+use super::evaluation::SymbolRef;
 use super::import_resolver::ImportResult;
+use super::localized_symbol::LocalizedSymbol;
 use super::symbols::class_symbol::ClassSymbol;
 use super::symbols::function_symbol::FunctionSymbol;
 
@@ -95,44 +97,52 @@ impl PythonArchBuilder {
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
-                if import_result.symbol.borrow().symbols.contains_key("__all__") {
-                    let all = import_result.symbol.borrow().symbols["__all__"].clone();
-                    let all = Symbol::follow_ref(all, session, &mut None, false, true, &mut self.diagnostics).0;
-                    if all.is_expired() || (*all.upgrade().unwrap()).borrow().evaluation.is_none() ||
-                        !(*all.upgrade().unwrap()).borrow().evaluation.as_ref().unwrap().value.is_some() {
-                            warn!("invalid __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
-                    } else {
-                        let all = all.upgrade().unwrap();
-                        let all = (*all).borrow();
-                        let value = &all.evaluation.as_ref().unwrap().value;
-                        let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
-                        if parse_error {
-                            warn!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                if let Some(all) = import_result.symbol.borrow().symbols().get("__all__") {
+                    let all_symbol_ref = SymbolRef::new(all, u32::MAX);
+                    let all = Symbol::follow_ref(all_symbol_ref, session, &mut None, false, true, &mut self.diagnostics);
+                    if let Some(all) = all.get(0) {
+                        if !all.0.is_expired() {
+                            let all = all.0.get_localized_symbol();
+                            let all = (*all).borrow();
+                            if all.evaluations.len() == 1 {
+                                let value = &all.evaluations[0].value;
+                                if value.is_some() {
+                                    let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
+                                    if parse_error {
+                                        warn!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths[0] )
+                                    }
+                                    name_filter = nf;
+                                    all_name_allowed = false;
+                                } else {
+                                    warn!("invalid __all__ import in file {} - no value found", (*import_result.symbol).borrow().paths[0])
+                                }
+                            } else {
+                                warn!("invalid __all__ import in file {} - multiple evaluation found", (*import_result.symbol).borrow().paths[0])
+                            }
+                        } else {
+                            warn!("invalid __all__ import in file {} - expired symbol", (*import_result.symbol).borrow().paths[0])
                         }
-                        name_filter = nf;
-                        all_name_allowed = false;
+                    } else {
+                        warn!("invalid __all__ import in file {} - no symbol found", (*import_result.symbol).borrow().paths[0])
                     }
                 }
-                let _import_result_sub_symbol = import_result.symbol.borrow().symbols.clone();
-                for s in _import_result_sub_symbol.values() {
+                for s in import_result.symbol.borrow().symbols.unwrap().symbols().values() {
                     if all_name_allowed || name_filter.contains(&s.borrow().name) {
-                        let mut variable = Symbol::new(s.borrow_mut().name.clone(), SymType::VARIABLE);
-                        variable.is_import_variable = true;
-                        variable.range = Some(import_name.range.clone());
-                        variable.evaluation = Some(Evaluation::eval_from_symbol(&s));
-                        if variable.evaluation.is_some() {
-                            let evaluation = variable.evaluation.as_ref().unwrap();
-                            let evaluated_type = &evaluation.symbol;
-                            let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade();
-                            if evaluated_type.is_some() {
-                                let evaluated_type = evaluated_type.unwrap();
-                                let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
-                                if !Rc::ptr_eq(&self.sym_stack[0], &evaluated_type_file) {
-                                    self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
-                                }
+                        let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, s.borrow_mut().name.as_str(), SymType::CONTENT);
+                        let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, import_name.range.clone());
+                        let loc = localized_var.borrow_mut();
+                        loc.is_import_variable = true;
+                        loc.evaluations = vec![Evaluation::eval_from_symbol(&s)];
+                        let evaluation = &loc.evaluations[0];
+                        let evaluated_type = &evaluation.symbol;
+                        let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade();
+                        if evaluated_type.is_some() {
+                            let evaluated_type = evaluated_type.unwrap();
+                            let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
+                            if !Rc::ptr_eq(&self.sym_stack[0], &evaluated_type_file) {
+                                self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
                             }
                         }
-                        self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
                     }
                 }
 
@@ -142,10 +152,9 @@ impl PythonArchBuilder {
                 } else {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
-                let mut variable = Symbol::new(var_name.to_string(), SymType::VARIABLE);
-                variable.is_import_variable = true;
-                variable.range = Some(import_name.range.clone());
-                self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
+                let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, var_name.as_str(), SymType::CONTENT);
+                let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, import_name.range.clone());
+                localized_var.borrow_mut().is_import_variable = true;
             }
         }
         Ok(())
@@ -245,29 +254,26 @@ impl PythonArchBuilder {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
-            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
-            variable.range = Some(assign.target.range.clone());
-            variable.evaluation = None;
-            self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
+            let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &assign.target.id.as_str(), SymType::CONTENT);
+            let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, assign.target.range.clone());
         }
     }
 
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
-            let mut variable = Symbol::new(assign.target.id.to_string(), SymType::VARIABLE);
-            variable.range = Some(assign.target.range.clone());
-            variable.evaluation = None;
-            let variable = self.sym_stack.last().unwrap().borrow_mut().add_symbol(session, variable);
+            let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &assign.target.id.as_str(), SymType::CONTENT);
+            let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, assign.target.range.clone());
             let mut variable = variable.borrow_mut();
+            let mut loc = localized_var.borrow_mut();
             if variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
                 let parent = variable.parent.as_ref().unwrap().upgrade();
                 if parent.is_some() {
                     let parent = parent.unwrap();
                     let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
-                    variable.evaluation = eval.0;
+                    loc.evaluations = eval.0;
                     self.diagnostics.extend(eval.1);
-                    if variable.evaluation.is_some() {
+                    if !loc.evaluations.is_empty() {
                         if (*self.sym_stack.last().unwrap()).borrow().is_external {
                             // external packages often import symbols from compiled files
                             // or with meta programmation like globals["var"] = __get_func().

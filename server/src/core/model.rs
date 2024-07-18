@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
 
+use super::localized_symbol::LocalizedSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 
 #[derive(Debug)]
@@ -62,11 +63,11 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: String,
-    symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    symbols: PtrWeakHashSet<Weak<RefCell<LocalizedSymbol>>>,
 }
 
 impl Model {
-    pub fn new(name: String, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(name: String, symbol: Rc<RefCell<LocalizedSymbol>>) -> Self {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
@@ -75,11 +76,11 @@ impl Model {
         res
     }
 
-    pub fn add_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_symbol(&mut self, symbol: Rc<RefCell<LocalizedSymbol>>) {
         self.symbols.insert(symbol);
     }
 
-    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
+    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<LocalizedSymbol>>> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().get_module_sym();

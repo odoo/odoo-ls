@@ -3,7 +3,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use ruff_text_size::{TextRange, TextSize};
 use tracing::warn;
 
-use super::{evaluation::Evaluation, symbol::Symbol};
+use crate::S;
+
+use super::{evaluation::Evaluation, localized_symbol::LocalizedSymbol, symbol::Symbol};
 
 #[derive(Debug, Clone)]
 enum SectionIndex {
@@ -37,10 +39,26 @@ impl SymbolLocation {
         }
     }
 
-    pub fn get_section_for(&self, position: TextSize) -> SectionRange {
-        let mut last_section = self.sections.first().unwrap();
-        for section in self.sections.iter().skip(1) {
-            if section.start > position.to_u32() {
+    pub fn get(&self, name: &str) -> Option<Rc<RefCell<Symbol>>> {
+        return self.symbols.get(name).cloned();
+    }
+
+    pub fn remove(&self, name: &String) -> Option<Rc<RefCell<Symbol>>> {
+        self.symbols.remove(name)
+    }
+
+    pub fn add_symbol(&mut self, name: &str, symbol: Rc<RefCell<Symbol>>) {
+        self.symbols.insert(S!(name), symbol);
+    }
+
+    pub fn symbols(&self) -> &HashMap<String, Rc<RefCell<Symbol>>> {
+        &self.symbols
+    }
+
+    pub fn get_section_for(&self, position: u32) -> SectionRange {
+        let mut last_section = self.sections.last().unwrap();
+        for section in self.sections.iter().rev().skip(1) { //reverse to fasten most calls as they will be with TextSize::MAX
+            if section.start < position {
                 break;
             }
             last_section = section;
@@ -109,16 +127,16 @@ impl Symbol {
 
     /* Given a position and a SectionIndex, try to find all the relevant evaluations, going in previous SectionRange if needed.
     acc can be provided to skip previously seen indexes */
-    fn _find_eval(&self, position: TextSize, parent: &Symbol, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<&Evaluation> {
+    fn _find_loc_sym(&self, position: u32, parent: &Symbol, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
         let mut res = vec![];
         match index {
             SectionIndex::NONE => { return res; },
             SectionIndex::INDEX(index) => {
                 let section = parent.symbols.as_ref().unwrap().sections.get(*index as usize).unwrap();
                 //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
-                for (eval_offset, evaluation) in self.evaluation.get(section.index as usize).unwrap().iter().rev() {
-                    if *eval_offset < position.to_u32() {
-                        res.push(evaluation);
+                for loc_sym in self.localized_sym.get(*index as usize).unwrap().iter().rev() {
+                    if loc_sym.borrow().range.start().to_u32() < position {
+                        res.push(loc_sym.clone());
                         break;
                     }
                 }
@@ -126,30 +144,57 @@ impl Symbol {
                     return res;
                 }
                 acc.push(*index);
-                res = self._find_eval(position, parent, &section.previous_indexes, acc);
+                res = self._find_loc_sym(position, parent, &section.previous_indexes, acc);
             },
             SectionIndex::OR(indexes) => {
                 for index in indexes.iter() {
-                    res.extend(self._find_eval(position, parent, index, acc));
+                    res.extend(self._find_loc_sym(position, parent, index, acc));
                 }
             }
         }
         res
     }
 
-    pub fn get_evaluations(&self, position: TextSize) -> Vec<&Evaluation> {
+    pub fn symbols(&self) -> &SymbolLocation {
+        self.symbols.as_ref().unwrap()
+    }
+
+    /*return a list of Localized Symbol that can be effective at the given position.
+    For example:
+    //////
+    a = 4
+    if X:
+        a = 5
+    else:
+        a = 6
+    Y
+    ////////
+    if we call get_loc_sym with the position of Y, two 'a' symbols (5 and 6) will be returned as they can be effective at Y, depending on the value of X
+    */
+    pub fn get_loc_sym(&self, position: u32) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
         let mut res = vec![];
         if let Some(parent) = self.parent.as_ref() {
             if let Some(parent) = parent.upgrade() {
                 let parent = parent.borrow();
                 let section = &parent.symbols.unwrap().get_section_for(position);
-                let evaluations = self._find_eval(position, &parent, &SectionIndex::INDEX(section.index), &mut vec![]);
+                res = self._find_loc_sym(position, &parent, &SectionIndex::INDEX(section.index), &mut vec![]);
             } else {
-                warn!("Parent must be available to get evaluations");
+                warn!("Parent must be available to get localized symbols");
             }
         } else {
-            warn!("Parent must be available to get evaluations");
+            warn!("Parent must be available to get localized symbols");
         }
         res
+    }
+
+    pub fn get_loc_sym_at(&self, position: u32) -> Option<Rc<RefCell<LocalizedSymbol>>> {
+        for sections in self.localized_sym.iter() {
+            for s in sections.iter() {
+                if s.borrow().range.start().to_u32() == position {
+                    return Some(s.clone());
+                }
+            }
+        }
+        None
     }
 }
