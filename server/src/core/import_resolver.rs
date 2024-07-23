@@ -16,7 +16,7 @@ use super::odoo::SyncOdoo;
 pub struct ImportResult {
     pub name: String,
     pub found: bool,
-    pub symbol: Rc<RefCell<Symbol>>,
+    pub symbol: Rc<RefCell<Symbol>>, //not LocalizedSymbol, because in import, the position is always u32::MAX
     pub file_tree: Tree,
     pub range: TextRange,
 }

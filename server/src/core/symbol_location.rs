@@ -16,12 +16,12 @@ enum SectionIndex {
 
 #[derive(Debug, Clone)]
 struct SectionRange {
-    start: u32,
-    index: u32,
-    previous_indexes: SectionIndex,
+    pub start: u32,
+    pub index: u32,
+    pub previous_indexes: SectionIndex,
 }
 
-// SymbolLocation hold all assignations and so evaluations t o a variable so we can know all possible type at a given position
+// SymbolLocation hold all assignatio*ns and so evaluations to a variable so we can know all possible type at a given position
 #[derive(Debug)]
 pub struct SymbolLocation {
     sections: Vec<SectionRange>,
@@ -106,7 +106,7 @@ impl SymbolLocation {
     ei = ElifStmt
     
     old_last_section = last_section
-    i_body = add_section(i.body)
+    i_body = i.body)
         visit_body
     ei_condition = add_section(ei.condition)
         visit_condition

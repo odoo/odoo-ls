@@ -60,6 +60,12 @@ impl From<&LocalizedSymbol> for SymbolRef {
     }
 }
 
+impl PartialEq for SymbolRef {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.symbol, &other.symbol) && self.position == other.position
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
     CONSTANT(ruff_python_ast::Expr), //expr is a literal
@@ -162,8 +168,8 @@ pub struct EvaluationSymbol {
 #[derive(Default)]
 pub struct AnalyzeAstResult {
     pub symbols: Vec<Evaluation>,
-    pub effective_sym: Option<Weak<RefCell<Symbol>>>,
-    pub factory: Option<Weak<RefCell<Symbol>>>,
+    pub effective_sym: Option<Weak<RefCell<LocalizedSymbol>>>,
+    pub factory: Option<Weak<RefCell<LocalizedSymbol>>>,
     pub context: Option<Context>,
     pub diagnostics: Vec<Diagnostic>
 }
@@ -270,17 +276,15 @@ impl Evaluation {
             Some(self.value.as_ref().unwrap().clone())
         } else {
             let symbol = self.symbol.get_symbol(session, context, diagnostics).0;
-            let symbol = symbol.upgrade();
-            if symbol.is_some() {
-                let symbol = Symbol::follow_ref(symbol.unwrap(), session, context, false, true, diagnostics);
-                let symbol = symbol.0.upgrade();
-                if symbol.is_some() {
-                    let symbol = symbol.unwrap();
-                    let symbol = symbol.borrow();
-                    if symbol.evaluation.is_some() {
-                        let eval = symbol.evaluation.as_ref().unwrap();
+            let evals = Symbol::follow_ref(symbol, session, context, false, true, diagnostics);
+            if evals.len() == 1 {
+                let eval = evals[0];
+                let loc_sym = eval.0.get_localized_symbol();
+                if let Some(loc_sym) = loc_sym {
+                    if loc_sym.borrow().evaluations.len() == 1 {
+                        let eval = loc_sym.borrow().evaluations[0];
                         if eval.value.is_some() {
-                            return Some((*eval).value.as_ref().unwrap().clone());
+                            return Some(eval.value.as_ref().unwrap().clone());
                         }
                     }
                 }
@@ -310,19 +314,20 @@ impl Evaluation {
         }
     }
 
-    //Build an evaluation from an ast node that can be associated to a symbol
+    //Build evaluations from an ast node that can be associated to a LocalizedSymbol
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
+    //The result is a list, because some ast can give various possible results. For example: a = func()
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
-        return (analyze_result.symbol, analyze_result.diagnostics)
+        return (analyze_result.symbols, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
     fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
-        if value.symbol.is_some() {
-            let eval = value.symbol.unwrap();
+        if value.symbols.len() == 1 { //only handle strict evaluations
+            let eval = value.symbols[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
             if let Some(v) = v {
                 match v {
@@ -513,8 +518,9 @@ impl Evaluation {
                             // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
                             // We don't want to launch validation step while Arch evaluating the code.
                             if base_loc.borrow().evaluations.len() == 0 {
-                                if base_sym.borrow().odoo_status == BuildStatus::DONE { //TODO update with new step validation to lower it to localized level
-                                    let mut v = PythonValidator::new(base_sym.clone());
+                                if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().odoo_status == BuildStatus::DONE &&
+                                base_loc.borrow().validation_status == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
+                                    let mut v = PythonValidator::new(base_loc.borrow().to_symbol_ref());
                                     v.validate(session);
                                 }
                             }
@@ -538,18 +544,17 @@ impl Evaluation {
                 let base_ref = evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
                 let bases = Symbol::follow_ref(base_ref, session, &mut None, false, false, &mut diagnostics);
                 for ibase in bases.iter() {
-                    let base = ibase.0.get_symbol();
                     let base_loc = ibase.0.get_localized_symbol();
                     if let Some(base_loc) = base_loc {
-                        let attribute = base_loc.get_member_symbol(session, &expr.attr.to_string(), module, false, false, true, &mut diagnostics);
-                        //TODO finish this
-                        res.symbol = Rc::downgrade(attribute.first().unwrap());
-                        res.instance = (**attribute.first().unwrap()).borrow().sym_type == SymType::VARIABLE;
+                        let attributes = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module, false, true, &mut diagnostics);
+                        if !attributes.is_empty() {
+                            evals.push(Evaluation::eval_from_symbol(attributes.first().unwrap()));
+                        }
                     }
                 }
             },
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) => {
-                let infered_sym: Option<Rc<RefCell<Symbol>>> = match ast {
+                let infered_syms = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
                         Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
                     },
@@ -561,39 +566,36 @@ impl Evaluation {
                     }
                 };
 
-                if infered_sym.is_none() {
+                if infered_syms.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-
-                if infered_sym.as_ref().unwrap().borrow().parent.is_none() {
-                    //for temporary symbol, store it in internal storage
-                    res._internal_hold_symbol = Some(infered_sym.as_ref().unwrap().clone());
-                }
-                res.symbol = Rc::downgrade(infered_sym.as_ref().unwrap());
-                let infered_sym = infered_sym.as_ref().unwrap().borrow();
-                res.instance = infered_sym.sym_type != SymType::CLASS;
-                if infered_sym.evaluation.is_some() {
-                    res.instance = infered_sym.evaluation.as_ref().unwrap().symbol.instance;
+                for infered_sym in infered_syms.iter() {
+                    evals.push(Evaluation::eval_from_symbol(&infered_sym.borrow().to_symbol_ref()));
                 }
             },
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if eval_left.is_none() || eval_left.as_ref().unwrap().symbol.symbol.upgrade().is_none() {
+                if eval_left.len() != 1 || eval_left[0].symbol.symbol.get_weak().is_expired() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = eval_left.unwrap().symbol.symbol.upgrade();
-                let base = base.unwrap();
-                let (base, _) = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
-                let base = base.upgrade().unwrap();
+                let base = eval_left[0].symbol.symbol;
+                let bases = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
+                if bases.len() != 1 {
+                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                }
+                let base = bases[0];
+                let base = base.0.get_localized_symbol().unwrap();
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 let base = base.borrow();
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
-                    let get_item = base.get_symbol(&(vec![], vec![S!("__getitem__")]));
-                    if let Some(get_item) = get_item {
+                    let get_item = base.get_loc_symbol(vec![S!("__getitem__")]);
+                    if get_item.len() == 1 {
+                        let get_item = get_item[0];
                         let get_item = get_item.borrow();
-                        if let Some(get_item_eval) = &get_item.evaluation {
+                        if get_item.evaluations.len() == 1 {
+                            let get_item_eval = get_item.evaluations[0];
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
                                 context.insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.remove(&S!("range"));
@@ -601,8 +603,7 @@ impl Evaluation {
                                 let mut ctxt = Some(context);
                                 let hook_result = hook(session, &get_item_eval.symbol, &mut ctxt, &mut diagnostics);
                                 if !hook_result.0.is_expired() {
-                                    res.symbol = hook_result.0;
-                                    res.instance = hook_result.1;
+                                    Evaluation::eval_from_symbol(&hook_result.0);
                                 }
                                 context = ctxt.unwrap();
                                 context.remove(&S!("args"));
@@ -630,18 +631,6 @@ impl EvaluationSymbol {
 
     pub fn new(symbol: SymbolRef, instance: bool, context: Context, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
         Self { symbol, instance, context, factory, get_symbol_hook }
-    }
-
-    pub fn new_with_symbol(symbol: Symbol, instance: bool, context: Context) -> EvaluationSymbol {
-        let sym = Rc::new(RefCell::new(symbol));
-        EvaluationSymbol {
-            symbol: SymbolRef{ symbol: Rc::downgrade(&sym), position: u32::MAX},
-            instance: instance,
-            context: context,
-            _internal_hold_symbol: Some(sym),
-            factory: None,
-            get_symbol_hook: None
-        }
     }
 
     pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (SymbolRef, bool) {

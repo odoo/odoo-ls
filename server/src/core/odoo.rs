@@ -480,7 +480,7 @@ impl SyncOdoo {
                 }
                 already_validation_rebuilt.insert(tree);
                 //TODO should delete previous first
-                let mut validator = PythonValidator::new(sym_rc);
+                let mut validator = PythonValidator::new(sym_rc.borrow().to_sym_ref());
                 validator.validate(session);
                 continue;
             }
@@ -729,7 +729,7 @@ impl SyncOdoo {
                     session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
                 }
                 if s.borrow().sym_type != SymType::FILE {
-                    symbols.extend(s.borrow().all_symbols(None, false).map(|x| {x.clone()}) );
+                    symbols.extend(s.borrow().all_symbols().map(|x| {x.clone()}) );
                 }
             }
         }

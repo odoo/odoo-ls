@@ -20,7 +20,7 @@ use lsp_types::Diagnostic;
 
 use super::evaluation::SymbolRef;
 use super::localized_symbol::{LocalizedSymbol, LocalizedSymbolIter};
-use super::symbol_location::SymbolLocation;
+use super::symbol_location::{self, SymbolLocation};
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::root_symbol::RootSymbol;
@@ -49,7 +49,7 @@ pub struct Symbol {
     pub in_workspace: bool,
 
     pub _root: Option<RootSymbol>,
-    _module: Option<ModuleSymbol>,
+    pub _module: Option<ModuleSymbol>,
 }
 
 impl Symbol {
@@ -345,13 +345,16 @@ impl Symbol {
         if symbol.borrow().sym_type == SymType::DIRTY {
             panic!("Can't unload dirty symbol");
         }
+        if symbol.borrow().sym_type == SymType::CONTENT {
+            panic!("Only unload file, package, namespace, but never file content. The all_symbols function is not localized, and would mess everything");
+        }
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while vec_to_unload.len() > 0 {
             let ref_to_unload = vec_to_unload.front().unwrap().clone();
             let mut mut_symbol = ref_to_unload.borrow_mut();
             // Unload children first
             let mut found_one = false;
-            for sym in mut_symbol.all_symbols(Some(TextRange::new(TextSize::new(u32::MAX-1), TextSize::new(u32::MAX))), false) {
+            for sym in mut_symbol.all_symbols() {
                 found_one = true;
                 vec_to_unload.push_front(sym.clone());
             }
@@ -577,7 +580,7 @@ impl Symbol {
         }
     }
 
-    //get a LocalizedSymbol that has the same given range and name
+    /// get a LocalizedSymbol that has the same given range and name
     pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Rc<RefCell<LocalizedSymbol>>> {
         if let Some(symbol) = self.symbols.unwrap().get(name) {
             for section in symbol.borrow().localized_sym.iter() {
@@ -657,10 +660,28 @@ impl Symbol {
         res
     }
 
+    pub fn all_symbols<'a>(&'a self) -> impl Iterator<Item= &'a Rc<RefCell<Symbol>>> + 'a {
+        //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
+        //be returned. If include_inherits is set, symbols from parent will be included.
+        let mut iter: Vec<Box<dyn Iterator<Item = &Rc<RefCell<Symbol>>>>> = Vec::new();
+        iter.push(Box::new(self.symbols.as_ref().unwrap().symbols().values()));
+        iter.push(Box::new(self.module_symbols.values()));
+        iter.into_iter().flatten()
+    }
+
     //create a new localized symbol on the last section for the given range
     pub fn new_localized_symbol(&mut self, loc_sym_type: LocSymType, range: TextRange) -> Rc<RefCell<LocalizedSymbol>> {
         let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.unwrap(), loc_sym_type, range)));
         self.localized_sym.last().unwrap().push(sym.clone());
+        sym
+    }
+
+    //create a new localized symbol with a range that can be in custom section
+    pub fn new_localized_symbol_with_range(&mut self, loc_sym_type: LocSymType, range: TextRange) -> Rc<RefCell<LocalizedSymbol>> {
+        let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.unwrap(), loc_sym_type, range)));
+        let section_id = self.parent.unwrap().upgrade().unwrap().borrow().symbols().get_section_for(range.start().to_u32()).index;
+        let index_to_insert = self.localized_sym[section_id as usize].binary_search_by(|x| x.borrow().range.start().to_u32().cmp(&range.start().to_u32())).unwrap_or_else(|x| x);
+        self.localized_sym[section_id as usize].insert(index_to_insert, sym);
         sym
     }
 
@@ -670,115 +691,22 @@ impl Symbol {
     }
 
     //infer a name, given a position
-    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<TextSize>) -> Option<Rc<RefCell<Symbol>>> {
-        let mut selected: Option<Rc<RefCell<Symbol>>> = None;
-        if name == "__doc__" {
-            //return self.doc; //TODO
+    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<TextSize>) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
+        let mut results: Vec<Rc<RefCell<LocalizedSymbol>>> = vec![];
+        //TODO implement 'super' behaviour in hooks
+        let symbol_location = on_symbol.borrow().symbols.unwrap();
+        if let Some(symbol) = symbol_location.get(name) {
+            results = symbol.borrow().get_loc_sym(position.unwrap_or(TextSize::MAX).to_u32());
         }
-        if name == "super" { //build temporary super Symbol
-            //TODO must not be done with temporary symbol. Should use a container with reserved keywords, like isinstance, super, etc..
-            let class = on_symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
-            if let Some(class) = class {
-                let class = class.upgrade();
-                if let Some(class) = class {
-                    let mut symbol = Symbol::new(
-                        S!("super"),
-                        SymType::FUNCTION
-                    );
-                    symbol.parent = None;
-                    symbol._function = Some(FunctionSymbol{
-                        is_static: true,
-                        is_property: false,
-                        diagnostics: vec![]
-                    });
-                    symbol.evaluation = Some(Evaluation::eval_from_symbol(&class));
-                    selected = Some(Rc::new(RefCell::new(symbol)));
-                    return selected;
-                }
-            }
-        }
-        if let Some(rc) = on_symbol.borrow().symbols.get(name) {
-            if position.is_none() || rc.borrow().range.unwrap().start() < position.unwrap() {
-                selected = Some(rc.clone());
-            }
-        }
-        if selected.is_none() && position.is_some() {
-            let position = position.unwrap();
-            for local_symbol in on_symbol.borrow().local_symbols.iter() {
-                if local_symbol.borrow().name.eq(name) && local_symbol.borrow_mut().range.unwrap().start() < position {
-                    if selected.is_none() || selected.as_ref().unwrap().borrow().range.unwrap().start() < local_symbol.borrow_mut().range.unwrap().start() {
-                        selected = Some(local_symbol.clone());
-                    }
-                }
-            }
-        }
-        if selected.is_none() && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.borrow().sym_type) {
+        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.borrow().sym_type) {
             let parent = on_symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
             return Symbol::infer_name(odoo, &parent, name, position);
         }
-        if selected.is_none() && (on_symbol.borrow().name != "builtins" || on_symbol.borrow().sym_type != SymType::FILE) {
+        if results.len() == 0 && (on_symbol.borrow().name != "builtins" || on_symbol.borrow().sym_type != SymType::FILE) {
             let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![])).as_ref().unwrap().clone();
             return Symbol::infer_name(odoo, &builtins, name, None);
         }
-        selected
-    }
-
-    /* similar to get_symbol: will return the symbol that is under this one with the specified name.
-        However, if the symbol is a class or a model, it will search in the base class or in comodel classes
-        if not all, it will return the first found. If all, the all found symbols are returned, but the first one
-        is the one that is overriding others.
-        :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_local: bool, prevent_comodel: bool, all: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
-        if self.module_symbols.contains_key(name) {
-            if all {
-                result.push(self.module_symbols[name].clone());
-            } else {
-                return vec![self.module_symbols[name].clone()];
-            }
-        }
-        if !prevent_local {
-            if self.symbols.contains_key(name) {
-                if all {
-                    result.push(self.symbols[name].clone());
-                } else {
-                    return vec![self.symbols[name].clone()];
-                }
-            }
-        }
-        if self._model.is_some() && !prevent_comodel {
-            let model = session.sync_odoo.models.get(&self._model.as_ref().unwrap().name);
-            if let Some(model) = model {
-                let symbols = model.clone().borrow().get_symbols(session, from_module.clone().unwrap_or(self.get_module_sym().expect("unable to find module")));
-                for sym in symbols {
-                    if Rc::ptr_eq(&sym, &self.get_rc().unwrap()) {
-                        continue;
-                    }
-                    let attribut = sym.borrow().get_member_symbol(session, name, None, false, true, all, diagnostics);
-                    if all {
-                        result.extend(attribut);
-                    } else {
-                        return attribut;
-                    }
-                }
-            }
-        }
-        if !all && result.len() != 0 {
-            return result;
-        }
-        if self._class.is_some() {
-            for base in self._class.as_ref().unwrap().bases.iter() {
-                let s = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_local, prevent_comodel, all, diagnostics);
-                if s.len() != 0 {
-                    if all {
-                        result.extend(s);
-                    } else {
-                        return s;
-                    }
-                }
-            }
-        }
-        result
+        results
     }
 
     pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<LocalizedSymbol>>> {
@@ -823,5 +751,15 @@ impl Symbol {
             }
         }
         return result
+    }
+
+    //panic if no localized symbol is available
+    pub fn last_loc_sym(&self) -> Rc<RefCell<LocalizedSymbol>> {
+        self.localized_sym.last().unwrap().last().unwrap().clone()
+    }
+
+    ///Return a SymbolRef for this symbol. If LocalizedSymbol is present, return a SymbolRef with position = u32::MAX
+    pub fn to_sym_ref(&self) -> SymbolRef {
+        SymbolRef::new(self.weak_self.unwrap().upgrade().unwrap(), u32::MAX)
     }
 }

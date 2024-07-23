@@ -7,7 +7,7 @@ use ruff_python_ast::Expr;
 use lsp_types::{Diagnostic, ShowMessageParams, notification::Notification};
 use tracing::{error, info};
 
-use crate::constants::{BuildSteps, BuildStatus, SymType, DEBUG_ODOO_BUILDER};
+use crate::constants::{BuildStatus, BuildSteps, LocSymType, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
@@ -15,6 +15,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::EvaluationValue;
+use super::localized_symbol::LocalizedSymbol;
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
@@ -65,7 +66,7 @@ impl PythonOdooBuilder {
         drop(symbol);
         for sym in iterator {
             let mut s_to_build = sym.borrow_mut();
-            if s_to_build.sym_type != SymType::CLASS {
+            if s_to_build.loc_sym_type != LocSymType::CLASS {
                 continue;
             }
             if !self.test_symbol_is_model(session, &sym, &mut s_to_build) {
@@ -89,28 +90,32 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _load_class_inherit(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
-        let module = symbol.get_module_sym();
+    fn _load_class_inherit(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
+        let module = loc_sym.get_module_sym();
+        let symbol = loc_sym.symbol().borrow();
         let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]));
         if let Some(_inherit) = _inherit {
-            if let Some(eval) = _inherit.borrow().evaluation.as_ref() {
+            if _inherit.borrow().last_loc_sym().borrow().evaluations.len() == 0 {
+                error!("wrong _inherit structure");
+            }
+            for eval in _inherit.borrow().last_loc_sym().borrow().evaluations.iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if let Some(eval) = eval.as_ref() {
                     match eval {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                            symbol._model.as_mut().unwrap().inherit = vec![S!(s.value.to_str())];
+                            loc_sym._model.as_mut().unwrap().inherit = vec![S!(s.value.to_str())];
                         },
                         EvaluationValue::LIST(l) => {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
-                                    symbol._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
+                                    loc_sym._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
                                 }
                             }
                         },
                         EvaluationValue::TUPLE(l) => {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
-                                    symbol._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
+                                    loc_sym._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
                                 }
                             }
                         },
@@ -121,16 +126,15 @@ impl PythonOdooBuilder {
                 } else {
                     error!("wrong _inherit value");
                 }
-            } else {
-                error!("wrong _inherit structure");
             }
         }
     }
 
-    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &Symbol) -> String {
+    fn _evaluate_name(&mut self, session: &mut SessionInfo, loc_sym: &LocalizedSymbol) -> String {
+        let symbol = loc_sym.symbol().borrow();
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]));
         if let Some(_name) = _name {
-            if let Some(eval) = _name.borrow().evaluation.as_ref() {
+            for eval in _name.borrow().last_loc_sym().borrow().evaluations.iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = eval {
                     return S!(s.value.to_str());
@@ -139,33 +143,34 @@ impl PythonOdooBuilder {
             error!("unable to parse model name");
             return "".to_string();
         }
-        if let Some(inherit_name) = symbol._model.as_ref().unwrap().inherit.first() {
+        if let Some(inherit_name) = loc_sym._model.as_ref().unwrap().inherit.first() {
             return inherit_name.clone();
         }
         symbol.name.clone()
     }
 
-    fn _load_class_name(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
-        symbol._model.as_mut().unwrap().name = self._evaluate_name(session, symbol);
-        if symbol._model.as_ref().unwrap().name.is_empty() {
-            symbol._model = None;
+    fn _load_class_name(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
+        loc_sym._model.as_mut().unwrap().name = self._evaluate_name(session, loc_sym);
+        if loc_sym._model.as_ref().unwrap().name.is_empty() {
+            loc_sym._model = None;
             return;
         }
-        if symbol._model.as_ref().unwrap().name != S!("base") {
-            symbol._model.as_mut().unwrap().inherit.push(S!("base"));
+        if loc_sym._model.as_ref().unwrap().name != S!("base") {
+            loc_sym._model.as_mut().unwrap().inherit.push(S!("base"));
         }
     }
 
-    fn _load_class_inherits(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
-        let _inherits = symbol.get_symbol(&(vec![], vec![S!("_inherits")]));
+    fn _load_class_inherits(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
+        let symbol = loc_sym.symbol();
+        let _inherits = symbol.borrow().get_symbol(&(vec![], vec![S!("_inherits")]));
         if let Some(_inherits) = _inherits {
-            if let Some(eval) = _inherits.borrow().evaluation.as_ref() {
+            for eval in _inherits.borrow().last_loc_sym().borrow().evaluations.iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
-                symbol._model.as_mut().unwrap().inherits.clear();
+                loc_sym._model.as_mut().unwrap().inherits.clear();
                 if let Some(EvaluationValue::DICT(d)) = eval {
                     for (k, v) in d.iter() {
                         if let (Expr::StringLiteral(k), Expr::StringLiteral(v)) = (k,v) {
-                            symbol._model.as_mut().unwrap().inherits.push((S!(k.value.to_str()), S!(v.value.to_str())));
+                            loc_sym._model.as_mut().unwrap().inherits.push((S!(k.value.to_str()), S!(v.value.to_str())));
                         } else {
                             error!("wrong _inherits value");
                         }
@@ -177,20 +182,20 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _get_attribute(&mut self, session: &mut SessionInfo, symbol: &mut Symbol, attr: &String) -> Option<EvaluationValue> {
-        let attr_sym = symbol.get_member_symbol(session, attr, None, false, true, false, &mut self.diagnostics);
+    fn _get_attribute(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol, attr: &String) -> Option<EvaluationValue> {
+        let attr_sym = loc_sym.get_member_symbol(session, attr, None, true, false, &mut self.diagnostics);
         if attr_sym.len() == 0 {
             return None;
         }
-        let attr_sym = attr_sym[0].clone();
-        if let Some(eval) = attr_sym.borrow().evaluation.as_ref() {
+        let attr_sym = attr_sym[0];
+        for eval in attr_sym.get_localized_symbol().unwrap().borrow().evaluations.iter() {
             let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
             return eval;
         }
         None
     }
 
-    fn _load_class_attributes(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
+    fn _load_class_attributes(&mut self, session: &mut SessionInfo, symbol: &mut LocalizedSymbol) {
         let descr = self._get_attribute(session, symbol, &"_description".to_string());
         if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = descr {
             symbol._model.as_mut().unwrap().description = S!(s.value.to_str());
@@ -278,9 +283,9 @@ impl PythonOdooBuilder {
         }
     }
 
-    /* true if the symbol inherit from odoo.models.BaseModel */
-    fn test_symbol_is_model(&mut self, session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, symbol: &mut Symbol) -> bool {
-        if symbol._class.is_none() {
+    /* true if the symbol inherit from odoo.models.BaseModel. loc_sym must be the data of rc_loc_sym */
+    fn test_symbol_is_model(&mut self, session: &mut SessionInfo, rc_loc_sym: &Rc<RefCell<LocalizedSymbol>>, loc_sym: &mut LocalizedSymbol) -> bool {
+        if loc_sym._class.is_none() {
             panic!("Symbol has no class Data. This should not happen");
         }
         let base_model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]));
@@ -293,23 +298,23 @@ impl PythonOdooBuilder {
             });
             return false;
         }
-        let base_model = base_model.unwrap();
-        let model = model.unwrap();
-        let transient = transient.unwrap();
-        if Rc::ptr_eq(rc_symbol, &base_model) ||
-            Rc::ptr_eq(rc_symbol, &model) ||
-            Rc::ptr_eq(rc_symbol, &transient) {
+        let base_model = base_model.unwrap().borrow().last_loc_sym();
+        let model = model.unwrap().borrow().last_loc_sym();
+        let transient = transient.unwrap().borrow().last_loc_sym();
+        if Rc::ptr_eq(rc_loc_sym, &base_model) ||
+            Rc::ptr_eq(rc_loc_sym, &model) ||
+            Rc::ptr_eq(rc_loc_sym, &transient) {
             return false;
         }
-        if !symbol._class.as_ref().unwrap().inherits(&base_model, &mut None) {
+        if !loc_sym._class.as_ref().unwrap().inherits(&base_model, &mut None) {
             return false;
         }
-        symbol._model = Some(ModelData::new());
-        let register = symbol.get_symbol(&(vec![], vec![S!("_register")]));
+        loc_sym._model = Some(ModelData::new());
+        let register = loc_sym.symbol.upgrade().unwrap().borrow().get_symbol(&(vec![], vec![S!("_register")]));
         if let Some(register) = register {
-            let register_eval = &register.borrow().evaluation;
-            if register_eval.is_some() {
-                let eval = register_eval.as_ref().unwrap();
+            let register_evals = &register.borrow().last_loc_sym().borrow().evaluations;
+            if register_evals.len() == 1 { //we don't handle multiple values
+                let eval = register_evals[0];
                 let value = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if value.is_some() {
                     let value = value.unwrap();

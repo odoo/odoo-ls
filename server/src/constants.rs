@@ -41,6 +41,12 @@ pub enum LocSymType {
     VARIABLE
 }
 
+impl fmt::Display for LocSymType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub enum BuildSteps {
     SYNTAX     = -1, //can't be 0, because others should be able to be used as vec index

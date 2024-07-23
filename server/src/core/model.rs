@@ -92,11 +92,11 @@ impl Model {
         symbol.into_iter()
     }
 
-    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
-        let mut res: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut res: Vec<Rc<RefCell<LocalizedSymbol>>> = vec![];
         for sym in self.symbols.iter() {
             if !sym.borrow()._model.as_ref().unwrap().inherit.contains(&sym.borrow()._model.as_ref().unwrap().name) {
                 if from_module.is_none() || sym.as_ref().borrow().get_module_sym().is_none() {

@@ -4,6 +4,7 @@ use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
 use crate::core::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
+use crate::S;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
 use ruff_python_ast::{Expr, Stmt, Alias, ExceptHandler, Parameter, Keyword, PatternKeyword, TypeParam, Pattern};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -14,7 +15,7 @@ pub struct AstUtils {}
 impl AstUtils {
 
     pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
-        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset);
+        let parent_symbol = Symbol::get_scope_symbol(file_symbol.borrow().to_sym_ref(), offset);
         let mut expr: Option<ExprOrIdent> = None;
         let file_info_borrowed = file_info.borrow();
         for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
@@ -28,9 +29,21 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol, &expr.range().end());
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.get_symbol().clone(), &expr.range().end());
         (analyse_ast_result, Some(expr.range()))
 
+    }
+
+    pub fn flatten_expr(expr: &Expr) -> String {
+        match expr {
+            Expr::Name(n) => {
+                n.id
+            },
+            Expr::Attribute(a) => {
+                AstUtils::flatten_expr(&a.value) + &a.attr
+            },
+            _ => {S!("//Unhandled//")}
+        }
     }
 
 }
