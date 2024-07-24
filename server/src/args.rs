@@ -49,6 +49,10 @@ pub struct Cli {
 
     #[arg(value_enum, long, default_value="trace")]
     pub log_level: LogLevel,
+
+    //provide a path to the directory that will be used for logs
+    #[arg(long)]
+    pub logs_directory: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
