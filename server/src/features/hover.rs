@@ -26,34 +26,34 @@ impl HoverFeature {
         if evals.is_empty() {
             return None;
         };
-        let eval = evals[0]; //TODO handle more evaluations
+        let eval = &evals[0]; //TODO handle more evaluations
         let sym_ref = eval.symbol.get_symbol(session, &mut None, &mut vec![]).0;
         if sym_ref.is_expired() {
             warn!("symbol expired");
             return None;
         }
-        let type_refs = Symbol::follow_ref(sym_ref, session, &mut None, true, false, &mut vec![]);
-        let type_ref = type_refs[0].0; //TODO handle more evaluations
+        let type_refs = Symbol::follow_ref(&sym_ref, session, &mut None, true, false, &mut vec![]);
+        let type_ref = &type_refs[0].0; //TODO handle more evaluations
         let type_sym = type_ref.get_symbol();
         let type_loc_sym = type_ref.get_localized_symbol().unwrap();
         let mut type_str = S!("Any");
-        if sym_ref != type_ref && (type_loc_sym.borrow().loc_sym_type != LocSymType::VARIABLE || type_loc_sym.borrow().is_type_alias()) {
+        if &sym_ref != type_ref && (type_loc_sym.borrow().loc_sym_type != LocSymType::VARIABLE || type_loc_sym.borrow().is_type_alias()) {
             type_str = type_ref.get_symbol().borrow().name.clone();
         }
         if analyse_ast_result.factory.is_some() && analyse_ast_result.effective_sym.is_some() {
-            type_str = Symbol::follow_ref(analyse_ast_result.effective_sym.unwrap().upgrade().unwrap().borrow().to_symbol_ref(), session, &mut None, true, false, &mut vec![])[0].0.get_symbol().borrow().name.clone();
+            type_str = Symbol::follow_ref(&analyse_ast_result.effective_sym.unwrap().upgrade().unwrap().borrow().to_symbol_ref(), session, &mut None, true, false, &mut vec![])[0].0.get_symbol().borrow().name.clone();
         }
         let mut type_sym_name = type_loc_sym.borrow().loc_sym_type.to_string().to_lowercase();
         if type_loc_sym.borrow().is_import_variable && Symbol::next_refs(session, &type_ref, &mut None, &mut vec![]).len() > 0 {
-            let next_ref = Symbol::next_refs(session, &type_ref, &mut None, &mut vec![])[0];
+            let next_ref = &Symbol::next_refs(session, &type_ref, &mut None, &mut vec![])[0];
             type_sym_name = next_ref.0.get_symbol().borrow().sym_type.to_string().to_lowercase();
         }
         if type_loc_sym.borrow().is_type_alias() {
             type_sym_name = S!("type alias");
             let mut type_alias_ref = Symbol::next_refs(session, &type_ref, &mut None, &mut vec![]);
             if type_alias_ref.len() > 0 {
-                if type_alias_ref[0].0 != type_ref {
-                    let type_alias_ref = Symbol::follow_ref(type_alias_ref[0].0, session, &mut None, true, false, &mut vec![]);
+                if &type_alias_ref[0].0 != type_ref {
+                    let type_alias_ref = Symbol::follow_ref(&type_alias_ref[0].0, session, &mut None, true, false, &mut vec![]);
                     if type_alias_ref.len() > 0 {
                         type_str = type_alias_ref[0].0.get_symbol().borrow().name.clone();
                     }

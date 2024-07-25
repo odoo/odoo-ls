@@ -99,7 +99,7 @@ impl PythonArchBuilder {
                 let mut name_filter: Vec<String> = vec![];
                 if let Some(all) = import_result.symbol.borrow().symbols().get("__all__") {
                     let all_symbol_ref = SymbolRef::new(all, u32::MAX);
-                    let all = Symbol::follow_ref(all_symbol_ref, session, &mut None, false, true, &mut self.diagnostics);
+                    let all = Symbol::follow_ref(&all_symbol_ref, session, &mut None, false, true, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
                         if !all.0.is_expired() {
                             let all = all.0.get_localized_symbol();
@@ -130,7 +130,7 @@ impl PythonArchBuilder {
                         warn!("invalid __all__ import in file {} - no symbol found", (*import_result.symbol).borrow().paths[0])
                     }
                 }
-                for s in import_result.symbol.borrow().symbols.unwrap().symbols().values() {
+                for s in import_result.symbol.borrow().symbols.as_ref().unwrap().symbols().values() {
                     if all_name_allowed || name_filter.contains(&s.borrow().name) {
                         let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, s.borrow_mut().name.as_str(), SymType::CONTENT);
                         let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, import_name.range.clone());
@@ -168,22 +168,26 @@ impl PythonArchBuilder {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
                         self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
                     }
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
                         self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
                     }
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
                         self._visit_ann_assign(session, ann_assign_stmt);
                     }
                 },
                 Stmt::Assign(assign_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
                         self._visit_assign(session, assign_stmt);
                     }
                 },
@@ -284,7 +288,7 @@ impl PythonArchBuilder {
                             // we don't want to handle that, so just declare __all__ content
                             // as symbols to not raise any error.
                             let evaluation = loc.evaluations.get(0).unwrap();
-                            match evaluation.value {
+                            match &evaluation.value {
                                 Some(EvaluationValue::LIST(list)) => {
                                     for item in list.iter() {
                                         match item {
@@ -363,7 +367,7 @@ impl PythonArchBuilder {
 
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
-            if !self.sym_stack.last().unwrap().borrow().symbols.unwrap().symbols().contains_key(&symbol_name) {
+            if !self.sym_stack.last().unwrap().borrow().symbols.as_ref().unwrap().symbols().contains_key(&symbol_name) {
                 let all_var = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &symbol_name, SymType::CONTENT);
                 all_var.borrow_mut().new_localized_symbol_with_range(LocSymType::VARIABLE, range);
             }

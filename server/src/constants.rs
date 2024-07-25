@@ -36,6 +36,7 @@ impl fmt::Display for SymType {
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum LocSymType {
+    FILE_OR_PACKAGE,
     CLASS,
     FUNCTION,
     VARIABLE

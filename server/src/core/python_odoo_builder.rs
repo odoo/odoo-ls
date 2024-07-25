@@ -92,7 +92,8 @@ impl PythonOdooBuilder {
 
     fn _load_class_inherit(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
         let module = loc_sym.get_module_sym();
-        let symbol = loc_sym.symbol().borrow();
+        let symbol = loc_sym.symbol();
+        let symbol = symbol.borrow();
         let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]));
         if let Some(_inherit) = _inherit {
             if _inherit.borrow().last_loc_sym().borrow().evaluations.len() == 0 {
@@ -131,7 +132,8 @@ impl PythonOdooBuilder {
     }
 
     fn _evaluate_name(&mut self, session: &mut SessionInfo, loc_sym: &LocalizedSymbol) -> String {
-        let symbol = loc_sym.symbol().borrow();
+        let symbol = loc_sym.symbol();
+        let symbol = symbol.borrow();
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]));
         if let Some(_name) = _name {
             for eval in _name.borrow().last_loc_sym().borrow().evaluations.iter() {
@@ -187,7 +189,7 @@ impl PythonOdooBuilder {
         if attr_sym.len() == 0 {
             return None;
         }
-        let attr_sym = attr_sym[0];
+        let attr_sym = &attr_sym[0];
         for eval in attr_sym.get_localized_symbol().unwrap().borrow().evaluations.iter() {
             let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
             return eval;
@@ -312,9 +314,10 @@ impl PythonOdooBuilder {
         loc_sym._model = Some(ModelData::new());
         let register = loc_sym.symbol.upgrade().unwrap().borrow().get_symbol(&(vec![], vec![S!("_register")]));
         if let Some(register) = register {
-            let register_evals = &register.borrow().last_loc_sym().borrow().evaluations;
+            let loc_register = register.borrow().last_loc_sym();
+            let register_evals = &loc_register.borrow().evaluations;
             if register_evals.len() == 1 { //we don't handle multiple values
-                let eval = register_evals[0];
+                let eval = &register_evals[0];
                 let value = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if value.is_some() {
                     let value = value.unwrap();

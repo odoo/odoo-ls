@@ -73,9 +73,8 @@ impl FileInfo {
             };
         }
     }
-//"/home/odoo/Documents/odoo-servers/test_odoo/odoo/odoo/addons/base/__manifest__.py"
+
     pub fn _build_ast(&mut self) {
-        //let ast = ast::Suite::parse(&content, content_path);
         let mut diagnostics = vec![];
         let content = &self.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes

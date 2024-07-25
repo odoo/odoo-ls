@@ -8,14 +8,14 @@ use crate::S;
 use super::{evaluation::Evaluation, localized_symbol::LocalizedSymbol, symbol::Symbol};
 
 #[derive(Debug, Clone)]
-enum SectionIndex {
+pub enum SectionIndex {
     INDEX(u32),
     OR(Vec<SectionIndex>),
     NONE,
 }
 
 #[derive(Debug, Clone)]
-struct SectionRange {
+pub struct SectionRange {
     pub start: u32,
     pub index: u32,
     pub previous_indexes: SectionIndex,
@@ -25,16 +25,14 @@ struct SectionRange {
 #[derive(Debug)]
 pub struct SymbolLocation {
     sections: Vec<SectionRange>,
-    end_offset: u32,
     symbols: HashMap<String, Rc<RefCell<Symbol>>>,
 }
 
 impl SymbolLocation {
 
-    pub fn new(range: TextRange)-> Self {
+    pub fn new()-> Self {
         Self {
-            sections: vec![SectionRange{start: range.start().to_u32(), index: 0, previous_indexes: SectionIndex::NONE}],
-            end_offset: range.end().to_u32(),
+            sections: vec![SectionRange{start: 0, index: 0, previous_indexes: SectionIndex::NONE}],
             symbols: HashMap::new(),
         }
     }
@@ -43,7 +41,7 @@ impl SymbolLocation {
         return self.symbols.get(name).cloned();
     }
 
-    pub fn remove(&self, name: &String) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn remove(&mut self, name: &String) -> Option<Rc<RefCell<Symbol>>> {
         self.symbols.remove(name)
     }
 
@@ -83,15 +81,7 @@ impl SymbolLocation {
             index: self.sections.len() as u32,
             previous_indexes: previous_index,
         };
-        self.sections.push(new_section);
-        if range.end().to_u32() < self.end_offset {
-            let end_section = SectionRange {
-                start: range.start().to_u32(),
-                index: self.sections.len() as u32,
-                previous_indexes: SectionIndex::INDEX(last_index),
-            };
-            self.sections.push(end_section);
-        }
+        self.sections.push(new_section.clone());
         new_section
     }
 
@@ -100,11 +90,11 @@ impl SymbolLocation {
     }
 
     /* Note on how to declare sections for an if:
-    
+
     given:
     i = IfStmt
     ei = ElifStmt
-    
+
     old_last_section = last_section
     i_body = i.body)
         visit_body
@@ -114,7 +104,7 @@ impl SymbolLocation {
         visit_body
     else_body = add_section(Range_none) //needed to have the possibility  to have ei_condition evaluated but not body
     next_sections = last_section
-    
+
     change_parent(old_last_section, ei_condition)
     change_parent(ei_condition, ei_body)
     change_parent(ei_condition, else_body)
@@ -176,7 +166,7 @@ impl Symbol {
         if let Some(parent) = self.parent.as_ref() {
             if let Some(parent) = parent.upgrade() {
                 let parent = parent.borrow();
-                let section = &parent.symbols.unwrap().get_section_for(position);
+                let section = &parent.symbols.as_ref().unwrap().get_section_for(position);
                 res = self._find_loc_sym(position, &parent, &SectionIndex::INDEX(section.index), &mut vec![]);
             } else {
                 warn!("Parent must be available to get localized symbols");

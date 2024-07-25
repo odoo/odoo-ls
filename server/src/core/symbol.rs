@@ -19,7 +19,7 @@ use std::vec;
 use lsp_types::Diagnostic;
 
 use super::evaluation::SymbolRef;
-use super::localized_symbol::{LocalizedSymbol, LocalizedSymbolIter};
+use super::localized_symbol::LocalizedSymbol;
 use super::symbol_location::{self, SymbolLocation};
 use super::symbols::function_symbol::FunctionSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
@@ -54,7 +54,7 @@ pub struct Symbol {
 
 impl Symbol {
     fn new(name: String, sym_type: SymType) -> Self {
-        Symbol{
+        let mut sym = Symbol{
             name: name.clone(),
             sym_type: sym_type,
             paths: vec![],
@@ -106,7 +106,14 @@ impl Symbol {
 
             _root: None,
             _module: None,
+        };
+        match sym_type {
+            SymType::FILE | SymType::PACKAGE | SymType::CONTENT => {
+                sym.symbols = Some(SymbolLocation::new());
+            },
+            _ => {}
         }
+        sym
     }
 
     pub fn new_root(name: String, sym_type: SymType) -> Self {
@@ -385,7 +392,7 @@ impl Symbol {
 
     pub fn remove_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if symbol.borrow().is_file_content() {
-            self.symbols.as_ref().unwrap().remove(&symbol.borrow().name);
+            self.symbols.as_mut().unwrap().remove(&symbol.borrow().name);
         } else {
             let in_modules = self.module_symbols.get(&symbol.borrow().name);
             if in_modules.is_some() && Rc::ptr_eq(&in_modules.unwrap(), &symbol) {
@@ -447,9 +454,9 @@ impl Symbol {
         res
     }
 
-    pub fn follow_ref(symbol: SymbolRef, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<(SymbolRef, bool)> {
+    pub fn follow_ref(symbol: &SymbolRef, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<(SymbolRef, bool)> {
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut sym: &Rc<RefCell<Symbol>> = symbol.get_symbol();
+        let mut sym = symbol.get_symbol();
         let mut sym_loc = symbol.get_localized_symbol();
         if sym_loc.is_none() {
             return vec![];
@@ -500,8 +507,10 @@ impl Symbol {
     }
 
     pub fn create_or_get_symbol(&mut self, session: &mut SessionInfo, name: &str, sym_type: SymType) -> Rc<RefCell<Symbol>> {
+        if self.symbols.is_some() {
         if let Some(existing) = self.symbols().get(name) {
             return existing;
+            }
         }
         let mut new_sym = Symbol::new(S!(name), sym_type);
         if self.is_external {
@@ -510,12 +519,12 @@ impl Symbol {
         let rc = Rc::new(RefCell::new(new_sym));
         let mut locked_symbol = rc.borrow_mut();
         locked_symbol.weak_self = Some(Rc::downgrade(&rc));
-        locked_symbol.parent = match self.weak_self {
+        locked_symbol.parent = match &self.weak_self {
             Some(s) => Some(s.clone()),
             None => panic!("A parent must be set to create a new symbol")
         };
         if locked_symbol.is_file_content() {
-            self.symbols.unwrap().add_symbol(name, rc.clone());
+            self.symbols.as_mut().unwrap().add_symbol(name, rc.clone());
         } else {
             self.module_symbols.insert(S!(name), rc.clone());
         }
@@ -527,15 +536,15 @@ impl Symbol {
 
     pub fn set_module(&mut self, session: &mut SessionInfo, _module: ModuleSymbol ) {
         self._module = Some(_module);
-        session.sync_odoo.modules.insert(_module.dir_name.clone(), self.weak_self.unwrap());
+        session.sync_odoo.modules.insert(self._module.as_ref().unwrap().dir_name.clone(), self.weak_self.as_ref().unwrap().clone());
     }
 
     pub fn get_module(&self) -> &ModuleSymbol {
-        &self._module.expect("Module should be set before call 'get_module'")
+        self._module.as_ref().expect("Module should be set before call 'get_module'")
     }
 
-    pub fn get_module_mut(&self) -> &mut ModuleSymbol {
-        &mut self._module.expect("Module should be set before call 'get_module'")
+    pub fn get_module_mut(&mut self) -> &mut ModuleSymbol {
+        self._module.as_mut().expect("Module should be set before call 'get_module'")
     }
 
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
@@ -582,7 +591,7 @@ impl Symbol {
 
     /// get a LocalizedSymbol that has the same given range and name
     pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Rc<RefCell<LocalizedSymbol>>> {
-        if let Some(symbol) = self.symbols.unwrap().get(name) {
+        if let Some(symbol) = self.symbols.as_ref().unwrap().get(name) {
             for section in symbol.borrow().localized_sym.iter() {
                 for loc in section.iter() {
                     if loc.borrow().range.start() == range.start() {
@@ -607,7 +616,7 @@ impl Symbol {
                 acc.push_str(format!("at {}", local.borrow().range.start().to_u32()).as_str());
             }
         }
-        if let Some(symbol_location) = self.symbols {
+        if let Some(symbol_location) = &self.symbols {
             if symbol_location.symbols().len() > 0 {
                 for _ in 0..level {
                     acc.push_str(" ");
@@ -641,7 +650,7 @@ impl Symbol {
         for s in self.module_symbols.values() {
             modules.push(s.borrow_mut().debug_to_json());
         }
-        for s in self.symbols.unwrap().symbols().values() {
+        for s in self.symbols.as_ref().unwrap().symbols().values() {
             symbols.push(s.borrow_mut().debug_to_json());
         }
         json!({
@@ -671,38 +680,34 @@ impl Symbol {
 
     //create a new localized symbol on the last section for the given range
     pub fn new_localized_symbol(&mut self, loc_sym_type: LocSymType, range: TextRange) -> Rc<RefCell<LocalizedSymbol>> {
-        let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.unwrap(), loc_sym_type, range)));
-        self.localized_sym.last().unwrap().push(sym.clone());
+        let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.as_ref().unwrap().clone(), loc_sym_type, range)));
+        self.localized_sym.last_mut().unwrap().push(sym.clone());
         sym
     }
 
     //create a new localized symbol with a range that can be in custom section
     pub fn new_localized_symbol_with_range(&mut self, loc_sym_type: LocSymType, range: TextRange) -> Rc<RefCell<LocalizedSymbol>> {
-        let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.unwrap(), loc_sym_type, range)));
-        let section_id = self.parent.unwrap().upgrade().unwrap().borrow().symbols().get_section_for(range.start().to_u32()).index;
+        let sym = Rc::new(RefCell::new(LocalizedSymbol::new(self.weak_self.as_ref().unwrap().clone(), loc_sym_type, range)));
+        let section_id = self.parent.as_ref().unwrap().upgrade().unwrap().borrow().symbols().get_section_for(range.start().to_u32()).index;
         let index_to_insert = self.localized_sym[section_id as usize].binary_search_by(|x| x.borrow().range.start().to_u32().cmp(&range.start().to_u32())).unwrap_or_else(|x| x);
-        self.localized_sym[section_id as usize].insert(index_to_insert, sym);
+        self.localized_sym[section_id as usize].insert(index_to_insert, sym.clone());
         sym
-    }
-
-    pub fn iter_localized_symbols<'a>(&'a self, position: u32) -> impl Iterator<Item= &'a Rc<RefCell<LocalizedSymbol>>> + 'a {
-        //return an iterator on all last instanciation of symbols.
-        LocalizedSymbolIter::new(self.symbols(), position)
     }
 
     //infer a name, given a position
     pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<TextSize>) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
         let mut results: Vec<Rc<RefCell<LocalizedSymbol>>> = vec![];
         //TODO implement 'super' behaviour in hooks
-        let symbol_location = on_symbol.borrow().symbols.unwrap();
+        let on_symbol = on_symbol.borrow();
+        let symbol_location = on_symbol.symbols.as_ref().unwrap();
         if let Some(symbol) = symbol_location.get(name) {
             results = symbol.borrow().get_loc_sym(position.unwrap_or(TextSize::MAX).to_u32());
         }
-        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.borrow().sym_type) {
-            let parent = on_symbol.borrow().parent.as_ref().unwrap().upgrade().unwrap();
+        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.sym_type) {
+            let parent = on_symbol.parent.as_ref().unwrap().upgrade().unwrap();
             return Symbol::infer_name(odoo, &parent, name, position);
         }
-        if results.len() == 0 && (on_symbol.borrow().name != "builtins" || on_symbol.borrow().sym_type != SymType::FILE) {
+        if results.len() == 0 && (on_symbol.name != "builtins" || on_symbol.sym_type != SymType::FILE) {
             let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![])).as_ref().unwrap().clone();
             return Symbol::infer_name(odoo, &builtins, name, None);
         }
@@ -738,7 +743,7 @@ impl Symbol {
         //TODO search in localSymbols too
         let mut result = sym.clone();
         let sym = sym.get_symbol();
-        for s in sym.borrow().symbols.unwrap().symbols().values() {
+        for s in sym.borrow().symbols.as_ref().unwrap().symbols().values() {
             for section in sym.borrow().localized_sym.iter() {
                 for loc in section.iter() {
                     if loc.borrow().range.start().to_u32() < offset &&
@@ -760,6 +765,6 @@ impl Symbol {
 
     ///Return a SymbolRef for this symbol. If LocalizedSymbol is present, return a SymbolRef with position = u32::MAX
     pub fn to_sym_ref(&self) -> SymbolRef {
-        SymbolRef::new(self.weak_self.unwrap().upgrade().unwrap(), u32::MAX)
+        SymbolRef::new(self.weak_self.as_ref().unwrap().upgrade().unwrap(), u32::MAX)
     }
 }

@@ -95,7 +95,8 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        let mut symbol = self.sym_ref.get_symbol().borrow_mut();
+        let symbol = self.sym_ref.get_symbol();
+        let mut symbol = symbol.borrow_mut();
         self.current_module = symbol.get_module_sym();
         if symbol.validation_status != BuildStatus::PENDING {
             return;
@@ -149,7 +150,8 @@ impl PythonValidator {
             },
             _ => {panic!("Only File, function or class can be validated")}
         }
-        let mut symbol = self.sym_ref.get_symbol().borrow_mut();
+        let symbol = self.sym_ref.get_symbol();
+        let mut symbol = symbol.borrow_mut();
         symbol.validation_status = BuildStatus::DONE;
         let mut loc_sym = self.sym_ref.get_localized_symbol();
         if loc_sym.is_some() {
@@ -320,7 +322,8 @@ impl PythonValidator {
         //Check inherit field
         let inherit = cl.symbol.upgrade().unwrap().borrow().get_symbol(&(vec![], vec![S!("_inherit")]));
         if let Some(inherit) = inherit {
-            let inherit_evals = &inherit.borrow().last_loc_sym().borrow().evaluations;
+            let loc_inherit = inherit.borrow().last_loc_sym();
+            let inherit_evals = &loc_inherit.borrow().evaluations;
             for inherit_eval in inherit_evals.iter() {
                 let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {

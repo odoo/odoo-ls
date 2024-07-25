@@ -141,9 +141,9 @@ impl PythonArchEval {
 
     ///follow the given symbol and check the files are evaluated if evaluation is None
     fn follow_and_resolve_eval(&mut self, session: &mut SessionInfo, sym_ref: SymbolRef) {
-        let imports = Symbol::follow_ref(sym_ref, session, &mut None, false, false, &mut self.diagnostics);
+        let imports = Symbol::follow_ref(&sym_ref, session, &mut None, false, false, &mut self.diagnostics);
         for import in imports.iter() {
-            let (mut sym_ref, mut instance) = import;
+            let (mut sym_ref, mut instance) = import.clone();
             let mut loc_sym = sym_ref.get_localized_symbol().unwrap();
             if loc_sym.borrow().evaluations.is_empty() {
                 let file_sym = sym_ref.get_symbol().borrow().get_file();
@@ -300,7 +300,7 @@ impl PythonArchEval {
 
     fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut Symbol, tree_not_found: &Tree, range: &TextRange) {
         let tree = flatten_tree(tree_not_found);
-        file.not_found_paths.push((BuildSteps::ARCH_EVAL, tree));
+        file.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
         session.sync_odoo.not_found_symbols.insert(file.get_rc().unwrap());
         self.diagnostics.push(Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
@@ -315,11 +315,12 @@ impl PythonArchEval {
 
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<LocalizedSymbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
-            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack[0], &base.range().start());
+            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack[0].clone(), &base.range().start());
             self.diagnostics.extend(eval_base.1);
             let eval_base = eval_base.0;
             if eval_base.len() == 0 {
-                let mut file = self.sym_stack[0].borrow_mut();
+                let file = self.sym_stack[0].clone();
+                let mut file = file.borrow_mut();
                 //TODO build tree
                 self.create_diagnostic_base_not_found(session, &mut file, &(vec![], vec![]), &base.range());
             }
@@ -335,7 +336,7 @@ impl PythonArchEval {
                 ));
                 continue;
             }
-            let eval_base = eval_base[0];
+            let eval_base = &eval_base[0];
             let symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![]).0;
             if symbol.get_symbol().borrow().sym_type != SymType::COMPILED {
                 if symbol.get_localized_symbol().unwrap().borrow().loc_sym_type != LocSymType::CLASS {
@@ -349,7 +350,7 @@ impl PythonArchEval {
                         None,
                     ));
                 } else {
-                    let file = self.sym_stack[0];
+                    let file = &self.sym_stack[0];
                     let file_symbol = symbol.get_symbol().borrow().get_file().unwrap().upgrade().unwrap();
                     if !Rc::ptr_eq(&file, &file_symbol) {
                         file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);

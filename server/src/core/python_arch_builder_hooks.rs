@@ -15,7 +15,8 @@ impl PythonArchBuilderHooks {
 
     pub fn on_class_def(session: &mut SessionInfo, localized_sym: Rc<RefCell<LocalizedSymbol>>) {
         let mut loc = localized_sym.borrow_mut();
-        let mut symbol = loc.symbol.upgrade().unwrap().borrow_mut();
+        let symbol = loc.symbol.upgrade().unwrap();
+        let mut symbol = symbol.borrow_mut();
         let name = &symbol.name;
         match name.as_str() {
             "BaseModel" => {
@@ -23,7 +24,6 @@ impl PythonArchBuilderHooks {
                     // ----------- env ------------
                     let env = symbol.get_symbol(&(vec![], vec![S!("env")]));
                     if env.is_none() {
-                        let mut env = symbol.create_or_get_symbol(session, "env", SymType::CONTENT);
                         let mut range = loc.range.clone();
                         let slots = symbol.get_symbol(&(vec![], vec![S!("__slots__")]));
                         if let Some(slots) = slots {
@@ -33,7 +33,8 @@ impl PythonArchBuilderHooks {
                                 range = loc_slots[0].borrow().range;
                             }
                         }
-                        let loc_env = env.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                        let mut env = symbol.create_or_get_symbol(session, "env", SymType::CONTENT);
+                        env.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, range);
                     }
                 }
             },
@@ -50,18 +51,18 @@ impl PythonArchBuilderHooks {
                     }
                     // ----------- env.cr ------------
                     let mut cr_sym = symbol.create_or_get_symbol(session, "cr", SymType::CONTENT);
-                    cr_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    cr_sym.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, range);
                     // ----------- env.uid ------------
                     let mut uid_sym = symbol.create_or_get_symbol(session, "uid", SymType::CONTENT);
-                    let uid_loc = uid_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    let uid_loc = uid_sym.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, range);
                     uid_loc.borrow_mut().doc_string = Some(S!("The current user id (for access rights checks)"));
                     // ----------- env.context ------------
                     let mut context_sym = symbol.create_or_get_symbol(session, "context", SymType::CONTENT);
-                    let context_loc = context_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    let context_loc = context_sym.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, range);
                     context_loc.borrow_mut().doc_string = Some(S!("The current context"));
                     // ----------- env.su ------------
                     let mut su_sym = symbol.create_or_get_symbol(session, "su", SymType::CONTENT);
-                    let su_loc = su_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, range);
+                    let su_loc = su_sym.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, range);
                     su_loc.borrow_mut().doc_string = Some(S!("whether in superuser mode"));
                 }
             },
@@ -76,7 +77,7 @@ impl PythonArchBuilderHooks {
                     let get_sym = symbol.get_symbol(&(vec![], vec![S!("__get__")]));
                     if get_sym.is_none() {
                         let mut get_sym = symbol.create_or_get_symbol(session, "__get__", SymType::CONTENT);
-                        let get_loc = get_sym.borrow().new_localized_symbol(LocSymType::VARIABLE, loc.range.clone());
+                        let get_loc = get_sym.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, loc.range.clone());
                     }
                 }
             }

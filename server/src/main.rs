@@ -7,7 +7,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
-use std::env;
+use std::{env, path::PathBuf};
 
 
 fn main() {
@@ -27,8 +27,8 @@ fn main() {
     let mut exe_dir = env::current_exe().expect("Unable to get binary directory... aborting");
     exe_dir.pop();
 
-    let log_dir = exe_dir.join("logs").sanitize();
-    if let Some(log_directory) = cli.logs_directory {
+    let mut log_dir = exe_dir.join("logs").sanitize();
+    if let Some(log_directory) = cli.logs_directory.clone() {
         let pathbuf = PathBuf::from(log_directory);
         if pathbuf.exists() {
             log_dir = pathbuf.sanitize();

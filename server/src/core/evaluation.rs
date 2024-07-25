@@ -28,18 +28,24 @@ impl SymbolRef {
             position
         }
     }
+    pub fn empty() -> Self {
+        Self {
+            symbol: Weak::new(),
+            position: 0
+        }
+    }
     pub fn is_expired(&self) -> bool {
         self.symbol.is_expired()
     }
     pub fn get_weak(&self) -> Weak<RefCell<Symbol>> {
-        self.symbol
+        self.symbol.clone()
     }
-    pub fn get_symbol(&self) -> &Rc<RefCell<Symbol>> {
-        &self.symbol.upgrade().unwrap()
+    pub fn get_symbol(&self) -> Rc<RefCell<Symbol>> {
+        self.symbol.upgrade().unwrap().clone()
     }
     //return the linked localized Symbol if exists
-    pub fn get_localized_symbol(&self) -> &Option<Rc<RefCell<LocalizedSymbol>>> {
-        &self.symbol.upgrade().unwrap().borrow().get_loc_sym_at(self.position)
+    pub fn get_localized_symbol(&self) -> Option<Rc<RefCell<LocalizedSymbol>>> {
+        self.symbol.upgrade().unwrap().borrow().get_loc_sym_at(self.position)
     }
 }
 
@@ -276,13 +282,13 @@ impl Evaluation {
             Some(self.value.as_ref().unwrap().clone())
         } else {
             let symbol = self.symbol.get_symbol(session, context, diagnostics).0;
-            let evals = Symbol::follow_ref(symbol, session, context, false, true, diagnostics);
+            let evals = Symbol::follow_ref(&symbol, session, context, false, true, diagnostics);
             if evals.len() == 1 {
-                let eval = evals[0];
+                let eval = &evals[0];
                 let loc_sym = eval.0.get_localized_symbol();
                 if let Some(loc_sym) = loc_sym {
                     if loc_sym.borrow().evaluations.len() == 1 {
-                        let eval = loc_sym.borrow().evaluations[0];
+                        let eval = &loc_sym.borrow().evaluations[0];
                         if eval.value.is_some() {
                             return Some(eval.value.as_ref().unwrap().clone());
                         }
@@ -327,7 +333,7 @@ impl Evaluation {
     fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
         if value.symbols.len() == 1 { //only handle strict evaluations
-            let eval = value.symbols[0];
+            let eval = &value.symbols[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
             if let Some(v) = v {
                 match v {
@@ -542,11 +548,11 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base_ref = evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
-                let bases = Symbol::follow_ref(base_ref, session, &mut None, false, false, &mut diagnostics);
+                let bases = Symbol::follow_ref(&base_ref, session, &mut None, false, false, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.0.get_localized_symbol();
                     if let Some(base_loc) = base_loc {
-                        let attributes = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module, false, true, &mut diagnostics);
+                        let attributes = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, &mut diagnostics);
                         if !attributes.is_empty() {
                             evals.push(Evaluation::eval_from_symbol(attributes.first().unwrap()));
                         }
@@ -579,12 +585,12 @@ impl Evaluation {
                 if eval_left.len() != 1 || eval_left[0].symbol.symbol.get_weak().is_expired() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = eval_left[0].symbol.symbol;
+                let base = &eval_left[0].symbol.symbol;
                 let bases = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = bases[0];
+                let base = &bases[0];
                 let base = base.0.get_localized_symbol().unwrap();
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 let base = base.borrow();
@@ -592,10 +598,10 @@ impl Evaluation {
                 if let Some(value) = value.0 {
                     let get_item = base.get_loc_symbol(vec![S!("__getitem__")]);
                     if get_item.len() == 1 {
-                        let get_item = get_item[0];
+                        let get_item = &get_item[0];
                         let get_item = get_item.borrow();
                         if get_item.evaluations.len() == 1 {
-                            let get_item_eval = get_item.evaluations[0];
+                            let get_item_eval = &get_item.evaluations[0];
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
                                 context.insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.remove(&S!("range"));
@@ -638,6 +644,6 @@ impl EvaluationSymbol {
             let hook = self.get_symbol_hook.unwrap();
             return hook(session, self, context, diagnostics);
         }
-        (self.symbol, self.instance)
+        (self.symbol.clone(), self.instance)
     }
 }

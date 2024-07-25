@@ -36,7 +36,7 @@ pub struct Cli {
     #[arg(long)]
     pub no_typeshed: bool,
 
-    //give an alternative path to stdlib stubs. 
+    //give an alternative path to stdlib stubs.
     #[arg(long)]
     pub stdlib: Option<String>,
 

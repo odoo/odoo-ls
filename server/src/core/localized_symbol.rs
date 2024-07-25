@@ -47,7 +47,7 @@ impl LocalizedSymbol {
     }
 
     pub fn is_type_alias(&self) -> bool {
-        return self.evaluations.len() >= 1 && self.evaluations.iter().all(|&x| !x.symbol.instance) && !self.is_import_variable;
+        return self.evaluations.len() >= 1 && self.evaluations.iter().all(|x| !x.symbol.instance) && !self.is_import_variable;
     }
 
     pub fn to_symbol_ref(&self) -> SymbolRef {
@@ -66,7 +66,8 @@ impl LocalizedSymbol {
     :param: from_module: optional, can change the from_module of the given class */
     pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<SymbolRef> {
         let mut result: Vec<SymbolRef> = vec![];
-        let sym = self.symbol.upgrade().unwrap().borrow();
+        let sym = self.symbol.upgrade().unwrap();
+        let sym = sym.borrow();
         if sym.module_symbols.contains_key(name) {
             if all {
                 result.push(sym.module_symbols[name].borrow().to_sym_ref());
@@ -74,11 +75,11 @@ impl LocalizedSymbol {
                 return vec![sym.module_symbols[name].borrow().to_sym_ref()];
             }
         }
-        if sym.symbols.unwrap().symbols().contains_key(name) {
+        if sym.symbols.as_ref().unwrap().symbols().contains_key(name) {
             if all {
-                result.push(sym.symbols.unwrap().symbols()[name].borrow().to_sym_ref());
+                result.push(sym.symbols.as_ref().unwrap().symbols()[name].borrow().to_sym_ref());
             } else {
-                return vec![sym.symbols.unwrap().symbols()[name].borrow().to_sym_ref()];
+                return vec![sym.symbols.as_ref().unwrap().symbols()[name].borrow().to_sym_ref()];
             }
         }
         if self._model.is_some() && !prevent_comodel {
@@ -86,7 +87,7 @@ impl LocalizedSymbol {
             if let Some(model) = model {
                 let loc_symbols = model.clone().borrow().get_symbols(session, from_module.clone().unwrap_or(self.get_module_sym().expect("unable to find module")));
                 for loc_sym in loc_symbols {
-                    if self.is_equal(loc_sym) {
+                    if self.is_equal(&loc_sym) {
                         continue;
                     }
                     let attribut = loc_sym.borrow().get_member_symbol(session, name, None, true, all, diagnostics);
@@ -116,7 +117,7 @@ impl LocalizedSymbol {
         result
     }
 
-    pub fn is_equal(&self, other: Rc<RefCell<LocalizedSymbol>>) -> bool {
+    pub fn is_equal(&self, other: &Rc<RefCell<LocalizedSymbol>>) -> bool {
         if Weak::ptr_eq(&self.symbol, &other.borrow().symbol) {
             return self.range == other.borrow().range;
         }
@@ -125,45 +126,12 @@ impl LocalizedSymbol {
 
     ///Return last declarations of LocalizedSymbols that are in the range of this LocalizedSymbol
     pub fn get_loc_symbol(&self, names: Vec<String>) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
-        let symbol = self.symbol().borrow();
+        let symbol = self.symbol();
+        let symbol = symbol.borrow();
         let child = symbol.get_symbol(&(vec![], names));
         if let Some(child) = child {
             return child.borrow().get_loc_sym(self.range.end().to_u32());
         }
         vec![]
-    }
-}
-
-//to iter through all last LocalizedSymbol of all symbols in a Symbol
-pub struct LocalizedSymbolIter<'a> {
-    outer_iter: std::collections::hash_map::Values<'a, String, Rc<RefCell<Symbol>>>,
-    inner_iter: Option<std::slice::Iter<'a, Rc<RefCell<LocalizedSymbol>>>>,
-    position: u32
-}
-
-impl<'a> LocalizedSymbolIter<'a> {
-    pub fn new(symbol_location: &'a SymbolLocation, position: u32) -> Self {
-        let mut outer_iter = symbol_location.symbols().values();
-        let inner_iter = outer_iter.next().map(|symbol| symbol.borrow().get_loc_sym(position).iter());
-
-        LocalizedSymbolIter { outer_iter, inner_iter, position}
-    }
-}
-
-impl<'a> Iterator for LocalizedSymbolIter<'a> {
-    type Item = &'a Rc<RefCell<LocalizedSymbol>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(ref mut inner) = self.inner_iter {
-                if let Some(loc_sym) = inner.next() {
-                    return Some(loc_sym);
-                }
-            }
-            self.inner_iter = self.outer_iter.next().map(|symbol| symbol.borrow().get_loc_sym(self.position).iter());
-            if self.inner_iter.is_none() {
-                return None;
-            }
-        }
     }
 }
