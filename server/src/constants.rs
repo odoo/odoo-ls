@@ -19,30 +19,17 @@ pub fn flatten_tree(tree: &Tree) -> Vec<String> {
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
-    DIRTY,
     ROOT,
     NAMESPACE,
     PACKAGE,
     FILE,
     COMPILED,
-    CONTENT
+    VARIABLE,
+    CLASS,
+    FUNCTION
 }
 
 impl fmt::Display for SymType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-pub enum LocSymType {
-    FILE_OR_PACKAGE,
-    CLASS,
-    FUNCTION,
-    VARIABLE
-}
-
-impl fmt::Display for LocSymType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }

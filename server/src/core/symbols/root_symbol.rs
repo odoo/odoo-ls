@@ -1,16 +1,27 @@
-use crate::threads::SessionInfo;
-use crate::{constants::SymType, core::symbol::Symbol};
-use std::cell::RefMut;
+use crate::{constants::SymType, threads::SessionInfo};
+use std::{cell::{RefCell, RefMut}, rc::Weak};
+
+use super::symbol::MainSymbol;
 
 #[derive(Debug)]
 pub struct RootSymbol {
     pub sys_path: Vec<String>, //sys path are stored in paths too, but this list identifies them
+    pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
+    pub parent: Option<Weak<RefCell<MainSymbol>>>,
 }
 
 impl RootSymbol {
 
-    pub fn add_symbol(&self, session: &mut SessionInfo, _self_symbol: &Symbol, symbol: &mut RefMut<Symbol>) {
-        match symbol.sym_type {
+    pub fn new() -> Self {
+        Self {
+            sys_path: vec![],
+            weak_self: None,
+            parent: None,
+        }
+    }
+
+    pub fn add_symbol(&self, session: &mut SessionInfo, symbol: &mut RefMut<MainSymbol>) {
+        match symbol.get_type() {
             SymType::FILE | SymType::PACKAGE => {
                 for path in symbol.paths.iter() {
                     for sys_p in self.sys_path.iter() {

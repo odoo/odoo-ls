@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use crate::constants::*;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;

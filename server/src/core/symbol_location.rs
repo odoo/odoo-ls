@@ -5,7 +5,7 @@ use tracing::warn;
 
 use crate::S;
 
-use super::{evaluation::Evaluation, localized_symbol::LocalizedSymbol, symbol::Symbol};
+use super::{evaluation::Evaluation, localized_symbol::LocalizedSymbol, symbols::symbol::Symbol};
 
 #[derive(Debug, Clone)]
 pub enum SectionIndex {

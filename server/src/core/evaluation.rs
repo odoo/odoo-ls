@@ -8,69 +8,11 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::constants::*;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::S;
 
-use super::localized_symbol::LocalizedSymbol;
 use super::python_validator::PythonValidator;
-
-#[derive(Debug, Default, Clone)]
-pub struct SymbolRef {
-    symbol: Weak<RefCell<Symbol>>,
-    position: u32,
-}
-
-impl SymbolRef {
-    pub fn new(symbol: Rc<RefCell<Symbol>>, position: u32) -> Self {
-        Self {
-            symbol: Rc::downgrade(&symbol),
-            position
-        }
-    }
-    pub fn empty() -> Self {
-        Self {
-            symbol: Weak::new(),
-            position: 0
-        }
-    }
-    pub fn is_expired(&self) -> bool {
-        self.symbol.is_expired()
-    }
-    pub fn get_weak(&self) -> Weak<RefCell<Symbol>> {
-        self.symbol.clone()
-    }
-    pub fn get_symbol(&self) -> Rc<RefCell<Symbol>> {
-        self.symbol.upgrade().unwrap().clone()
-    }
-    //return the linked localized Symbol if exists
-    pub fn get_localized_symbol(&self) -> Option<Rc<RefCell<LocalizedSymbol>>> {
-        self.symbol.upgrade().unwrap().borrow().get_loc_sym_at(self.position)
-    }
-}
-
-impl From<LocalizedSymbol> for SymbolRef {
-    fn from(value: LocalizedSymbol) -> Self {
-        Self {
-            symbol: value.symbol.clone(),
-            position: value.range.start().to_u32()
-        }
-    }
-}
-impl From<&LocalizedSymbol> for SymbolRef {
-    fn from(value: &LocalizedSymbol) -> Self {
-        Self {
-            symbol: value.symbol.clone(),
-            position: value.range.start().to_u32()
-        }
-    }
-}
-
-impl PartialEq for SymbolRef {
-    fn eq(&self, other: &Self) -> bool {
-        Weak::ptr_eq(&self.symbol, &other.symbol) && self.position == other.position
-    }
-}
+use super::symbols::symbol::MainSymbol;
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -124,7 +66,7 @@ impl ExprOrIdent<'_> {
 pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
-    MODULE(Rc<RefCell<Symbol>>),
+    MODULE(Rc<RefCell<MainSymbol>>),
     RANGE(TextRange)
 }
 
@@ -143,7 +85,7 @@ impl ContextValue {
         }
     }
 
-    pub fn as_module(&self) -> Rc<RefCell<Symbol>> {
+    pub fn as_module(&self) -> Rc<RefCell<MainSymbol>> {
         match self {
             ContextValue::MODULE(m) => m.clone(),
             _ => panic!("Not a module")
@@ -160,22 +102,22 @@ impl ContextValue {
 
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (SymbolRef, bool);
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Rc<RefCell<MainSymbol>>, bool);
 
 #[derive(Debug, Default, Clone)]
 pub struct EvaluationSymbol {
-    pub symbol: SymbolRef,
+    pub symbol: Weak<RefCell<MainSymbol>>,
     pub instance: bool,
     pub context: Context,
-    pub factory: Option<Weak<RefCell<Symbol>>>,
+    pub factory: Option<Weak<RefCell<MainSymbol>>>,
     pub get_symbol_hook: Option<GetSymbolHook>,
 }
 
 #[derive(Default)]
 pub struct AnalyzeAstResult {
     pub symbols: Vec<Evaluation>,
-    pub effective_sym: Option<Weak<RefCell<LocalizedSymbol>>>,
-    pub factory: Option<Weak<RefCell<LocalizedSymbol>>>,
+    pub effective_sym: Option<Weak<RefCell<MainSymbol>>>,
+    pub factory: Option<Weak<RefCell<MainSymbol>>>,
     pub context: Option<Context>,
     pub diagnostics: Vec<Diagnostic>
 }
@@ -191,10 +133,7 @@ impl Evaluation {
     pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: SymbolRef{
-                    symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")])).expect("builtins list not found")),
-                    position: u32::MAX
-                },
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")]), u32::MAX).expect("builtins list not found")),
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -324,13 +263,13 @@ impl Evaluation {
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
     //The result is a list, because some ast can give various possible results. For example: a = func()
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<MainSymbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
         return (analyze_result.symbols, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
+    fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<MainSymbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
         if value.symbols.len() == 1 { //only handle strict evaluations
             let eval = &value.symbols[0];
@@ -387,7 +326,7 @@ impl Evaluation {
         Definition -> symbol
         Autocompletion -> effective_sym
      */
-    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
+    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<MainSymbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
         let odoo = &mut session.sync_odoo;
         let mut evals = vec![];
         let effective_sym = None;
@@ -399,7 +338,7 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let module: Option<Rc<RefCell<Symbol>>> = parent.borrow().get_module_sym();
+        let module: Option<Rc<RefCell<MainSymbol>>> = parent.borrow().get_module_sym();
         let mut context: Context = HashMap::from([
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))

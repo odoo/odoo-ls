@@ -23,7 +23,7 @@ use regex::Regex;
 use crate::constants::*;
 use super::config::{DiagMissingImportsMode, RefreshMode};
 use super::file_mgr::FileMgr;
-use super::symbol::Symbol;
+use super::symbols::symbol::MainSymbol;
 use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -47,18 +47,18 @@ pub struct SyncOdoo {
     pub version_micro: u32,
     pub full_version: String,
     pub config: Config,
-    pub symbols: Option<Rc<RefCell<Symbol>>>,
+    pub symbols: Option<Rc<RefCell<MainSymbol>>>,
     pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
     file_mgr: Rc<RefCell<FileMgr>>,
-    pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
+    pub modules: HashMap<String, Weak<RefCell<MainSymbol>>>,
     pub models: HashMap<String, Rc<RefCell<Model>>>,
-    rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    rebuild_arch: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
+    rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
+    rebuild_odoo: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
+    rebuild_validation: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
     pub state_init: InitState,
-    pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
     pub need_rebuild: bool //if true, the next process_rebuilds will drop everything and rebuild everything
 }
@@ -68,7 +68,7 @@ unsafe impl Send for SyncOdoo {}
 impl SyncOdoo {
 
     pub fn new() -> Self {
-        let symbols = Rc::new(RefCell::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
+        let symbols = Rc::new(RefCell::new(MainSymbol::new_root()));
         symbols.borrow_mut().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
         let sync_odoo = Self {
             version_major: 0,
@@ -96,7 +96,7 @@ impl SyncOdoo {
     }
 
     pub fn reset(session: &mut SessionInfo, config: Config) {
-        let symbols = Rc::new(RefCell::new(Symbol::new_root("root".to_string(), SymType::ROOT)));
+        let symbols = Rc::new(RefCell::new(MainSymbol::new_root()));
         symbols.borrow_mut().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
         session.log_message(MessageType::INFO, S!("Resetting Database..."));
         info!("Resetting database...");
@@ -193,7 +193,7 @@ impl SyncOdoo {
             error!("Unable to find builtins at: {}", builtins_path.sanitize());
             return;
         };
-        let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, session.sync_odoo.symbols.as_ref().unwrap().clone(), false);
+        let _builtins_rc_symbol = MainSymbol::create_from_path(session, &builtins_path, session.sync_odoo.symbols.as_ref().unwrap().clone(), false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
         SyncOdoo::process_rebuilds(session);
     }
@@ -272,7 +272,7 @@ impl SyncOdoo {
         }
         let root_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let config_odoo_path = session.sync_odoo.config.odoo_path.clone();
-        let added_symbol = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol, false);
+        let added_symbol = MainSymbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol, false);
         session.sync_odoo.add_to_rebuild_arch(added_symbol.unwrap());
         SyncOdoo::process_rebuilds(session);
         //search common odoo addons path
@@ -318,7 +318,7 @@ impl SyncOdoo {
                         match item {
                             Ok(item) => {
                                 if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&item.file_name().to_str().unwrap().to_string()) {
-                                    let module_symbol = Symbol::create_from_path(session, &item.path(), addons_symbol.clone(), true);
+                                    let module_symbol = MainSymbol::create_from_path(session, &item.path(), addons_symbol.clone(), true);
                                     if module_symbol.is_some() {
                                         session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
                                     }
@@ -338,12 +338,12 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::ODOO_READY;
     }
 
-    pub fn get_symbol(&self, tree: &Tree) -> Option<Rc<RefCell<Symbol>>> {
-        self.symbols.as_ref().unwrap().borrow_mut().get_symbol(&tree)
+    pub fn get_symbol(&self, tree: &Tree, position: u32) -> Option<Rc<RefCell<MainSymbol>>> {
+        self.symbols.as_ref().unwrap().borrow_mut().get_symbol(&tree, position)
     }
 
-    fn pop_item(&mut self, step: BuildSteps) -> Option<Rc<RefCell<Symbol>>> {
-        let mut arc_sym: Option<Rc<RefCell<Symbol>>> = None;
+    fn pop_item(&mut self, step: BuildSteps) -> Option<Rc<RefCell<MainSymbol>>> {
+        let mut arc_sym: Option<Rc<RefCell<MainSymbol>>> = None;
         //Part 1: Find the symbol with a unmutable set
         {
             let set =  if step == BuildSteps::ARCH_EVAL {
@@ -355,7 +355,7 @@ impl SyncOdoo {
             } else {
                 &self.rebuild_arch
             };
-            let mut selected_sym: Option<Rc<RefCell<Symbol>>> = None;
+            let mut selected_sym: Option<Rc<RefCell<MainSymbol>>> = None;
             let mut selected_count: u32 = 999999999;
             let mut current_count: u32;
             for sym in &*set {
@@ -491,13 +491,13 @@ impl SyncOdoo {
         }
     }
 
-    pub fn rebuild_arch_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
+    pub fn rebuild_arch_now(session: &mut SessionInfo, symbol: &Rc<RefCell<MainSymbol>>) {
         session.sync_odoo.rebuild_arch.remove(symbol);
         let mut builder = PythonArchBuilder::new(symbol.clone());
         builder.load_arch(session);
     }
 
-    pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<MainSymbol>>) {
         //println!("ADDED TO ARCH - {}", symbol.borrow().paths.first().unwrap());
         if symbol.borrow().arch_status != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
@@ -510,7 +510,7 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<MainSymbol>>) {
         //println!("ADDED TO EVAL - {}", symbol.borrow().paths.first().unwrap());
         if symbol.borrow().arch_eval_status != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
@@ -522,7 +522,7 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<MainSymbol>>) {
         //println!("ADDED TO ODOO - {}", symbol.borrow().paths.first().unwrap());
         if symbol.borrow().odoo_status != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
@@ -533,7 +533,7 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_to_validations(&mut self, symbol: Rc<RefCell<MainSymbol>>) {
         //println!("ADDED TO VALIDATION - {}", symbol.borrow().paths.first().unwrap());
         if symbol.borrow().validation_status != BuildStatus::IN_PROGRESS {
             symbol.borrow_mut().validation_status = BuildStatus::PENDING;
@@ -541,23 +541,23 @@ impl SyncOdoo {
         }
     }
 
-    pub fn remove_from_rebuild_arch(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+    pub fn remove_from_rebuild_arch(&mut self, symbol: &Rc<RefCell<MainSymbol>>) {
         self.rebuild_arch.remove(symbol);
     }
 
-    pub fn remove_from_rebuild_arch_eval(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+    pub fn remove_from_rebuild_arch_eval(&mut self, symbol: &Rc<RefCell<MainSymbol>>) {
         self.rebuild_arch_eval.remove(symbol);
     }
 
-    pub fn remove_from_rebuild_odoo(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+    pub fn remove_from_rebuild_odoo(&mut self, symbol: &Rc<RefCell<MainSymbol>>) {
         self.rebuild_odoo.remove(symbol);
     }
 
-    pub fn remove_from_rebuild_validation(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+    pub fn remove_from_rebuild_validation(&mut self, symbol: &Rc<RefCell<MainSymbol>>) {
         self.rebuild_validation.remove(symbol);
     }
 
-    pub fn is_in_rebuild(&self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
+    pub fn is_in_rebuild(&self, symbol: &Rc<RefCell<MainSymbol>>, step: BuildSteps) -> bool {
         if step == BuildSteps::ARCH {
             return self.rebuild_arch.contains(symbol);
         }
@@ -592,7 +592,7 @@ impl SyncOdoo {
                     });
                     if vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
                         tree.0.pop();
-                    } 
+                    }
                     return Ok(tree);
                 }
             }
@@ -613,7 +613,7 @@ impl SyncOdoo {
         Err("Path not found in any module")
     }
 
-    pub fn _unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Result<Rc<RefCell<Symbol>>, String> {
+    pub fn _unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Result<Rc<RefCell<MainSymbol>>, String> {
         let ub_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let symbol = ub_symbol.borrow();
         let path_symbol = symbol.get_symbol(&session.sync_odoo.tree_from_path(&path).unwrap());
@@ -636,16 +636,16 @@ impl SyncOdoo {
             }
         }
         drop(symbol);
-        Symbol::unload(session, path_symbol.clone());
+        MainSymbol::unload(session, path_symbol.clone());
         Ok(parent)
     }
 
-    pub fn create_new_symbol(session: &mut SessionInfo, path: PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<(Rc<RefCell<Symbol>>,Tree)> {
+    pub fn create_new_symbol(session: &mut SessionInfo, path: PathBuf, parent: Rc<RefCell<MainSymbol>>, require_module: bool) -> Option<(Rc<RefCell<MainSymbol>>,Tree)> {
         let mut path = path.clone();
         if path.ends_with("__init__.py") || path.ends_with("__init__.pyi") || path.ends_with("__manifest__.py") {
             path.pop();
         }
-        let _arc_symbol = Symbol::create_from_path(session, &path, parent, require_module);
+        let _arc_symbol = MainSymbol::create_from_path(session, &path, parent, require_module);
         if _arc_symbol.is_some() {
             let _arc_symbol = _arc_symbol.unwrap();
             session.sync_odoo.add_to_rebuild_arch(_arc_symbol.clone());
@@ -658,7 +658,7 @@ impl SyncOdoo {
         from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
     pub fn search_symbols_to_rebuild(&mut self, tree: &Tree) -> bool {
         let flat_tree = vec![tree.0.clone(), tree.1.clone()].concat();
-        let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+        let mut found_sym: PtrWeakHashSet<Weak<RefCell<MainSymbol>>> = PtrWeakHashSet::new();
         let mut need_rebuild = false;
         let mut to_add = vec![vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
         for s in self.not_found_symbols.iter() {
@@ -709,7 +709,7 @@ impl SyncOdoo {
         need_rebuild
     }
 
-    pub fn get_file_symbol(&self, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn get_file_symbol(&self, path: &PathBuf) -> Option<Rc<RefCell<MainSymbol>>> {
         let symbol = self.symbols.as_ref().unwrap().borrow();
         let tree = &self.tree_from_path(&path);
         if let Ok(tree) = tree {

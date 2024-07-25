@@ -1,0 +1,129 @@
+use weak_table::PtrWeakHashSet;
+
+use crate::{constants::{BuildStatus, SymType}, threads::SessionInfo, S};
+use std::{cell::{RefCell, RefMut}, rc::Weak};
+
+use super::{module_symbol::ModuleSymbol, symbol::MainSymbol};
+
+pub enum PackageSymbol {
+    PythonPackage(PythonPackageSymbol),
+    Module(ModuleSymbol)
+}
+
+impl PackageSymbol {
+    pub fn new_python_package(name: String, path: String, is_external: bool) -> Self {
+        PackageSymbol::PythonPackage(PythonPackageSymbol::new(name, path, is_external))
+    }
+    pub fn new_module_package(name: String, path: String, is_external: bool) -> Self {
+        PackageSymbol::PythonPackage(ModuleSymbol::new(name, path, is_external))
+    }
+    pub fn name(&self) -> String {
+        match self {
+            PackageSymbol::PythonPackage(p) => &p.name,
+            PackageSymbol::Module(m) => &m.name,
+        }
+    }
+    pub fn parent(&self) -> &Option<Weak<RefCell<MainSymbol>>> {
+        match self {
+            PackageSymbol::Module(m) => &m.parent,
+            PackageSymbol::PythonPackage(p) => &p.parent
+        }
+    }
+    pub fn set_init_ext(&mut self, ext: String) {
+        match self {
+            PackageSymbol::PythonPackage(p) => {p.i_ext = ext},
+            PackageSymbol::Module(m) => {m.i_ext = ext},
+        }
+    }
+    pub fn dependencies(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4] {
+        match self {
+            PackageSymbol::Module(m) => &m.dependencies,
+            PackageSymbol::PythonPackage(p) => &p.dependencies
+        }
+    }
+    pub fn dependencies_as_mut(&self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4] {
+        match self {
+            PackageSymbol::Module(m) => &mut m.dependencies,
+            PackageSymbol::PythonPackage(p) => &mut p.dependencies
+        }
+    }
+    pub fn dependents(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3] {
+        match self {
+            PackageSymbol::Module(m) => &m.dependents,
+            PackageSymbol::PythonPackage(p) => &p.dependents
+        }
+    }
+    pub fn dependents_as_mut(&self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3] {
+        match self {
+            PackageSymbol::Module(m) => &mut m.dependents,
+            PackageSymbol::PythonPackage(p) => &mut p.dependents
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PythonPackageSymbol {
+    pub name: String,
+    pub path: String,
+    pub i_ext: String,
+    pub is_external: bool,
+    pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
+    pub parent: Option<Weak<RefCell<MainSymbol>>>,
+    pub arch_status: BuildStatus,
+    pub arch_eval_status: BuildStatus,
+    pub odoo_status: BuildStatus,
+    pub validation_status: BuildStatus,
+    pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
+    pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
+}
+
+impl PythonPackageSymbol {
+
+    pub fn new(name: String, path: String, is_external: bool) -> Self {
+        Self {
+            name,
+            path,
+            is_external,
+            i_ext: S!(""),
+            weak_self: None,
+            parent: None,
+            arch_status: BuildStatus::PENDING,
+            arch_eval_status: BuildStatus::PENDING,
+            odoo_status: BuildStatus::PENDING,
+            validation_status: BuildStatus::PENDING,
+            dependencies: [
+                vec![ //ARCH
+                    PtrWeakHashSet::new() //ARCH
+                ],
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new() //ARCH
+                ],
+                vec![
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
+                ],
+                vec![
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
+                ]],
+            dependents: [
+                vec![ //ARCH
+                    PtrWeakHashSet::new(), //ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new(), //VALIDATION
+                ],
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new() //VALIDATION
+                ],
+                vec![ //ODOO
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new()  //VALIDATION
+                ]],
+        }
+    }
+
+}

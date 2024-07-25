@@ -7,7 +7,7 @@ use lsp_types::DiagnosticSeverity;
 use lsp_types::NumberOrString;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;

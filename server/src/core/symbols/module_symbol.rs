@@ -2,35 +2,49 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, P
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::info;
-use std::collections::HashSet;
+use weak_table::PtrWeakHashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::constants::*;
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::constants::EXTENSION_NAME;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 
 
 #[derive(Debug)]
 pub struct ModuleSymbol {
+    pub name: String,
+    pub path: String,
+    pub i_ext: String,
+    pub is_external: bool,
     root_path: String,
     loaded: bool,
     module_name: String,
     pub dir_name: String,
     depends: Vec<String>,
     data: Vec<String>, // TODO
+    pub module_symbols: HashMap<String, Vec<Rc<RefCell<MainSymbol>>>>,
+    pub arch_status: BuildStatus,
+    pub arch_eval_status: BuildStatus,
+    pub odoo_status: BuildStatus,
+    pub validation_status: BuildStatus,
+    pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
+    pub parent: Option<Weak<RefCell<MainSymbol>>>,
+    pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
+    pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
 }
 
 impl ModuleSymbol {
 
-    pub fn new(session: &mut SessionInfo, dir_path: &PathBuf) -> Option<Self> {
+    pub fn new(session: &mut SessionInfo, dir_path: &PathBuf, is_external: bool) -> Self {
         let mut module = ModuleSymbol {
             root_path: dir_path.sanitize(),
             loaded: false,
@@ -38,6 +52,45 @@ impl ModuleSymbol {
             dir_name: String::new(),
             depends: vec!("base".to_string()),
             data: Vec::new(),
+            weak_self: None,
+            parent: None,
+            module_symbols: HashMap::new(),
+            arch_status: BuildStatus::PENDING,
+            arch_eval_status: BuildStatus::PENDING,
+            odoo_status: BuildStatus::PENDING,
+            validation_status: BuildStatus::PENDING,
+            dependencies: [
+                vec![ //ARCH
+                    PtrWeakHashSet::new() //ARCH
+                ],
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new() //ARCH
+                ],
+                vec![
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
+                ],
+                vec![
+                    PtrWeakHashSet::new(), // ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new()  //ODOO
+                ]],
+            dependents: [
+                vec![ //ARCH
+                    PtrWeakHashSet::new(), //ARCH
+                    PtrWeakHashSet::new(), //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new(), //VALIDATION
+                ],
+                vec![ //ARCH_EVAL
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new() //VALIDATION
+                ],
+                vec![ //ODOO
+                    PtrWeakHashSet::new(), //ODOO
+                    PtrWeakHashSet::new()  //VALIDATION
+                ]],
         };
         info!("building new module: {:?}", dir_path);
         if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {

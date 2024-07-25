@@ -3,14 +3,14 @@ use std::{cell::RefCell, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 
-use crate::{constants::{BuildStatus, LocSymType}, threads::SessionInfo};
+use crate::{constants::{BuildStatus}, threads::SessionInfo};
 
-use super::{evaluation::{Evaluation, SymbolRef}, model::ModelData, symbol::Symbol, symbol_location::SymbolLocation, symbols::{class_symbol::ClassSymbol, function_symbol::FunctionSymbol}};
+use super::{evaluation::{Evaluation, SymbolRef}, model::ModelData, symbols::symbol::Symbol, symbol_location::SymbolLocation, symbols::{class_symbol::ClassSymbol, function_symbol::FunctionSymbol}};
 
 
 #[derive(Debug)]
 pub struct LocalizedSymbol {
-    pub loc_sym_type: LocSymType,
+    pub loc_sym_type: String,
     pub symbol: Weak<RefCell<Symbol>>, //owner
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub range: TextRange,
@@ -25,9 +25,10 @@ pub struct LocalizedSymbol {
 }
 
 impl LocalizedSymbol {
-    pub fn new(owner: Weak<RefCell<Symbol>>, loc_sym_type: LocSymType, range: TextRange) -> Self {
+    pub fn new(owner: Weak<RefCell<Symbol>>, loc_sym_type: String, range: TextRange) -> Self {
         Self {
             symbol: owner,
+            symbols: None,
             loc_sym_type,
             range: range,
             is_import_variable: false,

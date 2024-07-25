@@ -4,11 +4,10 @@ use std::rc::Weak;
 use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
-use crate::core::symbol::Symbol;
 use crate::threads::SessionInfo;
 
-use super::localized_symbol::LocalizedSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
+use super::symbols::symbol::MainSymbol;
 
 #[derive(Debug)]
 pub struct ModelData {
@@ -63,11 +62,11 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: String,
-    symbols: PtrWeakHashSet<Weak<RefCell<LocalizedSymbol>>>,
+    symbols: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
 }
 
 impl Model {
-    pub fn new(name: String, symbol: Rc<RefCell<LocalizedSymbol>>) -> Self {
+    pub fn new(name: String, symbol: Rc<RefCell<MainSymbol>>) -> Self {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
@@ -76,27 +75,26 @@ impl Model {
         res
     }
 
-    pub fn add_symbol(&mut self, symbol: Rc<RefCell<LocalizedSymbol>>) {
+    pub fn add_symbol(&mut self, symbol: Rc<RefCell<MainSymbol>>) {
         self.symbols.insert(symbol);
     }
 
-    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<LocalizedSymbol>>> {
+    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<MainSymbol>>) -> impl Iterator<Item= Rc<RefCell<MainSymbol>>> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
-            let module = s.borrow().get_module_sym();
-            let module = module.expect("Module not found for model symbol");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) {
+            let module = s.borrow().find_module().expect("Model should be declared in a module");
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
                 symbol.push(s);
             }
         }
         symbol.into_iter()
     }
 
-    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<LocalizedSymbol>>> {
+    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<MainSymbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<MainSymbol>>> {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
-        let mut res: Vec<Rc<RefCell<LocalizedSymbol>>> = vec![];
+        let mut res: Vec<Rc<RefCell<MainSymbol>>> = vec![];
         for sym in self.symbols.iter() {
             if !sym.borrow()._model.as_ref().unwrap().inherit.contains(&sym.borrow()._model.as_ref().unwrap().name) {
                 if from_module.is_none() || sym.as_ref().borrow().get_module_sym().is_none() {

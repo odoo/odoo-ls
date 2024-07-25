@@ -9,7 +9,7 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use std::path::PathBuf;
 use std::rc::Rc;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
 use crate::S;

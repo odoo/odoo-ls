@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::constants::{BuildStatus, BuildSteps, LocSymType, SymType};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::threads::SessionInfo;

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
 use crate::S;

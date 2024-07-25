@@ -6,22 +6,22 @@ use std::path::Path;
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Identifier, Alias};
-use crate::core::symbol::Symbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
 
 use super::odoo::SyncOdoo;
+use super::symbols::symbol::MainSymbol;
 
 pub struct ImportResult {
     pub name: String,
     pub found: bool,
-    pub symbol: Rc<RefCell<Symbol>>, //not LocalizedSymbol, because in import, the position is always u32::MAX
+    pub symbol: Rc<RefCell<MainSymbol>>,
     pub file_tree: Tree,
     pub range: TextRange,
 }
 
-pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, from_range: &TextRange) -> Vec<ImportResult> {
+pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<MainSymbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, from_range: &TextRange) -> Vec<ImportResult> {
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
@@ -125,12 +125,12 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     return result;
 }
 
-pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &String) -> Option<Rc<RefCell<Symbol>>> {
+pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<MainSymbol>>, name: &String) -> Option<Rc<RefCell<MainSymbol>>> {
     let paths = (*odoo_addons).borrow().paths.clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name);
         if is_dir_cs(full_path.sanitize()) {
-            let _arc_symbol = Symbol::create_from_path(session, &full_path, odoo_addons.clone(), false);
+            let _arc_symbol = MainSymbol::create_from_path(session, &full_path, odoo_addons.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&_arc_symbol));
@@ -176,8 +176,8 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
     first_part_tree
 }
 
-fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, names: &Vec<String>, asname: Option<String>, range: &TextRange) -> (Option<Rc<RefCell<Symbol>>>, Rc<RefCell<Symbol>>) {
-    let mut sym: Option<Rc<RefCell<Symbol>>> = Some(symbol.clone());
+fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<MainSymbol>>, names: &Vec<String>, asname: Option<String>, range: &TextRange) -> (Option<Rc<RefCell<MainSymbol>>>, Rc<RefCell<MainSymbol>>) {
+    let mut sym: Option<Rc<RefCell<MainSymbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {
         let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]));
@@ -196,7 +196,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>,
     return (sym, last_symbol)
 }
 
-fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Rc<RefCell<Symbol>>, String> {
+fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<MainSymbol>>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Rc<RefCell<MainSymbol>>, String> {
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
         None => name.clone()
@@ -216,21 +216,21 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
             // if is_dir_cs(full_path.to_str().unwrap().to_string() + "-stubs") {
             //     full_path.set_file_name(full_path.file_name().unwrap().to_str().unwrap().to_string() + "-stubs");
             // }
-            let _arc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
+            let _arc_symbol = MainSymbol::create_from_path(session, &full_path, parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").sanitize()) {
-            let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("py"), parent.clone(), false);
+            let _arc_symbol = MainSymbol::create_from_path(session, &full_path.with_extension("py"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("pyi").sanitize()) {
-            let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("pyi"), parent.clone(), false);
+            let _arc_symbol = MainSymbol::create_from_path(session, &full_path.with_extension("pyi"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);

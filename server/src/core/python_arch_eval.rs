@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
 use crate::features::ast_utils::AstUtils;

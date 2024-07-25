@@ -9,7 +9,7 @@ use tracing::{error, info};
 
 use crate::constants::{BuildStatus, BuildSteps, LocSymType, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
-use crate::core::symbol::Symbol;
+use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
