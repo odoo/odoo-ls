@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
 use crate::features::ast_utils::AstUtils;
@@ -21,9 +21,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
-use super::evaluation::SymbolRef;
 use super::import_resolver::ImportResult;
-use super::localized_symbol::LocalizedSymbol;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
 
 

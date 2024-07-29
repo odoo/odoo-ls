@@ -4,7 +4,7 @@ use lsp_types::{CompletionItem, CompletionList, CompletionResponse};
 use crate::core::evaluation::ExprOrIdent;
 use crate::threads::SessionInfo;
 use crate::S;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::core::file_mgr::FileInfo;
 
 use super::ast_utils::ExprFinderVisitor;

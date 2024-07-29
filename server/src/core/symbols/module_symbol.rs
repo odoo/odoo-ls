@@ -31,7 +31,7 @@ pub struct ModuleSymbol {
     pub dir_name: String,
     depends: Vec<String>,
     data: Vec<String>, // TODO
-    pub module_symbols: HashMap<String, Vec<Rc<RefCell<MainSymbol>>>>,
+    pub module_symbols: HashMap<String, Rc<RefCell<MainSymbol>>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,

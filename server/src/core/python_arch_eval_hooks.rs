@@ -7,7 +7,7 @@ use lsp_types::DiagnosticSeverity;
 use lsp_types::NumberOrString;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -15,9 +15,7 @@ use crate::S;
 use super::evaluation::Evaluation;
 use super::evaluation::ContextValue;
 use super::evaluation::EvaluationSymbol;
-use super::evaluation::SymbolRef;
 use super::file_mgr::FileMgr;
-use super::localized_symbol::LocalizedSymbol;
 use super::symbols::module_symbol::ModuleSymbol;
 
 pub struct PythonArchEvalHooks {}

@@ -1,9 +1,9 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, SymType}, threads::SessionInfo};
+use crate::{constants::{BuildStatus, SymType}, core::symbol_location::SectionRange, threads::SessionInfo};
 use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
 
-use super::symbol::MainSymbol;
+use super::{section_mgr::SectionMgr, symbol::MainSymbol};
 
 #[derive(Debug)]
 pub struct FileSymbol {
@@ -18,8 +18,10 @@ pub struct FileSymbol {
     pub validation_status: BuildStatus,
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
+
+    //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<String, Rc<RefCell<MainSymbol>>>,
+    pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>>,
 }
 
 impl FileSymbol {

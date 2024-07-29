@@ -10,19 +10,17 @@ use weak_table::traits::WeakElement;
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 
-use crate::constants::{BuildStatus, BuildSteps, LocSymType, SymType};
+use crate::constants::{BuildStatus, BuildSteps, SymType};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
-use super::evaluation::{self, SymbolRef};
 use super::import_resolver::ImportResult;
-use super::localized_symbol::LocalizedSymbol;
 use super::symbols::class_symbol::ClassSymbol;
 use super::symbols::function_symbol::FunctionSymbol;
 

@@ -7,15 +7,14 @@ use ruff_python_ast::Expr;
 use lsp_types::{Diagnostic, ShowMessageParams, notification::Notification};
 use tracing::{error, info};
 
-use crate::constants::{BuildStatus, BuildSteps, LocSymType, SymType, DEBUG_ODOO_BUILDER};
+use crate::constants::{BuildStatus, BuildSteps, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::EvaluationValue;
-use super::localized_symbol::LocalizedSymbol;
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,

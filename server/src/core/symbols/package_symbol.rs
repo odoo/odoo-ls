@@ -1,7 +1,7 @@
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, SymType}, threads::SessionInfo, S};
-use std::{cell::{RefCell, RefMut}, rc::Weak};
+use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::MainSymbol};
 
@@ -73,6 +73,7 @@ pub struct PythonPackageSymbol {
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
+    pub module_symbols: HashMap<String, Rc<RefCell<MainSymbol>>>,
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
 }

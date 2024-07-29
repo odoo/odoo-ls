@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use crate::constants::*;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -14,9 +14,8 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
-use super::evaluation::{Evaluation, EvaluationValue, SymbolRef};
+use super::evaluation::{Evaluation, EvaluationValue};
 use super::file_mgr::FileInfo;
-use super::localized_symbol::LocalizedSymbol;
 use super::python_utils::{self, unpack_assign};
 
 #[derive(Debug)]

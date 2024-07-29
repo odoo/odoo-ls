@@ -6,7 +6,7 @@ use lsp_types::{GotoDefinitionResponse, Location, Range};
 use crate::constants::SymType;
 use crate::core::evaluation::AnalyzeAstResult;
 use crate::core::file_mgr::{FileMgr, FileInfo};
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::threads::SessionInfo;
 use crate::features::ast_utils::AstUtils;
 use crate::utils::PathSanitizer as _;

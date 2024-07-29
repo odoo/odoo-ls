@@ -7,4 +7,5 @@ pub mod namespace_symbol;
 pub mod package_symbol;
 pub mod root_symbol;
 pub mod symbol;
+pub mod symbol_mgr;
 pub mod variable_symbol;

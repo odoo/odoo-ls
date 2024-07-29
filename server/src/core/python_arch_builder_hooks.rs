@@ -1,12 +1,11 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol::MainSymbol;
 use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;
 
-use super::localized_symbol::LocalizedSymbol;
 use super::odoo::SyncOdoo;
 
 pub struct PythonArchBuilderHooks {}
