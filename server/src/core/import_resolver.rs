@@ -75,7 +75,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             if name_symbol.is_none() {
                 if !name.contains(".") {
                     //TODO WTF?
-                    name_symbol = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], vec![name.clone()]));
+                    name_symbol = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], vec![name.clone()]), u32::MAX);
                 }
                 if name_symbol.is_none() {
                     result[name_index as usize].symbol = fallback_sym.clone();
@@ -109,7 +109,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             None,
             &alias.range);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
-            name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name));
+            name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name), u32::MAX);
             if name_symbol.is_none() {
                 result[name_index as usize].symbol = fallback_sym.clone();
                 continue;
@@ -180,7 +180,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<MainSymbo
     let mut sym: Option<Rc<RefCell<MainSymbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {
-        let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]));
+        let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
         if next_symbol.is_none() {
             next_symbol = match _resolve_new_symbol(session, sym.as_ref().unwrap().clone(), &branch, asname.clone(), range) {
                 Ok(v) => Some(v),

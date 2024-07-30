@@ -17,13 +17,13 @@ use crate::S;
 use super::evaluation::EvaluationValue;
 
 pub struct PythonOdooBuilder {
-    symbol: Rc<RefCell<Symbol>>,
+    symbol: Rc<RefCell<MainSymbol>>,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl PythonOdooBuilder {
 
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonOdooBuilder {
+    pub fn new(symbol: Rc<RefCell<MainSymbol>>) -> PythonOdooBuilder {
         PythonOdooBuilder {
             symbol: symbol,
             diagnostics: vec![]
@@ -65,7 +65,7 @@ impl PythonOdooBuilder {
         drop(symbol);
         for sym in iterator {
             let mut s_to_build = sym.borrow_mut();
-            if s_to_build.loc_sym_type != LocSymType::CLASS {
+            if s_to_build.loc_sym_type != SymType::CLASS {
                 continue;
             }
             if !self.test_symbol_is_model(session, &sym, &mut s_to_build) {
@@ -89,7 +89,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _load_class_inherit(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
+    fn _load_class_inherit(&mut self, session: &mut SessionInfo, loc_sym: &mut MainSymbol) {
         let module = loc_sym.get_module_sym();
         let symbol = loc_sym.symbol();
         let symbol = symbol.borrow();
@@ -130,7 +130,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _evaluate_name(&mut self, session: &mut SessionInfo, loc_sym: &LocalizedSymbol) -> String {
+    fn _evaluate_name(&mut self, session: &mut SessionInfo, loc_sym: &MainSymbol) -> String {
         let symbol = loc_sym.symbol();
         let symbol = symbol.borrow();
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]));
@@ -150,7 +150,7 @@ impl PythonOdooBuilder {
         symbol.name.clone()
     }
 
-    fn _load_class_name(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
+    fn _load_class_name(&mut self, session: &mut SessionInfo, loc_sym: &mut MainSymbol) {
         loc_sym._model.as_mut().unwrap().name = self._evaluate_name(session, loc_sym);
         if loc_sym._model.as_ref().unwrap().name.is_empty() {
             loc_sym._model = None;
@@ -161,7 +161,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _load_class_inherits(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol) {
+    fn _load_class_inherits(&mut self, session: &mut SessionInfo, loc_sym: &mut MainSymbol) {
         let symbol = loc_sym.symbol();
         let _inherits = symbol.borrow().get_symbol(&(vec![], vec![S!("_inherits")]));
         if let Some(_inherits) = _inherits {
@@ -183,7 +183,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _get_attribute(&mut self, session: &mut SessionInfo, loc_sym: &mut LocalizedSymbol, attr: &String) -> Option<EvaluationValue> {
+    fn _get_attribute(&mut self, session: &mut SessionInfo, loc_sym: &mut MainSymbol, attr: &String) -> Option<EvaluationValue> {
         let attr_sym = loc_sym.get_member_symbol(session, attr, None, true, false, &mut self.diagnostics);
         if attr_sym.len() == 0 {
             return None;
@@ -196,7 +196,7 @@ impl PythonOdooBuilder {
         None
     }
 
-    fn _load_class_attributes(&mut self, session: &mut SessionInfo, symbol: &mut LocalizedSymbol) {
+    fn _load_class_attributes(&mut self, session: &mut SessionInfo, symbol: &mut MainSymbol) {
         let descr = self._get_attribute(session, symbol, &"_description".to_string());
         if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = descr {
             symbol._model.as_mut().unwrap().description = S!(s.value.to_str());
@@ -285,13 +285,13 @@ impl PythonOdooBuilder {
     }
 
     /* true if the symbol inherit from odoo.models.BaseModel. loc_sym must be the data of rc_loc_sym */
-    fn test_symbol_is_model(&mut self, session: &mut SessionInfo, rc_loc_sym: &Rc<RefCell<LocalizedSymbol>>, loc_sym: &mut LocalizedSymbol) -> bool {
+    fn test_symbol_is_model(&mut self, session: &mut SessionInfo, rc_loc_sym: &Rc<RefCell<MainSymbol>>, loc_sym: &mut MainSymbol) -> bool {
         if loc_sym._class.is_none() {
             panic!("Symbol has no class Data. This should not happen");
         }
-        let base_model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]));
-        let model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("Model")]));
-        let transient = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("TransientModel")]));
+        let base_model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]), u32::MAX);
+        let model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("Model")]), u32::MAX);
+        let transient = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("TransientModel")]), u32::MAX);
         if base_model.is_none() || model.is_none() || transient.is_none() {
             session.send_notification(ShowMessage::METHOD, ShowMessageParams{
                 typ: MessageType::ERROR,

@@ -68,8 +68,8 @@ unsafe impl Send for SyncOdoo {}
 impl SyncOdoo {
 
     pub fn new() -> Self {
-        let symbols = Rc::new(RefCell::new(MainSymbol::new_root()));
-        symbols.borrow_mut().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
+        let symbols = MainSymbol::new_root();
+        symbols.borrow_mut().as_root().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
         let sync_odoo = Self {
             version_major: 0,
             version_minor: 0,
@@ -276,9 +276,9 @@ impl SyncOdoo {
         session.sync_odoo.add_to_rebuild_arch(added_symbol.unwrap());
         SyncOdoo::process_rebuilds(session);
         //search common odoo addons path
-        let addon_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]));
+        let addon_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
         if addon_symbol.is_none() {
-            let odoo = session.sync_odoo.get_symbol(&tree(vec!["odoo"], vec![]));
+            let odoo = session.sync_odoo.get_symbol(&tree(vec!["odoo"], vec![]), u32::MAX);
             if odoo.is_none() {
                 panic!("Not able to find odoo. Please check your configuration");
             }
@@ -308,7 +308,7 @@ impl SyncOdoo {
 
     fn build_modules(session: &mut SessionInfo) {
         {
-            let addons_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![])).expect("Unable to find odoo addons symbol");
+            let addons_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX).expect("Unable to find odoo addons symbol");
             let addons_path = addons_symbol.borrow_mut().paths.clone();
             for addon_path in addons_path.iter() {
                 info!("searching modules in {}", addon_path);
@@ -582,7 +582,7 @@ impl SyncOdoo {
     pub fn tree_from_path(&self, path: &PathBuf) -> Result<Tree, &str> {
         //First check in odoo, before anywhere else
         {
-            let odoo_sym = self.symbols.as_ref().unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![]));
+            let odoo_sym = self.symbols.as_ref().unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
             for addon_path in odoo_sym.unwrap().borrow().paths.iter() {
                 if path.starts_with(addon_path) {
                     let path = path.strip_prefix(addon_path).unwrap().to_path_buf();
@@ -616,7 +616,7 @@ impl SyncOdoo {
     pub fn _unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Result<Rc<RefCell<MainSymbol>>, String> {
         let ub_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let symbol = ub_symbol.borrow();
-        let path_symbol = symbol.get_symbol(&session.sync_odoo.tree_from_path(&path).unwrap());
+        let path_symbol = symbol.get_symbol(&session.sync_odoo.tree_from_path(&path).unwrap(), u32::MAX);
         if path_symbol.is_none() {
             return Err("Symbol not found".to_string());
         }
@@ -713,7 +713,7 @@ impl SyncOdoo {
         let symbol = self.symbols.as_ref().unwrap().borrow();
         let tree = &self.tree_from_path(&path);
         if let Ok(tree) = tree {
-            return symbol.get_symbol(tree);
+            return symbol.get_symbol(tree, u32::MAX);
         } else {
             error!("Path {} not found", path.to_str().expect("unable to stringify path"));
             None

@@ -1,13 +1,16 @@
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
+use ruff_text_size::TextRange;
 
-use crate::{constants::BuildStatus, core::symbol_location::SectionRange};
+use crate::{constants::BuildStatus};
 
-use super::symbol::MainSymbol;
+use super::{symbol::MainSymbol, symbol_mgr::SectionRange};
 
 #[derive(Debug)]
 pub struct FunctionSymbol {
+    pub name: String,
+    pub is_external: bool,
     pub is_static: bool,
     pub is_property: bool,
     pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
@@ -17,7 +20,9 @@ pub struct FunctionSymbol {
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
+    pub range: TextRange,
+
+    //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<String, Rc<RefCell<MainSymbol>>>,
-    //TODO ??
+    pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>>,
 }

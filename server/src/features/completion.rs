@@ -16,7 +16,7 @@ pub struct CompletionFeature;
 impl CompletionFeature {
 
     pub fn autocomplete(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: &Rc<RefCell<MainSymbol>>,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32

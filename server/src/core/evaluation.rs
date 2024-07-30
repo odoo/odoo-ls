@@ -147,10 +147,7 @@ impl Evaluation {
     pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: SymbolRef{
-                    symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")])).expect("builtins list not found")),
-                    position: u32::MAX
-                },
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).expect("builtins list not found")),
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -164,10 +161,7 @@ impl Evaluation {
     pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: SymbolRef{
-                    symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")])).expect("builtins list not found")),
-                    position: u32::MAX
-                },
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).expect("builtins list not found")),
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -196,16 +190,13 @@ impl Evaluation {
         };
         let symbol;
         if !values.is_none_literal_expr() {
-            symbol = Rc::downgrade(&odoo.get_symbol(&tree_value).expect("builtins class not found"));
+            symbol = Rc::downgrade(&odoo.get_symbol(&tree_value, u32::MAX).expect("builtins class not found"));
         } else {
             symbol = Weak::new();
         }
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: SymbolRef{
-                    symbol: symbol,
-                    position: u32::MAX
-                },
+                symbol: symbol,
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -221,7 +212,7 @@ impl Evaluation {
             Some(self.value.as_ref().unwrap().clone())
         } else {
             let symbol = self.symbol.get_symbol(session, context, diagnostics).0;
-            let evals = Symbol::follow_ref(&symbol, session, context, false, true, diagnostics);
+            let evals = MainSymbol::follow_ref(&symbol, session, context, false, true, diagnostics);
             if evals.len() == 1 {
                 let eval = &evals[0];
                 let loc_sym = eval.0.get_localized_symbol();
@@ -239,13 +230,10 @@ impl Evaluation {
     }
 
     //create an evaluation that is evaluating to the given symbol
-    pub fn eval_from_symbol(symbol: &SymbolRef) -> Evaluation{
+    pub fn eval_from_symbol(symbol: &Weak<RefCell<MainSymbol>>) -> Evaluation{
         let mut instance = false;
-        let _ls = symbol.get_localized_symbol();
-        if let Some(ls) = _ls {
-            if ls.borrow().loc_sym_type == LocSymType::VARIABLE {
-                instance = true;
-            }
+        if symbol.upgrade().unwrap().borrow().typ() == SymType::VARIABLE {
+            instance = true;
         }
         Evaluation {
             symbol: EvaluationSymbol {symbol: symbol.clone(),
@@ -438,7 +426,7 @@ impl Evaluation {
                     let base_sym = base_sym_ref.get_symbol();
                     let base_loc = base_sym_ref.get_localized_symbol();
                     if let Some(base_loc) = base_loc {
-                        if base_loc.borrow().loc_sym_type == LocSymType::CLASS {
+                        if base_loc.borrow().loc_sym_type == SymType::CLASS {
                             if instance {
                                 //TODO handle call on class instance
                             } else {
@@ -455,7 +443,7 @@ impl Evaluation {
                                     range: Some(expr.range)
                                 });
                             }
-                        } else if base_loc.borrow().loc_sym_type == LocSymType::FUNCTION {
+                        } else if base_loc.borrow().loc_sym_type == SymType::FUNCTION {
                             //function return evaluation can come from:
                             //  - type annotation parsing (ARCH_EVAL step)
                             //  - documentation parsing (Arch_eval and VALIDATION step)
@@ -487,7 +475,7 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base_ref = evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
-                let bases = Symbol::follow_ref(&base_ref, session, &mut None, false, false, &mut diagnostics);
+                let bases = MainSymbol::follow_ref(&base_ref, session, &mut None, false, false, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.0.get_localized_symbol();
                     if let Some(base_loc) = base_loc {
@@ -501,10 +489,10 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) => {
                 let infered_syms = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
-                        Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
+                        MainSymbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
                     },
                     ExprOrIdent::Ident(expr) => {
-                        Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
+                        MainSymbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
                     }
                     _ => {
                         unreachable!();
@@ -525,7 +513,7 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = &eval_left[0].symbol.symbol;
-                let bases = Symbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
+                let bases = MainSymbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
@@ -574,11 +562,11 @@ impl Evaluation {
 
 impl EvaluationSymbol {
 
-    pub fn new(symbol: SymbolRef, instance: bool, context: Context, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
+    pub fn new(symbol: Weak<RefCell<MainSymbol>>, instance: bool, context: Context, factory: Option<Weak<RefCell<MainSymbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
         Self { symbol, instance, context, factory, get_symbol_hook }
     }
 
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (SymbolRef, bool) {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<MainSymbol>>, bool) {
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
             return hook(session, self, context, diagnostics);

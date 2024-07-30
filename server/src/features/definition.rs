@@ -18,7 +18,7 @@ pub struct DefinitionFeature {}
 impl DefinitionFeature {
 
     pub fn get_location(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: &Rc<RefCell<MainSymbol>>,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32

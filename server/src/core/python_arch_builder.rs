@@ -27,13 +27,13 @@ use super::symbols::function_symbol::FunctionSymbol;
 
 #[derive(Debug)]
 pub struct PythonArchBuilder {
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<Rc<RefCell<MainSymbol>>>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>
 }
 
 impl PythonArchBuilder {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
+    pub fn new(symbol: Rc<RefCell<MainSymbol>>) -> PythonArchBuilder {
         PythonArchBuilder {
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
@@ -96,8 +96,7 @@ impl PythonArchBuilder {
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
                 if let Some(all) = import_result.symbol.borrow().symbols().get("__all__") {
-                    let all_symbol_ref = SymbolRef::new(all, u32::MAX);
-                    let all = Symbol::follow_ref(&all_symbol_ref, session, &mut None, false, true, &mut self.diagnostics);
+                    let all = MainSymbol::follow_ref(&all, session, &mut None, false, true, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
                         if !all.0.is_expired() {
                             let all = all.0.get_localized_symbol();
@@ -128,13 +127,13 @@ impl PythonArchBuilder {
                         warn!("invalid __all__ import in file {} - no symbol found", (*import_result.symbol).borrow().paths[0])
                     }
                 }
-                for s in import_result.symbol.borrow().symbols.as_ref().unwrap().symbols().values() {
+                for s in import_result.symbol.borrow().symbols().as_ref().unwrap().symbols().values() {
                     if all_name_allowed || name_filter.contains(&s.borrow().name) {
                         let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, s.borrow_mut().name.as_str(), SymType::CONTENT);
-                        let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, import_name.range.clone());
+                        let localized_var = variable.borrow_mut().new_localized_symbol(SymType::VARIABLE, import_name.range.clone());
                         let mut loc = localized_var.borrow_mut();
                         loc.is_import_variable = true;
-                        loc.evaluations = vec![Evaluation::eval_from_symbol(&SymbolRef::new(s.clone(), u32::MAX))];
+                        loc.evaluations = vec![Evaluation::eval_from_symbol(&s)];
                         let evaluation = &loc.evaluations[0];
                         let evaluated_type = &evaluation.symbol;
                         let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0;
@@ -155,7 +154,7 @@ impl PythonArchBuilder {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
                 let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, var_name.as_str(), SymType::CONTENT);
-                let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, import_name.range.clone());
+                let localized_var = variable.borrow_mut().new_localized_symbol(SymType::VARIABLE, import_name.range.clone());
                 localized_var.borrow_mut().is_import_variable = true;
             }
         }
@@ -167,25 +166,25 @@ impl PythonArchBuilder {
             match stmt {
                 Stmt::Import(import_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
-                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != SymType::FUNCTION {
                         self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
                     }
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
-                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != SymType::FUNCTION {
                         self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
                     }
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
-                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != SymType::FUNCTION {
                         self._visit_ann_assign(session, ann_assign_stmt);
                     }
                 },
                 Stmt::Assign(assign_stmt) => {
                     if self.sym_stack.last().unwrap().borrow().localized_sym.is_empty() ||
-                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != LocSymType::FUNCTION {
+                    self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type != SymType::FUNCTION {
                         self._visit_assign(session, assign_stmt);
                     }
                 },
@@ -261,7 +260,7 @@ impl PythonArchBuilder {
         };
         for assign in assigns.iter() { //should only be one
             let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &assign.target.id.as_str(), SymType::CONTENT);
-            let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, assign.target.range.clone());
+            let localized_var = variable.borrow_mut().new_localized_symbol(SymType::VARIABLE, assign.target.range.clone());
         }
     }
 
@@ -269,7 +268,7 @@ impl PythonArchBuilder {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
             let mut variable = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &assign.target.id.as_str(), SymType::CONTENT);
-            let localized_var = variable.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, assign.target.range.clone());
+            let localized_var = variable.borrow_mut().new_localized_symbol(SymType::VARIABLE, assign.target.range.clone());
             let mut variable = variable.borrow_mut();
             let mut loc = localized_var.borrow_mut();
             if variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
@@ -307,31 +306,25 @@ impl PythonArchBuilder {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &func_def.name, SymType::CONTENT);
-        let loc_sym = sym.borrow_mut().new_localized_symbol(LocSymType::FUNCTION, func_def.range.clone());
-        loc_sym.borrow_mut()._function = Some(FunctionSymbol{
-            is_static: false,
-            is_property: false,
-            diagnostics: vec![]
-        });
+        let mut sym = self.sym_stack.last().unwrap().borrow_mut().new_content_symbol(&func_def.name, func_def.range.clone(), SymType::FUNCTION);
+        let mut func_sym = sym.borrow_mut().as_func_sym_mut();
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
-                loc_sym.borrow_mut()._function.as_mut().unwrap().is_static = true;
+                func_sym.is_static = true;
             }
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
-                loc_sym.borrow_mut()._function.as_mut().unwrap().is_property = true;
+                func_sym.is_property = true;
             }
         }
         if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {
             let expr: &ruff_python_ast::StmtExpr = func_def.body[0].as_expr_stmt().unwrap();
             if let Some(s) = expr.value.as_string_literal_expr() {
-                loc_sym.borrow_mut().doc_string = Some(s.value.to_string())
+                func_sym.doc_string = Some(s.value.to_string())
             }
         }
         //add params
         for arg in func_def.parameters.args.iter() {
-            let mut param = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &arg.parameter.name.id, SymType::CONTENT);
-            let loc_sym = sym.borrow_mut().new_localized_symbol(LocSymType::VARIABLE, arg.range.clone());
+            let mut param = self.sym_stack.last().unwrap().borrow_mut().new_content_symbol(&arg.parameter.name.id, arg.range.clone(), SymType::VARIABLE);
         }
         //visit body
         self.sym_stack.push(sym);
@@ -341,25 +334,22 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &class_def.name, SymType::CONTENT);
-        let loc_sym = sym.borrow_mut().new_localized_symbol(LocSymType::CLASS, class_def.range.clone());
-        loc_sym.borrow_mut()._class = Some(ClassSymbol {
-            bases: PtrWeakHashSet::new(),
-            diagnostics: vec![]
-        });
+        let mut sym = self.sym_stack.last().unwrap().borrow_mut().new_content_symbol(&class_def.name, class_def.range.clone(), SymType::VARIABLE);
+        let class_sym = sym.borrow_mut().as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
                 let const_expr = expr.value.as_literal_expr().unwrap();
                 if let Some(s) = const_expr.as_string_literal() {
-                    loc_sym.borrow_mut().doc_string = Some(s.value.to_string());
+                    class_sym.doc_string = Some(s.value.to_string());
                 }
             }
         }
         self.sym_stack.push(sym.clone());
         self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
-        PythonArchBuilderHooks::on_class_def(session, loc_sym);
+        drop(class_sym);
+        PythonArchBuilderHooks::on_class_def(session, sym);
         Ok(())
     }
 
@@ -367,7 +357,7 @@ impl PythonArchBuilder {
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
             if !self.sym_stack.last().unwrap().borrow().symbols.as_ref().unwrap().symbols().contains_key(&symbol_name) {
                 let all_var = self.sym_stack.last().unwrap().borrow_mut().create_or_get_symbol(session, &symbol_name, SymType::CONTENT);
-                all_var.borrow_mut().new_localized_symbol_with_range(LocSymType::VARIABLE, range);
+                all_var.borrow_mut().new_localized_symbol_with_range(SymType::VARIABLE, range);
             }
         }
     }

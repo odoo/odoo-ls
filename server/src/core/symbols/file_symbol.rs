@@ -1,9 +1,9 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, SymType}, core::symbol_location::SectionRange, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, SymType}, threads::SessionInfo};
 use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
 
-use super::{section_mgr::SectionMgr, symbol::MainSymbol};
+use super::{symbol::MainSymbol, symbol_mgr::SectionRange};
 
 #[derive(Debug)]
 pub struct FileSymbol {
@@ -16,6 +16,8 @@ pub struct FileSymbol {
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
+    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
+    pub in_workspace: bool,
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
 
@@ -37,6 +39,10 @@ impl FileSymbol {
             arch_eval_status: BuildStatus::PENDING,
             odoo_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
+            not_found_paths: vec![],
+            in_workspace: false,
+            sections: vec![],
+            symbols: HashMap::new(),
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH

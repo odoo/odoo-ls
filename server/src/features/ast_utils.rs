@@ -14,8 +14,8 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
-        let parent_symbol = Symbol::get_scope_symbol(file_symbol.borrow().to_sym_ref(), offset);
+    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<MainSymbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
+        let parent_symbol = MainSymbol::get_scope_symbol(file_symbol.borrow().to_sym_ref(), offset);
         let mut expr: Option<ExprOrIdent> = None;
         let file_info_borrowed = file_info.borrow();
         for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {

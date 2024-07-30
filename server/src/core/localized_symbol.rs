@@ -12,9 +12,6 @@ use super::{evaluation::{Evaluation, SymbolRef}, model::ModelData, symbols::symb
 pub struct LocalizedSymbol {
     pub loc_sym_type: String,
     pub symbol: Weak<RefCell<Symbol>>, //owner
-    pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
-    pub range: TextRange,
-    pub is_import_variable: bool,
     pub doc_string: Option<String>,
     pub ast_indexes: Option<Vec<u16>>, //list of index to reach the corresponding ast node from file ast
     pub validation_status: BuildStatus,

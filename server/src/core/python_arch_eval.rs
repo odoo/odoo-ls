@@ -27,14 +27,14 @@ use super::python_arch_eval_hooks::PythonArchEvalHooks;
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<Rc<RefCell<MainSymbol>>>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
     ast_indexes: Vec<u16>,
 }
 
 impl PythonArchEval {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
+    pub fn new(symbol: Rc<RefCell<MainSymbol>>) -> PythonArchEval {
         PythonArchEval {
             sym_stack: vec![symbol],
             diagnostics: Vec::new(),
@@ -120,7 +120,7 @@ impl PythonArchEval {
         }
     }
 
-    fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>) -> bool {
+    fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<MainSymbol>>) -> bool {
         let import_diag_level = &odoo.config.diag_missing_imports;
         if *import_diag_level == DiagMissingImportsMode::None {
             return false
@@ -138,8 +138,8 @@ impl PythonArchEval {
     }
 
     ///follow the given symbol and check the files are evaluated if evaluation is None
-    fn follow_and_resolve_eval(&mut self, session: &mut SessionInfo, sym_ref: SymbolRef) {
-        let imports = Symbol::follow_ref(&sym_ref, session, &mut None, false, false, &mut self.diagnostics);
+    fn follow_and_resolve_eval(&mut self, session: &mut SessionInfo, sym_ref: MainSymbol) {
+        let imports = MainSymbol::follow_ref(&sym_ref, session, &mut None, false, false, &mut self.diagnostics);
         for import in imports.iter() {
             let (mut sym_ref, mut instance) = import.clone();
             let mut loc_sym = sym_ref.get_localized_symbol().unwrap();
@@ -296,7 +296,7 @@ impl PythonArchEval {
         }
     }
 
-    fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut Symbol, tree_not_found: &Tree, range: &TextRange) {
+    fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut MainSymbol, tree_not_found: &Tree, range: &TextRange) {
         let tree = flatten_tree(tree_not_found);
         file.not_found_paths.push((BuildSteps::ARCH_EVAL, tree.clone()));
         session.sync_odoo.not_found_symbols.insert(file.get_rc().unwrap());
@@ -311,7 +311,7 @@ impl PythonArchEval {
         ));
     }
 
-    fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<LocalizedSymbol>>, class_stmt: &StmtClassDef) {
+    fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<MainSymbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
             let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack[0].clone(), &base.range().start());
             self.diagnostics.extend(eval_base.1);
@@ -337,7 +337,7 @@ impl PythonArchEval {
             let eval_base = &eval_base[0];
             let symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![]).0;
             if symbol.get_symbol().borrow().sym_type != SymType::COMPILED {
-                if symbol.get_localized_symbol().unwrap().borrow().loc_sym_type != LocSymType::CLASS {
+                if symbol.get_localized_symbol().unwrap().borrow().loc_sym_type != SymType::CLASS {
                     self.diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
                         Some(DiagnosticSeverity::WARNING),
@@ -399,7 +399,7 @@ impl PythonArchEval {
         {
             let inner_func = &variable.borrow()._function;
             if !inner_func.as_ref().unwrap().is_static {
-                if self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type == LocSymType::CLASS {
+                if self.sym_stack.last().unwrap().borrow().last_loc_sym().borrow().loc_sym_type == SymType::CLASS {
                     if func_stmt.parameters.args.len() == 0 { //TODO handle parameters || variable.borrow()._function.local_symbols.len() == 0 {
                         // self.diagnostics.push(Diagnostic::new(
                         //     FileMgr::textRange_to_temporary_Range(&func_stmt.range),

@@ -5,6 +5,8 @@ use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::MainSymbol;
 
+
+#[derive(Debug)]
 struct NamespaceDirectory {
     pub path: String,
     pub module_symbols: HashMap<String, Vec<Rc<RefCell<MainSymbol>>>>,
@@ -17,6 +19,8 @@ pub struct NamespaceSymbol {
     pub is_external: bool,
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
     pub parent: Option<Weak<RefCell<MainSymbol>>>,
+    pub in_workspace: bool,
+    pub module_symbols: HashMap<String, Rc<RefCell<MainSymbol>>>,
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
 }
@@ -30,6 +34,8 @@ impl NamespaceSymbol {
             is_external,
             weak_self: None,
             parent: None,
+            in_workspace: false,
+            module_symbols: HashMap::new(),
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH
@@ -63,6 +69,14 @@ impl NamespaceSymbol {
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
         }
+    }
+
+    pub fn add_file(&mut self, file: Rc<RefCell<MainSymbol>>) {
+        self.module_symbols.insert(file.borrow().name().clone(), file);
+    }
+
+    pub fn paths(&self) -> Vec<String> {
+        self.directories.iter().map(|x| {x.path}).collect()
     }
 
 }

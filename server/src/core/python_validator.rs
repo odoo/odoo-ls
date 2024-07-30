@@ -21,20 +21,20 @@ use super::python_utils::{self, unpack_assign};
 #[derive(Debug)]
 pub struct PythonValidator {
     file_mode: bool,
-    sym_ref: SymbolRef,
+    symbol: MainSymbol,
     diagnostics: Vec<Diagnostic>,
     safe_imports: Vec<bool>,
-    current_module: Option<Rc<RefCell<Symbol>>>
+    current_module: Option<Rc<RefCell<MainSymbol>>>
 }
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on any symbol containing code (file, function, class. Not variable, namespace).
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol: SymbolRef) -> Self {
+    pub fn new(symbol: MainSymbol) -> Self {
         Self {
             file_mode: true,
-            sym_ref: symbol,
+            symbol,
             diagnostics: Vec::new(),
             safe_imports: vec![false],
             current_module: None,
@@ -116,7 +116,7 @@ impl PythonValidator {
             },
             SymType::CONTENT => {
                 let loc_sym = self.sym_ref.get_localized_symbol().unwrap();
-                if !vec![LocSymType::CLASS, LocSymType::FUNCTION].contains(&loc_sym.borrow().loc_sym_type) {
+                if !vec![SymType::CLASS, SymType::FUNCTION].contains(&loc_sym.borrow().loc_sym_type) {
                     panic!("Only File, function or class can be validated")
                 }
                 self.file_mode = false;
@@ -310,7 +310,7 @@ impl PythonValidator {
         }
     }
 
-    fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<LocalizedSymbol>>) {
+    fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<MainSymbol>>) {
         let cl = class.borrow();
         let Some(model) = cl._model.as_ref() else {
             return;

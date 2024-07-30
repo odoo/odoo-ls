@@ -18,6 +18,8 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 
+use super::symbol_mgr::SectionRange;
+
 
 #[derive(Debug)]
 pub struct ModuleSymbol {
@@ -38,8 +40,14 @@ pub struct ModuleSymbol {
     pub validation_status: BuildStatus,
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
     pub parent: Option<Weak<RefCell<MainSymbol>>>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
+    pub in_workspace: bool,
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3],
+
+    //Trait SymbolMgr
+    pub sections: Vec<SectionRange>,
+    pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>>,
 }
 
 impl ModuleSymbol {
@@ -117,7 +125,7 @@ impl ModuleSymbol {
         Some(module)
     }
 
-    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<String> {
+    pub fn load_module_info(symbol: Rc<RefCell<MainSymbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<MainSymbol>>) -> Vec<String> {
         {
             let _symbol = symbol.borrow();
             let module = _symbol.get_module();
@@ -264,7 +272,7 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
+    fn _load_depends(symbol: &mut MainSymbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<MainSymbol>>) -> (Vec<Diagnostic>, Vec<String>) {
         let module = symbol.get_module();
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<String> = vec![];
@@ -299,15 +307,15 @@ impl ModuleSymbol {
         (diagnostics, loaded)
     }
 
-    fn _load_data(_symbol: Rc<RefCell<Symbol>>, _odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
+    fn _load_data(_symbol: Rc<RefCell<MainSymbol>>, _odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
         vec![]
     }
 
-    fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
+    fn _load_arch(symbol: Rc<RefCell<MainSymbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
         let root_path = (*symbol).borrow().get_module().root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
-            let _arc_symbol = Symbol::create_from_path(session, &tests_path, symbol, false);
+            let _arc_symbol = MainSymbol::create_from_path(session, &tests_path, symbol, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 session.sync_odoo.add_to_rebuild_arch(_arc_symbol);
@@ -316,7 +324,7 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
+    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<MainSymbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
         if symbol.borrow().get_module().dir_name == *dir_name || symbol.borrow().get_module().depends.contains(dir_name) {
             return true;
         }

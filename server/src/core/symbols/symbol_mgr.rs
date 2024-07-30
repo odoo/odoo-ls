@@ -1,6 +1,8 @@
+use std::{cell::RefCell, rc::Rc, collections::HashMap};
+
 use ruff_text_size::TextRange;
 
-use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol};
+use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::MainSymbol};
 
 
 #[derive(Debug, Clone)]
@@ -21,6 +23,8 @@ pub trait SymbolMgr {
     fn get_section_for(&self, position: u32) -> SectionRange;
     fn add_section(&mut self, range: TextRange) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
+    fn get_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<MainSymbol>>>;
+    fn iter_symbols(&self) -> impl Iterator<Item= &Rc<RefCell<MainSymbol>>>;
 }
 
 
@@ -85,8 +89,25 @@ macro_rules! impl_section_mgr_for {
             section.previous_indexes = new_parent;
         }
 
+        fn get_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<MainSymbol>>> {
+            let symbols: Option<&HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>> = self.symbols.get(name);
+            if let Some(symbols) = symbols {
+                let section: SectionRange = self.get_section_for(position);
+                let sym_section = symbols.get(&section.index);
+                if let Some(sym_section) = sym_section {
+                    return sym_section.clone();
+                }
+            }
+            vec![]
+        }
+
+        ///Iter through all symbols
+        fn iter_symbols(&self) -> impl Iterator<Item= &Rc<RefCell<MainSymbol>>> {
+            self.symbols.values().into_iter()
+        }
+
     }
 )+)
 }
 
-impl_section_mgr_for!(FileSymbol, ClassSymbol, FunctionSymbol);
+impl_section_mgr_for!(FileSymbol, ClassSymbol, FunctionSymbol, ModuleSymbol, PythonPackageSymbol);
