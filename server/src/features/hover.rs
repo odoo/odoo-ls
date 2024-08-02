@@ -7,7 +7,7 @@ use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use crate::core::symbols::symbol::MainSymbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
@@ -31,58 +31,59 @@ impl HoverFeature {
             warn!("symbol expired");
             return None;
         }
-        let type_refs = MainSymbol::follow_ref(&sym_ref, session, &mut None, true, false, &mut vec![]);
-        let type_ref = &type_refs[0].0; //TODO handle more evaluations
-        let type_sym = type_ref.get_symbol();
-        let type_loc_sym = type_ref.get_localized_symbol().unwrap();
+        let type_refs = MainSymbol::follow_ref(&sym_ref.upgrade().unwrap(), session, &mut None, true, false, &mut vec![]);
+        let type_sym = &type_refs[0].0; //TODO handle more evaluations
+        let type_sym_rc = type_sym.upgrade().unwrap();
         let mut type_str = S!("Any");
-        if &sym_ref != type_ref && (type_loc_sym.borrow().loc_sym_type != SymType::VARIABLE || type_loc_sym.borrow().is_type_alias()) {
-            type_str = type_ref.get_symbol().borrow().name.clone();
+        if !Weak::ptr_eq(&sym_ref, type_sym) && (type_sym_rc.borrow().typ() != SymType::VARIABLE || type_sym_rc.borrow().as_variable().is_type_alias()) {
+            type_str = type_sym_rc.borrow().name().clone();
         }
         if analyse_ast_result.factory.is_some() && analyse_ast_result.effective_sym.is_some() {
-            type_str = MainSymbol::follow_ref(&analyse_ast_result.effective_sym.unwrap().upgrade().unwrap().borrow().to_symbol_ref(), session, &mut None, true, false, &mut vec![])[0].0.get_symbol().borrow().name.clone();
+            type_str = MainSymbol::follow_ref(&analyse_ast_result.effective_sym.unwrap().upgrade().unwrap(), session, &mut None, true, false, &mut vec![])[0].0.upgrade().unwrap().borrow().name().clone();
         }
-        let mut type_sym_name = type_loc_sym.borrow().loc_sym_type.to_string().to_lowercase();
-        if type_loc_sym.borrow().is_import_variable && MainSymbol::next_refs(session, &type_ref, &mut None, &mut vec![]).len() > 0 {
-            let next_ref = &MainSymbol::next_refs(session, &type_ref, &mut None, &mut vec![])[0];
-            type_sym_name = next_ref.0.get_symbol().borrow().sym_type.to_string().to_lowercase();
+        let mut type_sym_name = type_sym_rc.borrow().typ().to_string().to_lowercase();
+        if type_sym_rc.borrow().typ() == SymType::VARIABLE &&
+            type_sym_rc.borrow().as_variable().is_import_variable &&
+            MainSymbol::next_refs(session, &type_sym_rc.borrow(), &mut None, &mut vec![]).len() > 0 {
+            let next_ref = &MainSymbol::next_refs(session, &type_sym_rc.borrow(), &mut None, &mut vec![])[0];
+            type_sym_name = next_ref.0.upgrade().unwrap().borrow().typ().to_string().to_lowercase();
         }
-        if type_loc_sym.borrow().is_type_alias() {
+        if type_sym_rc.borrow().typ() == SymType::VARIABLE && type_sym_rc.borrow().as_variable().is_type_alias() {
             type_sym_name = S!("type alias");
-            let mut type_alias_ref = MainSymbol::next_refs(session, &type_ref, &mut None, &mut vec![]);
+            let mut type_alias_ref = MainSymbol::next_refs(session, &type_sym_rc.borrow(), &mut None, &mut vec![]);
             if type_alias_ref.len() > 0 {
-                if &type_alias_ref[0].0 != type_ref {
-                    let type_alias_ref = MainSymbol::follow_ref(&type_alias_ref[0].0, session, &mut None, true, false, &mut vec![]);
+                if !Weak::ptr_eq(&type_alias_ref[0].0, type_sym) {
+                    let type_alias_ref = MainSymbol::follow_ref(&type_alias_ref[0].0.upgrade().unwrap(), session, &mut None, true, false, &mut vec![]);
                     if type_alias_ref.len() > 0 {
-                        type_str = type_alias_ref[0].0.get_symbol().borrow().name.clone();
+                        type_str = type_alias_ref[0].0.upgrade().unwrap().borrow().name().clone();
                     }
                 }
             }
         }
-        if type_loc_sym.borrow().loc_sym_type == SymType::FUNCTION {
-            if type_loc_sym.borrow()._function.as_ref().unwrap().is_property {
+        if type_sym_rc.borrow().typ() == SymType::FUNCTION {
+            if type_sym_rc.borrow().as_func().is_property {
                 type_sym_name = S!("property");
             } else {
                 type_sym_name = S!("method");
             }
         }
         // BLOCK 1: (type) **name** -> infered_type
-        let mut value: String = HoverFeature::build_block_1(&type_loc_sym, &type_sym_name, &type_str);
+        let mut value: String = HoverFeature::build_block_1(&type_sym_rc, &type_sym_name, &type_str);
         // BLOCK 2: useful links
         if type_str != S!("Any") && type_str != S!("constant") {
-            let paths = &type_sym.borrow().paths;
+            let paths = &type_sym_rc.borrow().paths();
             if paths.len() > 0 {
                 let mut path = PathBuf::new();//TODO FileMgr::pathname2uri(paths.first().unwrap());
-                if type_sym.borrow().sym_type == SymType::PACKAGE {
+                if type_sym_rc.borrow().typ() == SymType::PACKAGE {
                     path = PathBuf::from(path).join("__init__.py");
                 }
                 value += "  \n***  \n";
-                value += format!("See also: [{}]({}#{})  \n", type_sym.borrow().name.as_str(), path.sanitize(), type_loc_sym.borrow().range.start().to_usize()).as_str();
+                value += format!("See also: [{}]({}#{})  \n", type_sym_rc.borrow().name().as_str(), path.sanitize(), type_sym_rc.borrow().range().start().to_usize()).as_str();
             }
         }
         // BLOCK 3: documentation
-        if type_loc_sym.borrow().doc_string.is_some() {
-            value = value + "  \n***  \n" + type_loc_sym.borrow().doc_string.as_ref().unwrap();
+        if type_sym_rc.borrow().doc_string().is_some() {
+            value = value + "  \n***  \n" + type_sym_rc.borrow().doc_string().as_ref().unwrap();
         }
         let range = Some(Range {
             start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
@@ -101,18 +102,18 @@ impl HoverFeature {
         let loc_sym = loc_sym.borrow();
         let mut value = S!("```python  \n");
         value += &format!("({}) ", type_sym);
-        if loc_sym.loc_sym_type == SymType::FUNCTION && !loc_sym._function.as_ref().unwrap().is_property {
+        if loc_sym.typ() == SymType::FUNCTION && !loc_sym.as_func().is_property {
             value += "def ";
         }
-        value += &loc_sym.symbol().borrow().name;
-        if loc_sym.loc_sym_type == SymType::FUNCTION && !loc_sym._function.as_ref().unwrap().is_property {// && args?
+        value += &loc_sym.name();
+        if loc_sym.typ() == SymType::FUNCTION && !loc_sym.as_func().is_property {// && args?
             //TODO add args to function
         }
         if !infered_type.is_empty() && *type_sym != S!("module") {
-            if loc_sym.loc_sym_type == SymType::FUNCTION && !loc_sym._function.as_ref().unwrap().is_property {
+            if loc_sym.typ() == SymType::FUNCTION && !loc_sym.as_func().is_property {
                 value += " -> ";
                 value += &infered_type;
-            } else if loc_sym.symbol().borrow().name != *infered_type && loc_sym.loc_sym_type != SymType::CLASS {
+            } else if loc_sym.name() != infered_type && loc_sym.typ() != SymType::CLASS {
                 if *type_sym == S!("type alias") {
                     value += &format!(": type[{}]", infered_type);
                 } else {

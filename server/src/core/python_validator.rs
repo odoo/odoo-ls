@@ -114,16 +114,13 @@ impl PythonValidator {
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
-            SymType::CONTENT => {
-                let loc_sym = self.sym_ref.get_localized_symbol().unwrap();
-                if !vec![SymType::CLASS, SymType::FUNCTION].contains(&loc_sym.borrow().loc_sym_type) {
-                    panic!("Only File, function or class can be validated")
-                }
+            SymType::CLASS | SymType::FUNCTION => {
+                let loc_sym = self.symbol;
                 self.file_mode = false;
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
-                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), loc_sym.borrow().ast_indexes.as_ref().expect("this node should contains an index vector"));
+                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), loc_sym.borrow().ast_indexes());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
@@ -136,10 +133,10 @@ impl PythonValidator {
                     self.validate_body(session, body);
                     match stmt {
                         Stmt::FunctionDef(s) => {
-                            loc_sym.borrow_mut()._function.as_mut().unwrap().diagnostics = self.diagnostics.clone();
+                            loc_sym.borrow_mut().as_func_mut().diagnostics = self.diagnostics.clone();
                         },
                         Stmt::ClassDef(s) => {
-                            loc_sym.borrow_mut()._class.as_mut().unwrap().diagnostics = self.diagnostics.clone();
+                            loc_sym.borrow_mut().as_class_sym_mut().diagnostics = self.diagnostics.clone();
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     }
@@ -149,16 +146,11 @@ impl PythonValidator {
             },
             _ => {panic!("Only File, function or class can be validated")}
         }
-        let symbol = self.sym_ref.get_symbol();
-        let mut symbol = symbol.borrow_mut();
-        symbol.validation_status = BuildStatus::DONE;
-        let mut loc_sym = self.sym_ref.get_localized_symbol();
-        if loc_sym.is_some() {
-            loc_sym.unwrap().borrow_mut().validation_status = BuildStatus::DONE;
-        }
-        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.sym_type) {
-            if !symbol.in_workspace {
-                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &symbol.paths[0].to_string());
+        let mut symbol = self.symbol.borrow_mut();
+        symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::DONE);
+        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.typ()) {
+            if !symbol.in_workspace() {
+                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &symbol.paths()[0].to_string());
             } else {
                 drop(symbol);
                 let file_info = self.get_file_info(session.sync_odoo);
@@ -172,32 +164,32 @@ impl PythonValidator {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    let sym = self.sym_ref.get_symbol().borrow().get_positioned_symbol(&f.name.to_string(), &f.range);
+                    let sym = self.symbol.borrow().get_positioned_symbol(&f.name.to_string(), &f.range);
                     if let Some(sym) = sym {
-                        let val_status = sym.borrow().validation_status.clone();
+                        let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(sym.borrow().to_symbol_ref());
+                            let mut v = PythonValidator::new(sym);
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
-                        self.diagnostics.append(&mut sym.borrow_mut()._function.as_mut().unwrap().diagnostics);
+                        self.diagnostics.append(&mut sym.borrow_mut().as_func().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
                     }
                 },
                 Stmt::ClassDef(c) => {
-                    let sym = self.sym_ref.get_symbol().borrow().get_positioned_symbol(&c.name.to_string(), &c.range);
+                    let sym = self.symbol.borrow().get_positioned_symbol(&c.name.to_string(), &c.range);
                     if let Some(sym) = sym {
-                        let val_status = sym.borrow().validation_status.clone();
+                        let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(sym.borrow().to_symbol_ref());
+                            let mut v = PythonValidator::new(sym);
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
                         self._check_model(session, &sym);
-                        self.diagnostics.append(&mut sym.borrow_mut()._class.as_mut().unwrap().diagnostics);
+                        self.diagnostics.append(&mut sym.borrow_mut().as_class_sym().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
                     }
@@ -218,7 +210,7 @@ impl PythonValidator {
                     self.visit_ann_assign(session, a);
                 },
                 Stmt::Expr(e) => {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_ref.get_symbol().clone(), &e.range.start());
+                    let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.symbol.clone(), &e.range.start());
                     self.diagnostics.extend(diags);
                 },
                 Stmt::If(i) => {
@@ -252,7 +244,7 @@ impl PythonValidator {
     }
 
     fn _resolve_import(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
-        let file_symbol = self.sym_ref.get_symbol().borrow().get_file();
+        let file_symbol = self.symbol.borrow().get_file();
         let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
         let import_results = resolve_import_stmt(
             session,
@@ -263,15 +255,15 @@ impl PythonValidator {
             range);
         for import_result in import_results.iter() {
             if import_result.found && self.current_module.is_some() {
-                let module = import_result.symbol.borrow().get_module_sym();
+                let module = import_result.symbol.borrow().find_module();
                 if let Some(module) = module {
-                    if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow()._module.as_ref().unwrap().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
+                    if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30103"))),
                             Some(EXTENSION_NAME.to_string()),
-                            format!("{} is not in the dependencies of the module", module.borrow()._module.as_ref().unwrap().dir_name),
+                            format!("{} is not in the dependencies of the module", module.borrow().as_module_package().dir_name),
                             None,
                             None,
                         ))
@@ -291,7 +283,7 @@ impl PythonValidator {
         };
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
-                let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_ref.get_symbol().clone(), &assign.range.start());
+                let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.symbol.clone(), &assign.range.start());
                 self.diagnostics.extend(diags);
             }
         }
@@ -304,7 +296,7 @@ impl PythonValidator {
         let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));
         for a in assigns.iter() {
             if let Some(expr) = &a.value {
-                let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_ref.get_symbol().clone(), &assign.range.start());
+                let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.symbol.clone(), &assign.range.start());
                 self.diagnostics.extend(diags);
             }
         }
@@ -312,17 +304,17 @@ impl PythonValidator {
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<MainSymbol>>) {
         let cl = class.borrow();
-        let Some(model) = cl._model.as_ref() else {
+        let Some(model) = cl.as_class_sym()._model.as_ref() else {
             return;
         };
         if self.current_module.is_none() {
             return;
         }
         //Check inherit field
-        let inherit = cl.symbol.upgrade().unwrap().borrow().get_symbol(&(vec![], vec![S!("_inherit")]));
-        if let Some(inherit) = inherit {
-            let loc_inherit = inherit.borrow().last_loc_sym();
-            let inherit_evals = &loc_inherit.borrow().evaluations;
+        let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
+        if let Some(inherit) = inherit.last() {
+            let inherit = inherit.borrow();
+            let inherit_evals = &inherit.evaluations();
             for inherit_eval in inherit_evals.iter() {
                 let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {
@@ -363,9 +355,9 @@ impl PythonValidator {
                 let mut found_one = false;
                 for main_sym in borrowed_model.get_main_symbols(session, None, &mut None).iter() {
                     let main_sym = main_sym.borrow();
-                    let main_sym_module = main_sym.get_module_sym();
+                    let main_sym_module = main_sym.find_module();
                     if let Some(main_sym_module) = main_sym_module {
-                        let module_name = main_sym_module.borrow()._module.as_ref().unwrap().dir_name.clone();
+                        let module_name = main_sym_module.borrow().as_module_package().dir_name.clone();
                         main_modules.push(module_name.clone());
                         if ModuleSymbol::is_in_deps(session, &from, &module_name, &mut None) {
                             found_one = true;

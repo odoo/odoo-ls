@@ -31,15 +31,15 @@ impl DefinitionFeature {
         let mut links = vec![];
         for sym in analyse_ast_result.symbols.iter() {
             let sym_ref = sym.symbol.get_symbol(session, &mut None, &mut vec![]);
-            let loc_sym = sym_ref.0.get_localized_symbol();
+            let loc_sym = sym_ref.0.upgrade();
             if loc_sym.is_none() {
                 continue;
             }
-            let symbol = sym_ref.0.get_symbol();
+            let symbol =loc_sym.unwrap();
             let file = symbol.borrow().get_file();
             if let Some(file) = file {
-                for path in file.upgrade().unwrap().borrow().paths.iter() {
-                    match symbol.borrow().sym_type {
+                for path in file.upgrade().unwrap().borrow().paths().iter() {
+                    match symbol.borrow().typ() {
                         SymType::PACKAGE => {
                             links.push(Location{
                                 uri: FileMgr::pathname2uri(&PathBuf::from(path).join("__init__.py").sanitize()),
