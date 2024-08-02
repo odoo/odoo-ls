@@ -13,6 +13,8 @@ pub struct FunctionSymbol {
     pub is_external: bool,
     pub is_static: bool,
     pub is_property: bool,
+    pub doc_string: Option<String>,
+    pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
     pub parent: Option<Weak<RefCell<MainSymbol>>>,
@@ -25,4 +27,28 @@ pub struct FunctionSymbol {
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>>,
+}
+
+impl FunctionSymbol {
+
+    pub fn new(name: String, range: TextRange, is_external: bool) -> Self {
+        Self {
+            name,
+            is_external,
+            weak_self: None,
+            parent: None,
+            range,
+            is_static: false,
+            is_property: false,
+            diagnostics: vec![],
+            ast_indexes: vec![],
+            doc_string: None,
+            arch_status: BuildStatus::PENDING,
+            arch_eval_status: BuildStatus::PENDING,
+            odoo_status: BuildStatus::PENDING,
+            validation_status: BuildStatus::PENDING,
+            sections: vec![],
+            symbols: HashMap::new(),
+        }
+    }
 }

@@ -24,117 +24,117 @@ impl PythonArchEvalHooks {
 
     pub fn on_file_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<MainSymbol>>) {
         let tree = symbol.borrow().get_tree();
-        let name = symbol.borrow().name.clone();
+        let name = symbol.borrow().name().clone();
         match name.as_str() {
             "models" => {
                 if tree == (vec![S!("odoo"), S!("models")], vec!()) {
                     let base_model = symbol.borrow().get_symbol(&(vec![], vec![S!("BaseModel")]), u32::MAX);
-                    if base_model.is_some() {
-                        PythonArchEvalHooks::on_base_model_eval(odoo, base_model.unwrap().borrow().last_loc_sym(), symbol)
+                    if base_model.len() > 0 {
+                        PythonArchEvalHooks::on_base_model_eval(odoo, base_model.last().unwrap().clone(), symbol)
                     }
                 }
             },
             "api" => {
                 if tree == (vec![S!("odoo"), S!("api")], vec!()) {
                     let env = symbol.borrow().get_symbol(&(vec![], vec![S!("Environment")]), u32::MAX);
-                    if env.is_some() {
-                        PythonArchEvalHooks::on_env_eval(odoo, env.unwrap(), symbol)
+                    if env.len() > 0 {
+                        PythonArchEvalHooks::on_env_eval(odoo, env.last().unwrap().clone(), symbol)
                     }
                 }
             },
             "common" => {
                 if tree == (vec![S!("odoo"), S!("tests"), S!("common")], vec!()) {
                     let form = symbol.borrow().get_symbol(&(vec![], vec![S!("Form")]), u32::MAX);
-                    if form.is_some() {
-                        PythonArchEvalHooks::on_form_eval(odoo, form.unwrap())
+                    if form.len() > 0 {
+                        PythonArchEvalHooks::on_form_eval(odoo, form.last().unwrap().clone())
                     }
                     let transaction_class = symbol.borrow().get_symbol(&(vec![], vec![S!("TransactionCase")]), u32::MAX);
-                    if transaction_class.is_some() {
-                        PythonArchEvalHooks::on_transaction_class_eval(odoo, transaction_class.unwrap(), symbol);
+                    if transaction_class.len() > 0 {
+                        PythonArchEvalHooks::on_transaction_class_eval(odoo, transaction_class.last().unwrap().clone(), symbol);
                     }
                 }
             },
             "fields" => {
                 if tree == (vec![S!("odoo"), S!("fields")], vec!()) {
                     let boolean = symbol.borrow().get_symbol(&(vec![], vec![S!("Boolean")]), u32::MAX);
-                    if boolean.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, boolean.unwrap(), (vec![S!("builtins")], vec![S!("bool")]));
+                    if boolean.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, boolean.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("bool")]));
                     }
                     let integer = symbol.borrow().get_symbol(&(vec![], vec![S!("Integer")]), u32::MAX);
-                    if integer.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, integer.unwrap(), (vec![S!("builtins")], vec![S!("int")]));
+                    if integer.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, integer.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("int")]));
                     }
                     let float = symbol.borrow().get_symbol(&(vec![], vec![S!("Float")]), u32::MAX);
-                    if float.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, float.unwrap(), (vec![S!("builtins")], vec![S!("float")]));
+                    if float.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, float.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("float")]));
                     }
                     let monetary = symbol.borrow().get_symbol(&(vec![], vec![S!("Monetary")]), u32::MAX);
-                    if monetary.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, monetary.unwrap(), (vec![S!("builtins")], vec![S!("float")]));
+                    if monetary.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, monetary.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("float")]));
                     }
                     let char = symbol.borrow().get_symbol(&(vec![], vec![S!("Char")]), u32::MAX);
-                    if char.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, char.unwrap(), (vec![S!("builtins")], vec![S!("str")]));
+                    if char.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, char.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("str")]));
                     }
                     let text = symbol.borrow().get_symbol(&(vec![], vec![S!("Text")]), u32::MAX);
-                    if text.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, text.unwrap(), (vec![S!("builtins")], vec![S!("str")]));
+                    if text.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, text.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("str")]));
                     }
                     let html = symbol.borrow().get_symbol(&(vec![], vec![S!("Html")]), u32::MAX);
-                    if html.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, html.unwrap(), (vec![S!("markupsafe")], vec![S!("Markup")]));
+                    if html.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, html.last().unwrap().clone(), (vec![S!("markupsafe")], vec![S!("Markup")]));
                     }
                     let date = symbol.borrow().get_symbol(&(vec![], vec![S!("Date")]), u32::MAX);
-                    if date.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, date.unwrap(), (vec![S!("datetime")], vec![S!("date")]));
+                    if date.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, date.last().unwrap().clone(), (vec![S!("datetime")], vec![S!("date")]));
                     }
                     let datetime = symbol.borrow().get_symbol(&(vec![], vec![S!("Datetime")]), u32::MAX);
-                    if datetime.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, datetime.unwrap(), (vec![S!("datetime")], vec![S!("datetime")]));
+                    if datetime.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, datetime.last().unwrap().clone(), (vec![S!("datetime")], vec![S!("datetime")]));
                     }
                     let binary = symbol.borrow().get_symbol(&(vec![], vec![S!("Binary")]), u32::MAX);
-                    if binary.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, binary.unwrap(), (vec![S!("builtins")], vec![S!("bytes")]));
+                    if binary.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, binary.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("bytes")]));
                     }
                     let image = symbol.borrow().get_symbol(&(vec![], vec![S!("Image")]), u32::MAX);
-                    if image.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, image.unwrap(), (vec![S!("builtins")], vec![S!("bytes")]));
+                    if image.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, image.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("bytes")]));
                     }
                     let selection = symbol.borrow().get_symbol(&(vec![], vec![S!("Selection")]), u32::MAX);
-                    if selection.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, selection.unwrap(), (vec![S!("builtins")], vec![S!("str")]));
+                    if selection.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, selection.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("str")]));
                     }
                     let reference = symbol.borrow().get_symbol(&(vec![], vec![S!("Reference")]), u32::MAX);
-                    if reference.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, reference.unwrap(), (vec![S!("builtins")], vec![S!("str")]));
+                    if reference.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, reference.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("str")]));
                     }
                     let json_sym = symbol.borrow().get_symbol(&(vec![], vec![S!("Json")]), u32::MAX);
-                    if json_sym.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, json_sym.unwrap(), (vec![S!("builtins")], vec![S!("object")]));
+                    if json_sym.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, json_sym.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("object")]));
                     }
                     let properties = symbol.borrow().get_symbol(&(vec![], vec![S!("Properties")]), u32::MAX);
-                    if properties.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, properties.unwrap(), (vec![S!("builtins")], vec![S!("object")]));
+                    if properties.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, properties.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("object")]));
                     }
                     let properties_def = symbol.borrow().get_symbol(&(vec![], vec![S!("PropertiesDefinition")]), u32::MAX);
-                    if properties_def.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, properties_def.unwrap(), (vec![S!("builtins")], vec![S!("object")]));
+                    if properties_def.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, properties_def.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("object")]));
                     }
                     let id = symbol.borrow().get_symbol(&(vec![], vec![S!("Id")]), u32::MAX);
-                    if id.is_some() {
-                        PythonArchEvalHooks::_update_get_eval(odoo, id.unwrap(), (vec![S!("builtins")], vec![S!("int")]));
+                    if id.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval(odoo, id.last().unwrap().clone(), (vec![S!("builtins")], vec![S!("int")]));
                     }
                     let many2one = symbol.borrow().get_symbol(&(vec![], vec![S!("Many2one")]), u32::MAX);
-                    if many2one.is_some() {
-                        PythonArchEvalHooks::_update_get_eval_relational(many2one.unwrap());
+                    if many2one.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval_relational(many2one.last().unwrap().clone());
                     }
                     let one2many = symbol.borrow().get_symbol(&(vec![], vec![S!("One2many")]), u32::MAX);
-                    if one2many.is_some() {
-                        PythonArchEvalHooks::_update_get_eval_relational(one2many.unwrap());
+                    if one2many.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval_relational(one2many.last().unwrap().clone());
                     }
                     let many2many = symbol.borrow().get_symbol(&(vec![], vec![S!("Many2many")]), u32::MAX);
-                    if many2many.is_some() {
-                        PythonArchEvalHooks::_update_get_eval_relational(many2many.unwrap());
+                    if many2many.len() > 0 {
+                        PythonArchEvalHooks::_update_get_eval_relational(many2many.last().unwrap().clone());
                     }
                 }
             }
@@ -147,34 +147,29 @@ impl PythonArchEvalHooks {
         todo!()
     }
 
-    fn on_base_model_eval(odoo: &mut SyncOdoo, loc_sym: Rc<RefCell<MainSymbol>>, file_symbol: Rc<RefCell<MainSymbol>>) {
-        let symbol = loc_sym.borrow().symbol();
+    fn on_base_model_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<MainSymbol>>, file_symbol: Rc<RefCell<MainSymbol>>) {
         let symbol = symbol.borrow();
-        let loc_sym = loc_sym.borrow();
         // ----------- __iter__ ------------
-        let mut iter = symbol.get_symbol(&(vec![], vec![S!("__iter__")]));
-        if iter.is_some() && iter.as_ref().unwrap().borrow().last_loc_sym().borrow().evaluations.len() > 0 {
-            let iter = iter.as_mut().unwrap().borrow_mut();
-            let loc_iter = iter.last_loc_sym();
-            let evaluation = &mut loc_iter.borrow_mut().evaluations[0];
+        let mut iter = symbol.get_symbol(&(vec![], vec![S!("__iter__")]), u32::MAX);
+        if !iter.is_empty() && iter.last().unwrap().borrow().evaluations().len() > 0 {
+            let iter = iter.last().unwrap().borrow_mut();
+            let evaluation = &mut iter.evaluations()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
         // ----------- env ------------
-        let env = symbol.get_symbol(&(vec![], vec![S!("env")]));
+        let env = symbol.get_symbol(&(vec![], vec![S!("env")]), u32::MAX);
         let env_file = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![]), u32::MAX);
         let env_class = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![S!("Environment")]), u32::MAX);
-        if env.is_some() && env_class.is_some() {
-            let env = env.unwrap();
-            let env_class = env_class.unwrap();
-            let env = env.borrow_mut();
-            let loc_env = env.last_loc_sym();
-            let mut loc_env = loc_env.borrow_mut();
+        if !env.is_empty() && !env_class.is_empty() {
+            let env_rc = env.last().unwrap();
+            let mut env = env_rc.borrow_mut();
+            let env_class = env_class.last().unwrap();
             let mut context = HashMap::new();
             context.insert(S!("test_mode"), super::evaluation::ContextValue::BOOLEAN(true));
-            loc_env.evaluations = vec![Evaluation {
+            env.set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new(
-                    loc_env.to_symbol_ref(),
+                    Rc::downgrade(env_rc),
                     true,
                     context,
                     None,
@@ -182,41 +177,38 @@ impl PythonArchEvalHooks {
                 ),
                 value: None,
                 range: None,
-            }];
-            file_symbol.borrow_mut().add_dependency(&mut env_file.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
-            loc_env.doc_string = Some(S!(""));
+            }]);
+            file_symbol.borrow_mut().add_dependency(&mut env_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            env.set_doc_string(Some(S!("")));
         }
         // ------------ ids ------------
-        let ids = symbol.get_symbol(&(vec![], vec![S!("ids")]));
-        if let Some(ids) = ids {
+        let ids = symbol.get_symbol(&(vec![], vec![S!("ids")]), u32::MAX);
+        if !ids.is_empty() {
             let values: Vec<ruff_python_ast::Expr> = Vec::new();
-            let range = ids.borrow().last_loc_sym().borrow().range;
-            ids.borrow().last_loc_sym().borrow_mut().evaluations = vec![Evaluation::new_list(odoo, values, range)];
+            let range = ids.last().unwrap().borrow().range();
+            ids.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation::new_list(odoo, values, range.clone())]);
         }
         // ------------ sudo ------------
-        let mut sudo = symbol.get_symbol(&(vec![], vec![S!("sudo")]));
-        if sudo.is_some() && sudo.as_ref().unwrap().borrow().last_loc_sym().borrow().evaluations.len() == 1 {
-            let sudo = sudo.as_mut().unwrap().borrow_mut();
-            let loc_sudo = sudo.last_loc_sym();
-            let evaluation = &mut loc_sudo.borrow_mut().evaluations[0];
+        let mut sudo = symbol.get_symbol(&(vec![], vec![S!("sudo")]), u32::MAX);
+        if !sudo.is_empty() && sudo.last().unwrap().borrow().evaluations().len() == 1 {
+            let sudo = sudo.last().unwrap();
+            let evaluation = &mut sudo.borrow_mut().evaluations()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
         // ------------ create ------------
-        let mut create = symbol.get_symbol(&(vec![], vec![S!("create")]));
-        if create.is_some() && create.as_ref().unwrap().borrow().last_loc_sym().borrow().evaluations.len() == 1 {
-            let create = create.as_mut().unwrap().borrow_mut();
-            let loc_create = create.last_loc_sym();
-            let evaluation = &mut loc_create.borrow_mut().evaluations[0];
+        let mut create = symbol.get_symbol(&(vec![], vec![S!("create")]), u32::MAX);
+        if !create.is_empty() && create.last().unwrap().borrow().evaluations().len() == 1 {
+            let create = create.last().unwrap();
+            let evaluation = &mut create.borrow_mut().evaluations()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
         // ------------ search ------------
-        let mut search = symbol.get_symbol(&(vec![], vec![S!("search")]));
-        if search.is_some() && search.as_ref().unwrap().borrow().last_loc_sym().borrow().evaluations.len() == 1 {
-            let search = search.as_mut().unwrap().borrow_mut();
-            let loc_search = search.last_loc_sym();
-            let evaluation = &mut loc_search.borrow_mut().evaluations[0];
+        let mut search = symbol.get_symbol(&(vec![], vec![S!("search")]), u32::MAX);
+        if !search.is_empty() && search.last().unwrap().borrow().evaluations().len() == 1 {
+            let search = search.last().unwrap();
+            let evaluation = &mut search.borrow_mut().evaluations()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
@@ -241,8 +233,8 @@ impl PythonArchEvalHooks {
                             let symbols = model.clone().borrow().get_main_symbols(session, from_module.clone(), &mut None);
                             if symbols.len() > 0 {
                                 for s in symbols.iter() {
-                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().get_module_sym().unwrap().borrow()._module.as_ref().unwrap().dir_name, &mut None) {
-                                        return (s.borrow().to_symbol_ref(), true);
+                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name, &mut None) {
+                                        return (Rc::downgrade(s), true);
                                     }
                                 }
                                 //still here? If from module is set, dependencies are not met
@@ -284,13 +276,10 @@ impl PythonArchEvalHooks {
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
-            match test_cursor_sym {
-                Some(test_cursor_sym) => {
-                    return (test_cursor_sym.borrow().to_sym_ref(), true);
-                },
-                None => {
+            if test_cursor_sym.len() > 0 {
+                    return (Rc::downgrade(test_cursor_sym.last().unwrap()), true);
+            } else {
                     return (evaluation_sym.symbol.clone(), true); //TODO really true?
-                }
             }
         }
         return (evaluation_sym.symbol.clone(), true); //TODO really true?
@@ -298,10 +287,9 @@ impl PythonArchEvalHooks {
 
     fn on_env_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<MainSymbol>>, file_symbol: Rc<RefCell<MainSymbol>>) {
         let mut get_item = symbol.borrow().get_symbol(&(vec![], vec![S!("__getitem__")]), u32::MAX);
-        if get_item.is_some() {
-            let loc_get_item = get_item.as_mut().unwrap().borrow_mut().last_loc_sym();
-            let mut get_item = loc_get_item.borrow_mut();
-            get_item.evaluations = vec![Evaluation {
+        if !get_item.is_empty() {
+            let mut get_item = get_item.last().unwrap().borrow_mut();
+            get_item.set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol {symbol: Weak::new(),
                     instance: true,
                     context: HashMap::new(),
@@ -310,16 +298,16 @@ impl PythonArchEvalHooks {
                 },
                 value: None,
                 range: None
-            }];
+            }]);
         }
         let mut cr = symbol.borrow().get_symbol(&(vec![], vec![S!("cr")]), u32::MAX);
-        let curosor_file = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![]), u32::MAX);
+        let cursor_file = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![]), u32::MAX);
         let cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("Cursor")]), u32::MAX);
-        if cursor_sym.is_some() && cr.is_some() {
-            let cr_mut = cr.as_mut().unwrap().borrow_mut().last_loc_sym();
+        if !cursor_sym.is_empty() && !cr.is_empty() {
+            let cr_mut = cr.last().unwrap();
 
-            let sym_ref = cr_mut.borrow().to_symbol_ref();
-            cr_mut.borrow_mut().evaluations = vec![Evaluation {
+            let sym_ref = Rc::downgrade(cr_mut);
+            cr_mut.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new(
                     sym_ref,
                     true,
@@ -329,8 +317,8 @@ impl PythonArchEvalHooks {
                 ),
                 value: None,
                 range: None,
-            }];
-            file_symbol.borrow_mut().add_dependency(&mut curosor_file.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            }]);
+            file_symbol.borrow_mut().add_dependency(&mut cursor_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }
 
@@ -346,15 +334,14 @@ impl PythonArchEvalHooks {
         let env_file = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![]), u32::MAX);
         let env_model = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![S!("Environment")]), u32::MAX);
         let env_var = symbol.borrow().get_symbol(&(vec![], vec![S!("env")]), u32::MAX);
-        if env_model.is_some() && env_var.is_some() {
-            let env_model = env_model.unwrap();
-            let env_var = env_var.unwrap();
-            let env_var = env_var.borrow_mut();
+        if !env_model.is_empty() && !env_var.is_empty() {
+            let env_model = env_model.last().unwrap();
+            let env_var = env_var.last().unwrap();
             let mut context = HashMap::new();
             context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
-            env_var.last_loc_sym().borrow_mut().evaluations = vec![Evaluation {
+            env_var.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new(
-                    env_model.borrow().last_loc_sym().borrow().to_symbol_ref(),
+                    Rc::downgrade(env_model),
                     true,
                     context,
                     None,
@@ -362,8 +349,8 @@ impl PythonArchEvalHooks {
                 ),
                 value: None,
                 range: None,
-            }];
-            file_symbol.borrow_mut().add_dependency(&mut env_file.unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            }]);
+            file_symbol.borrow_mut().add_dependency(&mut env_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }
 
@@ -387,18 +374,18 @@ impl PythonArchEvalHooks {
 
     fn _update_get_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<MainSymbol>>, tree: Tree) {
         let get_sym = symbol.borrow().get_symbol(&(vec![], vec![S!("__get__")]), u32::MAX);
-        if get_sym.is_none() {
+        if get_sym.is_empty() {
             return;
         }
         let return_sym = odoo.get_symbol(&tree, u32::MAX);
-        if return_sym.is_none() {
-            symbol.borrow_mut().not_found_paths.push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
+        if return_sym.is_empty() {
+            symbol.borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
             odoo.not_found_symbols.insert(symbol);
             return;
         }
-        get_sym.as_ref().unwrap().borrow_mut().last_loc_sym().borrow_mut().evaluations = vec![Evaluation {
+        get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new(
-                return_sym.unwrap().borrow().last_loc_sym().borrow().to_symbol_ref(),
+                Rc::downgrade(return_sym.last().unwrap()),
                 true,
                 HashMap::new(),
                 None,
@@ -406,7 +393,7 @@ impl PythonArchEvalHooks {
             ),
             value: None,
             range: None
-        }];
+        }]);
     }
 
     fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<MainSymbol>>, bool)
@@ -425,10 +412,10 @@ impl PythonArchEvalHooks {
 
     fn _update_get_eval_relational(symbol: Rc<RefCell<MainSymbol>>) {
         let get_sym = symbol.borrow().get_symbol(&(vec![], vec![S!("__get__")]), u32::MAX);
-        if get_sym.is_none() {
+        if get_sym.is_empty() {
             return;
         }
-        get_sym.unwrap().borrow_mut().last_loc_sym().borrow_mut().evaluations = vec![Evaluation {
+        get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new(
                 Weak::new(),
                 true,
@@ -438,6 +425,6 @@ impl PythonArchEvalHooks {
             ),
             value: None,
             range: None,
-        }];
+        }]);
     }
 }

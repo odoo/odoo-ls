@@ -14,12 +14,13 @@ pub struct CompiledSymbol {
 
 impl CompiledSymbol {
 
-    pub fn new(name: String, path: String) -> Self {
+    pub fn new(name: String, path: String, is_external: bool) -> Self {
         Self {
             name,
+            is_external,
             weak_self:None,
             path,
-            parent: None
+            parent: None,
         }
     }
 

@@ -102,7 +102,7 @@ impl ContextValue {
 
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Rc<RefCell<MainSymbol>>, bool);
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<MainSymbol>>, bool);
 
 #[derive(Debug, Default, Clone)]
 pub struct EvaluationSymbol {
@@ -133,7 +133,7 @@ impl Evaluation {
     pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")]), u32::MAX).expect("builtins list not found")),
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")]), u32::MAX).last().expect("builtins list not found")),
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -147,7 +147,7 @@ impl Evaluation {
     pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).expect("builtins list not found")),
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).last().expect("builtins list not found")),
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -161,7 +161,7 @@ impl Evaluation {
     pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).expect("builtins list not found")),
+                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).last().expect("builtins list not found")),
                 instance: true,
                 context: HashMap::new(),
                 factory: None,
@@ -190,7 +190,7 @@ impl Evaluation {
         };
         let symbol;
         if !values.is_none_literal_expr() {
-            symbol = Rc::downgrade(&odoo.get_symbol(&tree_value, u32::MAX).expect("builtins class not found"));
+            symbol = Rc::downgrade(&odoo.get_symbol(&tree_value, u32::MAX).last().expect("builtins class not found"));
         } else {
             symbol = Weak::new();
         }
@@ -212,13 +212,13 @@ impl Evaluation {
             Some(self.value.as_ref().unwrap().clone())
         } else {
             let symbol = self.symbol.get_symbol(session, context, diagnostics).0;
-            let evals = MainSymbol::follow_ref(&symbol, session, context, false, true, diagnostics);
+            let evals = MainSymbol::follow_ref(&symbol.upgrade().unwrap(), session, context, false, true, diagnostics);
             if evals.len() == 1 {
                 let eval = &evals[0];
-                let loc_sym = eval.0.get_localized_symbol();
-                if let Some(loc_sym) = loc_sym {
-                    if loc_sym.borrow().evaluations.len() == 1 {
-                        let eval = &loc_sym.borrow().evaluations[0];
+                let eval_sym = eval.0.upgrade();
+                if let Some(eval_sym) = eval_sym {
+                    if eval_sym.borrow().evaluations().len() == 1 {
+                        let eval = &eval_sym.borrow().evaluations()[0];
                         if eval.value.is_some() {
                             return Some(eval.value.as_ref().unwrap().clone());
                         }
@@ -227,6 +227,10 @@ impl Evaluation {
             }
             None
         }
+    }
+
+    pub fn from_sections(sections: HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>) -> Vec<Evaluation> {
+        todo!()
     }
 
     //create an evaluation that is evaluating to the given symbol
@@ -321,12 +325,12 @@ impl Evaluation {
         let factory = None;
         let mut diagnostics = vec![];
         let from_module;
-        if let Some(module) = parent.borrow().get_module_sym() {
+        if let Some(module) = parent.borrow().find_module() {
             from_module = ContextValue::MODULE(module);
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let module: Option<Rc<RefCell<MainSymbol>>> = parent.borrow().get_module_sym();
+        let module: Option<Rc<RefCell<MainSymbol>>> = parent.borrow().find_module();
         let mut context: Context = HashMap::from([
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
@@ -399,7 +403,7 @@ impl Evaluation {
                 //TODO actually we only evaluate if there is only one function behind the evaluation.
                 // we could evaluate the result of each function and filter results by signature matching.
                 /* example:
-                
+
                 def test():
                     return "5"
 
@@ -422,49 +426,44 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let (base_sym_ref, instance) = base_eval[0].symbol.get_symbol(session, &mut None, &mut diagnostics);
-                if !base_sym_ref.is_expired() {
-                    let base_sym = base_sym_ref.get_symbol();
-                    let base_loc = base_sym_ref.get_localized_symbol();
-                    if let Some(base_loc) = base_loc {
-                        if base_loc.borrow().loc_sym_type == SymType::CLASS {
-                            if instance {
-                                //TODO handle call on class instance
-                            } else {
-                                //TODO diagnostic __new__ call parameters
-                                evals.push(Evaluation{
-                                    symbol: EvaluationSymbol {
-                                        symbol: base_sym_ref.clone(),
-                                        instance: true,
-                                        context: HashMap::new(),
-                                        factory: None,
-                                        get_symbol_hook: None,
-                                    },
-                                    value: None,
-                                    range: Some(expr.range)
-                                });
-                            }
-                        } else if base_loc.borrow().loc_sym_type == SymType::FUNCTION {
-                            //function return evaluation can come from:
-                            //  - type annotation parsing (ARCH_EVAL step)
-                            //  - documentation parsing (Arch_eval and VALIDATION step)
-                            //  - function body inference (VALIDATION step)
-                            // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
-                            // We don't want to launch validation step while Arch evaluating the code.
-                            if base_loc.borrow().evaluations.len() == 0 {
-                                if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().odoo_status == BuildStatus::DONE &&
-                                base_loc.borrow().validation_status == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
-                                    let mut v = PythonValidator::new(base_loc.borrow().to_symbol_ref());
-                                    v.validate(session);
-                                }
-                            }
-                            for eval in base_loc.borrow().evaluations.iter() {
-                                let mut e = eval.clone();
-                                e.range = Some(expr.range.clone());
-                                evals.push(e);
+                let base_sym = base_sym_ref.upgrade();
+                if let Some(base_sym) = base_sym {
+                    if base_sym.borrow().typ() == SymType::CLASS {
+                        if instance {
+                            //TODO handle call on class instance
+                        } else {
+                            //TODO diagnostic __new__ call parameters
+                            evals.push(Evaluation{
+                                symbol: EvaluationSymbol {
+                                    symbol: base_sym_ref.clone(),
+                                    instance: true,
+                                    context: HashMap::new(),
+                                    factory: None,
+                                    get_symbol_hook: None,
+                                },
+                                value: None,
+                                range: Some(expr.range)
+                            });
+                        }
+                    } else if base_sym.borrow().typ() == SymType::FUNCTION {
+                        //function return evaluation can come from:
+                        //  - type annotation parsing (ARCH_EVAL step)
+                        //  - documentation parsing (Arch_eval and VALIDATION step)
+                        //  - function body inference (VALIDATION step)
+                        // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
+                        // We don't want to launch validation step while Arch evaluating the code.
+                        if base_sym.borrow().evaluations().len() == 0 {
+                            if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
+                            base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
+                                let mut v = PythonValidator::new(base_sym);
+                                v.validate(session);
                             }
                         }
-                    } else {
-                        debug!("not able to do a call on {:?}", base_sym.borrow().sym_type);
+                        for eval in base_sym.borrow().evaluations().iter() {
+                            let mut e = eval.clone();
+                            e.range = Some(expr.range.clone());
+                            evals.push(e);
+                        }
                     }
                 }
             },
@@ -475,13 +474,13 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base_ref = evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
-                let bases = MainSymbol::follow_ref(&base_ref, session, &mut None, false, false, &mut diagnostics);
+                let bases = MainSymbol::follow_ref(&base_ref.upgrade().unwrap(), session, &mut None, false, false, &mut diagnostics);
                 for ibase in bases.iter() {
-                    let base_loc = ibase.0.get_localized_symbol();
+                    let base_loc = ibase.0.upgrade();
                     if let Some(base_loc) = base_loc {
                         let attributes = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, &mut diagnostics);
                         if !attributes.is_empty() {
-                            evals.push(Evaluation::eval_from_symbol(attributes.first().unwrap()));
+                            evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap())));
                         }
                     }
                 }
@@ -503,32 +502,32 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 for infered_sym in infered_syms.iter() {
-                    evals.push(Evaluation::eval_from_symbol(&infered_sym.borrow().to_symbol_ref()));
+                    evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(infered_sym)));
                 }
             },
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if eval_left.len() != 1 || eval_left[0].symbol.symbol.get_weak().is_expired() {
+                if eval_left.len() != 1 || eval_left[0].symbol.symbol.is_expired() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = &eval_left[0].symbol.symbol;
-                let bases = MainSymbol::follow_ref(base, session, &mut None, false, false, &mut diagnostics);
+                let bases = MainSymbol::follow_ref(&base.upgrade().unwrap(), session, &mut None, false, false, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = &bases[0];
-                let base = base.0.get_localized_symbol().unwrap();
+                let base = base.0.upgrade().unwrap();
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 let base = base.borrow();
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
-                    let get_item = base.get_loc_symbol(vec![S!("__getitem__")]);
+                    let get_item = base.get_content_symbol("__getitem__", u32::MAX);
                     if get_item.len() == 1 {
                         let get_item = &get_item[0];
                         let get_item = get_item.borrow();
-                        if get_item.evaluations.len() == 1 {
-                            let get_item_eval = &get_item.evaluations[0];
+                        if get_item.evaluations().len() == 1 {
+                            let get_item_eval = &get_item.evaluations()[0];
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
                                 context.insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.remove(&S!("range"));

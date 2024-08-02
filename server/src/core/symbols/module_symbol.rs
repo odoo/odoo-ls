@@ -125,6 +125,12 @@ impl ModuleSymbol {
         Some(module)
     }
 
+    pub fn add_symbol(&mut self, content: Rc<RefCell<MainSymbol>>, section: u32) {
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        section_vec.push(content);
+    }
+
     pub fn load_module_info(symbol: Rc<RefCell<MainSymbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<MainSymbol>>) -> Vec<String> {
         {
             let _symbol = symbol.borrow();

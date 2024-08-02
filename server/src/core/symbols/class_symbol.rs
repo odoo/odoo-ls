@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
 use crate::constants::BuildStatus;
+use crate::core::model::ModelData;
 
 use super::symbol::MainSymbol;
 use super::symbol_mgr::SectionRange;
@@ -15,7 +16,9 @@ use super::symbol_mgr::SectionRange;
 pub struct ClassSymbol {
     pub name: String,
     pub is_external: bool,
+    pub doc_string: Option<String>,
     pub bases: PtrWeakHashSet<Weak<RefCell<MainSymbol>>>,
+    pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others and stored on FileInfo
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
     pub parent: Option<Weak<RefCell<MainSymbol>>>,
@@ -24,6 +27,7 @@ pub struct ClassSymbol {
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub range: TextRange,
+    pub _model: Option<ModelData>,
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
@@ -44,7 +48,7 @@ impl ClassSymbol {
                 return false;
             }
             checked.as_mut().unwrap().insert(b.clone());
-            if b.borrow()._class.as_ref().unwrap().inherits(&base, checked) {
+            if b.borrow().as_class_sym().inherits(&base, checked) {
                 return true;
             }
         }

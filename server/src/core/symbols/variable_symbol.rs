@@ -9,6 +9,8 @@ use super::symbol::MainSymbol;
 pub struct VariableSymbol {
     pub name: String,
     pub is_external: bool,
+    pub doc_string: Option<String>,
+    pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
     pub parent: Option<Weak<RefCell<MainSymbol>>>,
     pub is_import_variable: bool,
@@ -18,10 +20,12 @@ pub struct VariableSymbol {
 
 impl VariableSymbol {
 
-    pub fn new(name: String, range: TextRange) -> Self {
+    pub fn new(name: String, range: TextRange, is_external: bool) -> Self {
         Self {
             name,
-            is_external: false,
+            is_external,
+            doc_string: None,
+            ast_indexes: vec![],
             weak_self: None,
             parent: None,
             range,

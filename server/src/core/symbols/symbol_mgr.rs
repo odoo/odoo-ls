@@ -24,7 +24,6 @@ pub trait SymbolMgr {
     fn add_section(&mut self, range: TextRange) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn get_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<MainSymbol>>>;
-    fn iter_symbols(&self) -> impl Iterator<Item= &Rc<RefCell<MainSymbol>>>;
 }
 
 
@@ -99,11 +98,6 @@ macro_rules! impl_section_mgr_for {
                 }
             }
             vec![]
-        }
-
-        ///Iter through all symbols
-        fn iter_symbols(&self) -> impl Iterator<Item= &Rc<RefCell<MainSymbol>>> {
-            self.symbols.values().into_iter()
         }
 
     }

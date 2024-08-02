@@ -78,4 +78,10 @@ impl FileSymbol {
         }
     }
 
+    pub fn add_symbol(&mut self, content: Rc<RefCell<MainSymbol>>, section: u32) {
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        section_vec.push(content);
+    }
+
 }

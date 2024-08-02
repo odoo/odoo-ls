@@ -30,13 +30,19 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => p.parent
         }
     }
-    pub fn set_parent(&mut self, parent: Weak<RefCell<MainSymbol>>) {
+    pub fn set_parent(&mut self, parent: Option<Weak<RefCell<MainSymbol>>>) {
         match self {
-            PackageSymbol::Module(m) => m.parent = Some(parent),
-            PackageSymbol::PythonPackage(p) => p.parent = Some(parent),
+            PackageSymbol::Module(m) => m.parent = parent,
+            PackageSymbol::PythonPackage(p) => p.parent = parent,
         }
     }
-    pub fn set_init_ext(&mut self, ext: String) {
+    pub fn i_ext(&self) -> String {
+        match self {
+            PackageSymbol::Module(m) => m.i_ext,
+            PackageSymbol::PythonPackage(p) => p.i_ext,
+        }
+    }
+    pub fn set_i_ext(&mut self, ext: String) {
         match self {
             PackageSymbol::PythonPackage(p) => {p.i_ext = ext},
             PackageSymbol::Module(m) => {m.i_ext = ext},
@@ -161,6 +167,12 @@ impl PythonPackageSymbol {
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
         }
+    }
+
+    pub fn add_symbol(&mut self, content: Rc<RefCell<MainSymbol>>, section: u32) {
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        section_vec.push(content);
     }
 
 }

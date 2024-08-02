@@ -21,7 +21,7 @@ use super::python_utils::{self, unpack_assign};
 #[derive(Debug)]
 pub struct PythonValidator {
     file_mode: bool,
-    symbol: MainSymbol,
+    symbol: Rc<RefCell<MainSymbol>>,
     diagnostics: Vec<Diagnostic>,
     safe_imports: Vec<bool>,
     current_module: Option<Rc<RefCell<MainSymbol>>>
@@ -31,7 +31,7 @@ pub struct PythonValidator {
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol: MainSymbol) -> Self {
+    pub fn new(symbol: Rc<RefCell<MainSymbol>>) -> Self {
         Self {
             file_mode: true,
             symbol,
@@ -42,11 +42,11 @@ impl PythonValidator {
     }
 
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
-        let file_symbol = self.sym_ref.get_symbol().borrow().get_file().unwrap().upgrade().unwrap();
+        let file_symbol = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
         let file_symbol = file_symbol.borrow();
-        let mut path = file_symbol.paths[0].clone();
-        if file_symbol.sym_type == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.i_ext.as_str();
+        let mut path = file_symbol.paths()[0].clone();
+        if file_symbol.typ() == SymType::PACKAGE {
+            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
         }
         let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         file_info_rc
@@ -94,14 +94,14 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        let symbol = self.sym_ref.get_symbol();
+        let symbol = self.symbol;
         let mut symbol = symbol.borrow_mut();
-        self.current_module = symbol.get_module_sym();
-        if symbol.validation_status != BuildStatus::PENDING {
+        self.current_module = symbol.find_module();
+        if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
         }
-        symbol.validation_status = BuildStatus::IN_PROGRESS;
-        let sym_type = symbol.sym_type.clone();
+        symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+        let sym_type = symbol.typ().clone();
         drop(symbol);
         match sym_type {
             SymType::FILE | SymType::PACKAGE => {

@@ -7,7 +7,7 @@ use super::symbol::MainSymbol;
 
 
 #[derive(Debug)]
-struct NamespaceDirectory {
+pub struct NamespaceDirectory {
     pub path: String,
     pub module_symbols: HashMap<String, Vec<Rc<RefCell<MainSymbol>>>>,
 }
