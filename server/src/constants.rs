@@ -44,7 +44,7 @@ pub enum BuildSteps {
     VALIDATION = 3,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum BuildStatus {
     PENDING,
     IN_PROGRESS,

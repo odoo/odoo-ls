@@ -71,7 +71,7 @@ impl NamespaceSymbol {
         }
     }
 
-    pub fn add_file(&mut self, file: Rc<RefCell<MainSymbol>>) {
+    pub fn add_file(&mut self, file: &Rc<RefCell<MainSymbol>>) {
         self.module_symbols.insert(file.borrow().name().clone(), file.clone());
     }
 

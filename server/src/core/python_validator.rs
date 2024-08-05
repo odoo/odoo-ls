@@ -120,7 +120,7 @@ impl PythonValidator {
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
-                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), loc_sym.borrow().ast_indexes());
+                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), loc_sym.borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
@@ -314,7 +314,7 @@ impl PythonValidator {
         let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
         if let Some(inherit) = inherit.last() {
             let inherit = inherit.borrow();
-            let inherit_evals = &inherit.evaluations();
+            let inherit_evals = &inherit.evaluations().unwrap();
             for inherit_eval in inherit_evals.iter() {
                 let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {

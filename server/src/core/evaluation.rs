@@ -217,9 +217,9 @@ impl Evaluation {
                 let eval = &evals[0];
                 let eval_sym = eval.0.upgrade();
                 if let Some(eval_sym) = eval_sym {
-                    if eval_sym.borrow().evaluations().len() == 1 {
+                    if eval_sym.borrow().evaluations().is_some() && eval_sym.borrow().evaluations().unwrap().len() == 1 {
                         let eval_borrowed = eval_sym.borrow();
-                        let eval = &eval_borrowed.evaluations()[0];
+                        let eval = &eval_borrowed.evaluations().unwrap()[0];
                         if eval.value.is_some() {
                             return Some(eval.value.as_ref().unwrap().clone());
                         }
@@ -453,17 +453,19 @@ impl Evaluation {
                         //  - function body inference (VALIDATION step)
                         // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
                         // We don't want to launch validation step while Arch evaluating the code.
-                        if base_sym.borrow().evaluations().len() == 0 {
+                        if base_sym.borrow().evaluations().is_some() && base_sym.borrow().evaluations().unwrap().len() == 0 {
                             if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
                             base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
                                 let mut v = PythonValidator::new(base_sym.clone());
                                 v.validate(session);
                             }
                         }
-                        for eval in base_sym.borrow().evaluations().iter() {
-                            let mut e = eval.clone();
-                            e.range = Some(expr.range.clone());
-                            evals.push(e);
+                        if base_sym.borrow().evaluations().is_some() {
+                            for eval in base_sym.borrow().evaluations().unwrap().iter() {
+                                let mut e = eval.clone();
+                                e.range = Some(expr.range.clone());
+                                evals.push(e);
+                            }
                         }
                     }
                 }
@@ -527,8 +529,8 @@ impl Evaluation {
                     if get_item.len() == 1 {
                         let get_item = &get_item[0];
                         let get_item = get_item.borrow();
-                        if get_item.evaluations().len() == 1 {
-                            let get_item_eval = &get_item.evaluations()[0];
+                        if get_item.evaluations().is_some() && get_item.evaluations().unwrap().len() == 1 {
+                            let get_item_eval = &get_item.evaluations().unwrap()[0];
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
                                 context.insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.remove(&S!("range"));

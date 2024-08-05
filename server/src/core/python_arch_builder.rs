@@ -102,8 +102,8 @@ impl PythonArchBuilder {
                             let all = all.0.upgrade();
                             if let Some(all) = all {
                                 let all = (*all).borrow();
-                                if all.evaluations().len() == 1 {
-                                    let value = &all.evaluations()[0].value;
+                                if all.evaluations().is_some() && all.evaluations().unwrap().len() == 1 {
+                                    let value = &all.evaluations().unwrap()[0].value;
                                     if value.is_some() {
                                         let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                                         if parse_error {

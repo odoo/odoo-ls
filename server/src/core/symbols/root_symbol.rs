@@ -1,10 +1,11 @@
-use crate::{constants::SymType, core::odoo::SyncOdoo, threads::SessionInfo};
+use crate::{constants::SymType, core::odoo::SyncOdoo, threads::SessionInfo, S};
 use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::MainSymbol;
 
 #[derive(Debug)]
 pub struct RootSymbol {
+    pub name: String,
     pub paths: Vec<String>,
     pub sys_path: Vec<String>, //sys path are stored in paths too, but this list identifies them
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
@@ -16,6 +17,7 @@ impl RootSymbol {
 
     pub fn new() -> Self {
         Self {
+            name: S!("Root"),
             paths: vec![],
             sys_path: vec![],
             weak_self: None,
@@ -24,7 +26,7 @@ impl RootSymbol {
         }
     }
 
-    pub fn add_file(&mut self, session: &mut SessionInfo, file: Rc<RefCell<MainSymbol>>) {
+    pub fn add_file(&mut self, session: &mut SessionInfo, file: &Rc<RefCell<MainSymbol>>) {
         for path in file.borrow().paths().iter() {
             for sys_p in self.sys_path.iter() {
                 if sys_p.is_empty() {

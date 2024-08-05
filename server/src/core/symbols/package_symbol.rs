@@ -76,7 +76,7 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => &mut p.dependents
         }
     }
-    pub fn add_file(&mut self, file: Rc<RefCell<MainSymbol>>) {
+    pub fn add_file(&mut self, file: &Rc<RefCell<MainSymbol>>) {
         match self {
             PackageSymbol::Module(m) => m.module_symbols.insert(file.borrow().name().clone(), file.clone()),
             PackageSymbol::PythonPackage(p) => p.module_symbols.insert(file.borrow().name().clone(), file.clone()),
@@ -173,10 +173,10 @@ impl PythonPackageSymbol {
         }
     }
 
-    pub fn add_symbol(&mut self, content: Rc<RefCell<MainSymbol>>, section: u32) {
+    pub fn add_symbol(&mut self, content: &Rc<RefCell<MainSymbol>>, section: u32) {
         let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
         let section_vec = sections.entry(section).or_insert_with(|| vec![]);
-        section_vec.push(content);
+        section_vec.push(content.clone());
     }
 
 }

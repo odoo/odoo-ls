@@ -141,7 +141,7 @@ impl PythonArchEval {
         for import in imports.iter() {
             let (mut weak_sym, mut instance) = import.clone();
             let mut sym = weak_sym.upgrade().unwrap();
-            if sym.borrow().evaluations().is_empty() {
+            if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
                 let file_sym = sym_ref.borrow().get_file();
                 if file_sym.is_some() {
                     let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
@@ -250,7 +250,7 @@ impl PythonArchEval {
                     panic!("either value or annotation should exists");
                 }
                 let mut v_mut = variable.borrow_mut();
-                for evaluation in v_mut.evaluations().iter() {
+                for evaluation in v_mut.evaluations().unwrap().iter() {
                     if let Some(sym) = evaluation.symbol.symbol.upgrade() {
                         if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() {
                             let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
@@ -276,7 +276,7 @@ impl PythonArchEval {
                 variable.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
                 let mut v_mut = variable.borrow_mut();
-                for evaluation in v_mut.evaluations().iter() {
+                for evaluation in v_mut.evaluations().unwrap().iter() {
                     if let Some(sym) = evaluation.symbol.symbol.upgrade() {
                         if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() {
                             let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();

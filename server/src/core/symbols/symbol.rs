@@ -56,10 +56,10 @@ impl MainSymbol {
         file.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::Namespace(n) => {
-                n.add_file(file);
+                n.add_file(&file);
             },
             MainSymbol::Package(p) => {
-                p.add_file(file);
+                p.add_file(&file);
             },
             _ => { panic!("Impossible to add a file to a {}", self.typ()); }
         }
@@ -67,7 +67,7 @@ impl MainSymbol {
     }
 
     //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_python_package(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let package = Rc::new(
             RefCell::new(
                 MainSymbol::Package(
@@ -79,13 +79,13 @@ impl MainSymbol {
         package.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::Namespace(n) => {
-                n.add_file(package);
+                n.add_file(&package);
             },
             MainSymbol::Package(p) => {
-                p.add_file(package);
+                p.add_file(&package);
             },
             MainSymbol::Root(r) => {
-                r.add_file(session, package)
+                r.add_file(session, &package)
             }
             _ => { panic!("Impossible to add a package to a {}", self.typ()); }
         }
@@ -93,7 +93,7 @@ impl MainSymbol {
     }
 
     //Create a sub-symbol that is representing a package
-    pub fn add_new_module_package(&self, session: &mut SessionInfo, name: &String, path: &PathBuf) -> Option<Rc<RefCell<Self>>> {
+    pub fn add_new_module_package(&mut self, session: &mut SessionInfo, name: &String, path: &PathBuf) -> Option<Rc<RefCell<Self>>> {
         let module = PackageSymbol::new_module_package(session, name.clone(), path, self.is_external());
         if module.is_none() {
             return None;
@@ -110,95 +110,95 @@ impl MainSymbol {
         package.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::Namespace(n) => {
-                n.add_file(package);
+                n.add_file(&package);
             },
             MainSymbol::Package(p) => {
-                p.add_file(package);
+                p.add_file(&package);
             },
             MainSymbol::Root(r) => {
-                r.add_file(session, package)
+                r.add_file(session, &package)
             }
             _ => { panic!("Impossible to add a package to a {}", self.typ()); }
         }
         Some(package)
     }
 
-    pub fn add_new_namespace(&self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_namespace(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let namespace = Rc::new(RefCell::new(MainSymbol::Namespace(NamespaceSymbol::new(name.clone(), vec![path.clone()], self.is_external()))));
         namespace.borrow_mut().set_weak_self(Rc::downgrade(&namespace));
         namespace.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::Namespace(n) => {
-                n.add_file(namespace);
+                n.add_file(&namespace);
             },
             MainSymbol::Package(p) => {
-                p.add_file(namespace);
+                p.add_file(&namespace);
             },
             MainSymbol::Root(r) => {
-                r.add_file(session, namespace);
+                r.add_file(session, &namespace);
             }
             _ => { panic!("Impossible to add a namespace to a {}", self.typ()); }
         }
         namespace
     }
 
-    pub fn add_new_compiled(&self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_compiled(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let compiled = Rc::new(RefCell::new(MainSymbol::Compiled(CompiledSymbol::new(name.clone(), path.clone(), self.is_external()))));
         compiled.borrow_mut().set_weak_self(Rc::downgrade(&compiled));
         compiled.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::Namespace(n) => {
-                n.add_file(compiled);
+                n.add_file(&compiled);
             },
             MainSymbol::Package(p) => {
-                p.add_file(compiled);
+                p.add_file(&compiled);
             },
             MainSymbol::Root(r) => {
-                r.add_file(session, compiled);
+                r.add_file(session, &compiled);
             }
             _ => { panic!("Impossible to add a compiled to a {}", self.typ()); }
         }
         compiled
     }
 
-    pub fn add_new_variable(&self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
+    pub fn add_new_variable(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
         let variable = Rc::new(RefCell::new(MainSymbol::Variable(VariableSymbol::new(name.clone(), range.clone(), self.is_external()))));
         variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));
         variable.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::File(f) => {
                 let section = f.get_section_for(range.start().to_u32()).index;
-                f.add_symbol(variable, section);
+                f.add_symbol(&variable, section);
             },
             MainSymbol::Package(PackageSymbol::Module(m)) => {
                 let section = m.get_section_for(range.start().to_u32()).index;
-                m.add_symbol(variable, section);
+                m.add_symbol(&variable, section);
             },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
                 let section = p.get_section_for(range.start().to_u32()).index;
-                p.add_symbol(variable, section);
+                p.add_symbol(&variable, section);
             },
             _ => { panic!("Impossible to add a variable to a {}", self.typ()); }
         }
         variable
     }
 
-    pub fn add_new_function(&self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
+    pub fn add_new_function(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
         let function = Rc::new(RefCell::new(MainSymbol::Function(FunctionSymbol::new(name.clone(), range.clone(), self.is_external()))));
         function.borrow_mut().set_weak_self(Rc::downgrade(&function));
         function.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
             MainSymbol::File(f) => {
                 let section = f.get_section_for(range.start().to_u32()).index;
-                f.add_symbol(function, section);
+                f.add_symbol(&function, section);
             },
             MainSymbol::Package(PackageSymbol::Module(m)) => {
                 let section = m.get_section_for(range.start().to_u32()).index;
-                m.add_symbol(function, section);
+                m.add_symbol(&function, section);
             },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
                 let section = p.get_section_for(range.start().to_u32()).index;
-                p.add_symbol(function, section);
+                p.add_symbol(&function, section);
             },
             _ => { panic!("Impossible to add a function to a {}", self.typ()); }
         }
@@ -322,7 +322,7 @@ impl MainSymbol {
 
     pub fn name(&self) -> &String {
         match self {
-            MainSymbol::Root(r) => &S!("root"),
+            MainSymbol::Root(r) => &r.name,
             MainSymbol::Namespace(n) => &n.name,
             MainSymbol::Package(p) => &p.name(),
             MainSymbol::File(f) => &f.name,
@@ -371,7 +371,7 @@ impl MainSymbol {
             MainSymbol::Variable(v) => v.is_external,
         }
     }
-    pub fn set_is_external(&self, external: bool) {
+    pub fn set_is_external(&mut self, external: bool) {
         match self {
             MainSymbol::Root(r) => {},
             MainSymbol::Namespace(n) => n.is_external = external,
@@ -411,16 +411,16 @@ impl MainSymbol {
         }
     }
 
-    pub fn ast_indexes(&self) -> &Vec<u16> {
+    pub fn ast_indexes(&self) -> Option<&Vec<u16>> {
         match self {
-            MainSymbol::Variable(v) => &v.ast_indexes,
-            MainSymbol::Class(c) => &c.ast_indexes,
-            MainSymbol::Function(f) => &f.ast_indexes,
-            MainSymbol::File(f) => &vec![],
-            MainSymbol::Compiled(c) => &vec![],
-            MainSymbol::Namespace(n) => &vec![],
-            MainSymbol::Package(p) => &vec![],
-            MainSymbol::Root(r) => &vec![],
+            MainSymbol::Variable(v) => Some(&v.ast_indexes),
+            MainSymbol::Class(c) => Some(&c.ast_indexes),
+            MainSymbol::Function(f) => Some(&f.ast_indexes),
+            MainSymbol::File(f) => None,
+            MainSymbol::Compiled(c) => None,
+            MainSymbol::Namespace(n) => None,
+            MainSymbol::Package(p) => None,
+            MainSymbol::Root(r) => None,
         }
     }
 
@@ -439,28 +439,28 @@ impl MainSymbol {
 
     pub fn weak_self(&mut self) -> Option<Weak<RefCell<MainSymbol>>> {
         match self {
-            MainSymbol::Root(r) => r.weak_self,
-            MainSymbol::Namespace(n) => n.weak_self,
-            MainSymbol::Package(PackageSymbol::Module(m)) => m.weak_self,
-            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self,
-            MainSymbol::File(f) => f.weak_self,
-            MainSymbol::Compiled(c) => c.weak_self,
-            MainSymbol::Class(c) => c.weak_self,
-            MainSymbol::Function(f) => f.weak_self,
-            MainSymbol::Variable(v) => v.weak_self,
+            MainSymbol::Root(r) => r.weak_self.clone(),
+            MainSymbol::Namespace(n) => n.weak_self.clone(),
+            MainSymbol::Package(PackageSymbol::Module(m)) => m.weak_self.clone(),
+            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self.clone(),
+            MainSymbol::File(f) => f.weak_self.clone(),
+            MainSymbol::Compiled(c) => c.weak_self.clone(),
+            MainSymbol::Class(c) => c.weak_self.clone(),
+            MainSymbol::Function(f) => f.weak_self.clone(),
+            MainSymbol::Variable(v) => v.weak_self.clone(),
         }
     }
 
     pub fn parent(&self) -> Option<Weak<RefCell<MainSymbol>>> {
         match self {
-            MainSymbol::Root(r) => r.parent,
-            MainSymbol::Namespace(n) => n.parent,
+            MainSymbol::Root(r) => r.parent.clone(),
+            MainSymbol::Namespace(n) => n.parent.clone(),
             MainSymbol::Package(p) => p.parent(),
-            MainSymbol::File(f) => f.parent,
-            MainSymbol::Compiled(c) => c.parent,
-            MainSymbol::Class(c) => c.parent,
-            MainSymbol::Function(f) => f.parent,
-            MainSymbol::Variable(v) => v.parent,
+            MainSymbol::File(f) => f.parent.clone(),
+            MainSymbol::Compiled(c) => c.parent.clone(),
+            MainSymbol::Class(c) => c.parent.clone(),
+            MainSymbol::Function(f) => f.parent.clone(),
+            MainSymbol::Variable(v) => v.parent.clone(),
         }
     }
 
@@ -479,11 +479,11 @@ impl MainSymbol {
     
     pub fn paths(&self) -> Vec<String> {
         match self {
-            MainSymbol::Root(r) => r.paths,
+            MainSymbol::Root(r) => r.paths.clone(),
             MainSymbol::Namespace(n) => n.paths(),
             MainSymbol::Package(p) => p.paths(),
-            MainSymbol::File(f) => vec![f.path],
-            MainSymbol::Compiled(c) => vec![c.path],
+            MainSymbol::File(f) => vec![f.path.clone()],
+            MainSymbol::Compiled(c) => vec![c.path.clone()],
             MainSymbol::Class(c) => vec![],
             MainSymbol::Function(f) => vec![],
             MainSymbol::Variable(v) => vec![],
@@ -619,7 +619,7 @@ impl MainSymbol {
             MainSymbol::Variable(_) => todo!(),
         }
     }
-    pub fn set_build_status(&self, step:BuildSteps, status: BuildStatus) {
+    pub fn set_build_status(&mut self, step:BuildSteps, status: BuildStatus) {
         match self {
             MainSymbol::Root(r) => {panic!()},
             MainSymbol::Namespace(n) => {panic!()},
@@ -687,16 +687,16 @@ impl MainSymbol {
             MainSymbol::Variable(v) => todo!(),
         }
     }
-    pub fn evaluations(&self) -> &Vec<Evaluation>{
+    pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
         match self {
-            MainSymbol::File(f) => { &vec![] },
-            MainSymbol::Root(r) => { &vec![] },
-            MainSymbol::Namespace(n) => { &vec![] },
-            MainSymbol::Package(p) => { &vec![] },
-            MainSymbol::Compiled(c) => { &vec![] },
-            MainSymbol::Class(c) => { &vec![] },
-            MainSymbol::Function(f) => { &vec![] },
-            MainSymbol::Variable(v) => &v.evaluations,
+            MainSymbol::File(f) => { None },
+            MainSymbol::Root(r) => { None },
+            MainSymbol::Namespace(n) => { None },
+            MainSymbol::Package(p) => { None },
+            MainSymbol::Compiled(c) => { None },
+            MainSymbol::Class(c) => { None },
+            MainSymbol::Function(f) => { None },
+            MainSymbol::Variable(v) => Some(&v.evaluations),
         }
     }
     pub fn set_evaluations(&mut self, data: Vec<Evaluation>) {

@@ -93,10 +93,10 @@ impl PythonOdooBuilder {
         let module = symbol.find_module();
         let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
         if let Some(_inherit) = _inherit.last() {
-            if _inherit.borrow().evaluations().len() == 0 {
+            if _inherit.borrow().evaluations().is_none() || _inherit.borrow().evaluations().unwrap().len() == 0 {
                 error!("wrong _inherit structure");
             }
-            for eval in _inherit.borrow().evaluations().iter() {
+            for eval in _inherit.borrow().evaluations().unwrap().iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if let Some(eval) = eval.as_ref() {
                     match eval {
@@ -131,7 +131,7 @@ impl PythonOdooBuilder {
     fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &MainSymbol) -> String {
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]), u32::MAX);
         if let Some(_name) = _name.last() {
-            for eval in _name.borrow().evaluations().iter() {
+            for eval in _name.borrow().evaluations().unwrap().iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = eval {
                     return S!(s.value.to_str());
@@ -160,7 +160,7 @@ impl PythonOdooBuilder {
     fn _load_class_inherits(&mut self, session: &mut SessionInfo, symbol: &mut MainSymbol) {
         let _inherits = symbol.get_symbol(&(vec![], vec![S!("_inherits")]), u32::MAX);
         if let Some(_inherits) = _inherits.last() {
-            for eval in _inherits.borrow().evaluations().iter() {
+            for eval in _inherits.borrow().evaluations().unwrap().iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 symbol.as_class_sym_mut()._model.as_mut().unwrap().inherits.clear();
                 if let Some(EvaluationValue::DICT(d)) = eval {
@@ -184,7 +184,7 @@ impl PythonOdooBuilder {
             return None;
         }
         let attr_sym = &attr_sym[0];
-        for eval in attr_sym.borrow().evaluations().iter() {
+        for eval in attr_sym.borrow().evaluations().unwrap().iter() {
             let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
             return eval;
         }
@@ -306,7 +306,7 @@ impl PythonOdooBuilder {
         let register = symbol.get_symbol(&(vec![], vec![S!("_register")]), u32::MAX);
         if let Some(register) = register.last() {
             let loc_register = register.borrow();
-            let register_evals = &loc_register.evaluations();
+            let register_evals = &loc_register.evaluations().unwrap();
             if register_evals.len() == 1 { //we don't handle multiple values
                 let eval = &register_evals[0];
                 let value = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
