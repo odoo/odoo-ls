@@ -194,7 +194,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<MainSymbo
             sym = None;
             break;
         }
-        sym = Some(next_symbol[0]);
+        sym = Some(next_symbol[0].clone());
         last_symbol = next_symbol[0].clone();
     }
     return (sym, last_symbol)

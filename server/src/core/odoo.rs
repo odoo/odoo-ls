@@ -283,7 +283,7 @@ impl SyncOdoo {
             }
             panic!("Not able to find odoo/addons. Please check your configuration");
         }
-        let addon_symbol = addon_symbol[0];
+        let addon_symbol = addon_symbol[0].clone();
         if odoo_addon_path.exists() {
             if session.sync_odoo.load_odoo_addons {
                 addon_symbol.borrow_mut().add_path(
@@ -308,7 +308,7 @@ impl SyncOdoo {
 
     fn build_modules(session: &mut SessionInfo) {
         {
-            let addons_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0];
+            let addons_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
             let addons_path = addons_symbol.borrow_mut().paths().clone();
             for addon_path in addons_path.iter() {
                 info!("searching modules in {}", addon_path);
@@ -583,7 +583,7 @@ impl SyncOdoo {
         //First check in odoo, before anywhere else
         {
             let odoo_sym = self.symbols.as_ref().unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
-            let odoo_sym = odoo_sym[0];
+            let odoo_sym = odoo_sym[0].clone();
             for addon_path in odoo_sym.borrow().paths().iter() {
                 if path.starts_with(addon_path) {
                     let path = path.strip_prefix(addon_path).unwrap().to_path_buf();
@@ -621,7 +621,7 @@ impl SyncOdoo {
         if path_symbol.is_empty() {
             return Err("Symbol not found".to_string());
         }
-        let path_symbol = path_symbol[0];
+        let path_symbol = path_symbol[0].clone();
         let parent = path_symbol.borrow().parent().clone().unwrap().upgrade().unwrap();
         if clean_cache {
             let file_mgr = session.sync_odoo.file_mgr.clone();

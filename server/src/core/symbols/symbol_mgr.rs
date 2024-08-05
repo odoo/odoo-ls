@@ -23,7 +23,8 @@ pub trait SymbolMgr {
     fn get_section_for(&self, position: u32) -> SectionRange;
     fn add_section(&mut self, range: TextRange) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
-    fn get_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<MainSymbol>>>;
+    fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<MainSymbol>>>;
+    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<MainSymbol>>>;
 }
 
 
@@ -88,16 +89,41 @@ macro_rules! impl_section_mgr_for {
             section.previous_indexes = new_parent;
         }
 
-        fn get_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<MainSymbol>>> {
-            let symbols: Option<&HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>> = self.symbols.get(name);
-            if let Some(symbols) = symbols {
+        fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<MainSymbol>>> {
+            let sections: Option<&HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>> = self.symbols.get(&name);
+            if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
-                let sym_section = symbols.get(&section.index);
-                if let Some(sym_section) = sym_section {
-                    return sym_section.clone();
-                }
+                return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut vec![]);
             }
             vec![]
+        }
+
+        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<MainSymbol>>> {
+            let mut res = vec![];
+            match index {
+                SectionIndex::NONE => { return res; },
+                SectionIndex::INDEX(index) => {
+                    let section = self.sections.get(*index as usize).unwrap();
+                    //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
+                    for loc_sym in map.get(index).unwrap().iter().rev() {
+                        if loc_sym.borrow().range().start().to_u32() < position {
+                            res.push(loc_sym.clone());
+                            break;
+                        }
+                    }
+                    if !res.is_empty() {
+                        return res;
+                    }
+                    acc.push(*index);
+                    res = self._get_loc_symbol(map, position, &section.previous_indexes, acc);
+                },
+                SectionIndex::OR(indexes) => {
+                    for index in indexes.iter() {
+                        res.extend(self._get_loc_symbol(map, position, index, acc));
+                    }
+                }
+            }
+            res
         }
 
     }

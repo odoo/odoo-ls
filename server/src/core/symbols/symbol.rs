@@ -50,7 +50,7 @@ impl MainSymbol {
     }
 
     //Create a sub-symbol that is representing a file
-    pub fn add_new_file(&self, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_file(&mut self, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let file = Rc::new(RefCell::new(MainSymbol::File(FileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         file.borrow_mut().set_weak_self(Rc::downgrade(&file));
         file.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -93,11 +93,16 @@ impl MainSymbol {
     }
 
     //Create a sub-symbol that is representing a package
-    pub fn add_new_module_package(&self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_module_package(&self, session: &mut SessionInfo, name: &String, path: &PathBuf) -> Option<Rc<RefCell<Self>>> {
+        let module = PackageSymbol::new_module_package(session, name.clone(), path, self.is_external());
+        if module.is_none() {
+            return None;
+        }
+        let module = module.unwrap();
         let package = Rc::new(
             RefCell::new(
                 MainSymbol::Package(
-                    PackageSymbol::new_module_package(name.clone(), path.clone(), self.is_external())
+                    module
                 )
             )
         );
@@ -115,7 +120,7 @@ impl MainSymbol {
             }
             _ => { panic!("Impossible to add a package to a {}", self.typ()); }
         }
-        package
+        Some(package)
     }
 
     pub fn add_new_namespace(&self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
@@ -291,6 +296,17 @@ impl MainSymbol {
         }
     }
 
+    pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
+        match self {
+            MainSymbol::File(f) => f,
+            MainSymbol::Class(c) => c,
+            MainSymbol::Function(f) => f,
+            MainSymbol::Package(PackageSymbol::Module(m)) => m,
+            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a symbol Mgr");}
+        }
+    }
+
     pub fn typ(&self) -> SymType {
         match self {
             MainSymbol::Root(_) => SymType::ROOT,
@@ -421,7 +437,7 @@ impl MainSymbol {
         }
     }
 
-    fn weak_self(&mut self) -> Option<Weak<RefCell<MainSymbol>>> {
+    pub fn weak_self(&mut self) -> Option<Weak<RefCell<MainSymbol>>> {
         match self {
             MainSymbol::Root(r) => r.weak_self,
             MainSymbol::Namespace(n) => n.weak_self,
@@ -435,7 +451,7 @@ impl MainSymbol {
         }
     }
 
-    pub fn parent(&mut self) -> Option<Weak<RefCell<MainSymbol>>> {
+    pub fn parent(&self) -> Option<Weak<RefCell<MainSymbol>>> {
         match self {
             MainSymbol::Root(r) => r.parent,
             MainSymbol::Namespace(n) => n.parent,
@@ -734,11 +750,24 @@ impl MainSymbol {
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
                 if (*parent).borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
-                    let module = (*parent).borrow_mut().add_new_module_package(session, &name, &path_str);
-                    ModuleSymbol::load_module_info(module, session, parent);
-                    //as the symbol has been added to parent before module creation, it has not been added to modules
-                    session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
-                    return Some(module);
+                    let module = (*parent).borrow_mut().add_new_module_package(session, &name, path);
+                    if module.is_none() {
+                        if require_module {
+                            return None;
+                        } else {
+                            let ref_sym = (*parent).borrow_mut().add_new_python_package(session, &name, &path_str);
+                            if !path.join("__init__.py").exists() {
+                                (*ref_sym).borrow_mut().as_package_mut().set_i_ext("i".to_string());
+                            }
+                            return Some(ref_sym);
+                        }
+                    } else {
+                        let module = module.unwrap();
+                        ModuleSymbol::load_module_info(module, session, parent);
+                        //as the symbol has been added to parent before module creation, it has not been added to modules
+                        session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
+                        return Some(module);
+                    }
                 } else if require_module {
                     return None;
                 } else {
@@ -860,16 +889,16 @@ impl MainSymbol {
     pub fn get_content_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<MainSymbol>>> {
         match self {
             MainSymbol::Class(c) => {
-                c.get_symbol(name, position)
+                c.get_symbol(name.to_string(), position)
             },
             MainSymbol::File(f) => {
-                f.get_symbol(name, position)
+                f.get_symbol(name.to_string(), position)
             },
             MainSymbol::Package(PackageSymbol::Module(m)) => {
-                m.get_symbol(name, position)
+                m.get_symbol(name.to_string(), position)
             },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
-                p.get_symbol(name, position)
+                p.get_symbol(name.to_string(), position)
             },
             _ => {vec![]}
         }
@@ -1257,27 +1286,27 @@ impl MainSymbol {
         return Vec::from(results) // :'( a whole copy?
     }
 
-    pub fn all_symbols<'a>(&'a self) -> impl Iterator<Item= &'a Rc<RefCell<MainSymbol>>> + 'a {
+    pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<MainSymbol>>> + '_ {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
         //be returned.
-        let mut iter: Vec<Box<dyn Iterator<Item = &Rc<RefCell<MainSymbol>>>>> = Vec::new();
+        let mut iter: Vec<Box<dyn Iterator<Item = Rc<RefCell<MainSymbol>>>>> = Vec::new();
         match self {
             MainSymbol::File(f) => {
-                iter.push(Box::new(self.iter_symbols().collect())); //TODO how does it work? :o
+                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
             },
             MainSymbol::Class(c) => {
-                iter.push(Box::new(c.iter_symbols()));
+                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
             },
             MainSymbol::Package(PackageSymbol::Module(m)) => {
-                iter.push(Box::new(m.iter_symbols()));
-                iter.push(Box::new(m.module_symbols.values()));
+                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
+                iter.push(Box::new(m.module_symbols.values().map(|x| x.clone())));
             },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
-                iter.push(Box::new(p.iter_symbols()));
-                iter.push(Box::new(p.module_symbols.values()));
+                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
+                iter.push(Box::new(p.module_symbols.values().map(|x| x.clone())));
             },
             MainSymbol::Namespace(n) => {
-                iter.push(Box::new(n.module_symbols.values()));
+                iter.push(Box::new(n.module_symbols.values().map(|x| x.clone())));
             },
             _ => {}
         }
@@ -1287,40 +1316,45 @@ impl MainSymbol {
     /* return the Symbol (class, function or file) the closest to the given offset */
     pub fn get_scope_symbol(file_symbol: Rc<RefCell<MainSymbol>>, offset: u32) -> Rc<RefCell<MainSymbol>> {
         let mut result = file_symbol.clone();
-        for s in file_symbol.borrow().iter_symbols() {
-            let sym = s.borrow();
-            match s {
-                MainSymbol::Class(c) => {
-                    if c.range().start().to_u32() < offset && c.range().end().to_u32() > offset {
-                        result = MainSymbol::get_scope_symbol(c, offset);
+        let section_id = file_symbol.borrow().as_symbol_mgr().get_section_for(offset);
+        for (sym_name, sym_map) in file_symbol.borrow().iter_symbols() {
+            match sym_map.get(&section_id.index) {
+                Some(symbols) => {
+                    for symbol in symbols.iter() {
+                        let typ = symbol.borrow().typ().clone();
+                        match typ {
+                            SymType::CLASS => {
+                                if symbol.borrow().range().start().to_u32() < offset && symbol.borrow().range().end().to_u32() < offset {
+                                    result = MainSymbol::get_scope_symbol(symbol.clone(), offset);
+                                }
+                            },
+                            SymType::FUNCTION => {
+                                if symbol.borrow().range().start().to_u32() < offset && symbol.borrow().range().end().to_u32() < offset {
+                                    result = MainSymbol::get_scope_symbol(symbol.clone(), offset);
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 },
-                MainSymbol::Function(f) => {
-                    if f.range().start().to_u32() < offset && f.range().end().to_u32() > offset {
-                        result = MainSymbol::get_scope_symbol(f, offset);
-                    }
-                },
-                _ => {}
+                None => {}
             }
         }
         return result
     }
 
     //infer a name, given a position
-    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<MainSymbol>>, name: &String, position: Option<TextSize>) -> Vec<Rc<RefCell<MainSymbol>>> {
+    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<MainSymbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<MainSymbol>>> {
         let mut results: Vec<Rc<RefCell<MainSymbol>>> = vec![];
         //TODO implement 'super' behaviour in hooks
         let on_symbol = on_symbol.borrow();
-        let symbol_location = on_symbol.symbols.as_ref().unwrap();
-        if let Some(symbol) = symbol_location.get(name) {
-            results = symbol.borrow().get_loc_sym(position.unwrap_or(TextSize::MAX).to_u32());
-        }
-        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.sym_type) {
-            let parent = on_symbol.parent.as_ref().unwrap().upgrade().unwrap();
+        results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
+        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.typ()) {
+            let parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
             return MainSymbol::infer_name(odoo, &parent, name, position);
         }
-        if results.len() == 0 && (on_symbol.name != "builtins" || on_symbol.sym_type != SymType::FILE) {
-            let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![]), u32::MAX).as_ref().unwrap().clone();
+        if results.len() == 0 && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
+            let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
             return MainSymbol::infer_name(odoo, &builtins, name, None);
         }
         results
@@ -1329,34 +1363,15 @@ impl MainSymbol {
     pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<MainSymbol>>> {
         let mut symbols: Vec<Rc<RefCell<MainSymbol>>> = Vec::new();
         match self {
-            MainSymbol::Class(c) => {
-                let syms = c.iter_symbols();
-                for sym in syms {
-                    symbols.push(sym.clone());
-                }
-            },
-            MainSymbol::Function(c) => {
-                let syms = c.iter_symbols();
-                for sym in syms {
-                    symbols.push(sym.clone());
-                }
-            },
-            MainSymbol::File(f) => {
-                let syms = f.iter_symbols();
-                for sym in syms {
-                    symbols.push(sym.clone());
-                }
-            },
-            MainSymbol::Package(PackageSymbol::Module(m)) => {
-                let syms = m.iter_symbols();
-                for sym in syms {
-                    symbols.push(sym.clone());
-                }
-            },
-            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
-                let syms = p.iter_symbols();
-                for sym in syms {
-                    symbols.push(sym.clone());
+            MainSymbol::Class(_) | MainSymbol::Function(_) | MainSymbol::File(_) | MainSymbol::Package(PackageSymbol::Module(_)) |
+            MainSymbol::Package(PackageSymbol::PythonPackage(_)) => {
+                let syms = self.iter_symbols();
+                for (sym_name, map) in syms {
+                    for (index, syms) in map.iter() {
+                        for sym in syms.iter() {
+                            symbols.push(sym.clone());
+                        }
+                    }
                 }
             },
             _ => {panic!()}
@@ -1427,11 +1442,11 @@ impl MainSymbol {
         return Weak::ptr_eq(&self.weak_self().unwrap_or(Weak::new()), &Rc::downgrade(other));
     }
 
-    fn _debug_print_graph_node(&self, acc: &mut String, level: u32) {
+    /*fn _debug_print_graph_node(&self, acc: &mut String, level: u32) {
         for _ in 0..level {
             acc.push_str(" ");
         }
-        acc.push_str(format!("{:?} {:?}\n", self.sym_type, self.name).as_str());
+        acc.push_str(format!("{:?} {:?}\n", self.typ(), self.name()).as_str());
         for section in self.localized_sym.iter() {
             for local in section.iter() {
                 for _ in 0..level {
@@ -1492,5 +1507,5 @@ impl MainSymbol {
         self._debug_print_graph_node(&mut res, 0);
         info!("----End output of symbol debug display----");
         res
-    }
+    }*/
 }

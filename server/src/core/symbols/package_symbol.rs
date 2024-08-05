@@ -1,7 +1,7 @@
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps, SymType}, threads::SessionInfo, S};
-use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::{RefCell, RefMut}, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::MainSymbol, symbol_mgr::SectionRange};
 
@@ -15,19 +15,23 @@ impl PackageSymbol {
     pub fn new_python_package(name: String, path: String, is_external: bool) -> Self {
         PackageSymbol::PythonPackage(PythonPackageSymbol::new(name, path, is_external))
     }
-    pub fn new_module_package(name: String, path: String, is_external: bool) -> Self {
-        PackageSymbol::Module(ModuleSymbol::new(name, path, is_external))
+    pub fn new_module_package(session: &mut SessionInfo, name: String, path: &PathBuf, is_external: bool) -> Option<Self> {
+        if let Some(module) = ModuleSymbol::new(session, name, path, is_external) {
+            Some(PackageSymbol::Module(module))
+        } else {
+            None
+        }
     }
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &String {
         match self {
-            PackageSymbol::PythonPackage(p) => p.name,
-            PackageSymbol::Module(m) => m.name,
+            PackageSymbol::PythonPackage(p) => &p.name,
+            PackageSymbol::Module(m) => &m.name,
         }
     }
     pub fn parent(&self) -> Option<Weak<RefCell<MainSymbol>>> {
         match self {
-            PackageSymbol::Module(m) => m.parent,
-            PackageSymbol::PythonPackage(p) => p.parent
+            PackageSymbol::Module(m) => m.parent.clone(),
+            PackageSymbol::PythonPackage(p) => p.parent.clone()
         }
     }
     pub fn set_parent(&mut self, parent: Option<Weak<RefCell<MainSymbol>>>) {
@@ -36,10 +40,10 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => p.parent = parent,
         }
     }
-    pub fn i_ext(&self) -> String {
+    pub fn i_ext(&self) -> &String {
         match self {
-            PackageSymbol::Module(m) => m.i_ext,
-            PackageSymbol::PythonPackage(p) => p.i_ext,
+            PackageSymbol::Module(m) => &m.i_ext,
+            PackageSymbol::PythonPackage(p) => &p.i_ext,
         }
     }
     pub fn set_i_ext(&mut self, ext: String) {
@@ -66,7 +70,7 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => &p.dependents
         }
     }
-    pub fn dependents_as_mut(&self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3] {
+    pub fn dependents_as_mut(&mut self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>; 3] {
         match self {
             PackageSymbol::Module(m) => &mut m.dependents,
             PackageSymbol::PythonPackage(p) => &mut p.dependents
@@ -74,14 +78,14 @@ impl PackageSymbol {
     }
     pub fn add_file(&mut self, file: Rc<RefCell<MainSymbol>>) {
         match self {
-            PackageSymbol::Module(m) => m.module_symbols.insert(file.borrow().name().clone(), file),
-            PackageSymbol::PythonPackage(p) => p.module_symbols.insert(file.borrow().name().clone(), file),
+            PackageSymbol::Module(m) => m.module_symbols.insert(file.borrow().name().clone(), file.clone()),
+            PackageSymbol::PythonPackage(p) => p.module_symbols.insert(file.borrow().name().clone(), file.clone()),
         };
     }
     pub fn paths(&self) -> Vec<String> {
         match self {
-            PackageSymbol::Module(m) => vec![m.path],
-            PackageSymbol::PythonPackage(p) => vec![p.path],
+            PackageSymbol::Module(m) => vec![m.path.clone()],
+            PackageSymbol::PythonPackage(p) => vec![p.path.clone()],
         }
     }
     pub fn is_external(&self) -> bool {

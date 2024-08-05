@@ -218,7 +218,8 @@ impl Evaluation {
                 let eval_sym = eval.0.upgrade();
                 if let Some(eval_sym) = eval_sym {
                     if eval_sym.borrow().evaluations().len() == 1 {
-                        let eval = &eval_sym.borrow().evaluations()[0];
+                        let eval_borrowed = eval_sym.borrow();
+                        let eval = &eval_borrowed.evaluations()[0];
                         if eval.value.is_some() {
                             return Some(eval.value.as_ref().unwrap().clone());
                         }
@@ -455,7 +456,7 @@ impl Evaluation {
                         if base_sym.borrow().evaluations().len() == 0 {
                             if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
                             base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
-                                let mut v = PythonValidator::new(base_sym);
+                                let mut v = PythonValidator::new(base_sym.clone());
                                 v.validate(session);
                             }
                         }
@@ -488,10 +489,10 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) => {
                 let infered_syms = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
-                        MainSymbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
+                        MainSymbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
                     },
                     ExprOrIdent::Ident(expr) => {
-                        MainSymbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( * max_infer))
+                        MainSymbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
                     }
                     _ => {
                         unreachable!();

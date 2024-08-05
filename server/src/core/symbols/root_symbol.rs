@@ -42,7 +42,7 @@ impl RootSymbol {
                 }
             }
         }
-        self.module_symbols.insert(file.borrow().name().clone(), file);
+        self.module_symbols.insert(file.borrow().name().clone(), file.clone());
     }
 
 }

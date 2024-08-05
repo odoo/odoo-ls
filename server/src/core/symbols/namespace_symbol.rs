@@ -72,11 +72,11 @@ impl NamespaceSymbol {
     }
 
     pub fn add_file(&mut self, file: Rc<RefCell<MainSymbol>>) {
-        self.module_symbols.insert(file.borrow().name().clone(), file);
+        self.module_symbols.insert(file.borrow().name().clone(), file.clone());
     }
 
     pub fn paths(&self) -> Vec<String> {
-        self.directories.iter().map(|x| {x.path}).collect()
+        self.directories.iter().map(|x| {x.path.clone()}).collect()
     }
 
 }
