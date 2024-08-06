@@ -128,7 +128,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &MainSymbol) -> String {
+    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &mut MainSymbol) -> String {
         let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]), u32::MAX);
         if let Some(_name) = _name.last() {
             for eval in _name.borrow().evaluations().unwrap().iter() {
@@ -291,9 +291,9 @@ impl PythonOdooBuilder {
             });
             return false;
         }
-        let base_model = base_model[0];
-        let model = model[0];
-        let transient = transient[0];
+        let base_model = base_model[0].clone();
+        let model = model[0].clone();
+        let transient = transient[0].clone();
         if Rc::ptr_eq(rc_symbol, &base_model) ||
             Rc::ptr_eq(rc_symbol, &model) ||
             Rc::ptr_eq(rc_symbol, &transient) {

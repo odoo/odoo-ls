@@ -69,7 +69,7 @@ impl SyncOdoo {
 
     pub fn new() -> Self {
         let symbols = MainSymbol::new_root();
-        symbols.borrow_mut().as_root().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
+        symbols.borrow_mut().as_root_mut().weak_self = Some(Rc::downgrade(&symbols)); // manually set weakself for root symbols
         let sync_odoo = Self {
             version_major: 0,
             version_minor: 0,

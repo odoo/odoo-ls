@@ -137,7 +137,8 @@ impl PythonArchEval {
 
     ///follow the given symbol and check the files are evaluated if evaluation is None
     fn follow_and_resolve_eval(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<MainSymbol>>) {
-        let imports = MainSymbol::follow_ref(&sym_ref, session, &mut None, false, false, &mut self.diagnostics);
+        let sym_ref_cl = sym_ref.clone();
+        let imports = MainSymbol::follow_ref(&sym_ref_cl, session, &mut None, false, false, &mut self.diagnostics);
         for import in imports.iter() {
             let (mut weak_sym, mut instance) = import.clone();
             let mut sym = weak_sym.upgrade().unwrap();
@@ -149,7 +150,7 @@ impl PythonArchEval {
                         session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
                         let mut builder = PythonArchEval::new(rc_file_sym);
                         builder.eval_arch(session);
-                        self.follow_and_resolve_eval(session, sym_ref);
+                        self.follow_and_resolve_eval(session, sym_ref.clone());
                     }
                 }
             }
@@ -174,7 +175,7 @@ impl PythonArchEval {
                 continue;
             };
             if _import_result.found {
-                let import_sym_ref = _import_result.symbol;
+                let import_sym_ref = _import_result.symbol.clone();
                 self.follow_and_resolve_eval(session, import_sym_ref.clone());
                 //TODO is this condition still useful?
                 if !Rc::ptr_eq(&import_sym_ref, &variable) { //anti-loop. We want to be sure we are not evaluating to the same sym
@@ -376,7 +377,7 @@ impl PythonArchEval {
             panic!("Class not found");
         }
         variable.as_ref().unwrap().borrow_mut().ast_indexes_mut().clear();
-        variable.as_ref().unwrap().borrow_mut().ast_indexes_mut().extend(self.ast_indexes);
+        variable.as_ref().unwrap().borrow_mut().ast_indexes_mut().extend(self.ast_indexes.iter());
         self.load_base_classes(session, variable.as_ref().unwrap(), class_stmt);
         self.sym_stack.push(variable.unwrap().clone());
         for (index, stmt) in class_stmt.body.iter().enumerate() {
@@ -394,9 +395,10 @@ impl PythonArchEval {
         }
         let variable = variable.unwrap();
         variable.borrow_mut().ast_indexes_mut().clear();
-        variable.borrow_mut().ast_indexes_mut().extend(self.ast_indexes);
+        variable.borrow_mut().ast_indexes_mut().extend(self.ast_indexes.iter());
         {
-            let inner_func = &variable.borrow().as_func_mut();
+            let mut variable_bw = variable.borrow_mut();
+            let inner_func = &variable_bw.as_func_mut();
             if !inner_func.is_static {
                 if self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
                     if func_stmt.parameters.args.len() == 0 { //TODO handle parameters || variable.borrow()._function.local_symbols.len() == 0 {

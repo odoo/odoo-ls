@@ -437,7 +437,7 @@ impl MainSymbol {
         }
     }
 
-    pub fn weak_self(&mut self) -> Option<Weak<RefCell<MainSymbol>>> {
+    pub fn weak_self(&self) -> Option<Weak<RefCell<MainSymbol>>> {
         match self {
             MainSymbol::Root(r) => r.weak_self.clone(),
             MainSymbol::Namespace(n) => n.weak_self.clone(),
@@ -673,10 +673,10 @@ impl MainSymbol {
         }
     }
 
-    pub fn iter_symbols(&self) -> std::collections::hash_map::IntoIter<String, HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>> {
+    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<String, HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>> {
         match self {
             MainSymbol::File(f) => {
-                f.symbols.into_iter()
+                f.symbols.iter()
             }
             MainSymbol::Root(r) => todo!(),
             MainSymbol::Namespace(n) => todo!(),
@@ -699,6 +699,18 @@ impl MainSymbol {
             MainSymbol::Variable(v) => Some(&v.evaluations),
         }
     }
+    pub fn evaluations_mut(&mut self) -> Option<&mut Vec<Evaluation>> {
+        match self {
+            MainSymbol::File(f) => { None },
+            MainSymbol::Root(r) => { None },
+            MainSymbol::Namespace(n) => { None },
+            MainSymbol::Package(p) => { None },
+            MainSymbol::Compiled(c) => { None },
+            MainSymbol::Class(c) => { None },
+            MainSymbol::Function(f) => { None },
+            MainSymbol::Variable(v) => Some(&mut v.evaluations),
+        }
+    }
     pub fn set_evaluations(&mut self, data: Vec<Evaluation>) {
         match self {
             MainSymbol::File(f) => { panic!() },
@@ -713,30 +725,31 @@ impl MainSymbol {
     }
 
     pub fn not_found_paths(&self) -> &Vec<(BuildSteps, Vec<String>)> {
+        static EMPTY_VEC: Vec<(BuildSteps, Vec<String>)> = Vec::new();
         match self {
             MainSymbol::File(f) => { &f.not_found_paths },
-            MainSymbol::Root(r) => { &vec![] },
-            MainSymbol::Namespace(n) => { &vec![] },
+            MainSymbol::Root(r) => { &EMPTY_VEC },
+            MainSymbol::Namespace(n) => { &EMPTY_VEC },
             MainSymbol::Package(PackageSymbol::Module(m)) => { &m.not_found_paths },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => { &p.not_found_paths },
-            MainSymbol::Compiled(c) => { &vec![] },
-            MainSymbol::Class(c) => { &vec![] },
-            MainSymbol::Function(f) => { &vec![] },
-            MainSymbol::Variable(v) => &vec![],
+            MainSymbol::Compiled(c) => { &EMPTY_VEC },
+            MainSymbol::Class(c) => { &EMPTY_VEC },
+            MainSymbol::Function(f) => { &EMPTY_VEC },
+            MainSymbol::Variable(v) => &EMPTY_VEC,
         }
     }
 
-    pub fn not_found_paths_mut(&self) -> &mut Vec<(BuildSteps, Vec<String>)> {
+    pub fn not_found_paths_mut(&mut self) -> &mut Vec<(BuildSteps, Vec<String>)> {
         match self {
             MainSymbol::File(f) => { &mut f.not_found_paths },
-            MainSymbol::Root(r) => { &mut vec![] },
-            MainSymbol::Namespace(n) => { &mut vec![] },
+            MainSymbol::Root(r) => { panic!("no not_found_path on Root") },
+            MainSymbol::Namespace(n) => { panic!("no not_found_path on Namespace") },
             MainSymbol::Package(PackageSymbol::Module(m)) => { &mut m.not_found_paths },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => { &mut p.not_found_paths },
-            MainSymbol::Compiled(c) => { &mut vec![] },
-            MainSymbol::Class(c) => { &mut vec![] },
-            MainSymbol::Function(f) => { &mut vec![] },
-            MainSymbol::Variable(v) => &mut vec![],
+            MainSymbol::Compiled(c) => { panic!("no not_found_path on Compiled") },
+            MainSymbol::Class(c) => { panic!("no not_found_path on Class") },
+            MainSymbol::Function(f) => { panic!("no not_found_path on Function") },
+            MainSymbol::Variable(v) => panic!("no not_found_path on Variable"),
         }
     }
 
@@ -763,7 +776,7 @@ impl MainSymbol {
                         }
                     } else {
                         let module = module.unwrap();
-                        ModuleSymbol::load_module_info(module, session, parent);
+                        ModuleSymbol::load_module_info(module.clone(), session, parent);
                         //as the symbol has been added to parent before module creation, it has not been added to modules
                         session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
                         return Some(module);
@@ -824,7 +837,7 @@ impl MainSymbol {
             }
             if symbol_tree_files.len() > 1 {
                 for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
-                    if let Some(s) = _mod_iter_sym.unwrap().borrow_mut().get_module_symbol(fk) {
+                    if let Some(s) = _mod_iter_sym.as_ref().unwrap().borrow_mut().get_module_symbol(fk) {
                         iter_sym = vec![s.clone()];
                     } else {
                         return vec![];
@@ -836,7 +849,8 @@ impl MainSymbol {
                     if iter_sym.len() > 1 {
                         trace!("TODO: explore all implementation possibilities");
                     }
-                    iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, u32::MAX);
+                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, u32::MAX);
+                    iter_sym = _iter_sym;
                     if iter_sym.is_empty() {
                         return vec![];
                     }
@@ -855,7 +869,8 @@ impl MainSymbol {
                     trace!("TODO: explore all implementation possibilities");
                 }
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, u32::MAX);
+                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, u32::MAX);
+                    iter_sym = _iter_sym;
                     return iter_sym.clone();
                 }
             }
@@ -1084,13 +1099,13 @@ impl MainSymbol {
             if vec![SymType::FILE, SymType::PACKAGE].contains(&ref_to_unload.borrow().typ()) {
                 MainSymbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
-            let mut mut_symbol = ref_to_unload.borrow_mut();
-            match *mut_symbol {
-                MainSymbol::Package(PackageSymbol::Module(m)) => {
+            match *ref_to_unload.borrow_mut() {
+                MainSymbol::Package(PackageSymbol::Module(ref mut m)) => {
                     session.sync_odoo.modules.remove(m.dir_name.as_str());
                 },
                 _ => {}
             }
+            drop(ref_to_unload);
         }
     }
 
@@ -1244,9 +1259,10 @@ impl MainSymbol {
         let mut index = 0;
         while index < results.len() {
             let (sym, instance) = &results[index];
-            let sym = sym.upgrade().unwrap().borrow();
+            let sym = sym.upgrade().unwrap();
+            let sym = sym.borrow();
             match *sym {
-                MainSymbol::Variable(v) => {
+                MainSymbol::Variable(ref v) => {
                     if stop_on_type && !instance && !v.is_import_variable {
                         continue;
                     }
@@ -1258,7 +1274,6 @@ impl MainSymbol {
                         let file_symbol = sym.get_file();
                         match file_symbol {
                             Some(file_symbol) => {
-                                drop(sym);
                                 if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
                                 session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
                                     let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());

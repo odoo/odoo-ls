@@ -94,8 +94,7 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        let symbol = self.symbol;
-        let mut symbol = symbol.borrow_mut();
+        let mut symbol = self.symbol.borrow_mut();
         self.current_module = symbol.find_module();
         if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
@@ -115,12 +114,11 @@ impl PythonValidator {
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymType::CLASS | SymType::FUNCTION => {
-                let loc_sym = self.symbol;
                 self.file_mode = false;
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
-                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), loc_sym.borrow().ast_indexes().unwrap());
+                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.symbol.borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
@@ -133,10 +131,10 @@ impl PythonValidator {
                     self.validate_body(session, body);
                     match stmt {
                         Stmt::FunctionDef(s) => {
-                            loc_sym.borrow_mut().as_func_mut().diagnostics = self.diagnostics.clone();
+                            self.symbol.borrow_mut().as_func_mut().diagnostics = self.diagnostics.clone();
                         },
                         Stmt::ClassDef(s) => {
-                            loc_sym.borrow_mut().as_class_sym_mut().diagnostics = self.diagnostics.clone();
+                            self.symbol.borrow_mut().as_class_sym_mut().diagnostics = self.diagnostics.clone();
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     }
@@ -168,12 +166,12 @@ impl PythonValidator {
                     if let Some(sym) = sym {
                         let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(sym);
+                            let mut v = PythonValidator::new(sym.clone());
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
-                        self.diagnostics.append(&mut sym.borrow_mut().as_func().diagnostics);
+                        self.diagnostics.append(&mut sym.borrow_mut().as_func_mut().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
                     }
@@ -183,13 +181,13 @@ impl PythonValidator {
                     if let Some(sym) = sym {
                         let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(sym);
+                            let mut v = PythonValidator::new(sym.clone());
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
                         self._check_model(session, &sym);
-                        self.diagnostics.append(&mut sym.borrow_mut().as_class_sym().diagnostics);
+                        self.diagnostics.append(&mut sym.borrow_mut().as_class_sym_mut().diagnostics);
                     } else {
                         //TODO panic!("symbol not found.");
                     }

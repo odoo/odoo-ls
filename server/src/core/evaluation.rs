@@ -230,7 +230,7 @@ impl Evaluation {
         }
     }
 
-    pub fn from_sections(sections: HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>) -> Vec<Evaluation> {
+    pub fn from_sections(sections: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>) -> Vec<Evaluation> {
         todo!()
     }
 

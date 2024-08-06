@@ -152,8 +152,8 @@ impl PythonArchEvalHooks {
         // ----------- __iter__ ------------
         let mut iter = symbol.get_symbol(&(vec![], vec![S!("__iter__")]), u32::MAX);
         if !iter.is_empty() && iter.last().unwrap().borrow().evaluations().is_some() && iter.last().unwrap().borrow().evaluations().unwrap().len() > 0 {
-            let iter = iter.last().unwrap().borrow_mut();
-            let evaluation = &mut iter.evaluations().unwrap()[0];
+            let mut iter = iter.last().unwrap().borrow_mut();
+            let evaluation = &mut iter.evaluations_mut().unwrap()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
@@ -185,14 +185,16 @@ impl PythonArchEvalHooks {
         let ids = symbol.get_symbol(&(vec![], vec![S!("ids")]), u32::MAX);
         if !ids.is_empty() {
             let values: Vec<ruff_python_ast::Expr> = Vec::new();
-            let range = ids.last().unwrap().borrow().range();
+            let last_id = ids.last().unwrap().borrow();
+            let range = last_id.range();
             ids.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation::new_list(odoo, values, range.clone())]);
         }
         // ------------ sudo ------------
         let mut sudo = symbol.get_symbol(&(vec![], vec![S!("sudo")]), u32::MAX);
         if !sudo.is_empty() && sudo.last().unwrap().borrow().evaluations().is_some() && sudo.last().unwrap().borrow().evaluations().unwrap().len() == 1 {
             let sudo = sudo.last().unwrap();
-            let evaluation = &mut sudo.borrow_mut().evaluations().unwrap()[0];
+            let mut sudo_mut = sudo.borrow_mut();
+            let evaluation = &mut sudo_mut.evaluations_mut().unwrap()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
@@ -200,7 +202,8 @@ impl PythonArchEvalHooks {
         let mut create = symbol.get_symbol(&(vec![], vec![S!("create")]), u32::MAX);
         if !create.is_empty() && create.last().unwrap().borrow().evaluations().is_some() && create.last().unwrap().borrow().evaluations().unwrap().len() == 1 {
             let create = create.last().unwrap();
-            let evaluation = &mut create.borrow_mut().evaluations().unwrap()[0];
+            let mut create_mut = create.borrow_mut();
+            let evaluation = &mut create_mut.evaluations_mut().unwrap()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }
@@ -208,7 +211,8 @@ impl PythonArchEvalHooks {
         let mut search = symbol.get_symbol(&(vec![], vec![S!("search")]), u32::MAX);
         if !search.is_empty() && search.last().unwrap().borrow().evaluations().is_some() && search.last().unwrap().borrow().evaluations().unwrap().len() == 1 {
             let search = search.last().unwrap();
-            let evaluation = &mut search.borrow_mut().evaluations().unwrap()[0];
+            let mut search_mut = search.borrow_mut();
+            let evaluation = &mut search_mut.evaluations_mut().unwrap()[0];
             let eval_sym = &mut evaluation.symbol;
             eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
         }

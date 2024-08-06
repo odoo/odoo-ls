@@ -298,7 +298,8 @@ impl PythonArchBuilder {
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
         let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(session, &func_def.name.id, &func_def.range);
-        let mut func_sym = sym.borrow_mut().as_func_mut();
+        let mut sym_bw = sym.borrow_mut();
+        let mut func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
                 func_sym.is_static = true;
@@ -318,6 +319,8 @@ impl PythonArchBuilder {
             let mut param = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &arg.parameter.name.id, &arg.range);
         }
         //visit body
+        drop(func_sym);
+        drop(sym_bw);
         self.sym_stack.push(sym);
         self.visit_node(session, &func_def.body)?;
         self.sym_stack.pop();
@@ -326,7 +329,8 @@ impl PythonArchBuilder {
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
         let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &class_def.name.id, &class_def.range);
-        let class_sym = sym.borrow_mut().as_class_sym_mut();
+        let mut sym_bw = sym.borrow_mut();
+        let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
@@ -340,6 +344,7 @@ impl PythonArchBuilder {
         self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
         drop(class_sym);
+        drop(sym_bw);
         PythonArchBuilderHooks::on_class_def(session, sym);
         Ok(())
     }
