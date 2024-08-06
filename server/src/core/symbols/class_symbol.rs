@@ -9,7 +9,7 @@ use crate::constants::BuildStatus;
 use crate::core::model::ModelData;
 
 use super::symbol::MainSymbol;
-use super::symbol_mgr::SectionRange;
+use super::symbol_mgr::{SectionRange, SymbolMgr};
 
 
 #[derive(Debug)]
@@ -36,6 +36,29 @@ pub struct ClassSymbol {
 
 impl ClassSymbol {
 
+    pub fn new(name: String, range: TextRange, is_external: bool) -> Self {
+        let mut res = Self {
+            name,
+            is_external,
+            weak_self: None,
+            parent: None,
+            range,
+            diagnostics: vec![],
+            ast_indexes: vec![],
+            doc_string: None,
+            arch_status: BuildStatus::PENDING,
+            arch_eval_status: BuildStatus::PENDING,
+            odoo_status: BuildStatus::PENDING,
+            validation_status: BuildStatus::PENDING,
+            sections: vec![],
+            symbols: HashMap::new(),
+            bases: PtrWeakHashSet::new(),
+            _model: None,
+        };
+        res._init_symbol_mgr();
+        res
+    }
+
     pub fn inherits(&self, base: &Rc<RefCell<MainSymbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<MainSymbol>>>>) -> bool {
         if checked.is_none() {
             *checked = Some(PtrWeakHashSet::new());
@@ -53,6 +76,12 @@ impl ClassSymbol {
             }
         }
         false
+    }
+
+    pub fn add_symbol(&mut self, content: &Rc<RefCell<MainSymbol>>, section: u32) {
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        section_vec.push(content.clone());
     }
 
 }

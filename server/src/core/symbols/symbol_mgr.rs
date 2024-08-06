@@ -24,6 +24,7 @@ pub trait SymbolMgr {
     fn add_section(&mut self, range: TextRange) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<MainSymbol>>>;
+    fn _init_symbol_mgr(&mut self);
     fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<MainSymbol>>>;
 }
 
@@ -53,6 +54,14 @@ change_parent(SectionIndex::Or(old_last_section | ei_body | else_body), next_sec
 macro_rules! impl_section_mgr_for {
     ($($t:ty),+ $(,)?) => ($(
     impl SymbolMgr for $t {
+        fn _init_symbol_mgr(&mut self) {
+            self.sections.push(SectionRange{
+                start: 0,
+                index: 0,
+                previous_indexes: SectionIndex::NONE
+            });
+        }
+
         fn get_section_for(&self, position: u32) -> SectionRange {
             let mut last_section = self.sections.last().unwrap();
             for section in self.sections.iter().rev().skip(1) { //reverse to fasten most calls as they will be with TextSize::MAX

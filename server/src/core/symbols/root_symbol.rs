@@ -27,7 +27,9 @@ impl RootSymbol {
     }
 
     pub fn add_file(&mut self, session: &mut SessionInfo, file: &Rc<RefCell<MainSymbol>>) {
-        for path in file.borrow().paths().iter() {
+        let paths = file.borrow().paths().clone();
+        self.module_symbols.insert(file.borrow().name().clone(), file.clone());
+        for path in paths.iter() {
             for sys_p in self.sys_path.iter() {
                 if sys_p.is_empty() {
                     continue;
@@ -44,7 +46,6 @@ impl RootSymbol {
                 }
             }
         }
-        self.module_symbols.insert(file.borrow().name().clone(), file.clone());
     }
 
 }

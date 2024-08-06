@@ -53,10 +53,11 @@ impl PythonArchBuilder {
         if symbol.typ() == SymType::PACKAGE {
             path = PathBuf::from(path).join("__init__.py").sanitize() + symbol.as_package().i_ext().as_str();
         }
-        symbol.as_file_mut().in_workspace = (symbol.parent().is_some() &&
+        let in_workspace = (symbol.parent().is_some() &&
             symbol.parent().as_ref().unwrap().upgrade().is_some() &&
             symbol.parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
             session.sync_odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
+        symbol.set_in_workspace(in_workspace);
         drop(symbol);
         let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
         let mut file_info = (*file_info).borrow_mut();
@@ -328,7 +329,7 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &class_def.name.id, &class_def.range);
+        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(session, &class_def.name.id, &class_def.range);
         let mut sym_bw = sym.borrow_mut();
         let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
@@ -340,11 +341,10 @@ impl PythonArchBuilder {
                 }
             }
         }
+        drop(sym_bw);
         self.sym_stack.push(sym.clone());
         self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
-        drop(class_sym);
-        drop(sym_bw);
         PythonArchBuilderHooks::on_class_def(session, sym);
         Ok(())
     }

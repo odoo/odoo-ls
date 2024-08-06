@@ -11,6 +11,7 @@ use crate::core::import_resolver::find_module;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::MainSymbol;
 use crate::constants::EXTENSION_NAME;
+use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
@@ -108,6 +109,7 @@ impl ModuleSymbol {
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
         };
+        module._init_symbol_mgr();
         info!("building new module: {:?}", dir_path);
         if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
             module.depends.clear();

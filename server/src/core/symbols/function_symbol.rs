@@ -5,7 +5,7 @@ use ruff_text_size::TextRange;
 
 use crate::{constants::BuildStatus};
 
-use super::{symbol::MainSymbol, symbol_mgr::SectionRange};
+use super::{symbol::MainSymbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
 #[derive(Debug)]
 pub struct FunctionSymbol {
@@ -32,7 +32,7 @@ pub struct FunctionSymbol {
 impl FunctionSymbol {
 
     pub fn new(name: String, range: TextRange, is_external: bool) -> Self {
-        Self {
+        let mut res = Self {
             name,
             is_external,
             weak_self: None,
@@ -49,6 +49,8 @@ impl FunctionSymbol {
             validation_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::new(),
-        }
+        };
+        res._init_symbol_mgr();
+        res
     }
 }

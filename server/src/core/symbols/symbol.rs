@@ -50,7 +50,7 @@ impl MainSymbol {
     }
 
     //Create a sub-symbol that is representing a file
-    pub fn add_new_file(&mut self, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_file(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let file = Rc::new(RefCell::new(MainSymbol::File(FileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         file.borrow_mut().set_weak_self(Rc::downgrade(&file));
         file.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -61,6 +61,9 @@ impl MainSymbol {
             MainSymbol::Package(p) => {
                 p.add_file(&file);
             },
+            MainSymbol::Root(r) => {
+                r.add_file(session, &file);
+            }
             _ => { panic!("Impossible to add a file to a {}", self.typ()); }
         }
         file
@@ -178,6 +181,10 @@ impl MainSymbol {
                 let section = p.get_section_for(range.start().to_u32()).index;
                 p.add_symbol(&variable, section);
             },
+            MainSymbol::Class(c) => {
+                let section = c.get_section_for(range.start().to_u32()).index;
+                c.add_symbol(&variable, section);
+            }
             _ => { panic!("Impossible to add a variable to a {}", self.typ()); }
         }
         variable
@@ -200,9 +207,39 @@ impl MainSymbol {
                 let section = p.get_section_for(range.start().to_u32()).index;
                 p.add_symbol(&function, section);
             },
+            MainSymbol::Class(c) => {
+                let section = c.get_section_for(range.start().to_u32()).index;
+                c.add_symbol(&function, section);
+            }
             _ => { panic!("Impossible to add a function to a {}", self.typ()); }
         }
         function
+    }
+
+    pub fn add_new_class(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
+        let class = Rc::new(RefCell::new(MainSymbol::Class(ClassSymbol::new(name.clone(), range.clone(), self.is_external()))));
+        class.borrow_mut().set_weak_self(Rc::downgrade(&class));
+        class.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
+        match self {
+            MainSymbol::File(f) => {
+                let section = f.get_section_for(range.start().to_u32()).index;
+                f.add_symbol(&class, section);
+            },
+            MainSymbol::Package(PackageSymbol::Module(m)) => {
+                let section = m.get_section_for(range.start().to_u32()).index;
+                m.add_symbol(&class, section);
+            },
+            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
+                let section = p.get_section_for(range.start().to_u32()).index;
+                p.add_symbol(&class, section);
+            },
+            MainSymbol::Class(c) => {
+                let section = c.get_section_for(range.start().to_u32()).index;
+                c.add_symbol(&class, section);
+            }
+            _ => { panic!("Impossible to add a class to a {}", self.typ()); }
+        }
+        class
     }
 
     pub fn as_root(&self) -> &RootSymbol {
@@ -566,6 +603,19 @@ impl MainSymbol {
             MainSymbol::Variable(v) => panic!(),
         }
     }
+    pub fn set_in_workspace(&mut self, in_workspace: bool) {
+        match self {
+            MainSymbol::Root(r) => panic!(),
+            MainSymbol::Namespace(n) => n.in_workspace = in_workspace,
+            MainSymbol::Package(PackageSymbol::Module(m)) => m.in_workspace = in_workspace,
+            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace = in_workspace,
+            MainSymbol::File(f) => f.in_workspace = in_workspace,
+            MainSymbol::Compiled(c) => panic!(),
+            MainSymbol::Class(c) => panic!(),
+            MainSymbol::Function(f) => panic!(),
+            MainSymbol::Variable(v) => panic!(),
+        }
+    }
     pub fn build_status(&self, step:BuildSteps) -> BuildStatus {
         match self {
             MainSymbol::Root(r) => {panic!()},
@@ -758,7 +808,7 @@ impl MainSymbol {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.sanitize();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
-            let ref_sym = (*parent).borrow_mut().add_new_file(&name, &path_str);
+            let ref_sym = (*parent).borrow_mut().add_new_file(session, &name, &path_str);
             return Some(ref_sym);
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {

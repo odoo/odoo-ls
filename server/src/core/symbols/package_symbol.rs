@@ -3,7 +3,7 @@ use weak_table::PtrWeakHashSet;
 use crate::{constants::{BuildStatus, BuildSteps, SymType}, threads::SessionInfo, S};
 use std::{cell::{RefCell, RefMut}, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use super::{module_symbol::ModuleSymbol, symbol::MainSymbol, symbol_mgr::SectionRange};
+use super::{module_symbol::ModuleSymbol, symbol::MainSymbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
 #[derive(Debug)]
 pub enum PackageSymbol {
@@ -122,7 +122,7 @@ pub struct PythonPackageSymbol {
 impl PythonPackageSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
-        Self {
+        let mut res = Self {
             name,
             path,
             is_external,
@@ -170,7 +170,9 @@ impl PythonPackageSymbol {
                     PtrWeakHashSet::new(), //ODOO
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
-        }
+        };
+        res._init_symbol_mgr();
+        res
     }
 
     pub fn add_symbol(&mut self, content: &Rc<RefCell<MainSymbol>>, section: u32) {
