@@ -44,6 +44,9 @@ impl PythonArchBuilder {
     pub fn load_arch(&mut self, session: &mut SessionInfo) -> Result<(), Error> {
         //println!("load arch");
         let mut symbol = self.sym_stack[0].borrow_mut();
+        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE].contains(&symbol.typ()) {
+            return Ok(()); // nothing to extract
+        }
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         if symbol.paths().len() != 1 {
             panic!()
@@ -128,21 +131,28 @@ impl PythonArchBuilder {
                         warn!("invalid __all__ import in file {} - no symbol found", (*import_result.symbol).borrow().paths()[0])
                     }
                 }
-                for (name, loc_syms) in import_result.symbol.borrow().iter_symbols() {
+                let mut dep_to_add = vec![];
+                let symbol = import_result.symbol.borrow();
+                for (name, loc_syms) in symbol.iter_symbols() {
                     if all_name_allowed || name_filter.contains(&name) {
                         let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &name, &import_result.range);
                         let mut loc = variable.borrow_mut();
                         loc.as_variable_mut().is_import_variable = true;
-                        loc.as_variable_mut().evaluations = Evaluation::from_sections(loc_syms);
-                        let evaluation = &loc.as_variable_mut().evaluations[0];
-                        let evaluated_type = &evaluation.symbol;
-                        let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0;
-                        if !evaluated_type.is_expired() {
-                            let evaluated_type = evaluated_type.upgrade().unwrap();
-                            let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
-                            if !Rc::ptr_eq(&self.sym_stack[0], &evaluated_type_file) {
-                                self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
-                            }
+                        loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
+                        dep_to_add.push(variable.clone());
+                    }
+                }
+                drop(symbol);
+                for sym in dep_to_add {
+                    let mut sym_bw = sym.borrow_mut();
+                    let evaluation = &sym_bw.as_variable_mut().evaluations[0];
+                    let evaluated_type = &evaluation.symbol;
+                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0;
+                    if !evaluated_type.is_expired() {
+                        let evaluated_type = evaluated_type.upgrade().unwrap();
+                        let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
+                        if !Rc::ptr_eq(&self.sym_stack[0], &evaluated_type_file) {
+                            self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
                         }
                     }
                 }

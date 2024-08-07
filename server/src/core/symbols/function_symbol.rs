@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 
-use crate::{constants::BuildStatus};
+use crate::{constants::BuildStatus, core::evaluation::Evaluation};
 
 use super::{symbol::MainSymbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -16,6 +16,7 @@ pub struct FunctionSymbol {
     pub doc_string: Option<String>,
     pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
+    pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub weak_self: Option<Weak<RefCell<MainSymbol>>>,
     pub parent: Option<Weak<RefCell<MainSymbol>>>,
     pub arch_status: BuildStatus,
@@ -43,6 +44,7 @@ impl FunctionSymbol {
             diagnostics: vec![],
             ast_indexes: vec![],
             doc_string: None,
+            evaluations: vec![],
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             odoo_status: BuildStatus::PENDING,
@@ -52,5 +54,11 @@ impl FunctionSymbol {
         };
         res._init_symbol_mgr();
         res
+    }
+
+    pub fn add_symbol(&mut self, content: &Rc<RefCell<MainSymbol>>, section: u32) {
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        section_vec.push(content.clone());
     }
 }

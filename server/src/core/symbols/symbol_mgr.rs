@@ -98,6 +98,7 @@ macro_rules! impl_section_mgr_for {
             section.previous_indexes = new_parent;
         }
 
+        ///Return all the symbols that are valid as last declaration for the given position
         fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<MainSymbol>>> {
             let sections: Option<&HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>> = self.symbols.get(&name);
             if let Some(sections) = sections {
@@ -107,6 +108,7 @@ macro_rules! impl_section_mgr_for {
             vec![]
         }
 
+        ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
         fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<MainSymbol>>> {
             let mut res = vec![];
             match index {

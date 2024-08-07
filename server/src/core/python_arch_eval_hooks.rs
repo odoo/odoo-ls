@@ -185,9 +185,9 @@ impl PythonArchEvalHooks {
         let ids = symbol.get_symbol(&(vec![], vec![S!("ids")]), u32::MAX);
         if !ids.is_empty() {
             let values: Vec<ruff_python_ast::Expr> = Vec::new();
-            let last_id = ids.last().unwrap().borrow();
-            let range = last_id.range();
-            ids.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation::new_list(odoo, values, range.clone())]);
+            let mut last_id = ids.last().unwrap().borrow_mut();
+            let range = last_id.range().clone();
+            last_id.set_evaluations(vec![Evaluation::new_list(odoo, values, range.clone())]);
         }
         // ------------ sudo ------------
         let mut sudo = symbol.get_symbol(&(vec![], vec![S!("sudo")]), u32::MAX);

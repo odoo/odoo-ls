@@ -13,6 +13,7 @@ use crate::S;
 
 use super::python_validator::PythonValidator;
 use super::symbols::symbol::MainSymbol;
+use super::symbols::symbol_mgr::SectionIndex;
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -230,8 +231,21 @@ impl Evaluation {
         }
     }
 
-    pub fn from_sections(sections: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>) -> Vec<Evaluation> {
-        todo!()
+    ///Return a list of evaluations of the symbol that hold these sections.
+    ///For example:
+    /// if X:
+    ///     i=5
+    /// else:
+    ///     i="test"
+    /// It will return two evaluation for i, one with 5 and one for "test"
+    pub fn from_sections(parent: &MainSymbol, sections: &HashMap<u32, Vec<Rc<RefCell<MainSymbol>>>>) -> Vec<Evaluation> {
+        let mut res = vec![];
+        let section = parent.as_symbol_mgr().get_section_for(u32::MAX);
+        let syms = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut vec![]);
+        for sym in syms {
+            res.push(Evaluation::eval_from_symbol(&Rc::downgrade(&sym)));
+        }
+        res
     }
 
     //create an evaluation that is evaluating to the given symbol
@@ -473,10 +487,10 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer);
                 diagnostics.extend(diags);
-                if base_evals.len() != 1 || evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0.is_expired() {
+                if base_evals.len() != 1 || base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0.is_expired() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_ref = evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
+                let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
                 let bases = MainSymbol::follow_ref(&base_ref.upgrade().unwrap(), session, &mut None, false, false, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.0.upgrade();

@@ -87,6 +87,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             result[name_index as usize].name = name.split(".").map(str::to_string).next().unwrap();
             result[name_index as usize].found = true;
             result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
+            continue;
         }
         let name_split: Vec<String> = name.split(".").map(str::to_string).collect();
         let name_first_part: Vec<String> = Vec::from_iter(name_split[0..name_split.len()-1].iter().cloned());

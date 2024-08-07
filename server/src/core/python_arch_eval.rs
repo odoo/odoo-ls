@@ -318,6 +318,7 @@ impl PythonArchEval {
                 let mut file = file.borrow_mut();
                 //TODO build tree
                 self.create_diagnostic_base_not_found(session, &mut file, &(vec![], vec![]), &base.range());
+                continue;
             }
             if eval_base.len() > 1 {
                 self.diagnostics.push(Diagnostic::new(

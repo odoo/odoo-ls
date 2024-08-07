@@ -158,6 +158,9 @@ impl MainSymbol {
             },
             MainSymbol::Root(r) => {
                 r.add_file(session, &compiled);
+            },
+            MainSymbol::Compiled(c) => {
+                c.add_compiled(&compiled);
             }
             _ => { panic!("Impossible to add a compiled to a {}", self.typ()); }
         }
@@ -184,6 +187,10 @@ impl MainSymbol {
             MainSymbol::Class(c) => {
                 let section = c.get_section_for(range.start().to_u32()).index;
                 c.add_symbol(&variable, section);
+            },
+            MainSymbol::Function(f) => {
+                let section = f.get_section_for(range.start().to_u32()).index;
+                f.add_symbol(&variable, section);
             }
             _ => { panic!("Impossible to add a variable to a {}", self.typ()); }
         }
@@ -211,6 +218,10 @@ impl MainSymbol {
                 let section = c.get_section_for(range.start().to_u32()).index;
                 c.add_symbol(&function, section);
             }
+            MainSymbol::Function(f) => {
+                let section = f.get_section_for(range.start().to_u32()).index;
+                f.add_symbol(&function, section);
+            }
             _ => { panic!("Impossible to add a function to a {}", self.typ()); }
         }
         function
@@ -236,6 +247,10 @@ impl MainSymbol {
             MainSymbol::Class(c) => {
                 let section = c.get_section_for(range.start().to_u32()).index;
                 c.add_symbol(&class, section);
+            }
+            MainSymbol::Function(f) => {
+                let section = f.get_section_for(range.start().to_u32()).index;
+                f.add_symbol(&class, section);
             }
             _ => { panic!("Impossible to add a class to a {}", self.typ()); }
         }
@@ -728,13 +743,22 @@ impl MainSymbol {
             MainSymbol::File(f) => {
                 f.symbols.iter()
             }
-            MainSymbol::Root(r) => todo!(),
-            MainSymbol::Namespace(n) => todo!(),
-            MainSymbol::Package(p) => todo!(),
-            MainSymbol::Compiled(c) => todo!(),
-            MainSymbol::Class(c) => todo!(),
-            MainSymbol::Function(f) => todo!(),
-            MainSymbol::Variable(v) => todo!(),
+            MainSymbol::Root(r) => panic!(),
+            MainSymbol::Namespace(n) => panic!(),
+            MainSymbol::Package(PackageSymbol::Module(m)) => {
+                m.symbols.iter()
+            },
+            MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
+                p.symbols.iter()
+            }
+            MainSymbol::Compiled(c) => panic!(),
+            MainSymbol::Class(c) => {
+                c.symbols.iter()
+            },
+            MainSymbol::Function(f) => {
+                f.symbols.iter()
+            },
+            MainSymbol::Variable(v) => panic!(),
         }
     }
     pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
@@ -745,7 +769,7 @@ impl MainSymbol {
             MainSymbol::Package(p) => { None },
             MainSymbol::Compiled(c) => { None },
             MainSymbol::Class(c) => { None },
-            MainSymbol::Function(f) => { None },
+            MainSymbol::Function(f) => Some(&f.evaluations),
             MainSymbol::Variable(v) => Some(&v.evaluations),
         }
     }
@@ -757,7 +781,7 @@ impl MainSymbol {
             MainSymbol::Package(p) => { None },
             MainSymbol::Compiled(c) => { None },
             MainSymbol::Class(c) => { None },
-            MainSymbol::Function(f) => { None },
+            MainSymbol::Function(f) => Some(&mut f.evaluations),
             MainSymbol::Variable(v) => Some(&mut v.evaluations),
         }
     }
@@ -769,7 +793,7 @@ impl MainSymbol {
             MainSymbol::Package(p) => { panic!() },
             MainSymbol::Compiled(c) => { panic!() },
             MainSymbol::Class(c) => { panic!() },
-            MainSymbol::Function(f) => { panic!() },
+            MainSymbol::Function(f) => { f.evaluations = data; },
             MainSymbol::Variable(v) => v.evaluations = data,
         }
     }
@@ -893,13 +917,15 @@ impl MainSymbol {
                         return vec![];
                     }
                 }
+            } else {
+                iter_sym = vec![_mod_iter_sym.unwrap()];
             }
             if symbol_tree_content.len() != 0 {
                 for fk in symbol_tree_content.iter() {
                     if iter_sym.len() > 1 {
                         trace!("TODO: explore all implementation possibilities");
                     }
-                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, u32::MAX);
+                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, position);
                     iter_sym = _iter_sym;
                     if iter_sym.is_empty() {
                         return vec![];
@@ -910,7 +936,7 @@ impl MainSymbol {
             if symbol_tree_content.len() == 0 {
                 return vec![];
             }
-            iter_sym = self.get_content_symbol(&symbol_tree_content[0], u32::MAX);
+            iter_sym = self.get_content_symbol(&symbol_tree_content[0], position);
             if iter_sym.is_empty() {
                 return vec![];
             }
@@ -919,7 +945,7 @@ impl MainSymbol {
                     trace!("TODO: explore all implementation possibilities");
                 }
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, u32::MAX);
+                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, position);
                     iter_sym = _iter_sym;
                     return iter_sym.clone();
                 }
@@ -946,6 +972,9 @@ impl MainSymbol {
             },
             MainSymbol::Package(PackageSymbol::PythonPackage(p)) => {
                 p.module_symbols.get(name).cloned()
+            }
+            MainSymbol::Root(r) => {
+                r.module_symbols.get(name).cloned()
             }
             _ => {None}
         }
@@ -1296,7 +1325,6 @@ impl MainSymbol {
             },
             _ => {
                 let mut vec = VecDeque::new();
-                vec.push_back((symbol.weak_self().unwrap(), false));
                 return vec
             }
         }
@@ -1305,6 +1333,9 @@ impl MainSymbol {
     pub fn follow_ref(symbol: &Rc<RefCell<MainSymbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<(Weak<RefCell<MainSymbol>>, bool)> {
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut results = MainSymbol::next_refs(session, &symbol.borrow(), &mut None, &mut vec![]);
+        if results.is_empty() {
+            return vec![(Rc::downgrade(symbol), symbol.borrow().typ() == SymType::VARIABLE)];
+        }
         let can_eval_external = !symbol.borrow().is_external();
         let mut index = 0;
         while index < results.len() {
@@ -1319,7 +1350,7 @@ impl MainSymbol {
                     if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
                         continue;
                     }
-                    if v.evaluations.is_empty() {
+                    if v.evaluations.is_empty() && can_eval_external {
                         //no evaluation? let's check that the file has been evaluated
                         let file_symbol = sym.get_file();
                         match file_symbol {
@@ -1334,6 +1365,7 @@ impl MainSymbol {
                         }
                     }
                     let mut next_sym_refs = MainSymbol::next_refs(session, &sym, &mut None, &mut vec![]);
+                    index += 1;
                     if next_sym_refs.len() >= 1 {
                         results.pop_front();
                         index -= 1;
@@ -1341,7 +1373,6 @@ impl MainSymbol {
                             results.push_back(next_results);
                         }
                     }
-                    index += 1;
                 },
                 _ => {
                     index += 1;
