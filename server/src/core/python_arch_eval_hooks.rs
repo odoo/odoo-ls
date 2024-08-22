@@ -276,7 +276,7 @@ impl PythonArchEvalHooks {
                                     diagnostics.push(Diagnostic::new(range,
                                         Some(DiagnosticSeverity::ERROR),
                                         Some(NumberOrString::String(S!("OLS30101"))),
-                                        None,
+                                        Some(EXTENSION_NAME.to_string()),
                                         S!("This model is not in the dependencies of your module."),
                                         None,
                                         None
@@ -288,7 +288,7 @@ impl PythonArchEvalHooks {
                                 diagnostics.push(Diagnostic::new(range,
                                     Some(DiagnosticSeverity::ERROR),
                                     Some(NumberOrString::String(S!("OLS30102"))),
-                                    None,
+                                    Some(EXTENSION_NAME.to_string()),
                                     S!("Unknown model. Check your addons path"),
                                     None,
                                     None
