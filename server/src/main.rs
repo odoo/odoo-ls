@@ -40,8 +40,8 @@ fn main() {
     let file_appender = RollingFileAppender::builder()
         .max_log_files(5) // only the most recent 5 log files will be kept
         .rotation(Rotation::HOURLY)
-        .filename_prefix(format!("odoo_logs_{}", std::process::id()))
-        .filename_suffix("log")
+        .filename_prefix("odoo_logs")
+        .filename_suffix(format!("{}.log", std::process::id()))
         .build(log_dir)
         .expect("failed to initialize rolling file appender");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);

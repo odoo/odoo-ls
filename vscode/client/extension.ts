@@ -238,8 +238,8 @@ async function changeSelectedConfig(context: ExtensionContext, configId: Number)
 }
 
 async function find_last_log_file(context: ExtensionContext, pid: number) {
-    let prefix = "odoo_logs_" + pid;
-    let suffix = ".log"
+    let prefix = "odoo_logs";
+    let suffix =  `.${pid}.log`
     let cwd = path.join(__dirname, "..", "..");
     if (context.extensionMode === ExtensionMode.Development) {
         cwd = path.join(cwd, "..", "server");
