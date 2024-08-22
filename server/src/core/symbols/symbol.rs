@@ -6,6 +6,7 @@ use weak_table::traits::WeakElement;
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
 use crate::core::model::Model;
+use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
@@ -18,7 +19,7 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::{u32, vec};
-use lsp_types::Diagnostic;
+use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 
 use crate::core::symbols::function_symbol::FunctionSymbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -1697,19 +1698,43 @@ impl Symbol {
         symbols.into_iter()
     }
 
+    /* Hook for get_member_symbol
+    Position is set to [0,0], because inside the method there is no concept of the current position.
+    The setting of the position is then delegated to the calling function.
+    TODO Consider refactoring.
+     */
+    fn member_symbol_hook(&self, name: &String, diagnostics: &mut Vec<Diagnostic>){
+        if name == "Form"{
+            let tree = self.get_tree();
+            if tree == (vec![S!("odoo"), S!("tests"), S!("common")], vec!()){
+                diagnostics.push(Diagnostic::new(Range::new(Position::new(0,0),Position::new(0,0)),
+                    Some(DiagnosticSeverity::WARNING),
+                    Some(NumberOrString::String(S!("OLS20006"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    S!("Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
+                    None,
+                    Some(vec![DiagnosticTag::DEPRECATED]),
+                )
+                );
+            }
+        }
+    }
+
     /* similar to get_symbol: will return the symbol that is under this one with the specified name.
     However, if the symbol is a class or a model, it will search in the base class or in comodel classes
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut diagnostics: Vec<Diagnostic> = vec![];
+        self.member_symbol_hook(name, &mut diagnostics);
         let mod_sym = self.get_module_symbol(name);
         if let Some(mod_sym) = mod_sym {
             if all {
                 result.push(mod_sym);
             } else {
-                return vec![mod_sym];
+                return (vec![mod_sym], diagnostics);
             }
         }
         let content_sym = self.get_sub_symbol(name, u32::MAX);
@@ -1717,7 +1742,7 @@ impl Symbol {
             if all {
                 result.extend(content_sym);
             } else {
-                return content_sym;
+                return (content_sym, diagnostics);
             }
         }
         if self.typ() == SymType::CLASS && self.as_class_sym()._model.is_some() && !prevent_comodel {
@@ -1733,32 +1758,34 @@ impl Symbol {
                         if self.is_equal(&loc_sym) {
                             continue;
                         }
-                        let attribut = loc_sym.borrow().get_member_symbol(session, name, None, true, all, diagnostics);
+                        let (attribut, att_diagnostic) = loc_sym.borrow().get_member_symbol(session, name, None, true, all);
+                        diagnostics.extend(att_diagnostic);
                         if all {
                             result.extend(attribut);
                         } else {
-                            return attribut;
+                            return (attribut, diagnostics);
                         }
                     }
                 }
             }
         }
         if !all && result.len() != 0 {
-            return result;
+            return (result, diagnostics);
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
-                let s = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all, diagnostics);
-                if s.len() != 0 {
+                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all);
+                    diagnostics.extend(s_diagnostic);
+                    if s.len() != 0 {
                     if all {
                         result.extend(s);
                     } else {
-                        return s;
+                        return (s, diagnostics);
                     }
                 }
             }
         }
-        result
+        (result, diagnostics)
     }
 
     pub fn is_equal(&self, other: &Rc<RefCell<Symbol>>) -> bool {

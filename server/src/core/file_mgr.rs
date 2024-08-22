@@ -88,7 +88,7 @@ impl FileInfo {
                     end: Position::new(error.location.end().to_u32(), 0)},
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30001"))),
-                None,
+                Some(EXTENSION_NAME.to_string()),
                 error.error.to_string(),
                 None,
                 None));

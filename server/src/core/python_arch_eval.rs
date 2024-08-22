@@ -568,7 +568,7 @@ impl PythonArchEval {
                     let symbol_type_rc = symbol_eval[0].0.upgrade().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
                     if symbol_type.typ() == SymType::CLASS {
-                        let iter = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, &mut self.diagnostics);
+                        let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false);
                         if iter.len() == 1 {
                             if iter[0].borrow().evaluations().is_some() && iter[0].borrow().evaluations().unwrap().len() == 1 {
                                 let iter = iter[0].borrow();

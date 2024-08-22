@@ -10,6 +10,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use crate::S;
 
+use super::file_mgr::FileMgr;
 use super::python_validator::PythonValidator;
 use super::symbols::symbol::Symbol;
 use super::symbols::symbol_mgr::SectionIndex;
@@ -619,7 +620,11 @@ impl Evaluation {
                 for ibase in bases.iter() {
                     let base_loc = ibase.0.upgrade();
                     if let Some(base_loc) = base_loc {
-                        let attributes = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, &mut diagnostics);
+                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true);
+                        for diagnostic in attributes_diagnostics.iter_mut(){
+                            diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
+                        }
+                        diagnostics.extend(attributes_diagnostics);
                         if !attributes.is_empty() {
                             let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap()));
                             eval.symbol.context = context.as_ref().unwrap().clone();

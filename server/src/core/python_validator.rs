@@ -330,7 +330,7 @@ impl PythonValidator {
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30102"))),
-                            None,
+                            Some(EXTENSION_NAME.to_string()),
                             S!("Unknown model. Check your addons path"),
                             None,
                             None)
@@ -342,7 +342,7 @@ impl PythonValidator {
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30102"))),
-                    None,
+                    Some(EXTENSION_NAME.to_string()),
                     S!("Unknown model. Check your addons path"),
                     None,
                     None)
