@@ -1,4 +1,5 @@
-use ruff_python_ast::{Expr, ExprName};
+use ruff_python_ast::{Expr, ExprContext, ExprName, ExprTuple};
+use ruff_text_size::TextRange;
 use tracing::error;
 
 #[derive(Debug, Clone)]
@@ -6,7 +7,7 @@ pub struct Assign {
     pub target: ExprName,
     pub value: Option<Expr>,
     pub annotation: Option<Expr>,
-    pub index: Option<usize>,
+    pub index: Option<usize>, //If index is set, it means that value is not unpackable, and that the target should be associated to the 'index' element of value
 }
 
 fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
@@ -90,9 +91,10 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
     // Ex: for "a: int", return [("a", "int", None)]
     // Ex: for "(a, (b, c)) = (1, (2, 3))", return [("a", None, 1), ("b", None, 2), ("c", None, 3)]
     // Ex: for "a, b = b, a = 1, 2" return [("a", None, 1), ("b", None, 2), ("a", None, 2), ("b", None, 1)]
+    // Ex: for "a, *b, c, d = 1, 2, 3, 4, 5" return [("a", None, 1), ("b", None, (2, 3)), ("c", None, 4), ("d", None, 5)] //TODO
     let mut res: Vec<Assign> = Vec::new();
 
-    for target in targets.iter() {
+    for (index, target) in targets.iter().enumerate() {
         match target {
             Expr::Attribute(expr) => {},
             Expr::Subscript(expr) => {},

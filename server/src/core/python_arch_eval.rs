@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtTry};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, error, warn};
 use weak_table::traits::WeakElement;
@@ -21,6 +22,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
+use super::evaluation::ContextValue;
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
@@ -118,7 +120,10 @@ impl PythonArchEval {
             },
             Stmt::Try(try_stmt) => {
                 self._visit_try(session, try_stmt);
-            }
+            },
+            Stmt::For(for_stmt) => {
+                self._visit_for(session, for_stmt);
+            },
             _ => {}
         }
     }
@@ -479,6 +484,9 @@ impl PythonArchEval {
                 },
                 Stmt::Try(try_stmt) => {
                     self._visit_try(session, try_stmt);
+                },
+                Stmt::For(for_stmt) => {
+                    self._visit_for(session, for_stmt);
                 }
                 _ => {}
             }
@@ -506,6 +514,58 @@ impl PythonArchEval {
             }
             self.ast_indexes.pop();
         }
+    }
+
+    fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
+        let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
+            &for_stmt.iter,
+            self.sym_stack.last().unwrap().clone(),
+            &for_stmt.target.range().start());
+        self.diagnostics.extend(diags);
+        if eval_iter_node.len() == 1 { //Only handle values that we are sure about
+            let eval = &eval_iter_node[0];
+            let (weak_symbol, instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![]);
+            if let Some(symbol) = weak_symbol.upgrade() {
+                let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, true, false, &mut vec![]);
+                if symbol_eval.len() == 1 && symbol_eval[0].0.upgrade().is_some() {
+                    let symbol_type_rc = symbol_eval[0].0.upgrade().unwrap();
+                    let symbol_type = symbol_type_rc.borrow();
+                    if symbol_type.typ() == SymType::CLASS {
+                        let iter = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, &mut vec![]);
+                        if iter.len() == 1 {
+                            if iter[0].borrow().evaluations().is_some() && iter[0].borrow().evaluations().unwrap().len() == 1 {
+                                let iter = iter[0].borrow();
+                                let eval_iter = &iter.evaluations().unwrap()[0];
+                                if for_stmt.target.is_name_expr() { //only handle simple variable for now
+                                    let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id, &for_stmt.target.range());
+                                    variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
+                                    variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
+                                        Evaluation::eval_from_symbol(
+                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(symbol_type_rc.clone()))])), &mut vec![]).0
+                                        )
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        self.ast_indexes.push(0 as u16);
+        for (index_stmt, stmt) in for_stmt.body.iter().enumerate() {
+            self.ast_indexes.push(index_stmt as u16);
+            self.visit_stmt(session, &stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
+        //TODO split evaluation
+        self.ast_indexes.push(1 as u16);
+        for (index_stmt, stmt) in for_stmt.orelse.iter().enumerate() {
+            self.ast_indexes.push(index_stmt as u16);
+            self.visit_stmt(session, &stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
     }
 
     fn _visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) {
