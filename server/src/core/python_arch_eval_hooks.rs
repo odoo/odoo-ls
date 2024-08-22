@@ -159,11 +159,20 @@ impl PythonArchEvalHooks {
         let symbol = symbol.borrow();
         // ----------- __iter__ ------------
         let mut iter = symbol.get_symbol(&(vec![], vec![S!("__iter__")]), u32::MAX);
-        if !iter.is_empty() && iter.last().unwrap().borrow().evaluations().is_some() && iter.last().unwrap().borrow().evaluations().unwrap().len() > 0 {
+        if !iter.is_empty() {
             let mut iter = iter.last().unwrap().borrow_mut();
-            let evaluation = &mut iter.evaluations_mut().unwrap()[0];
-            let eval_sym = &mut evaluation.symbol;
-            eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
+            iter.evaluations_mut().unwrap().clear();
+            iter.evaluations_mut().unwrap().push(Evaluation {
+                symbol: EvaluationSymbol {
+                    symbol: Weak::new(),
+                    instance: true,
+                    context: HashMap::new(),
+                    factory: None,
+                    get_symbol_hook: Some(PythonArchEvalHooks::eval_get_take_parent)
+                },
+                range: None,
+                value: None
+            });
         }
         // ----------- env ------------
         let env = symbol.get_symbol(&(vec![], vec![S!("env")]), u32::MAX);
