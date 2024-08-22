@@ -43,6 +43,10 @@ If your code is working fine, it can happen if you use too many "import *" that 
 "Multiple definition found for base class".
 The extension is unable to handle a base class that has multiple possible definitions. This warning should disappear in the future
 
+### OLS20006
+"Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"
+Form is no longer available on odoo.tests.common, thus it should not be imported from there.
+
 ### OLS20201
 
 "The active key is deprecated".
