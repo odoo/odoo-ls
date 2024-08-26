@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::Diagnostic;
 use tracing::{info, warn};
@@ -389,40 +389,10 @@ impl PythonArchBuilder {
         Ok(())
     }
 
-    fn get_var_name_from_expr<'a>(expr: &Expr, acc: &'a mut Vec<(String, TextRange)>) -> &'a mut Vec<(String, TextRange)> {
-        match expr {
-            Expr::Name(n) => {
-                acc.push((n.id.clone(), n.range().clone()));
-            },
-            Expr::Attribute(a) => {
-                //TODO implement that has really low benefits
-            },
-            Expr::Tuple(t) => {
-                for e in t.elts.iter() {
-                    PythonArchBuilder::get_var_name_from_expr(&e, acc);
-                }
-            },
-            Expr::List(l) => {
-                for e in l.elts.iter() {
-                    PythonArchBuilder::get_var_name_from_expr(&e, acc);
-                }
-            },
-            Expr::Subscript(s) => {
-                //TODO not sure to want to implement that
-            },
-            Expr::Starred(s) => {
-                PythonArchBuilder::get_var_name_from_expr(&s.value, acc);
-            }
-            _ => {panic!("Not handled expr in name extracting: {:?}", expr)}
-        }
-        acc
-    }
-
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
-        let mut assigns: Vec<(String, TextRange)> = vec![];
-        let unpacked = PythonArchBuilder::get_var_name_from_expr(&for_stmt.target, &mut assigns);
+        let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.0, &assign.1);
+            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
         }
         self.visit_node(session, &for_stmt.body)?;
         //TODO should split evaluations as in if

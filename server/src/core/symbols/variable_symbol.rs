@@ -37,7 +37,7 @@ impl VariableSymbol {
     }
 
     pub fn is_type_alias(&self) -> bool {
-        return self.evaluations.len() >= 1 && self.evaluations.iter().all(|x| !x.symbol.instance) && !self.is_import_variable;
+        return self.evaluations.len() >= 1 && self.evaluations.iter().all(|x| !x.symbol.is_instance().unwrap_or(true)) && !self.is_import_variable;
     }
 
 }

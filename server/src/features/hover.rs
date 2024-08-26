@@ -2,10 +2,11 @@ use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
 use tracing::warn;
 use weak_table::traits::WeakElement;
-use crate::core::evaluation::{AnalyzeAstResult, Evaluation};
+use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use crate::core::symbols::symbol::Symbol;
@@ -36,9 +37,10 @@ impl HoverFeature {
                 continue;
             }
             let symbol = symbol.upgrade().unwrap();
-            let type_refs = Symbol::follow_ref(&symbol, session, &mut None, true, false, &mut vec![]);
+            let mut context = Some(eval.symbol.context.clone());
+            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, &mut vec![]);
             // BLOCK 1: (type) **name** -> infered_type
-            value += HoverFeature::build_block_1(session, &symbol, &type_refs).as_str();
+            value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
                 let typ = typ.0.upgrade();
@@ -87,7 +89,7 @@ impl HoverFeature {
     parameters:   (type_sym)  symbol: infered_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<(Weak<RefCell<Symbol>>, bool)>) -> String {
+    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<(Weak<RefCell<Symbol>>, bool)>, context: &mut Option<Context>) -> String {
         let symbol = rc_symbol.borrow();
         //python code balise
         let mut value = S!("```python  \n");
@@ -139,7 +141,7 @@ impl HoverFeature {
         for (index, infered_type) in infered_types.iter().enumerate() {
             let infered_type = infered_type.0.upgrade();
             if let Some(infered_type) = infered_type {
-                if Rc::ptr_eq(rc_symbol, &infered_type) {
+                if Rc::ptr_eq(rc_symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
                     if infered_type.borrow().typ() != SymType::CLASS {
                         value += "None";
                     }
@@ -151,7 +153,7 @@ impl HoverFeature {
                         if let Some(func_eval) = func_eval {
                             let max_eval: i32 = func_eval.len() as i32 -1;
                             for (eval_index, eval) in func_eval.iter().enumerate() {
-                                let s = eval.symbol.get_symbol(session, &mut None, &mut vec![]).0;
+                                let s = eval.symbol.get_symbol(session, context, &mut vec![]).0;
                                 if let Some(s) = s.upgrade() {
                                     func_return_type += s.borrow().name(); //TODO should do a followref?
                                 } else {
