@@ -3,9 +3,11 @@ use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
+use core::time;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+use std::time::Instant;
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
@@ -124,6 +126,7 @@ impl SyncOdoo {
 
     pub fn init(session: &mut SessionInfo, config: Config) {
         info!("Initializing odoo");
+        let start_time = Instant::now();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
@@ -182,6 +185,7 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::PYTHON_READY;
         SyncOdoo::build_database(session);
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
+        info!("Time taken: {} ms", start_time.elapsed().as_millis());
     }
 
     pub fn load_builtins(session: &mut SessionInfo) {
