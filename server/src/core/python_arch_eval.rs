@@ -423,17 +423,7 @@ impl PythonArchEval {
         variable.borrow_mut().ast_indexes_mut().clear();
         variable.borrow_mut().ast_indexes_mut().extend(self.ast_indexes.iter());
         {
-            if !variable.borrow_mut().as_func_mut().can_be_in_class() && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
-                self.diagnostics.push(Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&func_stmt.range),
-                    Some(DiagnosticSeverity::ERROR),
-                    None,
-                    None,
-                    S!("Non-static method should have at least one parameter"),
-                    None,
-                    None
-                ))
-            } else {
+            if variable.borrow_mut().as_func_mut().can_be_in_class() || !(self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS){
                 let mut is_first = true;
                 for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
                     if is_first && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
@@ -446,7 +436,7 @@ impl PythonArchEval {
                     }
                     is_first = false;
                     if arg.parameter.annotation.is_some() {
-                        let (eval, diags) = Evaluation::eval_from_ast(session, 
+                        let (eval, diags) = Evaluation::eval_from_ast(session,
                                                     &arg.parameter.annotation.as_ref().unwrap(),
                                                     self.sym_stack.last().unwrap().clone(),
                                                     &func_stmt.range.start());
@@ -461,6 +451,16 @@ impl PythonArchEval {
                         self.diagnostics.extend(diags);
                     }
                 }
+            } else if !variable.borrow_mut().as_func_mut().is_static{
+                self.diagnostics.push(Diagnostic::new(
+                    FileMgr::textRange_to_temporary_Range(&func_stmt.range),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30002"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    S!("Non-static method should have at least one parameter"),
+                    None,
+                    None
+                ))
             }
         }
         self.sym_stack.push(variable);
