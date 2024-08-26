@@ -163,13 +163,7 @@ impl PythonArchEvalHooks {
             let mut iter = iter.last().unwrap().borrow_mut();
             iter.evaluations_mut().unwrap().clear();
             iter.evaluations_mut().unwrap().push(Evaluation {
-                symbol: EvaluationSymbol {
-                    symbol: Weak::new(),
-                    instance: true,
-                    context: HashMap::new(),
-                    factory: None,
-                    get_symbol_hook: Some(PythonArchEvalHooks::eval_get_take_parent)
-                },
+                symbol: EvaluationSymbol::new_self(HashMap::new(), None, None),
                 range: None,
                 value: None
             });
@@ -185,7 +179,7 @@ impl PythonArchEvalHooks {
             let mut context = HashMap::new();
             context.insert(S!("test_mode"), super::evaluation::ContextValue::BOOLEAN(true));
             env.set_evaluations(vec![Evaluation {
-                symbol: EvaluationSymbol::new(
+                symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(env_class),
                     true,
                     context,
@@ -208,30 +202,48 @@ impl PythonArchEvalHooks {
         }
         // ------------ sudo ------------
         let mut sudo = symbol.get_symbol(&(vec![], vec![S!("sudo")]), u32::MAX);
-        if !sudo.is_empty() && sudo.last().unwrap().borrow().evaluations().is_some() && sudo.last().unwrap().borrow().evaluations().unwrap().len() == 1 {
-            let sudo = sudo.last().unwrap();
-            let mut sudo_mut = sudo.borrow_mut();
-            let evaluation = &mut sudo_mut.evaluations_mut().unwrap()[0];
-            let eval_sym = &mut evaluation.symbol;
-            eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
+        if !sudo.is_empty()  {
+            let mut sudo = sudo.last().unwrap().borrow_mut();
+            sudo.evaluations_mut().unwrap().clear();
+            sudo.evaluations_mut().unwrap().push(Evaluation {
+                symbol: EvaluationSymbol::new_self(
+                    HashMap::new(),
+                    None,
+                    None,
+                ),
+                range: None,
+                value: None
+            });
         }
         // ------------ create ------------
         let mut create = symbol.get_symbol(&(vec![], vec![S!("create")]), u32::MAX);
-        if !create.is_empty() && create.last().unwrap().borrow().evaluations().is_some() && create.last().unwrap().borrow().evaluations().unwrap().len() == 1 {
-            let create = create.last().unwrap();
-            let mut create_mut = create.borrow_mut();
-            let evaluation = &mut create_mut.evaluations_mut().unwrap()[0];
-            let eval_sym = &mut evaluation.symbol;
-            eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
+        if !create.is_empty() {
+            let mut create = create.last().unwrap().borrow_mut();
+            create.evaluations_mut().unwrap().clear();
+            create.evaluations_mut().unwrap().push(Evaluation {
+                symbol: EvaluationSymbol::new_self(
+                    HashMap::new(),
+                    None,
+                    None,
+                ),
+                range: None,
+                value: None
+            });
         }
         // ------------ search ------------
         let mut search = symbol.get_symbol(&(vec![], vec![S!("search")]), u32::MAX);
-        if !search.is_empty() && search.last().unwrap().borrow().evaluations().is_some() && search.last().unwrap().borrow().evaluations().unwrap().len() == 1 {
-            let search = search.last().unwrap();
-            let mut search_mut = search.borrow_mut();
-            let evaluation = &mut search_mut.evaluations_mut().unwrap()[0];
-            let eval_sym = &mut evaluation.symbol;
-            eval_sym.get_symbol_hook = Some(PythonArchEvalHooks::eval_get_take_parent);
+        if !search.is_empty() {
+            let mut search: std::cell::RefMut<Symbol> = search.last().unwrap().borrow_mut();
+            search.evaluations_mut().unwrap().clear();
+            search.evaluations_mut().unwrap().push(Evaluation {
+                symbol: EvaluationSymbol::new_self(
+                    HashMap::new(),
+                    None,
+                    None,
+                ),
+                range: None,
+                value: None
+            });
         }
     }
 
@@ -290,7 +302,7 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        (evaluation_sym.symbol.clone(), true)
+        (Weak::new(), false)
     }
 
     fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
@@ -300,10 +312,10 @@ impl PythonArchEvalHooks {
             if test_cursor_sym.len() > 0 {
                     return (Rc::downgrade(test_cursor_sym.last().unwrap()), true);
             } else {
-                    return (evaluation_sym.symbol.clone(), true); //TODO really true?
+                    return evaluation_sym.get_symbol(session, &mut None, diagnostics);
             }
         }
-        return (evaluation_sym.symbol.clone(), true); //TODO really true?
+        (evaluation_sym.get_weak().weak.clone() , evaluation_sym.get_weak().instance)
     }
 
     fn on_env_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, file_symbol: Rc<RefCell<Symbol>>) {
@@ -311,12 +323,12 @@ impl PythonArchEvalHooks {
         if !get_item.is_empty() {
             let mut get_item = get_item.last().unwrap().borrow_mut();
             get_item.set_evaluations(vec![Evaluation {
-                symbol: EvaluationSymbol {symbol: Weak::new(),
-                    instance: true,
-                    context: HashMap::new(),
-                    factory: None,
-                    get_symbol_hook: Some(PythonArchEvalHooks::eval_get_item)
-                },
+                symbol: EvaluationSymbol::new_with_symbol(Weak::new(),
+                    true,
+                    HashMap::new(),
+                    None,
+                    Some(PythonArchEvalHooks::eval_get_item)
+                ),
                 value: None,
                 range: None
             }]);
@@ -327,7 +339,7 @@ impl PythonArchEvalHooks {
         if !cursor_sym.is_empty() && !cr.is_empty() {
             let cr_mut = cr.last().unwrap();
             cr_mut.borrow_mut().set_evaluations(vec![Evaluation {
-                symbol: EvaluationSymbol::new(
+                symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(cursor_sym.last().unwrap()),
                     true,
                     HashMap::new(),
@@ -359,7 +371,7 @@ impl PythonArchEvalHooks {
             let mut context = HashMap::new();
             context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
             env_var.borrow_mut().set_evaluations(vec![Evaluation {
-                symbol: EvaluationSymbol::new(
+                symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(env_model),
                     true,
                     context,
@@ -388,7 +400,7 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        (evaluation_sym.symbol.clone(), evaluation_sym.instance)
+        (evaluation_sym.get_weak().weak.clone() , evaluation_sym.get_weak().instance)
     }
 
     fn _update_get_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, tree: Tree) {
@@ -404,7 +416,7 @@ impl PythonArchEvalHooks {
             return;
         }
         get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
-            symbol: EvaluationSymbol::new(
+            symbol: EvaluationSymbol::new_with_symbol(
                 Rc::downgrade(return_sym.last().unwrap()),
                 true,
                 HashMap::new(),
@@ -419,11 +431,11 @@ impl PythonArchEvalHooks {
     fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_none() {
-            return (evaluation_sym.symbol.clone(), evaluation_sym.instance);
+            return evaluation_sym.get_symbol(session, &mut None, diagnostics);
         }
         let comodel = context.as_ref().unwrap().get(&S!("comodel"));
         if comodel.is_none() {
-            return (evaluation_sym.symbol.clone(), evaluation_sym.instance);
+            return evaluation_sym.get_symbol(session, &mut None, diagnostics);
         }
         let comodel = comodel.unwrap().as_string();
         //TODO let comodel_sym = odoo.models.get(comodel);
@@ -436,7 +448,7 @@ impl PythonArchEvalHooks {
             return;
         }
         get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
-            symbol: EvaluationSymbol::new(
+            symbol: EvaluationSymbol::new_with_symbol(
                 Weak::new(),
                 true,
                 HashMap::new(),

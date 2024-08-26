@@ -1360,13 +1360,13 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(Weak<RefCell<Symbol>>, bool)> {
         match symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
-                    //TODO context is modified in each for loop, which is wrong !
-                    let sym = eval.symbol.get_symbol(session, context, diagnostics);
+                    //TODO context is modified in each for loop, which is wrong if a key in context is specific to one result!
+                    let sym = eval.symbol.get_symbol(session, &mut None, diagnostics);
                     if !sym.0.is_expired() {
                         res.push_back(sym);
                     }
@@ -1382,9 +1382,13 @@ impl Symbol {
 
     pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<(Weak<RefCell<Symbol>>, bool)> {
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut None, &mut vec![]);
+        let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
         if results.is_empty() {
             return vec![(Rc::downgrade(symbol), symbol.borrow().typ() == SymType::VARIABLE)];
+        }
+        //there is a 'next_ref'. Remove "parent" from context if any
+        if context.is_some() {
+            context.as_mut().unwrap().remove(&S!("parent"));
         }
         let can_eval_external = !symbol.borrow().is_external();
         let mut index = 0;
@@ -1421,7 +1425,7 @@ impl Symbol {
                             None => {}
                         }
                     }
-                    let mut next_sym_refs = Symbol::next_refs(session, &sym, &mut None, &mut vec![]);
+                    let mut next_sym_refs = Symbol::next_refs(session, &sym, &mut vec![]);
                     index += 1;
                     if next_sym_refs.len() >= 1 {
                         results.pop_front();

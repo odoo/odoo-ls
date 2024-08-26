@@ -267,8 +267,8 @@ impl PythonArchEval {
                 }
                 let mut v_mut = variable.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.symbol.upgrade() {
-                        if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() {
+                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
+                        if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() { //TODO not good
                             let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.sym_stack[0], &sym_file) {
                                 self.sym_stack[0].borrow_mut().add_dependency(&mut sym_file.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
@@ -293,8 +293,8 @@ impl PythonArchEval {
                 self.diagnostics.extend(diags);
                 let mut v_mut = variable.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.symbol.upgrade() {
-                        if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() {
+                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
+                        if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() { //TODO not good
                             let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.sym_stack[0], &sym_file) {
                                 self.sym_stack[0].borrow_mut().add_dependency(&mut sym_file.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
@@ -445,13 +445,13 @@ impl PythonArchEval {
                         let mut var_bw = variable.borrow_mut();
                         let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
                         symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap())));
-                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.instance = true;
+                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().instance = true;
                         is_first = false;
                         continue;
                     }
                     is_first = false;
                     if arg.parameter.annotation.is_some() {
-                        let (eval, diags) = Evaluation::eval_from_ast(session, 
+                        let (eval, diags) = Evaluation::eval_from_ast(session,
                                                     &arg.parameter.annotation.as_ref().unwrap(),
                                                     self.sym_stack.last().unwrap().clone(),
                                                     &func_stmt.range.start());
@@ -526,7 +526,7 @@ impl PythonArchEval {
             let eval = &eval_iter_node[0];
             let (weak_symbol, instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![]);
             if let Some(symbol) = weak_symbol.upgrade() {
-                let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, true, false, &mut vec![]);
+                let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, &mut vec![]);
                 if symbol_eval.len() == 1 && symbol_eval[0].0.upgrade().is_some() {
                     let symbol_type_rc = symbol_eval[0].0.upgrade().unwrap();
                     let symbol_type = symbol_type_rc.borrow();

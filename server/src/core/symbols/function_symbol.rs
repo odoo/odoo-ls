@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 
-use crate::{constants::BuildStatus, core::evaluation::Evaluation};
+use crate::{constants::BuildStatus, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -80,5 +80,21 @@ impl FunctionSymbol {
             }
         }
         return false;
+    }
+
+    /**
+     * Given a specific context (with args, parent), adapt the evaluations of the function to get a more precise answer
+     */
+    pub fn get_return_type(&self, session: &mut SessionInfo, func_context: Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Vec<Evaluation> {
+        let mut res = vec![];
+        /*for eval in self.evaluations.iter() {
+            let mut new_eval = eval.clone();
+            let symbol = new_eval.symbol.get_symbol(session, func_context.clone(), diagnostics);
+            new_eval.symbol.symbol = symbol.0.clone();
+            new_eval.symbol.instance = symbol.1;
+            new_eval.symbol.get_symbol_hook = None;
+            res.push(new_eval);
+        }*/
+        res
     }
 }
