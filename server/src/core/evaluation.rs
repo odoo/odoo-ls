@@ -27,9 +27,9 @@ pub enum EvaluationValue {
 #[derive(Debug, Clone)]
 pub struct Evaluation {
     //symbol lead to type evaluation, and value/range hold the evaluated value in case of a 'constant' value, like in "variable = 5".
-    pub symbol: EvaluationSymbol,
-    pub value: Option<EvaluationValue>,
-    pub range: Option<TextRange>,
+    pub symbol: EvaluationSymbol, // int
+    pub value: Option<EvaluationValue>, //
+    pub range: Option<TextRange>, //evaluated part
 }
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
     MODULE(Rc<RefCell<Symbol>>),
-    SYMBOL(Rc<RefCell<Symbol>>),
+    SYMBOL(Rc<RefCell<Symbol>>), //TODO should be Weak, no?
     RANGE(TextRange)
 }
 
@@ -110,14 +110,34 @@ impl ContextValue {
     }
 }
 
+/** A context can contains: (non-exhaustive)
+* module: the current module the file belongs to
+* parent: in an expression, like self.test, the parent is the base attribute, so 'self' for test
+* object: the object the expression is executed on (useful if function is defined in parent object).
+*/
 pub type Context = HashMap<String, ContextValue>;
 
 type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool);
 
+#[derive(Debug, Clone)]
+pub struct EvaluationSymbolWeak {
+    pub weak: Weak<RefCell<Symbol>>,
+    pub instance: bool,
+}
+
+#[derive(Debug, Default, Clone)]
+enum EvaluationSymbolPtr {
+    WEAK(EvaluationSymbolWeak),
+    SELF,
+    ARG,
+    NONE,
+    #[default]
+    ANY
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct EvaluationSymbol {
-    pub symbol: Weak<RefCell<Symbol>>,
-    pub instance: bool,
+    sym: EvaluationSymbolPtr,
     pub context: Context,
     pub factory: Option<Weak<RefCell<Symbol>>>,
     pub get_symbol_hook: Option<GetSymbolHook>,
@@ -128,13 +148,12 @@ pub struct AnalyzeAstResult {
     pub evaluations: Vec<Evaluation>,
     pub effective_sym: Option<Weak<RefCell<Symbol>>>,
     pub factory: Option<Weak<RefCell<Symbol>>>,
-    pub context: Option<Context>,
     pub diagnostics: Vec<Diagnostic>
 }
 
 impl AnalyzeAstResult {
     pub fn from_only_diagnostics(diags: Vec<Diagnostic>) -> Self {
-        AnalyzeAstResult { evaluations: vec![], effective_sym: None, factory: None, context: None, diagnostics: diags }
+        AnalyzeAstResult { evaluations: vec![], effective_sym: None, factory: None, diagnostics: diags }
     }
 }
 
@@ -143,8 +162,10 @@ impl Evaluation {
     pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")]), u32::MAX).last().expect("builtins list not found")),
-                instance: true,
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")]), u32::MAX).last().expect("builtins list not found")),
+                    instance: true,
+                }),
                 context: HashMap::new(),
                 factory: None,
                 get_symbol_hook: None
@@ -157,8 +178,10 @@ impl Evaluation {
     pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).last().expect("builtins list not found")),
-                instance: true,
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).last().expect("builtins list not found")),
+                    instance: true,
+                }),
                 context: HashMap::new(),
                 factory: None,
                 get_symbol_hook: None
@@ -171,8 +194,10 @@ impl Evaluation {
     pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).last().expect("builtins list not found")),
-                instance: true,
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).last().expect("builtins list not found")),
+                    instance: true,
+                }),
                 context: HashMap::new(),
                 factory: None,
                 get_symbol_hook: None
@@ -206,8 +231,10 @@ impl Evaluation {
         }
         Evaluation {
             symbol: EvaluationSymbol {
-                symbol: symbol,
-                instance: true,
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                    weak: symbol,
+                    instance: true,
+                }),
                 context: HashMap::new(),
                 factory: None,
                 get_symbol_hook: None
@@ -221,7 +248,7 @@ impl Evaluation {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
         } else {
-            let symbol = self.symbol.get_symbol(session, context, diagnostics).0;
+            let symbol = self.symbol.get_symbol(session, &mut None, diagnostics).0;
             let evals = Symbol::follow_ref(&symbol.upgrade().unwrap(), session, context, false, true, diagnostics);
             if evals.len() == 1 {
                 let eval = &evals[0];
@@ -264,8 +291,11 @@ impl Evaluation {
             instance = true;
         }
         Evaluation {
-            symbol: EvaluationSymbol {symbol: symbol.clone(),
-                instance: instance,
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                    weak: symbol.clone(),
+                    instance: instance,
+                }),
                 context: HashMap::new(),
                 factory: None,
                 get_symbol_hook: None
@@ -280,13 +310,33 @@ impl Evaluation {
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
     //The result is a list, because some ast can give various possible results. For example: a = func()
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
-        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
+        let from_module;
+        if let Some(module) = parent.borrow().find_module() {
+            from_module = ContextValue::MODULE(module);
+        } else {
+            from_module = ContextValue::BOOLEAN(false);
+        }
+        let mut context: Option<Context> = Some(HashMap::from([
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(ast.range()))
+        ]));
+        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context);
         return (analyze_result.evaluations, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
     fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer);
+        let from_module;
+        if let Some(module) = parent.borrow().find_module() {
+            from_module = ContextValue::MODULE(module);
+        } else {
+            from_module = ContextValue::BOOLEAN(false);
+        }
+        let mut context: Option<Context> = Some(HashMap::from([
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(ast.range()))
+        ]));
+        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context);
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -313,7 +363,7 @@ impl Evaluation {
     result.0: the direct evaluation
     result.1: the effective symbol that would be used if the program is running
     result.2: the factory used to build the effective symbol
-    result.3: the context after the evaluation
+    result.3: the context after the evaluation. Can't be None
     result.4: the diagnostics that code is generating.
     Example:
         --------
@@ -342,23 +392,13 @@ impl Evaluation {
         Definition -> symbol
         Autocompletion -> effective_sym
      */
-    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> AnalyzeAstResult {
+    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, context: &mut Option<Context>) -> AnalyzeAstResult {
         let odoo = &mut session.sync_odoo;
         let mut evals = vec![];
         let effective_sym = None;
         let factory = None;
         let mut diagnostics = vec![];
-        let from_module;
-        if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(module);
-        } else {
-            from_module = ContextValue::BOOLEAN(false);
-        }
         let module: Option<Rc<RefCell<Symbol>>> = parent.borrow().find_module();
-        let mut context: Context = HashMap::from([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
-        ]);
 
         match ast {
             ExprOrIdent::Expr(Expr::StringLiteral(expr)) => {
@@ -449,7 +489,9 @@ impl Evaluation {
                 if base_eval.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let (base_sym_ref, instance) = base_eval[0].symbol.get_symbol(session, &mut None, &mut diagnostics);
+                let mut context = Some(base_eval[0].symbol.context.clone());
+                //TODO context should give params
+                let (base_sym_ref, instance) = base_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics);
                 let base_sym = base_sym_ref.upgrade();
                 if let Some(base_sym) = base_sym {
                     if base_sym.borrow().typ() == SymType::CLASS {
@@ -459,8 +501,10 @@ impl Evaluation {
                             //TODO diagnostic __new__ call parameters
                             evals.push(Evaluation{
                                 symbol: EvaluationSymbol {
-                                    symbol: base_sym_ref.clone(),
-                                    instance: true,
+                                    sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                                        weak: base_sym_ref.clone(),
+                                        instance: true,
+                                    }),
                                     context: HashMap::new(),
                                     factory: None,
                                     get_symbol_hook: None,
@@ -486,6 +530,7 @@ impl Evaluation {
                         if base_sym.borrow().evaluations().is_some() {
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
                                 let mut e = eval.clone();
+                                e.symbol.context.extend(context.as_mut().unwrap().clone());
                                 e.range = Some(expr.range.clone());
                                 evals.push(e);
                             }
@@ -506,7 +551,10 @@ impl Evaluation {
                     if let Some(base_loc) = base_loc {
                         let attributes = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, &mut diagnostics);
                         if !attributes.is_empty() {
-                            evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap())));
+                            let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap()));
+                            eval.symbol.context = context.as_ref().unwrap().clone();
+                            eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(base_loc));
+                            evals.push(eval);
                         }
                     }
                 }
@@ -534,10 +582,10 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if eval_left.len() != 1 || eval_left[0].symbol.symbol.is_expired() {
+                if eval_left.len() != 1 || eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0.is_expired() { //TODO set context?
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = &eval_left[0].symbol.symbol;
+                let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0; //TODO set context?
                 let bases = Symbol::follow_ref(&base.upgrade().unwrap(), session, &mut None, false, false, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -555,17 +603,15 @@ impl Evaluation {
                         if get_item.evaluations().is_some() && get_item.evaluations().unwrap().len() == 1 {
                             let get_item_eval = &get_item.evaluations().unwrap()[0];
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
-                                context.insert(S!("args"), ContextValue::STRING(value));
-                                let old_range = context.remove(&S!("range"));
-                                context.insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
-                                let mut ctxt = Some(context);
-                                let hook_result = hook(session, &get_item_eval.symbol, &mut ctxt, &mut diagnostics);
+                                context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value));
+                                let old_range = context.as_mut().unwrap().remove(&S!("range"));
+                                context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
+                                let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics);
                                 if !hook_result.0.is_expired() {
                                     evals.push(Evaluation::eval_from_symbol(&hook_result.0));
                                 }
-                                context = ctxt.unwrap();
-                                context.remove(&S!("args"));
-                                context.insert(S!("range"), old_range.unwrap());
+                                context.as_mut().unwrap().remove(&S!("args"));
+                                context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
                             }
                         }
                     }
@@ -581,21 +627,78 @@ impl Evaluation {
             }
             _ => {}
         }
-        AnalyzeAstResult { evaluations: evals, effective_sym, factory, context: Some(context), diagnostics }
+        AnalyzeAstResult { evaluations: evals, effective_sym, factory, diagnostics }
     }
 }
 
 impl EvaluationSymbol {
 
-    pub fn new(symbol: Weak<RefCell<Symbol>>, instance: bool, context: Context, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
-        Self { symbol, instance, context, factory, get_symbol_hook }
+    pub fn new_with_symbol(symbol: Weak<RefCell<Symbol>>, instance: bool, context: Context, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> Self {
+        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, instance: instance}), context, factory, get_symbol_hook }
+    }
+
+    pub fn new_self(context: Context, factory: Option<Weak<RefCell<Symbol>>>, get_symbol_hook: Option<GetSymbolHook>) -> EvaluationSymbol {
+        Self {
+            sym: EvaluationSymbolPtr::SELF,
+            context,
+            factory,
+            get_symbol_hook,
+        }
+    }
+
+    pub fn is_instance(&self) -> Option<bool> {
+        match &self.sym {
+            EvaluationSymbolPtr::ANY => None,
+            EvaluationSymbolPtr::ARG => None,
+            EvaluationSymbolPtr::NONE => None,
+            EvaluationSymbolPtr::SELF => Some(true),
+            EvaluationSymbolPtr::WEAK(w) => Some(w.instance)
+        }
+    }
+
+    pub fn get_weak(&self) -> &EvaluationSymbolWeak {
+        match &self.sym {
+            EvaluationSymbolPtr::WEAK(w) => w,
+            _ => panic!("Not an EvaluationSymbolWeak")
+        }
+    }
+
+    pub fn get_weak_mut(&mut self) -> &mut EvaluationSymbolWeak {
+        match &mut self.sym {
+            EvaluationSymbolPtr::WEAK(ref mut w) => w,
+            _ => panic!("Not an EvaluationSymbolWeak")
+        }
     }
 
     pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
+        let mut full_context = self.context.clone();
+        //extend with local elements
+        if let Some(context) = context {
+            full_context.extend(context.clone());
+        }
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
-            return hook(session, self, context, diagnostics);
+            return hook(session, self, &mut Some(full_context), diagnostics);
         }
-        (self.symbol.clone(), self.instance)
+        match &self.sym {
+            EvaluationSymbolPtr::WEAK(w) => {
+                (w.weak.clone(), w.instance)
+            },
+            EvaluationSymbolPtr::ANY => { (Weak::new(), false)},
+            EvaluationSymbolPtr::ARG => { (Weak::new(), false)},
+            EvaluationSymbolPtr::NONE => { (Weak::new(), false)},
+            EvaluationSymbolPtr::SELF => {
+                let parent = full_context.get(&S!("parent"));
+                match parent {
+                    Some(p) => {
+                        match p {
+                            ContextValue::SYMBOL(s) => { (Rc::downgrade(s), true) },
+                            _ => { (Weak::new(), false) }
+                        }
+                    },
+                    None => { (Weak::new(), false) }
+                }
+            }
+        }
     }
 }

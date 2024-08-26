@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
+use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
@@ -29,7 +30,17 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end());
+        let from_module;
+        if let Some(module) = file_symbol.borrow().find_module() {
+            from_module = ContextValue::MODULE(module);
+        } else {
+            from_module = ContextValue::BOOLEAN(false);
+        }
+        let mut context: Option<Context> = Some(HashMap::from([
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(expr.range()))
+        ]));
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context);
         (analyse_ast_result, Some(expr.range()))
 
     }

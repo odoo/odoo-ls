@@ -1,10 +1,7 @@
 pub mod config;
 pub mod evaluation;
-pub mod event;
-pub mod event_queue;
 pub mod file_mgr;
 pub mod import_resolver;
-pub	mod messages;
 pub mod model;
 pub mod odoo;
 pub mod python_arch_builder;
