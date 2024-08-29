@@ -351,14 +351,11 @@ impl SyncOdoo {
         let mut arc_sym: Option<Rc<RefCell<Symbol>>> = None;
         //Part 1: Find the symbol with a unmutable set
         {
-            let set =  if step == BuildSteps::ARCH_EVAL {
-                &self.rebuild_arch_eval
-            } else if step == BuildSteps::ODOO {
-                &self.rebuild_odoo
-            } else if step == BuildSteps::VALIDATION {
-                &self.rebuild_validation
-            } else {
-                &self.rebuild_arch
+            let set =  match step {
+                BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
+                BuildSteps::ODOO => &self.rebuild_odoo,
+                BuildSteps::VALIDATION => &self.rebuild_validation,
+                _ => &self.rebuild_arch
             };
             let mut selected_sym: Option<Rc<RefCell<Symbol>>> = None;
             let mut selected_count: u32 = 999999999;
@@ -368,34 +365,14 @@ impl SyncOdoo {
                 let file = sym.borrow().get_file().unwrap().upgrade().unwrap();
                 let file = file.borrow();
                 for (index, dep_set) in file.get_all_dependencies(step).iter().enumerate() {
-                    if index == BuildSteps::ARCH as usize {
-                        for dep in dep_set.iter() {
-                            if self.rebuild_arch.contains(&dep) {
-                                current_count += 1;
-                            }
-                        }
-                    }
-                    if index == BuildSteps::ARCH_EVAL as usize {
-                        for dep in dep_set.iter() {
-                            if self.rebuild_arch_eval.contains(&dep) {
-                                current_count += 1;
-                            }
-                        }
-                    }
-                    if index == BuildSteps::ODOO as usize {
-                        for dep in dep_set.iter() {
-                            if self.rebuild_odoo.contains(&dep) {
-                                current_count += 1;
-                            }
-                        }
-                    }
-                    if index == BuildSteps::VALIDATION as usize {
-                        for dep in dep_set.iter() {
-                            if self.rebuild_validation.contains(&dep) {
-                                current_count += 1;
-                            }
-                        }
-                    }
+                    let index_set =  match index {
+                        x if x == BuildSteps::ARCH as usize => &self.rebuild_arch,
+                        x if x == BuildSteps::ARCH_EVAL as usize => &self.rebuild_arch_eval,
+                        x if x == BuildSteps::VALIDATION as usize => &self.rebuild_validation,
+                        _ => continue,
+                    };
+                    current_count +=
+                        dep_set.iter().filter(|dep| index_set.contains(dep)).count() as u32;
                 }
                 if current_count < selected_count {
                     selected_sym = Some(sym.clone());
@@ -410,14 +387,11 @@ impl SyncOdoo {
             }
         }
         {
-            let set =  if step == BuildSteps::ARCH_EVAL {
-                &mut self.rebuild_arch_eval
-            } else if step == BuildSteps::ODOO {
-                &mut self.rebuild_odoo
-            } else if step == BuildSteps::VALIDATION {
-                &mut self.rebuild_validation
-            } else {
-                &mut self.rebuild_arch
+            let set =  match step {
+                BuildSteps::ARCH_EVAL => &mut self.rebuild_arch_eval,
+                BuildSteps::ODOO => &mut self.rebuild_odoo,
+                BuildSteps::VALIDATION => &mut self.rebuild_validation,
+                _ => &mut self.rebuild_arch
             };
             if arc_sym.is_none() {
                 set.clear(); //remove any potential dead weak ref
