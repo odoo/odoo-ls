@@ -55,6 +55,10 @@ Deprecation warning
 Unable to parse file. Ruff_python_parser was unable to parse the file content.
 See the error message to get the details from Ruff
 
+### OLS30002
+
+"Non-static method should have at least one parameter"
+
 ### OLS30101
 
 "This model is not in the dependencies of your module."
