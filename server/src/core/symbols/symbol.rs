@@ -1703,8 +1703,8 @@ impl Symbol {
     The setting of the position is then delegated to the calling function.
     TODO Consider refactoring.
      */
-    fn member_symbol_hook(&self, name: &String, diagnostics: &mut Vec<Diagnostic>){
-        if name == "Form"{
+    fn member_symbol_hook(&self, session: &SessionInfo, name: &String, diagnostics: &mut Vec<Diagnostic>){
+        if session.sync_odoo.version_major >= 17 && name == "Form"{
             let tree = self.get_tree();
             if tree == (vec![S!("odoo"), S!("tests"), S!("common")], vec!()){
                 diagnostics.push(Diagnostic::new(Range::new(Position::new(0,0),Position::new(0,0)),
@@ -1728,7 +1728,7 @@ impl Symbol {
     pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut diagnostics: Vec<Diagnostic> = vec![];
-        self.member_symbol_hook(name, &mut diagnostics);
+        self.member_symbol_hook(session, name, &mut diagnostics);
         let mod_sym = self.get_module_symbol(name);
         if let Some(mod_sym) = mod_sym {
             if all {
