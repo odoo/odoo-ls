@@ -864,50 +864,34 @@ impl Symbol {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.sanitize();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
-            let ref_sym = (*parent).borrow_mut().add_new_file(session, &name, &path_str);
-            return Some(ref_sym);
-        } else {
-            if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                if (*parent).borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
-                    let module = (*parent).borrow_mut().add_new_module_package(session, &name, path);
-                    if module.is_none() {
-                        if require_module {
-                            return None;
-                        } else {
-                            let ref_sym = (*parent).borrow_mut().add_new_python_package(session, &name, &path_str);
-                            if !path.join("__init__.py").exists() {
-                                (*ref_sym).borrow_mut().as_package_mut().set_i_ext("i".to_string());
-                            }
-                            return Some(ref_sym);
-                        }
-                    } else {
-                        let module = module.unwrap();
-                        ModuleSymbol::load_module_info(module.clone(), session, parent);
-                        //as the symbol has been added to parent before module creation, it has not been added to modules
-                        session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
-                        return Some(module);
-                    }
-                } else if require_module {
-                    return None;
-                } else {
-                    if (*parent).borrow().get_tree().clone() == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
-                        //Force namespace for odoo/addons
-                        let ref_sym = (*parent).borrow_mut().add_new_namespace(session, &name, &path_str);
-                        return Some(ref_sym);
-                    } else {
-                        let ref_sym = (*parent).borrow_mut().add_new_python_package(session, &name, &path_str);
-                        if !path.join("__init__.py").exists() {
-                            (*ref_sym).borrow_mut().as_package_mut().set_i_ext("i".to_string());
-                        }
-                        return Some(ref_sym);
-                    }
+            Some((*parent).borrow_mut().add_new_file(session, &name, &path_str))
+        } else if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+            if (*parent).borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+                let module = (*parent).borrow_mut().add_new_module_package(session, &name, path);
+                if let Some(module) = module {
+                    ModuleSymbol::load_module_info(module.clone(), session, parent);
+                    //as the symbol has been added to parent before module creation, it has not been added to modules
+                    session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
+                    return Some(module);
                 }
-            } else if !require_module{ //TODO should handle module with only __manifest__.py (see odoo/addons/test_data-module)
+            }
+            if require_module {
+                return None;
+            }
+            if (*parent).borrow().get_tree().clone() == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
+                //Force namespace for odoo/addons
                 let ref_sym = (*parent).borrow_mut().add_new_namespace(session, &name, &path_str);
                 return Some(ref_sym);
-            } else {
-                return None
             }
+            let ref_sym = (*parent).borrow_mut().add_new_python_package(session, &name, &path_str);
+            if !path.join("__init__.py").exists() {
+                (*ref_sym).borrow_mut().as_package_mut().set_i_ext(S!("i"));
+            }
+            Some(ref_sym)
+        } else if !require_module { //TODO should handle module with only __manifest__.py (see odoo/addons/test_data_module)
+            Some((*parent).borrow_mut().add_new_namespace(session, &name, &path_str))
+        } else {
+            None
         }
     }
 
@@ -941,13 +925,12 @@ impl Symbol {
     pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
         let symbol_tree_files: &Vec<String> = &tree.0;
         let symbol_tree_content: &Vec<String> = &tree.1;
-        let mut iter_sym: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut iter_sym: Vec<Rc<RefCell<Symbol>>>;
         if symbol_tree_files.len() != 0 {
-            let _mod_iter_sym = self.get_module_symbol(&symbol_tree_files[0]);
-            if _mod_iter_sym.is_none() {
-                return vec![];
-            }
-            iter_sym = vec![_mod_iter_sym.unwrap()];
+            iter_sym = match self.get_module_symbol(&symbol_tree_files[0]){
+                Some(mod_iter_sym) => vec![mod_iter_sym],
+                None => {return vec![];}
+            };
             if symbol_tree_files.len() > 1 {
                 for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
                     if let Some(s) = iter_sym.last().unwrap().clone().borrow_mut().get_module_symbol(fk) {
