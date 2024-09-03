@@ -142,19 +142,6 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_take_parent(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
-    {
-        if let Some(context) = context {
-            if let Some(class_sym) = context.get("parent") {
-                match class_sym {
-                    ContextValue::SYMBOL(s) => return (Rc::downgrade(s), s.borrow().typ() == SymType::VARIABLE),
-                    _ => {}
-                }
-            }
-        }
-        (Weak::new(), false)
-    }
-
     fn on_base_model_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, file_symbol: Rc<RefCell<Symbol>>) {
         let symbol = symbol.borrow();
         // ----------- __iter__ ------------
