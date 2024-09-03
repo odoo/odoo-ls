@@ -1,4 +1,5 @@
 use glob::glob;
+use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use tracing::error;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -22,7 +23,29 @@ pub struct ImportResult {
     pub range: TextRange,
 }
 
-pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>) -> Vec<ImportResult> {
+fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbol>>>, session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
+    if session.sync_odoo.version_major >= 17 && alias.name.as_str() == "Form" && (*(from_symbol.as_ref().unwrap())).borrow().get_tree().0 == vec!["odoo", "tests", "common"]{
+        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);
+        if let Some(diagnostic) = diagnostics.as_mut() {
+            diagnostic.push(
+                Diagnostic::new(
+                        Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
+                        Some(DiagnosticSeverity::WARNING),
+                            Some(NumberOrString::String(S!("OLS20006"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            S!("Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
+                            None,
+                        Some(vec![DiagnosticTag::DEPRECATED]),
+                )
+            );
+        }
+        results.pop()
+    } else {
+        None
+    }
+}
+
+pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
@@ -55,6 +78,10 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     for alias in name_aliases.iter() {
         let name = alias.name.as_str().to_string();
         name_index += 1;
+        if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbol, session, source_file_symbol, from_stmt, level,  diagnostics){
+            result[name_index as usize] = hook_result;
+            continue;
+        }
         if name == "*" {
             result[name_index as usize].found = true;
             result[name_index as usize].symbol = from_symbol.as_ref().unwrap().clone();
