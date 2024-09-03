@@ -264,7 +264,7 @@ impl PythonValidator {
             from_stmt,
             name_aliases,
             level,
-            range);
+            range, &mut None);
         for import_result in import_results.iter() {
             if import_result.found && self.current_module.is_some() {
                 let module = import_result.symbol.borrow().find_module();
