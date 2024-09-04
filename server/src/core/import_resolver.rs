@@ -221,9 +221,9 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
             // if is_dir_cs(full_path.to_str().unwrap().to_string() + "-stubs") {
             //     full_path.set_file_name(full_path.file_name().unwrap().to_str().unwrap().to_string() + "-stubs");
             // }
-            let _arc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
-            if _arc_symbol.is_some() {
-                let _arc_symbol = _arc_symbol.unwrap();
+            let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
+            if _rc_symbol.is_some() {
+                let _arc_symbol = _rc_symbol.unwrap();
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
                 return Ok(_arc_symbol);
             }
