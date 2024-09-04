@@ -19,13 +19,8 @@ pub struct ClassSymbol {
     pub doc_string: Option<String>,
     pub bases: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
-    pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others and stored on FileInfo
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
-    pub arch_status: BuildStatus,
-    pub arch_eval_status: BuildStatus,
-    pub odoo_status: BuildStatus,
-    pub validation_status: BuildStatus,
     pub range: TextRange,
     pub _model: Option<ModelData>,
 
@@ -43,13 +38,8 @@ impl ClassSymbol {
             weak_self: None,
             parent: None,
             range,
-            diagnostics: vec![],
             ast_indexes: vec![],
             doc_string: None,
-            arch_status: BuildStatus::PENDING,
-            arch_eval_status: BuildStatus::PENDING,
-            odoo_status: BuildStatus::PENDING,
-            validation_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::new(),
             bases: PtrWeakHashSet::new(),
