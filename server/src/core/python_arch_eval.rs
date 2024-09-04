@@ -1,13 +1,12 @@
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use tracing::{debug, error, warn};
-use weak_table::traits::WeakElement;
+use tracing::debug;
 use std::path::PathBuf;
 
 use crate::constants::*;
@@ -26,11 +25,13 @@ use super::evaluation::ContextValue;
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
-use super::symbols::symbol_mgr::SymbolMgr;
 
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
+    file: Rc<RefCell<Symbol>>,
+    file_mode: bool,
+    current_step: BuildSteps,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
@@ -40,6 +41,9 @@ pub struct PythonArchEval {
 impl PythonArchEval {
     pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
         PythonArchEval {
+            file: symbol.clone(), //dummy, evaluated in eval_arch
+            file_mode: false, //dummy, evaluated in eval_arch
+            current_step: BuildSteps::ARCH, //dummy, evaluated in eval_arch
             sym_stack: vec![symbol],
             diagnostics: Vec::new(),
             safe_import: vec![false],
@@ -48,37 +52,55 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
-        //println!("eval arch");
-        let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
-        if symbol.build_status(BuildSteps::ARCH_EVAL) != BuildStatus::PENDING {
+        let symbol = self.sym_stack.first().unwrap();
+        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
+            return; // nothing to evaluate
+        }
+        if symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::PENDING {
             return;
         }
-        symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        if symbol.paths().len() != 1 {
+        {
+            let file = symbol.borrow();
+            let file = file.get_file().unwrap();
+            let file = file.upgrade().unwrap();
+            self.file = file.clone();
+            self.file_mode = Rc::ptr_eq(&file, &symbol);
+            self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
+            self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
+        }
+        symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
+        if self.file.borrow().paths().len() != 1 {
             panic!("Trying to eval_arch a symbol without any path")
         }
-        let mut path = symbol.paths()[0].clone();
-        //println!("eval path: {}", path);
-        if symbol.typ() == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + symbol.as_package().i_ext().as_str();
-        }
-        if session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).is_none() {
-            symbol.print_dependencies();
-        }
-        drop(symbol);
+        let path = match self.file.borrow().typ() {
+            SymType::FILE => {
+                self.file.borrow().paths()[0].clone()
+            },
+            SymType::PACKAGE => {
+                PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
+            },
+            _ => panic!("invalid symbol type to extract path")
+        };
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
-            for (index, stmt) in file_info.ast.as_ref().unwrap().iter().enumerate() {
+            let ast = match self.file_mode {
+                true => {file_info.ast.as_ref().unwrap()},
+                false => {
+                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                }
+            };
+            for (index, stmt) in ast.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
                 self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
         }
         drop(file_info);
-        let mut file_info = (*file_info_rc).borrow_mut();
-        file_info.replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-        PythonArchEvalHooks::on_file_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
+        if self.file_mode {
+            (*file_info_rc).borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+            PythonArchEvalHooks::on_file_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
+        }
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if symbol.is_external() {
@@ -87,11 +109,14 @@ impl PythonArchEval {
                     sym.borrow_mut().ast_indexes_mut().clear(); //TODO isn't it make it invalid? should set to None?
                 }
             }
-            drop(file_info);
-            session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &path);
+            if self.file_mode {
+                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &path);
+            }
         } else {
             drop(symbol);
-            session.sync_odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
+            if self.file_mode {
+                session.sync_odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
+            }
         }
     }
 
@@ -147,11 +172,11 @@ impl PythonArchEval {
 
     ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
     fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<Symbol>>, from_sym: &Rc<RefCell<Symbol>>) -> bool {
-        let mut sym_ref_cl = sym_ref.clone();
+        let sym_ref_cl = sym_ref.clone();
         let syms_followed = Symbol::follow_ref(&sym_ref_cl, session, &mut None, false, false, &mut self.diagnostics);
         for sym in syms_followed.iter() {
-            let (mut weak_sym, mut instance) = sym.clone();
-            let mut sym = weak_sym.upgrade().unwrap();
+            let (weak_sym, _instance) = sym.clone();
+            let sym = weak_sym.upgrade().unwrap();
             if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
                 let file_sym = sym_ref.borrow().get_file();
                 if file_sym.is_some() {
@@ -198,15 +223,15 @@ impl PythonArchEval {
                     let file_of_import_symbol = _import_result.symbol.borrow().get_file();
                     if let Some(import_file) = file_of_import_symbol {
                         let import_file = import_file.upgrade().unwrap();
-                        if !Rc::ptr_eq(self.sym_stack.first().unwrap(), &import_file) {
-                            self.sym_stack.first().unwrap().borrow_mut().add_dependency(&mut import_file.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                        if !Rc::ptr_eq(&self.file, &import_file) {
+                            self.file.borrow_mut().add_dependency(&mut import_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
                         }
                     }
                 } else {
                     let mut file_tree = vec![_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
                     file_tree.extend(_import_result.name.split(".").map(str::to_string));
-                    self.sym_stack.first().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, file_tree.clone()));
-                    session.sync_odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
+                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
+                    session.sync_odoo.not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
@@ -227,8 +252,8 @@ impl PythonArchEval {
                     continue;
                 }
                 if !self.safe_import.last().unwrap() {
-                    self.sym_stack.first().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, file_tree.clone()));
-                    session.sync_odoo.not_found_symbols.insert(self.sym_stack.first().unwrap().clone());
+                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
+                    session.sync_odoo.not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
@@ -265,13 +290,13 @@ impl PythonArchEval {
                 } else {
                     panic!("either value or annotation should exists");
                 }
-                let mut v_mut = variable.borrow_mut();
+                let v_mut = variable.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
                     if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
                         if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() { //TODO not good
                             let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
-                            if !Rc::ptr_eq(&self.sym_stack[0], &sym_file) {
-                                self.sym_stack[0].borrow_mut().add_dependency(&mut sym_file.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                            if !Rc::ptr_eq(&self.file, &sym_file) {
+                                self.file.borrow_mut().add_dependency(&mut sym_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
                             }
                         }
                     }
@@ -291,13 +316,13 @@ impl PythonArchEval {
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                 variable.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
-                let mut v_mut = variable.borrow_mut();
+                let v_mut = variable.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
                     if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
                         if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() { //TODO not good
                             let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
-                            if !Rc::ptr_eq(&self.sym_stack[0], &sym_file) {
-                                self.sym_stack[0].borrow_mut().add_dependency(&mut sym_file.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                            if !Rc::ptr_eq(&self.file, &sym_file) {
+                                self.file.borrow_mut().add_dependency(&mut sym_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
                             }
                         }
                     }
@@ -325,7 +350,7 @@ impl PythonArchEval {
 
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
-            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack[0].clone(), &base.range().start());
+            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &base.range().start());
             self.diagnostics.extend(eval_base.1);
             let eval_base = eval_base.0;
             if eval_base.len() == 0 {
@@ -377,28 +402,13 @@ impl PythonArchEval {
                         None,
                     ));
                 } else {
-                    let file = &self.sym_stack[0];
                     let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
-                    if !Rc::ptr_eq(&file, &file_symbol) {
-                        file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+                    if !Rc::ptr_eq(&self.file, &file_symbol) {
+                        self.file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), self.current_step, BuildSteps::ARCH);
                     }
                     loc_sym.borrow_mut().as_class_sym_mut().bases.insert(symbol);
                 }
             }
-        }
-    }
-
-    fn extract_base_name(base: &Expr) -> (String, Option<&TextRange>) {
-        match base {
-            Expr::Name(name) => {
-                return (name.id.to_string(), Some(&name.range));
-            },
-            Expr::Attribute(attr) => {
-                let (mut name, range) = PythonArchEval::extract_base_name(&attr.value);
-                name = name + "." + &attr.attr.to_string();
-                return (name, range);
-            },
-            _ => {(S!(""), None)}
         }
     }
 
@@ -468,31 +478,17 @@ impl PythonArchEval {
                 ))
             }
         }
-        self.sym_stack.push(variable);
-        for (index, stmt) in func_stmt.body.iter().enumerate() {
-            //we don't want to evaluate functions here, but in validator. We must only assign ast indexes
-            self.ast_indexes.push(index as u16);
-            match stmt {
-                Stmt::FunctionDef(f) => {
-                    self.visit_func_def(session, f);
-                },
-                Stmt::ClassDef(c) => {
-                    self.visit_class_def(session, c, stmt);
-                },
-                Stmt::If(if_stmt) => {
-                    self._visit_if(session, if_stmt);
-                },
-                Stmt::Try(try_stmt) => {
-                    self._visit_try(session, try_stmt);
-                },
-                Stmt::For(for_stmt) => {
-                    self._visit_for(session, for_stmt);
-                }
-                _ => {}
+        if self.file_mode || variable.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
+            variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
+            self.sym_stack.push(variable.clone());
+            for (index, stmt) in func_stmt.body.iter().enumerate() {
+                self.ast_indexes.push(index as u16);
+                self.visit_stmt(session, stmt);
+                self.ast_indexes.pop();
             }
-            self.ast_indexes.pop();
+            self.sym_stack.pop();
+            variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
         }
-        self.sym_stack.pop();
     }
 
     fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {

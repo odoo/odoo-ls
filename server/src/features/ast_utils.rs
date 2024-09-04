@@ -57,6 +57,60 @@ impl AstUtils {
         }
     }
 
+    pub fn find_stmt_from_ast<'a>(ast: &'a Vec<Stmt>, indexes: &Vec<u16>) -> &'a Stmt {
+        let mut stmt = ast.get(indexes[0] as usize).expect("index not found in ast");
+        let mut i_index = 1;
+        while i_index < indexes.len() {
+            match stmt {
+                Stmt::ClassDef(c) => {
+                    stmt = c.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
+                },
+                Stmt::FunctionDef(f) => {
+                    stmt = f.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
+                },
+                Stmt::If(if_stmt) => {
+                    let bloc = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    if *bloc == 0 {
+                        stmt = if_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
+                    } else {
+                        stmt = if_stmt.elif_else_clauses.get((bloc-1) as usize).expect("Bloc not found in if stmt").body.get(*stmt_index as usize).expect("index not found in ast");
+                    }
+                },
+                Stmt::Try(try_stmt) => {
+                    let bloc = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    if *bloc == 0 {
+                        stmt = try_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
+                    } else if *bloc == 1 {
+                        stmt = try_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
+                    } else if *bloc == 2 {
+                        stmt = try_stmt.finalbody.get(*stmt_index as usize).expect("index not found in ast");
+                    } else {
+                        panic!("Wrong try bloc");
+                    }
+                },
+                Stmt::For(for_stmt) => {
+                    let bloc = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    if *bloc == 0 {
+                        stmt = for_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
+                    } else if *bloc == 1 {
+                        stmt = for_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
+                    } else {
+                        panic!("Wrong for bloc");
+                    }
+                }
+                _ => {}
+            }
+            i_index += 1;
+        }
+        stmt
+    }
+
 }
 
 pub struct ExprFinderVisitor<'a> {
