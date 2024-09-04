@@ -684,15 +684,7 @@ impl Symbol {
                 }
             },
             Symbol::Compiled(_) => todo!(),
-            Symbol::Class(c) => {
-                match step {
-                    BuildSteps::SYNTAX => panic!(),
-                    BuildSteps::ARCH => c.arch_status,
-                    BuildSteps::ARCH_EVAL => c.arch_eval_status,
-                    BuildSteps::ODOO => c.odoo_status,
-                    BuildSteps::VALIDATION => c.validation_status,
-                }
-            },
+            Symbol::Class(c) => todo!(),
             Symbol::Function(f) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -737,15 +729,7 @@ impl Symbol {
                 }
             },
             Symbol::Compiled(_) => panic!(),
-            Symbol::Class(c) => {
-                match step {
-                    BuildSteps::SYNTAX => panic!(),
-                    BuildSteps::ARCH => c.arch_status = status,
-                    BuildSteps::ARCH_EVAL => c.arch_eval_status = status,
-                    BuildSteps::ODOO => c.odoo_status = status,
-                    BuildSteps::VALIDATION => c.validation_status = status,
-                }
-            },
+            Symbol::Class(c) => panic!(),
             Symbol::Function(f) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
