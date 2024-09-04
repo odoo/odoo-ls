@@ -10,12 +10,15 @@ use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
+use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::{Evaluation, EvaluationValue};
 use super::file_mgr::FileInfo;
+use super::python_arch_builder::PythonArchBuilder;
+use super::python_arch_eval::PythonArchEval;
 use super::python_utils::{self, unpack_assign};
 
 #[derive(Debug)]
@@ -27,7 +30,7 @@ pub struct PythonValidator {
     current_module: Option<Rc<RefCell<Symbol>>>
 }
 
-/* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on any symbol containing code (file, function, class. Not variable, namespace).
+/* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on symbol containing code (file and functions only. Not class, variable, namespace).
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
@@ -52,60 +55,6 @@ impl PythonValidator {
         file_info_rc
     }
 
-    fn find_stmt_from_ast<'a>(ast: &'a Vec<Stmt>, indexes: &Vec<u16>) -> &'a Stmt {
-        let mut stmt = ast.get(indexes[0] as usize).expect("index not found in ast");
-        let mut i_index = 1;
-        while i_index < indexes.len() {
-            match stmt {
-                Stmt::ClassDef(c) => {
-                    stmt = c.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
-                },
-                Stmt::FunctionDef(f) => {
-                    stmt = f.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
-                },
-                Stmt::If(if_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    if *bloc == 0 {
-                        stmt = if_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
-                    } else {
-                        stmt = if_stmt.elif_else_clauses.get((bloc-1) as usize).expect("Bloc not found in if stmt").body.get(*stmt_index as usize).expect("index not found in ast");
-                    }
-                },
-                Stmt::Try(try_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    if *bloc == 0 {
-                        stmt = try_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
-                    } else if *bloc == 1 {
-                        stmt = try_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
-                    } else if *bloc == 2 {
-                        stmt = try_stmt.finalbody.get(*stmt_index as usize).expect("index not found in ast");
-                    } else {
-                        panic!("Wrong try bloc");
-                    }
-                },
-                Stmt::For(for_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    if *bloc == 0 {
-                        stmt = for_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
-                    } else if *bloc == 1 {
-                        stmt = for_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
-                    } else {
-                        panic!("Wrong for bloc");
-                    }
-                }
-                _ => {}
-            }
-            i_index += 1;
-        }
-        stmt
-    }
-
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
         let mut symbol = self.sym_stack[0].borrow_mut();
@@ -113,11 +62,11 @@ impl PythonValidator {
         if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
         }
-        symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         let sym_type = symbol.typ().clone();
         drop(symbol);
         match sym_type {
             SymType::FILE | SymType::PACKAGE => {
+                self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
@@ -129,10 +78,20 @@ impl PythonValidator {
             },
             SymType::FUNCTION => {
                 self.file_mode = false;
+                let func = &self.sym_stack[0];
+                if func.borrow().as_func().arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                    let mut builder = PythonArchBuilder::new(func.clone());
+                    builder.load_arch(session);
+                }
+                if func.borrow().as_func().arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                    let mut builder = PythonArchEval::new(func.clone());
+                    builder.eval_arch(session);
+                }
+                self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
-                    let stmt = PythonValidator::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
+                    let stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
@@ -296,6 +255,7 @@ impl PythonValidator {
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
         if self.file_mode {
+            //assigns at file level are done in arch eval step as no odoo stuff is required.
             return;
         }
         let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));

@@ -16,6 +16,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
+use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
@@ -27,6 +28,9 @@ use super::symbols::function_symbol::{Argument, FunctionSymbol};
 
 #[derive(Debug)]
 pub struct PythonArchBuilder {
+    file: Rc<RefCell<Symbol>>,
+    file_mode: bool,
+    current_step: BuildSteps,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>
@@ -35,6 +39,9 @@ pub struct PythonArchBuilder {
 impl PythonArchBuilder {
     pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
         PythonArchBuilder {
+            file: symbol.clone(), //dummy, evaluated in load_arch
+            file_mode: false, //dummy, evaluated in load_arch
+            current_step: BuildSteps::ARCH, //dummy, evaluated in load_arch
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![]
@@ -42,34 +49,52 @@ impl PythonArchBuilder {
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) -> Result<(), Error> {
-        //println!("load arch");
-        let mut symbol = self.sym_stack[0].borrow_mut();
-        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE].contains(&symbol.typ()) {
+        let symbol = &self.sym_stack[0];
+        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return Ok(()); // nothing to extract
         }
-        symbol.set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        if symbol.paths().len() != 1 {
-            panic!()
+        {
+            let file = symbol.borrow();
+            let file = file.get_file().unwrap();
+            let file = file.upgrade().unwrap();
+            self.file = file.clone();
+            self.file_mode = Rc::ptr_eq(&file, &symbol);
+            self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
         }
-        let mut path = symbol.paths()[0].clone();
-        //println!("load arch path: {}", path);
-        if symbol.typ() == SymType::PACKAGE {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + symbol.as_package().i_ext().as_str();
+        symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        let path = match self.file.borrow().typ() {
+            SymType::FILE => {
+                self.file.borrow().paths()[0].clone()
+            },
+            SymType::PACKAGE => {
+                PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
+            },
+            _ => panic!("invalid symbol type to extract path")
+        };
+        if self.file_mode {
+            let in_workspace = (self.file.borrow().parent().is_some() &&
+                self.file.borrow().parent().as_ref().unwrap().upgrade().is_some() &&
+                self.file.borrow().parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
+                session.sync_odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
+            self.file.borrow_mut().set_in_workspace(in_workspace);
         }
-        let in_workspace = (symbol.parent().is_some() &&
-            symbol.parent().as_ref().unwrap().upgrade().is_some() &&
-            symbol.parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
-            session.sync_odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
-        symbol.set_in_workspace(in_workspace);
-        drop(symbol);
         let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
         let mut file_info = (*file_info).borrow_mut();
-        file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
+        if self.file_mode {
+            //diagnostics for functions are stored directly on funcs
+            file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
+        }
         if file_info.ast.is_some() {
-            self.visit_node(session, &file_info.ast.as_ref().unwrap())?;
+            let ast = match self.file_mode {
+                true => {file_info.ast.as_ref().unwrap()},
+                false => {
+                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                }
+            };
+            self.visit_node(session, &ast)?;
             self._resolve_all_symbols(session);
             session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
-        } else {
+        } else if self.file_mode {
             file_info.publish_diagnostics(session);
         }
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
@@ -92,9 +117,9 @@ impl PythonArchBuilder {
                     level,
                     range).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    session.sync_odoo.not_found_symbols.insert(self.sym_stack[0].clone());
+                    session.sync_odoo.not_found_symbols.insert(self.file.clone());
                     let file_tree_flattened = vec![import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
-                    self.sym_stack[0].borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH, file_tree_flattened));
+                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree_flattened));
                     continue;
                 }
                 let mut all_name_allowed = true;
@@ -151,8 +176,8 @@ impl PythonArchBuilder {
                     if !evaluated_type.is_expired() {
                         let evaluated_type = evaluated_type.upgrade().unwrap();
                         let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
-                        if !Rc::ptr_eq(&self.sym_stack[0], &evaluated_type_file) {
-                            self.sym_stack[0].borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                        if !Rc::ptr_eq(&self.file, &evaluated_type_file) {
+                            self.file.borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
                         }
                     }
                 }
@@ -200,13 +225,13 @@ impl PythonArchBuilder {
                     self.visit_class_def(session, class_def_stmt)?;
                 },
                 Stmt::If(if_stmt) => {
-                    self.visit_if(session, if_stmt);
+                    self.visit_if(session, if_stmt)?;
                 },
                 Stmt::Try(try_stmt) => {
-                    self.visit_try(session, try_stmt);
+                    self.visit_try(session, try_stmt)?;
                 },
                 Stmt::For(for_stmt) => {
-                    self.visit_for(session, for_stmt);
+                    self.visit_for(session, for_stmt)?;
                 },
                 _ => {}
             }
@@ -271,16 +296,16 @@ impl PythonArchBuilder {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
-            let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
+            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
         }
     }
 
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
-            let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
+            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
             let mut variable = variable.borrow_mut();
-            if variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
+            if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
                 let parent = variable.parent().as_ref().unwrap().upgrade();
                 if parent.is_some() {
                     let parent = parent.unwrap();
@@ -345,9 +370,13 @@ impl PythonArchBuilder {
             });
         }
         //visit body
-        self.sym_stack.push(sym);
-        self.visit_node(session, &func_def.body)?;
-        self.sym_stack.pop();
+        if self.file_mode || sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
+            sym.borrow_mut().as_func_mut().arch_status = BuildStatus::IN_PROGRESS;
+            self.sym_stack.push(sym.clone());
+            self.visit_node(session, &func_def.body)?;
+            self.sym_stack.pop();
+            sym.borrow_mut().as_func_mut().arch_status = BuildStatus::DONE;
+        }
         Ok(())
     }
 
