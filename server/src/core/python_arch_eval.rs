@@ -537,7 +537,7 @@ impl PythonArchEval {
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
                                         Evaluation::eval_from_symbol(
-                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(symbol_type_rc.clone()))])), &mut vec![]).0
+                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![]).0
                                         )
                                     );
                                 }

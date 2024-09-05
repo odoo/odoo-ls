@@ -246,7 +246,11 @@ impl PythonArchEvalHooks {
                             let module = context.get(&S!("module"));
                             let from_module;
                             if let Some(ContextValue::MODULE(m)) = module {
-                                from_module = Some(m.clone());
+                                if let Some(m) = m.upgrade() {
+                                    from_module = Some(m.clone());
+                                } else {
+                                    from_module = None;
+                                }
                             } else {
                                 from_module = None;
                             }

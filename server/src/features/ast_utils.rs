@@ -32,7 +32,7 @@ impl AstUtils {
         let expr = expr.unwrap();
         let from_module;
         if let Some(module) = file_symbol.borrow().find_module() {
-            from_module = ContextValue::MODULE(module);
+            from_module = ContextValue::MODULE(Rc::downgrade(&module));
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
