@@ -24,6 +24,7 @@ pub trait SymbolMgr {
     fn add_section(&mut self, range: TextRange) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<Symbol>>>;
+    fn get_ext_symbol(&self, name: String) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
     fn _init_symbol_mgr(&mut self);
     fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<Symbol>>>;
 }
@@ -106,6 +107,10 @@ macro_rules! impl_section_mgr_for {
                 return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut vec![]);
             }
             vec![]
+        }
+
+        fn get_ext_symbol(&self, name: String) -> Option<&Vec<Rc<RefCell<Symbol>>>> {
+            self.ext_symbols.get(&name)
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol

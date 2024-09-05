@@ -36,8 +36,12 @@ pub struct FunctionSymbol {
     pub args: Vec<Argument>,
 
     //Trait SymbolMgr
+    //--- Body content
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    //--- dynamics variables
+    pub ext_symbols: HashMap<String, Vec<Rc<RefCell<Symbol>>>>,
+
 }
 
 impl FunctionSymbol {
@@ -61,6 +65,7 @@ impl FunctionSymbol {
             validation_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::new(),
+            ext_symbols: HashMap::new(),
             args: vec![]
         };
         res._init_symbol_mgr();
