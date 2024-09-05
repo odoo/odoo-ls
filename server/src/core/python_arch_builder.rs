@@ -5,9 +5,8 @@ use anyhow::Error;
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::Diagnostic;
-use tracing::{info, warn};
+use tracing::warn;
 use weak_table::traits::WeakElement;
-use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 
 use crate::constants::{BuildStatus, BuildSteps, SymType};
@@ -22,8 +21,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::import_resolver::ImportResult;
-use super::symbols::class_symbol::ClassSymbol;
-use super::symbols::function_symbol::{Argument, FunctionSymbol};
+use super::symbols::function_symbol::Argument;
 
 
 #[derive(Debug)]
@@ -120,8 +118,7 @@ impl PythonArchBuilder {
                     self.sym_stack.last().unwrap(),
                     from_stmt,
                     name_aliases,
-                    level,
-                    range).remove(0); //we don't need the vector with this call as there will be 1 result.
+                    level).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
                     session.sync_odoo.not_found_symbols.insert(self.file.clone());
                     let file_tree_flattened = vec![import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();

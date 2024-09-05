@@ -1,11 +1,9 @@
-use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
-use crate::constants::BuildStatus;
 use crate::core::model::ModelData;
 
 use super::symbol::Symbol;
