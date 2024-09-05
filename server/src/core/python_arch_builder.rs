@@ -370,7 +370,7 @@ impl PythonArchBuilder {
             });
         }
         //visit body
-        if self.file_mode || sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
+        if !self.file_mode || sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             sym.borrow_mut().as_func_mut().arch_status = BuildStatus::IN_PROGRESS;
             self.sym_stack.push(sym.clone());
             self.visit_node(session, &func_def.body)?;
