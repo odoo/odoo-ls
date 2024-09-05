@@ -365,8 +365,9 @@ impl SyncOdoo {
             let mut current_count: u32;
             for sym in &*set {
                 current_count = 0;
-                let symbol = sym.borrow_mut();
-                for (index, dep_set) in symbol.get_all_dependencies(step).iter().enumerate() {
+                let file = sym.borrow().get_file().unwrap().upgrade().unwrap();
+                let file = file.borrow();
+                for (index, dep_set) in file.get_all_dependencies(step).iter().enumerate() {
                     if index == BuildSteps::ARCH as usize {
                         for dep in dep_set.iter() {
                             if self.rebuild_arch.contains(&dep) {
