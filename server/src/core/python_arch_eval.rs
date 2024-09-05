@@ -277,29 +277,41 @@ impl PythonArchEval {
         };
         for assign in assigns.iter() { //should only be one
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
-            if let Some(variable) = variable {
-                let parent = variable.borrow().parent().unwrap().upgrade().unwrap().clone();
+            if let Some(variable_rc) = variable {
+                let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
                     let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
-                    variable.borrow_mut().set_evaluations(eval);
+                    variable_rc.borrow_mut().set_evaluations(eval);
                     self.diagnostics.extend(diags);
                 } else if assign.value.is_some() {
                     let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
-                    variable.borrow_mut().set_evaluations(eval);
+                    variable_rc.borrow_mut().set_evaluations(eval);
                     self.diagnostics.extend(diags);
                 } else {
                     panic!("either value or annotation should exists");
                 }
-                let v_mut = variable.borrow_mut();
+                let mut dep_to_add = vec![];
+                let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
                     if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
-                        if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() { //TODO not good
-                            let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
+                        if let Some(file) = sym.borrow().get_file().clone() {
+                            let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
-                                self.file.borrow_mut().add_dependency(&mut sym_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                                match Rc::ptr_eq(&variable_rc, &sym_file) {
+                                    true => {
+                                        dep_to_add.push(variable_rc.clone());
+                                    },
+                                    false => {
+                                        dep_to_add.push(sym_file);
+                                    }
+                                };
                             }
                         }
                     }
+                }
+                drop(v_mut);
+                for dep in dep_to_add {
+                    self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
                 }
             } else {
                 debug!("Symbol not found");
@@ -311,22 +323,35 @@ impl PythonArchEval {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
-            if let Some(variable) = variable {
-                let parent = variable.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
+            if let Some(variable_rc) = variable {
+                let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
-                variable.borrow_mut().set_evaluations(eval);
+                variable_rc.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
-                let v_mut = variable.borrow_mut();
+                let mut dep_to_add = vec![];
+                let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
                     if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
-                        if !sym.borrow().is_file_content() && sym.borrow().parent().is_some() { //TODO not good
-                            let sym_file = sym.borrow().get_file().unwrap().upgrade().unwrap().clone();
+                        if let Some(file) = sym.borrow().get_file().clone() {
+                            let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
-                                self.file.borrow_mut().add_dependency(&mut sym_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                                match Rc::ptr_eq(&variable_rc, &sym_file) {
+                                    true => {
+                                        dep_to_add.push(variable_rc.clone());
+                                    },
+                                    false => {
+                                        dep_to_add.push(sym_file);
+                                    }
+                                };
                             }
                         }
                     }
                 }
+                drop(v_mut);
+                for dep in dep_to_add {
+                    self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                }
+
             } else {
                 debug!("Symbol not found");
             }
