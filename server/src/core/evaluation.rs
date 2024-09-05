@@ -68,8 +68,8 @@ impl ExprOrIdent<'_> {
 pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
-    MODULE(Rc<RefCell<Symbol>>),
-    SYMBOL(Rc<RefCell<Symbol>>), //TODO should be Weak, no?
+    MODULE(Weak<RefCell<Symbol>>),
+    SYMBOL(Weak<RefCell<Symbol>>),
     RANGE(TextRange)
 }
 
@@ -88,14 +88,14 @@ impl ContextValue {
         }
     }
 
-    pub fn as_module(&self) -> Rc<RefCell<Symbol>> {
+    pub fn as_module(&self) -> Weak<RefCell<Symbol>> {
         match self {
             ContextValue::MODULE(m) => m.clone(),
             _ => panic!("Not a module")
         }
     }
 
-    pub fn as_symbol(&self) -> Rc<RefCell<Symbol>> {
+    pub fn as_symbol(&self) -> Weak<RefCell<Symbol>> {
         match self {
             ContextValue::SYMBOL(s) => s.clone(),
             _ => panic!("Not a symbol")
@@ -312,7 +312,7 @@ impl Evaluation {
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(module);
+            from_module = ContextValue::MODULE(Rc::downgrade(&module));
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -328,7 +328,7 @@ impl Evaluation {
     fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(module);
+            from_module = ContextValue::MODULE(Rc::downgrade(&module));
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -553,7 +553,7 @@ impl Evaluation {
                         if !attributes.is_empty() {
                             let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap()));
                             eval.symbol.context = context.as_ref().unwrap().clone();
-                            eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(base_loc));
+                            eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
                             evals.push(eval);
                         }
                     }
@@ -692,7 +692,7 @@ impl EvaluationSymbol {
                 match parent {
                     Some(p) => {
                         match p {
-                            ContextValue::SYMBOL(s) => { (Rc::downgrade(s), true) },
+                            ContextValue::SYMBOL(s) => { (s.clone(), true) },
                             _ => { (Weak::new(), false) }
                         }
                     },
