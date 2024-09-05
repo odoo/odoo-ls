@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::core::symbols::symbol::Symbol;
-use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;
 
@@ -28,7 +27,7 @@ impl PythonArchBuilderHooks {
                                 range = slots[0].borrow().range().clone();
                             }
                         }
-                        let mut env = sym.add_new_variable(session, &S!("env"), &range);
+                        sym.add_new_variable(session, &S!("env"), &range);
                     }
                 }
             },
@@ -40,15 +39,15 @@ impl PythonArchBuilderHooks {
                         range = new_sym[0].borrow().range().clone();
                     }
                     // ----------- env.cr ------------
-                    let mut cr_sym = sym.add_new_variable(session, &S!("cr"), &range);
+                    sym.add_new_variable(session, &S!("cr"), &range);
                     // ----------- env.uid ------------
-                    let mut uid_sym = sym.add_new_variable(session, &S!("uid"), &range);
+                    let uid_sym = sym.add_new_variable(session, &S!("uid"), &range);
                     uid_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("The current user id (for access rights checks)"));
                     // ----------- env.context ------------
-                    let mut context_sym = sym.add_new_variable(session, &S!("context"), &range);
+                    let context_sym = sym.add_new_variable(session, &S!("context"), &range);
                     context_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("The current context"));
                     // ----------- env.su ------------
-                    let mut su_sym = sym.add_new_variable(session, &S!("su"), &range);
+                    let su_sym = sym.add_new_variable(session, &S!("su"), &range);
                     su_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("whether in superuser mode"));
                 }
             },
@@ -63,7 +62,7 @@ impl PythonArchBuilderHooks {
                     let get_sym = sym.get_symbol(&(vec![], vec![S!("__get__")]), u32::MAX);
                     if get_sym.is_empty() {
                         let range = sym.range().clone();
-                        let mut get_sym = sym.add_new_variable(session, &S!("__get__"), &range);
+                        sym.add_new_variable(session, &S!("__get__"), &range);
                     }
                 }
             }

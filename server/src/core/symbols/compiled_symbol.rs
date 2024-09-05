@@ -1,5 +1,4 @@
-use crate::{constants::SymType, threads::SessionInfo};
-use std::{cell::{RefCell, RefMut}, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
 

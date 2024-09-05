@@ -207,8 +207,7 @@ impl PythonArchEval {
             &self.file,
             from_stmt,
             name_aliases,
-            level,
-            range);
+            level);
 
         for _import_result in import_results.iter() {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);

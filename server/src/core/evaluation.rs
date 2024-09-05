@@ -1,7 +1,6 @@
 use ruff_python_ast::{Identifier, Expr, Operator};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::Diagnostic;
-use tracing::{debug, error};
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};

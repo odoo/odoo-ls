@@ -3,7 +3,6 @@ use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
-use core::time;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -35,6 +34,7 @@ use crate::utils::{PathSanitizer, ToFilePath as _};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
 pub enum InitState {
     NOT_READY,
@@ -155,7 +155,7 @@ impl SyncOdoo {
                 root_symbol.add_path(stub_dir.clone());
             }
             let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output();
-            if let Err(output) = &output {
+            if let Err(_output) = &output {
                 error!("Wrong python command: {}", session.sync_odoo.config.python_path.clone());
                 session.send_notification("$Odoo/invalid_python_path", ());
                 session.send_notification("$Odoo/loadingStatusUpdate", "stop");
@@ -767,7 +767,7 @@ impl Odoo {
             return Err(format!("{:?}", _e));
         }
         let python_path = python_path.unwrap();
-        let mut python_path = match python_path {
+        let python_path = match python_path {
             Some(p) => {p.python_path},
             None => {
                 session.log_message(MessageType::WARNING, S!("No PythonPath provided. Be sure that your editor support the route Odoo/getPythonPath and that route always return a result. Using 'python3' instead"));
@@ -997,7 +997,7 @@ impl Odoo {
         Ok(None)
     }
 
-    pub fn handle_did_change_configuration(session: &mut SessionInfo, params: DidChangeConfigurationParams) {
+    pub fn handle_did_change_configuration(session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
         let old_config = session.sync_odoo.config.clone();
         match Odoo::update_configuration(session) {
             Ok (config) => {

@@ -21,7 +21,7 @@ pub struct ImportResult {
     pub range: TextRange,
 }
 
-pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, from_range: &TextRange) -> Vec<ImportResult> {
+pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>) -> Vec<ImportResult> {
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
@@ -35,8 +35,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         session,
         session.sync_odoo.symbols.as_ref().unwrap().clone(),
         &file_tree,
-        None,
-        from_range);
+        None);
     let mut result = vec![];
     for alias in name_aliases {
         result.push(ImportResult{
@@ -70,8 +69,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
                 session,
                 from_symbol.as_ref().unwrap().clone(),
                 &vec![name.split(".").map(str::to_string).next().unwrap()],
-                None,
-                &alias.range);
+                None);
             if name_symbol.is_none() {
                 if !name.contains(".") {
                     //TODO WTF?
@@ -98,8 +96,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             session,
             from_symbol.as_ref().unwrap().clone(),
             &name_first_part,
-            None,
-            &alias.range);
+            None);
         if next_symbol.is_none() {
             result[name_index as usize].symbol = fallback_sym.clone();
             continue;
@@ -109,8 +106,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             session,
             next_symbol.as_ref().unwrap().clone(),
             &name_last_name,
-            None,
-            &alias.range);
+            None);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
             //TODO what if multiple values?
             name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
@@ -180,13 +176,13 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
     first_part_tree
 }
 
-fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, names: &Vec<String>, asname: Option<String>, range: &TextRange) -> (Option<Rc<RefCell<Symbol>>>, Rc<RefCell<Symbol>>) {
+fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, names: &Vec<String>, asname: Option<String>) -> (Option<Rc<RefCell<Symbol>>>, Rc<RefCell<Symbol>>) {
     let mut sym: Option<Rc<RefCell<Symbol>>> = Some(symbol.clone());
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {
         let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
         if next_symbol.is_empty() {
-            next_symbol = match _resolve_new_symbol(session, sym.as_ref().unwrap().clone(), &branch, asname.clone(), range) {
+            next_symbol = match _resolve_new_symbol(session, sym.as_ref().unwrap().clone(), &branch, asname.clone()) {
                 Ok(v) => vec![v],
                 Err(_) => vec![]
             }
@@ -201,7 +197,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>,
     return (sym, last_symbol)
 }
 
-fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &String, asname: Option<String>, range: &TextRange) -> Result<Rc<RefCell<Symbol>>, String> {
+fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &String, asname: Option<String>) -> Result<Rc<RefCell<Symbol>>, String> {
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
         None => name.clone()
