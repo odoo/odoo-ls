@@ -98,7 +98,7 @@ impl PythonArchEval {
         }
         drop(file_info);
         if self.file_mode {
-            (*file_info_rc).borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+            file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
             PythonArchEvalHooks::on_file_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
         }
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
@@ -204,7 +204,7 @@ impl PythonArchEval {
         }
         let import_results: Vec<ImportResult> = resolve_import_stmt(
             session,
-            &self.sym_stack.first().unwrap(),
+            &self.file,
             from_stmt,
             name_aliases,
             level,
