@@ -95,15 +95,6 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
-            {
-                let symbol = self.sym_stack[0].borrow();
-                match symbol.typ() {
-                    SymType::FUNCTION => {
-                        println!("here");
-                    }
-                    _ => {}
-                }
-            }
             self.visit_node(session, &ast)?;
             self._resolve_all_symbols(session);
             session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());

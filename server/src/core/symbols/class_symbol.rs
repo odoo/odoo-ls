@@ -25,8 +25,11 @@ pub struct ClassSymbol {
     pub _model: Option<ModelData>,
 
     //Trait SymbolMgr
+    //--- Body symbols
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    //--- dynamics variables
+    pub ext_symbols: HashMap<String, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl ClassSymbol {
@@ -42,6 +45,7 @@ impl ClassSymbol {
             doc_string: None,
             sections: vec![],
             symbols: HashMap::new(),
+            ext_symbols: HashMap::new(),
             bases: PtrWeakHashSet::new(),
             _model: None,
         };

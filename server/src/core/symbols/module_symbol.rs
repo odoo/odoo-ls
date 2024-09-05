@@ -49,6 +49,8 @@ pub struct ModuleSymbol {
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    //--- dynamics variables
+    pub ext_symbols: HashMap<String, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl ModuleSymbol {
@@ -76,6 +78,7 @@ impl ModuleSymbol {
             validation_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::new(),
+            ext_symbols: HashMap::new(),
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH
