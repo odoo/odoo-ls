@@ -95,6 +95,15 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
+            {
+                let symbol = self.sym_stack[0].borrow();
+                match symbol.typ() {
+                    SymType::FUNCTION => {
+                        println!("here");
+                    }
+                    _ => {}
+                }
+            }
             self.visit_node(session, &ast)?;
             self._resolve_all_symbols(session);
             session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
@@ -205,24 +214,16 @@ impl PythonArchBuilder {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().typ() != SymType::FUNCTION {
-                        self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
-                    }
+                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().typ() != SymType::FUNCTION {
-                        self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
-                    }
+                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().typ() != SymType::FUNCTION {
-                        self._visit_ann_assign(session, ann_assign_stmt);
-                    }
+                    self._visit_ann_assign(session, ann_assign_stmt);
                 },
                 Stmt::Assign(assign_stmt) => {
-                    if self.sym_stack.last().unwrap().borrow().typ() != SymType::FUNCTION {
-                        self._visit_assign(session, assign_stmt);
-                    }
+                    self._visit_assign(session, assign_stmt);
                 },
                 Stmt::FunctionDef(function_def_stmt) => {
                     self.visit_func_def(session, function_def_stmt)?;
