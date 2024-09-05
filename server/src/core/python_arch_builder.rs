@@ -78,12 +78,16 @@ impl PythonArchBuilder {
                 session.sync_odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
             self.file.borrow_mut().set_in_workspace(in_workspace);
         }
-        let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
-        let mut file_info = (*file_info).borrow_mut();
+        let file_info_rc = match self.file_mode {
+            true => session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false), //create ast if not in cache
+            false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
+        };
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
+            let mut file_info = file_info_rc.borrow_mut();
             file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         }
+        let file_info = file_info_rc.borrow();
         if file_info.ast.is_some() {
             let ast = match self.file_mode {
                 true => {file_info.ast.as_ref().unwrap()},
@@ -95,6 +99,8 @@ impl PythonArchBuilder {
             self._resolve_all_symbols(session);
             session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
         } else if self.file_mode {
+            drop(file_info);
+            let mut file_info = file_info_rc.borrow_mut();
             file_info.publish_diagnostics(session);
         }
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
