@@ -4,7 +4,6 @@ use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
-use std::borrow::BorrowMut;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};

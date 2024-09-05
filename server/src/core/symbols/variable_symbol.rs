@@ -1,7 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::SymType, core::evaluation::Evaluation, threads::SessionInfo};
-use std::{cell::{RefCell, RefMut}, rc::Weak};
+use crate::core::evaluation::Evaluation;
+use std::{cell::RefCell, rc::Weak};
 
 use super::symbol::Symbol;
 
