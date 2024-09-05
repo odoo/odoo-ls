@@ -478,7 +478,7 @@ impl PythonArchEval {
                 ))
             }
         }
-        if self.file_mode || variable.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
+        if !self.file_mode || variable.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
             self.sym_stack.push(variable.clone());
             for (index, stmt) in func_stmt.body.iter().enumerate() {
