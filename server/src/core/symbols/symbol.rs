@@ -438,6 +438,19 @@ impl Symbol {
         }
     }
 
+    pub fn has_range(&self) -> bool {
+        match self {
+            Symbol::Root(r) => false,
+            Symbol::Namespace(n) => false,
+            Symbol::Package(p) => false,
+            Symbol::File(f) => false,
+            Symbol::Compiled(c) => false,
+            Symbol::Class(c) => true,
+            Symbol::Function(f) => true,
+            Symbol::Variable(v) => true,
+        }
+    }
+
     pub fn range(&self) -> &TextRange {
         match self {
             Symbol::Root(r) => panic!(),
@@ -935,7 +948,7 @@ impl Symbol {
                     if iter_sym.len() > 1 {
                         trace!("TODO: explore all implementation possibilities");
                     }
-                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, position);
+                    let _iter_sym = iter_sym[0].borrow_mut().get_sub_symbol(fk, position);
                     iter_sym = _iter_sym;
                     if iter_sym.is_empty() {
                         return vec![];
@@ -946,7 +959,7 @@ impl Symbol {
             if symbol_tree_content.len() == 0 {
                 return vec![];
             }
-            iter_sym = self.get_content_symbol(&symbol_tree_content[0], position);
+            iter_sym = self.get_sub_symbol(&symbol_tree_content[0], position);
             if iter_sym.is_empty() {
                 return vec![];
             }
@@ -955,7 +968,7 @@ impl Symbol {
                     trace!("TODO: explore all implementation possibilities");
                 }
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    let _iter_sym = iter_sym[0].borrow_mut().get_content_symbol(fk, position);
+                    let _iter_sym = iter_sym[0].borrow_mut().get_sub_symbol(fk, position);
                     iter_sym = _iter_sym;
                     return iter_sym.clone();
                 }
@@ -964,6 +977,9 @@ impl Symbol {
         iter_sym
     }
 
+    /*
+    Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
+     */
     pub fn get_module_symbol(&self, name: &str) -> Option<Rc<RefCell<Symbol>>> {
         match self {
             Symbol::Namespace(n) => {
@@ -988,6 +1004,9 @@ impl Symbol {
         }
     }
 
+    /**
+     * Return all symbol before the given position that match the name in the body of the symbol
+     */
     pub fn get_content_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
         match self {
             Symbol::Class(c) => {
@@ -1004,6 +1023,33 @@ impl Symbol {
             },
             Symbol::Function(f) => {
                 f.get_symbol(name.to_string(), position)
+            },
+            _ => {vec![]}
+        }
+    }
+
+    /**
+     * Return a symbol that can be called from outside of the body of the symbol
+     */
+    pub fn get_sub_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
+        match self {
+            Symbol::Class(c) => {
+                c.get_symbol(name.to_string(), position)
+            },
+            Symbol::File(f) => {
+                f.get_symbol(name.to_string(), position)
+            },
+            Symbol::Package(PackageSymbol::Module(m)) => {
+                m.get_symbol(name.to_string(), position)
+            },
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => {
+                p.get_symbol(name.to_string(), position)
+            },
+            Symbol::Function(f) => {
+                if let Some(vec) = f.get_ext_symbol(name.to_string()) {
+                    return vec.clone();
+                }
+                vec![]
             },
             _ => {vec![]}
         }
@@ -1536,7 +1582,7 @@ impl Symbol {
                 return vec![mod_sym];
             }
         }
-        let content_sym = self.get_content_symbol(name, u32::MAX);
+        let content_sym = self.get_sub_symbol(name, u32::MAX);
         if content_sym.len() >= 1 {
             if all {
                 result.extend(content_sym);
