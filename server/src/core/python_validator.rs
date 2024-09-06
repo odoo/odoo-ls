@@ -1,6 +1,7 @@
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{trace, warn};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -25,7 +26,7 @@ use super::python_utils::{self, unpack_assign};
 pub struct PythonValidator {
     file_mode: bool,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
-    diagnostics: Vec<Diagnostic>,
+    pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //collect diagnostic from arch and arch_eval too from inner functions
     safe_imports: Vec<bool>,
     current_module: Option<Rc<RefCell<Symbol>>>
 }
@@ -38,7 +39,7 @@ impl PythonValidator {
         Self {
             file_mode: true,
             sym_stack: vec![symbol],
-            diagnostics: Vec::new(),
+            diagnostics: HashMap::from([(BuildSteps::VALIDATION, vec![])]),
             safe_imports: vec![false],
             current_module: None,
         }
@@ -74,7 +75,7 @@ impl PythonValidator {
                 }
                 drop(file_info);
                 let mut file_info = file_info_rc.borrow_mut();
-                file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
+                file_info.update_validation_diagnostics(self.diagnostics.clone());
             },
             SymType::FUNCTION => {
                 self.file_mode = false;
@@ -87,6 +88,8 @@ impl PythonValidator {
                     let mut builder = PythonArchEval::new(func.clone());
                     builder.eval_arch(session);
                 }
+                self.diagnostics = func.borrow().as_func().diagnostics.clone();
+                self.diagnostics.entry(BuildSteps::VALIDATION).or_insert_with(|| vec![]);
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
@@ -100,7 +103,7 @@ impl PythonValidator {
                     };
                     self.validate_body(session, body);
                     match stmt {
-                        Stmt::FunctionDef(s) => {
+                        Stmt::FunctionDef(_) => {
                             self.sym_stack[0].borrow_mut().as_func_mut().diagnostics = self.diagnostics.clone();
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
@@ -125,6 +128,12 @@ impl PythonValidator {
         }
     }
 
+    fn merge_diagnostics(&mut self, diags: HashMap<BuildSteps, Vec<Diagnostic>>) {
+        for (key, value) in diags.iter() {
+            self.diagnostics.entry(*key).or_insert_with(|| vec![]).extend(value.clone());
+        }
+    }
+
     fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {
         for stmt in vec_ast.iter() {
             match stmt {
@@ -138,7 +147,7 @@ impl PythonValidator {
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
-                        self.diagnostics.append(&mut sym.borrow_mut().as_func_mut().diagnostics);
+                        self.merge_diagnostics(sym.borrow_mut().as_func_mut().diagnostics.clone());
                     } else {
                         panic!("function not found");
                     }
@@ -163,7 +172,7 @@ impl PythonValidator {
                 },
                 Stmt::Expr(e) => {
                     let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_stack.last().unwrap().clone(), &e.range.start());
-                    self.diagnostics.extend(diags);
+                    self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().extend(diags);
                 },
                 Stmt::If(i) => {
                     self.validate_body(session, &i.body);
@@ -221,7 +230,7 @@ impl PythonValidator {
                 let module = import_result.symbol.borrow().find_module();
                 if let Some(module) = module {
                     if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
-                        self.diagnostics.push(Diagnostic::new(
+                        self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30103"))),
@@ -237,33 +246,11 @@ impl PythonValidator {
     }
 
     fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
-        if self.file_mode {
-            return;
-        }
-        let assigns = match assign.value.as_ref() {
-            Some(value) => python_utils::unpack_assign(&vec![*assign.target.clone()], Some(&assign.annotation), Some(value)),
-            None => python_utils::unpack_assign(&vec![*assign.target.clone()], Some(&assign.annotation), None)
-        };
-        for a in assigns.iter() {
-            if let Some(expr) = &a.value {
-                let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), &assign.range.start());
-                self.diagnostics.extend(diags);
-            }
-        }
+
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
-        if self.file_mode {
-            //assigns at file level are done in arch eval step as no odoo stuff is required.
-            return;
-        }
-        let assigns = unpack_assign(&assign.targets, None, Some(&assign.value));
-        for a in assigns.iter() {
-            if let Some(expr) = &a.value {
-                let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), &assign.range.start());
-                self.diagnostics.extend(diags);
-            }
-        }
+
     }
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
@@ -330,7 +317,7 @@ impl PythonValidator {
                 }
                 if !found_one {
                     if main_modules.len() > 0 {
-                        self.diagnostics.push(Diagnostic::new(
+                        self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30104"))),
@@ -340,7 +327,7 @@ impl PythonValidator {
                             None)
                         )
                     } else {
-                        self.diagnostics.push(Diagnostic::new(
+                        self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30102"))),
@@ -352,7 +339,7 @@ impl PythonValidator {
                     }
                 }
             } else {
-                self.diagnostics.push(Diagnostic::new(
+                self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30102"))),
