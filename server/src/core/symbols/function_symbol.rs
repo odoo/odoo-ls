@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 
-use crate::{constants::BuildStatus, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps}, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -24,7 +24,7 @@ pub struct FunctionSymbol {
     pub is_property: bool,
     pub doc_string: Option<String>,
     pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
-    pub diagnostics: Vec<Diagnostic>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
+    pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
@@ -55,7 +55,7 @@ impl FunctionSymbol {
             range,
             is_static: false,
             is_property: false,
-            diagnostics: vec![],
+            diagnostics: HashMap::new(),
             ast_indexes: vec![],
             doc_string: None,
             evaluations: vec![],
@@ -70,6 +70,10 @@ impl FunctionSymbol {
         };
         res._init_symbol_mgr();
         res
+    }
+    
+    pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
+        self.diagnostics.insert(step, diagnostics);
     }
 
     pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
