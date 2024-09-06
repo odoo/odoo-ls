@@ -111,6 +111,13 @@ impl FileInfo {
         self.diagnostics.insert(step, diagnostics);
     }
 
+    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>) {
+        self.need_push = true;
+        for (key, value) in diagnostics.iter() {
+            self.diagnostics.entry(*key).or_insert_with(|| vec![]).extend(value.clone());
+        }
+    }
+
     fn update_range(&self, mut diagnostic: Diagnostic) -> Diagnostic {
         diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line as usize);
         diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line as usize);

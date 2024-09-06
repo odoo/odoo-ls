@@ -52,7 +52,7 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
-        let symbol = self.sym_stack.first().unwrap();
+        let symbol = self.sym_stack.first().unwrap().clone();
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to evaluate
         }
@@ -100,6 +100,9 @@ impl PythonArchEval {
         if self.file_mode {
             file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
             PythonArchEvalHooks::on_file_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
+        } else {
+            //then Symbol must be a function
+            symbol.borrow_mut().as_func_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
         }
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
