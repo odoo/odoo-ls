@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::debug;
 use std::path::PathBuf;
@@ -25,6 +25,7 @@ use super::evaluation::ContextValue;
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
+use super::symbols::function_symbol::FunctionSymbol;
 
 
 #[derive(Debug, Clone)]
@@ -95,6 +96,11 @@ impl PythonArchEval {
                 self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
+            if !self.file_mode {
+                if self.sym_stack[0].borrow().as_func().evaluations.is_empty() {
+                    self.sym_stack[0].borrow_mut().as_func_mut().evaluations = vec![Evaluation::new_none()];
+                }
+            }
         }
         drop(file_info);
         if self.file_mode {
@@ -152,6 +158,9 @@ impl PythonArchEval {
             Stmt::For(for_stmt) => {
                 self._visit_for(session, for_stmt);
             },
+            Stmt::Return(return_stmt) => {
+                self._visit_return(session, return_stmt);
+            }
             _ => {}
         }
     }
@@ -176,7 +185,7 @@ impl PythonArchEval {
     ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
     fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<Symbol>>, from_sym: &Rc<RefCell<Symbol>>) -> bool {
         let sym_ref_cl = sym_ref.clone();
-        let syms_followed = Symbol::follow_ref(&sym_ref_cl, session, &mut None, false, false, &mut self.diagnostics);
+        let syms_followed = Symbol::follow_ref(&sym_ref_cl, session, &mut None, false, false, None, &mut self.diagnostics);
         for sym in syms_followed.iter() {
             let (weak_sym, _instance) = sym.clone();
             let sym = weak_sym.upgrade().unwrap();
@@ -402,7 +411,7 @@ impl PythonArchEval {
             let eval_base = &eval_base[0];
             let symbol_weak = eval_base.symbol.get_symbol(session, &mut None, &mut vec![]).0;
             let symbol = symbol_weak.upgrade().unwrap();
-            let ref_sym = Symbol::follow_ref(&symbol, session, &mut None, true, false, &mut vec![]);
+            let ref_sym = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
             if ref_sym.len() > 1 {
                 self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
@@ -549,7 +558,7 @@ impl PythonArchEval {
             let eval = &eval_iter_node[0];
             let (weak_symbol, instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![]);
             if let Some(symbol) = weak_symbol.upgrade() {
-                let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, &mut vec![]);
+                let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
                 if symbol_eval.len() == 1 && symbol_eval[0].0.upgrade().is_some() {
                     let symbol_type_rc = symbol_eval[0].0.upgrade().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
@@ -625,4 +634,18 @@ impl PythonArchEval {
         }
         self.ast_indexes.pop();
     }
+
+    fn _visit_return(&mut self, session: &mut SessionInfo, return_stmt: &StmtReturn) {
+        let func = self.sym_stack[0].clone();
+        if func.borrow().typ() == SymType::FUNCTION {
+            if let Some(value) = return_stmt.value.as_ref() {
+                let (eval, diags) = Evaluation::eval_from_ast(session, value, func.clone(), &return_stmt.range.start());
+                self.diagnostics.extend(diags);
+                FunctionSymbol::add_return_evaluations(func, session, eval);
+            } else {
+                FunctionSymbol::add_return_evaluations(func, session, vec![Evaluation::new_none()]);
+            }
+        }
+    }
+
 }
