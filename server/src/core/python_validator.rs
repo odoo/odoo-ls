@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtReturn, StmtTry};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{trace, warn};
 use std::collections::HashMap;
@@ -182,6 +182,11 @@ impl PythonValidator {
                 Stmt::Delete(d) => {
                     //TODO
                 },
+                Stmt::For(f) => {
+                    //TODO check condition ? if some checks has to be done on single Expr
+                    self.validate_body(session, &f.body);
+                },
+                Stmt::Return(r) => {},
                 _ => {
                     trace!("Stmt not handled");
                 }

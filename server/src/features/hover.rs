@@ -38,7 +38,7 @@ impl HoverFeature {
             }
             let symbol = symbol.upgrade().unwrap();
             let mut context = Some(eval.symbol.context.clone());
-            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, &mut vec![]);
+            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, None, &mut vec![]);
             // BLOCK 1: (type) **name** -> infered_type
             value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links

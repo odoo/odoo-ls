@@ -128,7 +128,7 @@ impl PythonArchBuilder {
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
-                    let all = Symbol::follow_ref(all, session, &mut None, false, true, &mut self.diagnostics);
+                    let all = Symbol::follow_ref(all, session, &mut None, false, true, None, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
                         if !all.0.is_expired() {
                             let all = all.0.upgrade();

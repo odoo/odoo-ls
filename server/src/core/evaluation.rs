@@ -128,7 +128,7 @@ pub struct EvaluationSymbolWeak {
 enum EvaluationSymbolPtr {
     WEAK(EvaluationSymbolWeak),
     SELF,
-    ARG,
+    ARG(u32),
     NONE,
     #[default]
     ANY
@@ -243,12 +243,60 @@ impl Evaluation {
         }
     }
 
+    pub fn new_none() -> Self {
+        Self {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::NONE,
+                context: HashMap::new(),
+                factory: None,
+                get_symbol_hook: None,
+            },
+            value: None,
+            range: None
+        }
+    }
+
+    pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
+        let mut res = vec![];
+        match self.symbol.sym {
+            EvaluationSymbolPtr::WEAK(_) => {
+                //take the weak by get_symbol instead of the match
+                let (weak, instance) = self.symbol.get_symbol(session, &mut None, &mut vec![]);
+                if let Some(sym_up) = weak.upgrade() {
+                    let out_of_scope = Symbol::follow_ref(&sym_up, session, &mut None, true, false, Some(function.clone()), &mut vec![]);
+                    for (weak_sym, instance) in out_of_scope {
+                        res.push(Evaluation {
+                            symbol: EvaluationSymbol {
+                                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                                    weak: weak_sym,
+                                    instance: instance
+                                }),
+                                context: HashMap::new(),
+                                factory: None,
+                                get_symbol_hook: None,
+                            },
+                            value: None,
+                            range: None
+                        })
+                    }
+                }
+            },
+            EvaluationSymbolPtr::SELF | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE | EvaluationSymbolPtr::ANY => {
+                res.push(self.clone());
+            },
+        }
+        res
+    }
+
     pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
         } else {
             let symbol = self.symbol.get_symbol(session, &mut None, diagnostics).0;
-            let evals = Symbol::follow_ref(&symbol.upgrade().unwrap(), session, context, false, true, diagnostics);
+            if symbol.is_expired() {
+                return None;
+            }
+            let evals = Symbol::follow_ref(&symbol.upgrade().unwrap(), session, context, false, true, None, diagnostics);
             if evals.len() == 1 {
                 let eval = &evals[0];
                 let eval_sym = eval.0.upgrade();
@@ -264,6 +312,11 @@ impl Evaluation {
             }
             None
         }
+    }
+
+    //return true if both evalution lead to the same final type
+    pub fn eq_type(&self, other_eval: &Evaluation) -> bool {
+        false //TODO
     }
 
     ///Return a list of evaluations of the symbol that hold these sections.
@@ -286,6 +339,9 @@ impl Evaluation {
     //create an evaluation that is evaluating to the given symbol
     pub fn eval_from_symbol(symbol: &Weak<RefCell<Symbol>>) -> Evaluation{
         let mut instance = false;
+        if symbol.is_expired() {
+            return Evaluation::new_none();
+        }
         if symbol.upgrade().unwrap().borrow().typ() == SymType::VARIABLE {
             instance = true;
         }
@@ -544,7 +600,7 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
-                let bases = Symbol::follow_ref(&base_ref.upgrade().unwrap(), session, &mut None, false, false, &mut diagnostics);
+                let bases = Symbol::follow_ref(&base_ref.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.0.upgrade();
                     if let Some(base_loc) = base_loc {
@@ -585,7 +641,7 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0; //TODO set context?
-                let bases = Symbol::follow_ref(&base.upgrade().unwrap(), session, &mut None, false, false, &mut diagnostics);
+                let bases = Symbol::follow_ref(&base.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
@@ -648,7 +704,7 @@ impl EvaluationSymbol {
     pub fn is_instance(&self) -> Option<bool> {
         match &self.sym {
             EvaluationSymbolPtr::ANY => None,
-            EvaluationSymbolPtr::ARG => None,
+            EvaluationSymbolPtr::ARG(_) => None,
             EvaluationSymbolPtr::NONE => None,
             EvaluationSymbolPtr::SELF => Some(true),
             EvaluationSymbolPtr::WEAK(w) => Some(w.instance)
@@ -684,7 +740,7 @@ impl EvaluationSymbol {
                 (w.weak.clone(), w.instance)
             },
             EvaluationSymbolPtr::ANY => { (Weak::new(), false)},
-            EvaluationSymbolPtr::ARG => { (Weak::new(), false)},
+            EvaluationSymbolPtr::ARG(_) => { (Weak::new(), false)},
             EvaluationSymbolPtr::NONE => { (Weak::new(), false)},
             EvaluationSymbolPtr::SELF => {
                 let parent = full_context.get(&S!("parent"));
