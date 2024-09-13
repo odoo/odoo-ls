@@ -1303,6 +1303,19 @@ impl Symbol {
         return None;
     }
 
+    pub fn has_rc_in_parents(&self, rc: Rc<RefCell<Symbol>>, stop_same_file: bool) -> bool {
+        if Rc::ptr_eq(&self.weak_self().unwrap().upgrade().unwrap(), &rc) {
+            return true;
+        }
+        if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
+            return false;
+        }
+        if self.parent().is_some() {
+            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().has_rc_in_parents(rc, stop_same_file);
+        }
+        return false;
+    }
+
     /// get a Symbol that has the same given range and name
     pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Rc<RefCell<Symbol>>> {
         if let Some(symbols) = match self {
@@ -1410,7 +1423,7 @@ impl Symbol {
         }
     }
 
-    pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<(Weak<RefCell<Symbol>>, bool)> {
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
         if results.is_empty() {
@@ -1438,6 +1451,10 @@ impl Symbol {
                         continue;
                     }
                     if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
+                        index += 1;
+                        continue;
+                    }
+                    if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
                         index += 1;
                         continue;
                     }
