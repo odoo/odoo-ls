@@ -67,6 +67,7 @@ impl PythonValidator {
         drop(symbol);
         match sym_type {
             SymType::FILE | SymType::PACKAGE => {
+                trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
@@ -78,6 +79,7 @@ impl PythonValidator {
                 file_info.update_validation_diagnostics(self.diagnostics.clone());
             },
             SymType::FUNCTION => {
+                trace!("Validating function {}", self.sym_stack[0].borrow().name());
                 self.file_mode = false;
                 let func = &self.sym_stack[0];
                 if func.borrow().as_func().arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????

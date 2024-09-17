@@ -5,6 +5,7 @@ use weak_table::traits::WeakElement;
 
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
+use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
@@ -1160,6 +1161,24 @@ impl Symbol {
         symbol.dependents_as_mut()[level_i][step_i].insert(self.get_rc().unwrap());
     }
 
+    pub fn add_model_dependencies(&mut self, model: &Rc<RefCell<Model>>) {
+        match self {
+            Symbol::Package(PackageSymbol::Module(m)) => {
+                m.model_dependencies.insert(model.clone());
+                model.borrow_mut().add_dependent(&self.weak_self().unwrap().upgrade().unwrap());
+            },
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => {
+                p.model_dependencies.insert(model.clone());
+                model.borrow_mut().add_dependent(&self.weak_self().unwrap().upgrade().unwrap());
+            }
+            Symbol::File(f) => {
+                f.model_dependencies.insert(model.clone());
+                model.borrow_mut().add_dependent(&self.weak_self().unwrap().upgrade().unwrap());
+            },
+            _ => {}
+        }
+    }
+
     pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
         //signals that a change occured to this symbol. "step" indicates which level of change occured.
         //It will trigger rebuild on all dependencies
@@ -1178,7 +1197,7 @@ impl Symbol {
                                 } else if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    session.sync_odoo.add_to_validations(sym.clone());
+                                    SyncOdoo::add_to_validations(session, sym.clone());
                                 }
                             }
                         }
@@ -1193,7 +1212,7 @@ impl Symbol {
                                 } else if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    session.sync_odoo.add_to_validations(sym.clone());
+                                    SyncOdoo::add_to_validations(session, sym.clone());
                                 }
                             }
                         }
@@ -1206,8 +1225,16 @@ impl Symbol {
                                 if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    session.sync_odoo.add_to_validations(sym.clone());
+                                    SyncOdoo::add_to_validations(session, sym.clone());
                                 }
+                            }
+                        }
+                    }
+                    for class in sym_to_inv.iter_classes() {
+                        if let Some(model_data) = &class.borrow().as_class_sym()._model {
+                            let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                            if let Some(model) = model {
+                                model.borrow().add_dependents_to_validation(session);
                             }
                         }
                     }
@@ -1253,6 +1280,14 @@ impl Symbol {
             match *ref_to_unload.borrow_mut() {
                 Symbol::Package(PackageSymbol::Module(ref mut m)) => {
                     session.sync_odoo.modules.remove(m.dir_name.as_str());
+                },
+                Symbol::Class(ref mut c) => {
+                    if let Some(model_data) = c._model.as_ref() {
+                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                        if let Some(model) = model {
+                            model.borrow_mut().remove_symbol(session, &ref_to_unload);
+                        }
+                    }
                 },
                 _ => {}
             }
@@ -1393,6 +1428,16 @@ impl Symbol {
         return None;
     }
 
+    pub fn parent_file_or_function(&self) -> Option<Weak<RefCell<Symbol>>> {
+        if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE || self.typ() == SymType::FUNCTION {
+            return self.weak_self().clone();
+        }
+        if self.parent().is_some() {
+            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().parent_file_or_function();
+        }
+        return None;
+    }
+
     pub fn find_module(&self) -> Option<Rc<RefCell<Symbol>>> {
         match self {
             Symbol::Package(PackageSymbol::Module(m)) => {return self.get_rc();}
@@ -1422,7 +1467,7 @@ impl Symbol {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
                     //TODO context is modified in each for loop, which is wrong if a key in context is specific to one result!
-                    let sym = eval.symbol.get_symbol(session, &mut None, diagnostics);
+                    let sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
                     if !sym.0.is_expired() {
                         res.push_back(sym);
                     }
@@ -1514,6 +1559,9 @@ impl Symbol {
             Symbol::Class(c) => {
                 iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
             },
+            Symbol::Function(_) => {
+                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
+            },
             Symbol::Package(PackageSymbol::Module(m)) => {
                 iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
                 iter.push(Box::new(m.module_symbols.values().map(|x| x.clone())));
@@ -1568,7 +1616,7 @@ impl Symbol {
         results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
         if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.typ()) {
             let parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
-            return Symbol::infer_name(odoo, &parent, name, position);
+            return Symbol::infer_name(odoo, &parent, name, Some(on_symbol.range().start().to_u32()));
         }
         if results.len() == 0 && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
             let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
@@ -1657,6 +1705,104 @@ impl Symbol {
 
     pub fn is_equal(&self, other: &Rc<RefCell<Symbol>>) -> bool {
         return Weak::ptr_eq(&self.weak_self().unwrap_or(Weak::new()), &Rc::downgrade(other));
+    }
+
+    /**
+     * Only browse file content, do not use on namespace or packages to browse disk
+     * return a list of functions under Class symbol
+     */
+    pub fn iter_inner_functions(&self) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut res = vec![];
+
+        fn iter_recursive(symbol: &Symbol, res: &mut Vec<Rc<RefCell<Symbol>>>) {
+            match symbol {
+                Symbol::Class(c) => {
+                    for (_name, section) in c.symbols.iter() {
+                        for (_position, symbol_list) in section.iter() {
+                            for symbol in symbol_list.iter() {
+                                match *symbol.borrow() {
+                                    Symbol::Function(_) => res.push(symbol.clone()),
+                                    _ => {},
+                                }
+                            }
+                        }
+                    }
+                },
+                Symbol::File(f) => {
+                    for (_name, section) in f.symbols.iter() {
+                        for (_position, symbol_list) in section.iter() {
+                            for symbol in symbol_list.iter() {
+                                iter_recursive(&symbol.borrow(), res);
+                            }
+                        }
+                    }
+                },
+                Symbol::Function(f) => {
+                    for (_name, section) in f.symbols.iter() {
+                        for (_position, symbol_list) in section.iter() {
+                            for symbol in symbol_list.iter() {
+                                iter_recursive(&symbol.borrow(), res);
+                            }
+                        }
+                    }
+                },
+                Symbol::Root(_) => {},
+                Symbol::Namespace(_) => {},
+                Symbol::Package(_) => {},
+                Symbol::Compiled(_) => {},
+                Symbol::Variable(_) => {},
+            }
+        }
+
+        iter_recursive(self, &mut res);
+
+        res
+    }
+
+    pub fn iter_classes(&self) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut res = vec![];
+
+        fn iter_recursive(symbol: &Symbol, res: &mut Vec<Rc<RefCell<Symbol>>>) {
+            match symbol {
+                Symbol::Class(c) => {
+                    res.push(c.weak_self.as_ref().unwrap().upgrade().unwrap().clone());
+                    for (_name, section) in c.symbols.iter() {
+                        for (_position, symbol_list) in section.iter() {
+                            for symbol in symbol_list.iter() {
+                                iter_recursive(&symbol.borrow(), res);
+                            }
+                        }
+                    }
+                },
+                Symbol::File(f) => {
+                    for (_name, section) in f.symbols.iter() {
+                        for (_position, symbol_list) in section.iter() {
+                            for symbol in symbol_list.iter() {
+                                iter_recursive(&symbol.borrow(), res);
+                            }
+                        }
+                    }
+                },
+                Symbol::Function(f) => {
+                    for (_name, section) in f.symbols.iter() {
+                        for (_position, symbol_list) in section.iter() {
+                            for symbol in symbol_list.iter() {
+                                iter_recursive(&symbol.borrow(), res);
+                            }
+                        }
+                    }
+                },
+                Symbol::Root(_) => {},
+                Symbol::Namespace(_) => {},
+                Symbol::Package(_) => {},
+                Symbol::Compiled(_) => {},
+                Symbol::Variable(_) => {},
+            }
+        }
+
+        iter_recursive(self, &mut res);
+
+        res
     }
 
     pub fn print_dependencies(&self) {

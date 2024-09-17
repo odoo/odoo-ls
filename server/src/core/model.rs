@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use crate::threads::SessionInfo;
 
+use super::odoo::SyncOdoo;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::symbol::Symbol;
 
@@ -63,6 +64,7 @@ impl ModelData {
 pub struct Model {
     name: String,
     symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
 }
 
 impl Model {
@@ -70,13 +72,20 @@ impl Model {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
+            dependents: PtrWeakHashSet::new(),
         };
         res.symbols.insert(symbol);
         res
     }
 
-    pub fn add_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         self.symbols.insert(symbol);
+        self.add_dependents_to_validation(session);
+    }
+
+    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
+        self.symbols.remove(symbol);
+        self.add_dependents_to_validation(session);
     }
 
     pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
@@ -110,5 +119,15 @@ impl Model {
             }
         }
         res
+    }
+
+    pub fn add_dependent(&mut self, symbol: &Rc<RefCell<Symbol>>) {
+        self.dependents.insert(symbol.clone());
+    }
+
+    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo) {
+        for dep in self.dependents.iter() {
+            SyncOdoo::add_to_validations(session, dep.clone());
+        }
     }
 }

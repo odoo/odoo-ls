@@ -1,7 +1,7 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps}, threads::SessionInfo, S};
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
+use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model, threads::SessionInfo, S};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -111,6 +111,7 @@ pub struct PythonPackageSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub in_workspace: bool,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
+    pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
 
@@ -141,6 +142,7 @@ impl PythonPackageSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            model_dependencies: PtrWeakHashSet::new(),
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH

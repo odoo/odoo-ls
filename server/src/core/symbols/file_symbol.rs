@@ -1,7 +1,7 @@
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, WeakHashSet};
 
-use crate::constants::{BuildStatus, BuildSteps};
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
+use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -18,6 +18,7 @@ pub struct FileSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub in_workspace: bool,
+    pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
 
@@ -46,6 +47,7 @@ impl FileSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            model_dependencies: PtrWeakHashSet::new(),
             dependencies: [
                 vec![ //ARCH
                     PtrWeakHashSet::new() //ARCH
