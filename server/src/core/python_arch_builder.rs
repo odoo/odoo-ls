@@ -2,10 +2,10 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
+use ruff_text_size::TextRange;
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry, StmtWith};
 use lsp_types::Diagnostic;
-use tracing::warn;
+use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
@@ -59,6 +59,7 @@ impl PythonArchBuilder {
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
         }
+        trace!("evaluating {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = match self.file.borrow().typ() {
             SymType::FILE => {
@@ -95,7 +96,9 @@ impl PythonArchBuilder {
             };
             self.visit_node(session, &ast)?;
             self._resolve_all_symbols(session);
-            session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+            if self.file_mode {
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+            }
         } else if self.file_mode {
             drop(file_info);
             let mut file_info = file_info_rc.borrow_mut();
@@ -175,7 +178,7 @@ impl PythonArchBuilder {
                     let mut sym_bw = sym.borrow_mut();
                     let evaluation = &sym_bw.as_variable_mut().evaluations[0];
                     let evaluated_type = &evaluation.symbol;
-                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics).0;
+                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).0;
                     if !evaluated_type.is_expired() {
                         let evaluated_type = evaluated_type.upgrade().unwrap();
                         let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
@@ -227,6 +230,9 @@ impl PythonArchBuilder {
                 },
                 Stmt::For(for_stmt) => {
                     self.visit_for(session, for_stmt)?;
+                },
+                Stmt::With(with_stmt) => {
+                    self.visit_with(session, with_stmt);
                 },
                 _ => {}
             }
@@ -430,6 +436,16 @@ impl PythonArchBuilder {
         self.visit_node(session, &try_stmt.body)?;
         self.visit_node(session, &try_stmt.orelse)?;
         self.visit_node(session, &try_stmt.finalbody)?;
+        for handler in try_stmt.handlers.iter() {
+            match handler {
+                ruff_python_ast::ExceptHandler::ExceptHandler(h) => self.visit_node(session, &h.body)?
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) -> Result<(), Error> {
+        self.visit_node(session, &with_stmt.body)?;
         Ok(())
     }
 }

@@ -30,7 +30,7 @@ impl DefinitionFeature {
         }
         let mut links = vec![];
         for eval in analyse_ast_result.evaluations.iter() {
-            let sym_ref = eval.symbol.get_symbol(session, &mut None, &mut vec![]);
+            let sym_ref = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let loc_sym = sym_ref.0.upgrade();
             if loc_sym.is_none() {
                 continue;
@@ -50,7 +50,7 @@ impl DefinitionFeature {
                             let range = if eval.range.is_some() {
                                 eval.range.unwrap().clone()
                             } else {
-                                let get_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![]);
+                                let get_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
                                 if let Some(eval_sym) = get_sym.0.upgrade() {
                                     eval_sym.borrow().range().clone()
                                 } else {

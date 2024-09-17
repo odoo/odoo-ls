@@ -504,7 +504,7 @@ impl SyncOdoo {
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        //println!("ADDED TO ARCH - {}", symbol.borrow().paths.first().unwrap());
+        trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
         if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
@@ -517,7 +517,7 @@ impl SyncOdoo {
     }
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        //println!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap());
+        trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
         if symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
@@ -529,7 +529,7 @@ impl SyncOdoo {
     }
 
     pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        //println!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap());
+        trace!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
         if symbol.borrow().build_status(BuildSteps::ODOO) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
@@ -539,11 +539,24 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        //println!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap());
+    pub fn add_to_validations(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+        trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
         if symbol.borrow().build_status(BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
             symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-            self.rebuild_validation.insert(symbol);
+            if vec![SymType::PACKAGE, SymType::FILE].contains(&symbol.borrow().typ()) {
+                for func in symbol.borrow_mut().iter_inner_functions() {
+                    let f = func.borrow();
+                    let iter: Vec<Rc<RefCell<Symbol>>> = f.all_symbols().collect();
+                    drop(f);
+                    for sub_sym in iter {
+                        Symbol::unload(session, sub_sym);
+                    }
+                    func.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
+                    func.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                    func.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
+                }
+            }
+            session.sync_odoo.rebuild_validation.insert(symbol);
         }
     }
 
@@ -663,12 +676,12 @@ impl SyncOdoo {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
         from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, tree: &Tree) -> bool {
+    pub fn search_symbols_to_rebuild(session: &mut SessionInfo, tree: &Tree) -> bool {
         let flat_tree = vec![tree.0.clone(), tree.1.clone()].concat();
         let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let mut need_rebuild = false;
         let mut to_add = vec![vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
-        for s in self.not_found_symbols.iter() {
+        for s in session.sync_odoo.not_found_symbols.iter() {
             let mut index: i32 = 0; //i32 sa we could go in negative values
             while (index as usize) < s.borrow().not_found_paths().len() {
                 let (step, not_found_tree) = s.borrow().not_found_paths()[index as usize].clone();
@@ -699,19 +712,19 @@ impl SyncOdoo {
             }
         }
         for s in to_add[0].iter() {
-            self.add_to_rebuild_arch(s.clone());
+            session.sync_odoo.add_to_rebuild_arch(s.clone());
         }
         for s in to_add[1].iter() {
-            self.add_to_rebuild_arch_eval(s.clone());
+            session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
         }
         for s in to_add[2].iter() {
-            self.add_to_init_odoo(s.clone());
+            session.sync_odoo.add_to_init_odoo(s.clone());
         }
         for s in to_add[3].iter() {
-            self.add_to_validations(s.clone());
+            SyncOdoo::add_to_validations(session, s.clone());
         }
         for sym in found_sym.iter() {
-            self.not_found_symbols.remove(&sym);
+            session.sync_odoo.not_found_symbols.remove(&sym);
         }
         need_rebuild
     }
@@ -1106,7 +1119,7 @@ impl Odoo {
             //2 - create new document
             let tree = session.sync_odoo.tree_from_path(&PathBuf::from(new_path));
             if let Ok(tree) = tree {
-                session.sync_odoo.search_symbols_to_rebuild(&tree);
+                SyncOdoo::search_symbols_to_rebuild(session, &tree);
             }
             SyncOdoo::process_rebuilds(session);
         }
@@ -1122,7 +1135,7 @@ impl Odoo {
             //1 - delete old uri
             let tree = session.sync_odoo.tree_from_path(&PathBuf::from(path));
             if let Ok(tree) = tree {
-                session.sync_odoo.search_symbols_to_rebuild(&tree);
+                SyncOdoo::search_symbols_to_rebuild(session, &tree);
             }
         }
         SyncOdoo::process_rebuilds(session);
@@ -1179,7 +1192,7 @@ impl Odoo {
             drop(mut_file_info);
             let _ = SyncOdoo::_unload_path(session, &path, false);
             //build new by searching for missing symbols
-            session.sync_odoo.search_symbols_to_rebuild(&tree);
+            SyncOdoo::search_symbols_to_rebuild(session, &tree);
             if is_open || (is_save && session.sync_odoo.config.refresh_mode == RefreshMode::OnSave) {
                     SyncOdoo::process_rebuilds(session);
             } else {

@@ -32,7 +32,7 @@ impl HoverFeature {
             if index != 0 {
                 value += "  \n***  \n";
             }
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![]).0;
+            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
             if symbol.is_expired() {
                 continue;
             }
@@ -143,7 +143,7 @@ impl HoverFeature {
             if let Some(infered_type) = infered_type {
                 if Rc::ptr_eq(rc_symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
                     if infered_type.borrow().typ() != SymType::CLASS {
-                        value += "None";
+                        value += "Any";
                     }
                 } else {
                     let infered_type = infered_type.borrow();
@@ -153,7 +153,7 @@ impl HoverFeature {
                         if let Some(func_eval) = func_eval {
                             let max_eval: i32 = func_eval.len() as i32 -1;
                             for (eval_index, eval) in func_eval.iter().enumerate() {
-                                let s = eval.symbol.get_symbol(session, context, &mut vec![]).0;
+                                let s = eval.symbol.get_symbol(session, context, &mut vec![], None).0;
                                 if let Some(s) = s.upgrade() {
                                     func_return_type += s.borrow().name(); //TODO should do a followref?
                                 } else {

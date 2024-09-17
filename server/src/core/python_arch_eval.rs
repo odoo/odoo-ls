@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use tracing::debug;
+use tracing::{debug, trace};
 use std::path::PathBuf;
 
 use crate::constants::*;
@@ -69,6 +69,7 @@ impl PythonArchEval {
             self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
             self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
         }
+        trace!("evaluating {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
         if self.file.borrow().paths().len() != 1 {
             panic!("Trying to eval_arch a symbol without any path")
@@ -158,6 +159,9 @@ impl PythonArchEval {
             Stmt::For(for_stmt) => {
                 self._visit_for(session, for_stmt);
             },
+            Stmt::With(with_stmt) => {
+                self._visit_with(session, with_stmt);
+            }
             Stmt::Return(return_stmt) => {
                 self._visit_return(session, return_stmt);
             }
@@ -304,7 +308,7 @@ impl PythonArchEval {
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
+                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).0.upgrade() {
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -337,12 +341,12 @@ impl PythonArchEval {
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
-                variable_rc.borrow_mut().set_evaluations(eval);
+                println!("Setting {} as {:?}", variable_rc.borrow().name(), eval);variable_rc.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics).0.upgrade() {
+                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).0.upgrade() {
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -409,7 +413,7 @@ impl PythonArchEval {
                 continue;
             }
             let eval_base = &eval_base[0];
-            let symbol_weak = eval_base.symbol.get_symbol(session, &mut None, &mut vec![]).0;
+            let symbol_weak = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
             let symbol = symbol_weak.upgrade().unwrap();
             let ref_sym = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
             if ref_sym.len() > 1 {
@@ -556,7 +560,7 @@ impl PythonArchEval {
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
-            let (weak_symbol, instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![]);
+            let (weak_symbol, instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             if let Some(symbol) = weak_symbol.upgrade() {
                 let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
                 if symbol_eval.len() == 1 && symbol_eval[0].0.upgrade().is_some() {
@@ -573,7 +577,7 @@ impl PythonArchEval {
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
                                         Evaluation::eval_from_symbol(
-                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![]).0
+                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None).0
                                         )
                                     );
                                 }
@@ -633,6 +637,21 @@ impl PythonArchEval {
             self.ast_indexes.pop();
         }
         self.ast_indexes.pop();
+        self.ast_indexes.push(3 as u16);
+        for (handler_iter, handler) in try_stmt.handlers.iter().enumerate() {
+            self.ast_indexes.push(handler_iter as u16);
+            match handler {
+                ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
+                    for (index, stmt) in h.body.iter().enumerate() {
+                        self.ast_indexes.push(index as u16);
+                        self.visit_stmt(session, stmt);
+                        self.ast_indexes.pop();
+                    }
+                },
+            }
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
     }
 
     fn _visit_return(&mut self, session: &mut SessionInfo, return_stmt: &StmtReturn) {
@@ -645,6 +664,14 @@ impl PythonArchEval {
             } else {
                 FunctionSymbol::add_return_evaluations(func, session, vec![Evaluation::new_none()]);
             }
+        }
+    }
+
+    fn _visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
+        for (index, stmt) in with_stmt.body.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(session, stmt);
+            self.ast_indexes.pop();
         }
     }
 

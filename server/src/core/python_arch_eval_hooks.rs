@@ -234,7 +234,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if let Some(context) = context {
             let arg = context.get(&S!("args"));
@@ -253,6 +253,10 @@ impl PythonArchEvalHooks {
                                 }
                             } else {
                                 from_module = None;
+                            }
+                            if let Some(file_symbol) = file_symbol {
+                                let mut f = file_symbol.borrow_mut();
+                                f.add_model_dependencies(model);
                             }
                             let symbols = model.clone().borrow().get_main_symbols(session, from_module.clone(), &mut None);
                             if symbols.len() > 0 {
@@ -285,6 +289,16 @@ impl PythonArchEvalHooks {
                                     None
                                 ));
                             }
+                        } else {
+                            let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
+                            diagnostics.push(Diagnostic::new(range,
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30102"))),
+                                None,
+                                S!("Unknown model. Check your addons path"),
+                                None,
+                                None
+                            ));
                         }
                     }
                     _ => {
@@ -296,14 +310,14 @@ impl PythonArchEvalHooks {
         (Weak::new(), false)
     }
 
-    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
             if test_cursor_sym.len() > 0 {
                     return (Rc::downgrade(test_cursor_sym.last().unwrap()), true);
             } else {
-                    return evaluation_sym.get_symbol(session, &mut None, diagnostics);
+                    return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
             }
         }
         (evaluation_sym.get_weak().weak.clone() , evaluation_sym.get_weak().instance)
@@ -376,7 +390,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_some() {
             let parent_instance = context.as_ref().unwrap().get(&S!("parent_instance"));
@@ -419,14 +433,14 @@ impl PythonArchEvalHooks {
         }]);
     }
 
-    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool)
+    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if context.is_none() {
-            return evaluation_sym.get_symbol(session, &mut None, diagnostics);
+            return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
         }
         let comodel = context.as_ref().unwrap().get(&S!("comodel"));
         if comodel.is_none() {
-            return evaluation_sym.get_symbol(session, &mut None, diagnostics);
+            return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
         }
         let comodel = comodel.unwrap().as_string();
         //TODO let comodel_sym = odoo.models.get(comodel);
