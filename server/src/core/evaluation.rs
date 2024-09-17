@@ -116,7 +116,15 @@ impl ContextValue {
 */
 pub type Context = HashMap<String, ContextValue>;
 
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool);
+/**
+ * A hook will receive:
+ * session: current active session
+ * eval: the evaluationSymbol the hook is executed on
+ * context: if provided, can contains useful information
+ * diagnostics: a vec the hook can fill to add diagnostics
+ * file_symbol: if provided, can be used to add dependencies
+ */
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool);
 
 #[derive(Debug, Clone)]
 pub struct EvaluationSymbolWeak {
@@ -261,7 +269,7 @@ impl Evaluation {
         match self.symbol.sym {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
-                let (weak, instance) = self.symbol.get_symbol(session, &mut None, &mut vec![]);
+                let (weak, instance) = self.symbol.get_symbol(session, &mut None, &mut vec![], None);
                 if let Some(sym_up) = weak.upgrade() {
                     let out_of_scope = Symbol::follow_ref(&sym_up, session, &mut None, true, false, Some(function.clone()), &mut vec![]);
                     for (weak_sym, instance) in out_of_scope {
@@ -292,7 +300,7 @@ impl Evaluation {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
         } else {
-            let symbol = self.symbol.get_symbol(session, &mut None, diagnostics).0;
+            let symbol = self.symbol.get_symbol(session, &mut None, diagnostics, None).0;
             if symbol.is_expired() {
                 return None;
             }
@@ -546,7 +554,7 @@ impl Evaluation {
                 }
                 let mut context = Some(base_eval[0].symbol.context.clone());
                 //TODO context should give params
-                let (base_sym_ref, instance) = base_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics);
+                let (base_sym_ref, instance) = base_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics, None);
                 let base_sym = base_sym_ref.upgrade();
                 if let Some(base_sym) = base_sym {
                     if base_sym.borrow().typ() == SymType::CLASS {
@@ -576,7 +584,7 @@ impl Evaluation {
                         // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
                         // We don't want to launch validation step while Arch evaluating the code.
                         if base_sym.borrow().evaluations().is_some() && base_sym.borrow().evaluations().unwrap().len() == 0 {
-                            if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
+                            if base_sym.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
                             base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
                                 let mut v = PythonValidator::new(base_sym.clone());
                                 v.validate(session);
@@ -594,12 +602,12 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
-                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer);
+                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if base_evals.len() != 1 || base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0.is_expired() {
+                if base_evals.len() != 1 || base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).0.is_expired() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0;
+                let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone())).0;
                 let bases = Symbol::follow_ref(&base_ref.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.0.upgrade();
@@ -637,10 +645,10 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if eval_left.len() != 1 || eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0.is_expired() { //TODO set context?
+                if eval_left.len() != 1 || eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).0.is_expired() { //TODO set context?
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics).0; //TODO set context?
+                let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).0; //TODO set context?
                 let bases = Symbol::follow_ref(&base.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -648,10 +656,9 @@ impl Evaluation {
                 let base = &bases[0];
                 let base = base.0.upgrade().unwrap();
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
-                let base = base.borrow();
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
-                    let get_item = base.get_content_symbol("__getitem__", u32::MAX);
+                    let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX);
                     if get_item.len() == 1 {
                         let get_item = &get_item[0];
                         let get_item = get_item.borrow();
@@ -661,7 +668,7 @@ impl Evaluation {
                                 context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.as_mut().unwrap().remove(&S!("range"));
                                 context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
-                                let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics);
+                                let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
                                 if !hook_result.0.is_expired() {
                                     evals.push(Evaluation::eval_from_symbol(&hook_result.0));
                                 }
@@ -725,7 +732,7 @@ impl EvaluationSymbol {
         }
     }
 
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> (Weak<RefCell<Symbol>>, bool) {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool) {
         let mut full_context = self.context.clone();
         //extend with local elements
         if let Some(context) = context {
@@ -733,7 +740,7 @@ impl EvaluationSymbol {
         }
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
-            return hook(session, self, &mut Some(full_context), diagnostics);
+            return hook(session, self, &mut Some(full_context), diagnostics, file_symbol);
         }
         match &self.sym {
             EvaluationSymbolPtr::WEAK(w) => {

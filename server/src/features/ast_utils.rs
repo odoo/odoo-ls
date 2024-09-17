@@ -79,15 +79,20 @@ impl AstUtils {
                     }
                 },
                 Stmt::Try(try_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
+                    let first_index = indexes.get(i_index).unwrap();
                     i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    if *bloc == 0 {
-                        stmt = try_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
-                    } else if *bloc == 1 {
-                        stmt = try_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
-                    } else if *bloc == 2 {
-                        stmt = try_stmt.finalbody.get(*stmt_index as usize).expect("index not found in ast");
+                    let second_index = indexes.get(i_index).unwrap();
+                    if *first_index == 0 {
+                        stmt = try_stmt.body.get(*second_index as usize).expect("index not found in ast");
+                    } else if *first_index == 1 {
+                        stmt = try_stmt.orelse.get(*second_index as usize).expect("index not found in ast");
+                    } else if *first_index == 2 {
+                        stmt = try_stmt.finalbody.get(*second_index as usize).expect("index not found in ast");
+                    } else if *first_index == 3 {
+                        i_index += 1;
+                        let third_index = indexes.get(i_index).unwrap();
+                        let handler = try_stmt.handlers.get(*second_index as usize).expect("Handler not found in ast");
+                        stmt = handler.as_except_handler().unwrap().body.get(*third_index as usize).expect("index not found in handler ast");
                     } else {
                         panic!("Wrong try bloc");
                     }
@@ -103,6 +108,9 @@ impl AstUtils {
                     } else {
                         panic!("Wrong for bloc");
                     }
+                },
+                Stmt::With(with_stmt) => {
+                    stmt = with_stmt.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in with stmt");
                 }
                 _ => {}
             }

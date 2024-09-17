@@ -15,6 +15,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::EvaluationValue;
+use super::odoo::SyncOdoo;
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
@@ -54,7 +55,7 @@ impl PythonOdooBuilder {
         drop(symbol);
         self._load(session);
         file_info.borrow_mut().replace_diagnostics(BuildSteps::ODOO, self.diagnostics.clone());
-        session.sync_odoo.add_to_validations(self.symbol.clone());
+        SyncOdoo::add_to_validations(session, self.symbol.clone());
         let mut symbol = self.symbol.borrow_mut();
         symbol.set_build_status(BuildSteps::ODOO, BuildStatus::DONE);
     }
@@ -78,13 +79,14 @@ impl PythonOdooBuilder {
             }
             self._load_class_inherits(session, &mut s_to_build);
             self._load_class_attributes(session, &mut s_to_build);
-            let model = session.sync_odoo.models.get_mut(&s_to_build.as_class_sym()._model.as_ref().unwrap().name);
+            let model = session.sync_odoo.models.get_mut(&s_to_build.as_class_sym()._model.as_ref().unwrap().name).cloned();
             if model.is_none() {
                 let model = Model::new(s_to_build.as_class_sym()._model.as_ref().unwrap().name.clone(), sym.clone());
                 session.sync_odoo.models.insert(s_to_build.as_class_sym()._model.as_ref().unwrap().name.clone(), Rc::new(RefCell::new(model)));
             } else {
                 let model = model.unwrap();
-                model.borrow_mut().add_symbol(sym.clone());
+                drop(s_to_build);
+                model.borrow_mut().add_symbol(session, sym.clone());
             }
         }
     }
