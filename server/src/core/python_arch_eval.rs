@@ -341,7 +341,6 @@ impl PythonArchEval {
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
-                println!("Setting {} as {:?}", variable_rc.borrow().name(), eval);variable_rc.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
