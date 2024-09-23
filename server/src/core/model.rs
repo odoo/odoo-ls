@@ -127,7 +127,8 @@ impl Model {
 
     pub fn add_dependents_to_validation(&self, session: &mut SessionInfo) {
         for dep in self.dependents.iter() {
-            SyncOdoo::add_to_validations(session, dep.clone());
+            dep.borrow_mut().invalidate_sub_functions(session);
+            session.sync_odoo.add_to_validations(dep.clone());
         }
     }
 }

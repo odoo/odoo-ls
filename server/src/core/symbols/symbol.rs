@@ -1197,7 +1197,8 @@ impl Symbol {
                                 } else if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    SyncOdoo::add_to_validations(session, sym.clone());
+                                    sym.borrow_mut().invalidate_sub_functions(session);
+                                    session.sync_odoo.add_to_validations(sym.clone());
                                 }
                             }
                         }
@@ -1212,7 +1213,8 @@ impl Symbol {
                                 } else if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    SyncOdoo::add_to_validations(session, sym.clone());
+                                    sym.borrow_mut().invalidate_sub_functions(session);
+                                    session.sync_odoo.add_to_validations(sym.clone());
                                 }
                             }
                         }
@@ -1225,7 +1227,8 @@ impl Symbol {
                                 if index == BuildSteps::ODOO as usize {
                                     session.sync_odoo.add_to_init_odoo(sym.clone());
                                 } else if index == BuildSteps::VALIDATION as usize {
-                                    SyncOdoo::add_to_validations(session, sym.clone());
+                                    sym.borrow_mut().invalidate_sub_functions(session);
+                                    session.sync_odoo.add_to_validations(sym.clone());
                                 }
                             }
                         }
@@ -1244,6 +1247,15 @@ impl Symbol {
                 for sym in sym_to_inv.all_module_symbol() {
                     vec_to_invalidate.push_back(sym.clone());
                 }
+            }
+        }
+    }
+
+    pub fn invalidate_sub_functions(&mut self, session: &mut SessionInfo) {
+        if vec![SymType::PACKAGE, SymType::FILE].contains(&self.typ()) {
+            for func in self.iter_inner_functions() {
+                func.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                func.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             }
         }
     }
