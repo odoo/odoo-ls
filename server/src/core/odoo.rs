@@ -539,24 +539,11 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_validations(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
         trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
         if symbol.borrow().build_status(BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
             symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-            if vec![SymType::PACKAGE, SymType::FILE].contains(&symbol.borrow().typ()) {
-                for func in symbol.borrow_mut().iter_inner_functions() {
-                    let f = func.borrow();
-                    let iter: Vec<Rc<RefCell<Symbol>>> = f.all_symbols().collect();
-                    drop(f);
-                    for sub_sym in iter {
-                        Symbol::unload(session, sub_sym);
-                    }
-                    func.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
-                    func.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                    func.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-                }
-            }
-            session.sync_odoo.rebuild_validation.insert(symbol);
+            self.rebuild_validation.insert(symbol);
         }
     }
 
@@ -721,7 +708,8 @@ impl SyncOdoo {
             session.sync_odoo.add_to_init_odoo(s.clone());
         }
         for s in to_add[3].iter() {
-            SyncOdoo::add_to_validations(session, s.clone());
+            s.borrow_mut().invalidate_sub_functions(session);
+            session.sync_odoo.add_to_validations(s.clone());
         }
         for sym in found_sym.iter() {
             session.sync_odoo.not_found_symbols.remove(&sym);

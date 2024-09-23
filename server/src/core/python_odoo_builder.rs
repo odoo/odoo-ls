@@ -55,7 +55,7 @@ impl PythonOdooBuilder {
         drop(symbol);
         self._load(session);
         file_info.borrow_mut().replace_diagnostics(BuildSteps::ODOO, self.diagnostics.clone());
-        SyncOdoo::add_to_validations(session, self.symbol.clone());
+        session.sync_odoo.add_to_validations(self.symbol.clone());
         let mut symbol = self.symbol.borrow_mut();
         symbol.set_build_status(BuildSteps::ODOO, BuildStatus::DONE);
     }
