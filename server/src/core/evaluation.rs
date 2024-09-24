@@ -1,4 +1,4 @@
-use ruff_python_ast::{Identifier, Expr, Operator};
+use ruff_python_ast::{Expr, Identifier, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::Diagnostic;
 use weak_table::traits::WeakElement;
@@ -35,6 +35,7 @@ pub struct Evaluation {
 pub enum ExprOrIdent<'a> {
     Expr(&'a Expr),
     Ident(&'a Identifier),
+    Parameter(&'a Parameter),
 }
 
 impl ExprOrIdent<'_> {
@@ -47,6 +48,9 @@ impl ExprOrIdent<'_> {
             ExprOrIdent::Ident(i) => {
                 i.range()
             }
+            ExprOrIdent::Parameter(p) => {
+                p.range()
+            }
         }
     }
 
@@ -56,6 +60,9 @@ impl ExprOrIdent<'_> {
                 e
             },
             ExprOrIdent::Ident(_) => {
+                panic!("ExprOrIdent is not an expr")
+            },
+            ExprOrIdent::Parameter(_) => {
                 panic!("ExprOrIdent is not an expr")
             }
         }
@@ -622,13 +629,16 @@ impl Evaluation {
                     }
                 }
             },
-            ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) => {
+            ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) | ExprOrIdent::Parameter(_) => {
                 let infered_syms = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
                         Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
                     },
                     ExprOrIdent::Ident(expr) => {
                         Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
+                    },
+                    ExprOrIdent::Parameter(expr) => {
+                        Symbol::infer_name(odoo, & parent, & expr.name.id.to_string(), Some( max_infer.to_u32()))
                     }
                     _ => {
                         unreachable!();

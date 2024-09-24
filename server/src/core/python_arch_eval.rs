@@ -337,10 +337,14 @@ impl PythonArchEval {
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
+            if assign.target.id.to_string() == "AbstractModel" {
+                println!("here");
+            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
+                variable_rc.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
