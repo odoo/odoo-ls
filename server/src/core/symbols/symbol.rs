@@ -1591,7 +1591,7 @@ impl Symbol {
     }
 
     /* return the Symbol (class, function or file) the closest to the given offset */
-    pub fn get_scope_symbol(file_symbol: Rc<RefCell<Symbol>>, offset: u32) -> Rc<RefCell<Symbol>> {
+    pub fn get_scope_symbol(file_symbol: Rc<RefCell<Symbol>>, offset: u32, is_param: bool) -> Rc<RefCell<Symbol>> {
         let mut result = file_symbol.clone();
         let section_id = file_symbol.borrow().as_symbol_mgr().get_section_for(offset);
         for (sym_name, sym_map) in file_symbol.borrow().iter_symbols() {
@@ -1602,12 +1602,12 @@ impl Symbol {
                         match typ {
                             SymType::CLASS => {
                                 if symbol.borrow().body_range().start().to_u32() < offset && symbol.borrow().body_range().end().to_u32() > offset {
-                                    result = Symbol::get_scope_symbol(symbol.clone(), offset);
+                                    result = Symbol::get_scope_symbol(symbol.clone(), offset, is_param);
                                 }
                             },
                             SymType::FUNCTION => {
                                 if symbol.borrow().body_range().start().to_u32() < offset && symbol.borrow().body_range().end().to_u32() > offset {
-                                    result = Symbol::get_scope_symbol(symbol.clone(), offset);
+                                    result = Symbol::get_scope_symbol(symbol.clone(), offset, is_param);
                                 }
                             }
                             _ => {}
@@ -1627,8 +1627,12 @@ impl Symbol {
         let on_symbol = on_symbol.borrow();
         results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
         if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.typ()) {
-            let parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
-            return Symbol::infer_name(odoo, &parent, name, Some(on_symbol.range().start().to_u32()));
+            let mut parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
+            while parent.borrow().typ() == SymType::CLASS {
+                let _parent = parent.borrow().parent().unwrap().upgrade().unwrap();
+                parent = _parent;
+            }
+            return Symbol::infer_name(odoo, &parent, name, position);
         }
         if results.len() == 0 && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
             let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
@@ -1683,16 +1687,22 @@ impl Symbol {
         if self.typ() == SymType::CLASS && self.as_class_sym()._model.is_some() && !prevent_comodel {
             let model = session.sync_odoo.models.get(&self.as_class_sym()._model.as_ref().unwrap().name);
             if let Some(model) = model {
-                let loc_symbols = model.clone().borrow().get_symbols(session, from_module.clone().unwrap_or(self.find_module().expect("unable to find module")));
-                for loc_sym in loc_symbols {
-                    if self.is_equal(&loc_sym) {
-                        continue;
-                    }
-                    let attribut = loc_sym.borrow().get_member_symbol(session, name, None, true, all, diagnostics);
-                    if all {
-                        result.extend(attribut);
-                    } else {
-                        return attribut;
+                let mut from_module = from_module.clone();
+                if from_module.is_none() {
+                    from_module = self.find_module();
+                }
+                if let Some(from_module) = from_module {
+                    let loc_symbols = model.clone().borrow().get_symbols(session, from_module);
+                    for loc_sym in loc_symbols {
+                        if self.is_equal(&loc_sym) {
+                            continue;
+                        }
+                        let attribut = loc_sym.borrow().get_member_symbol(session, name, None, true, all, diagnostics);
+                        if all {
+                            result.extend(attribut);
+                        } else {
+                            return attribut;
+                        }
                     }
                 }
             }

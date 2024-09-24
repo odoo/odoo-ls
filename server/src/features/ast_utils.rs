@@ -16,7 +16,6 @@ pub struct AstUtils {}
 impl AstUtils {
 
     pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
-        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset);
         let mut expr: Option<ExprOrIdent> = None;
         let file_info_borrowed = file_info.borrow();
         for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
@@ -30,6 +29,10 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
+        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, match expr {
+            ExprOrIdent::Parameter(_) => true,
+            _ => false
+        });
         let from_module;
         if let Some(module) = file_symbol.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -182,7 +185,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     fn visit_parameter(&mut self, parameter: &'a Parameter) {
         walk_parameter(self, parameter);
         if self.expr.is_none() && parameter.name.range().contains(self.offset) {
-            self.expr = Some(ExprOrIdent::Ident(&parameter.name));
+            self.expr = Some(ExprOrIdent::Parameter(&parameter));
         }
     }
 
