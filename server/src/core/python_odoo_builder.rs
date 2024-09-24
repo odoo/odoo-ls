@@ -287,6 +287,7 @@ impl PythonOdooBuilder {
         if symbol_tree.0.len() == 2 && symbol_tree.1.len() == 1 && symbol_tree.0[0] == "odoo" && symbol_tree.0[1] == "models" &&
             (symbol_tree.1[0] == "BaseModel" || symbol_tree.1[0] == "Model" || symbol_tree.1[0] == "TransientModel") {
             //we don't want to compare these classes with themselves
+            return false;
         } else {
             let base_model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]), u32::MAX);
             let model = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("models")], vec![S!("Model")]), u32::MAX);
