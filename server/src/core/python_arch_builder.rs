@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::TextRange;
+use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};

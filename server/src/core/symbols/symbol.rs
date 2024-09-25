@@ -1601,12 +1601,20 @@ impl Symbol {
                         let typ = symbol.borrow().typ().clone();
                         match typ {
                             SymType::CLASS => {
-                                if symbol.borrow().body_range().start().to_u32() < offset && symbol.borrow().body_range().end().to_u32() > offset {
+                                let range = match is_param {
+                                    true => symbol.borrow().range().start().to_u32(),
+                                    false => symbol.borrow().body_range().start().to_u32(),
+                                };
+                                if range < offset && symbol.borrow().body_range().end().to_u32() > offset {
                                     result = Symbol::get_scope_symbol(symbol.clone(), offset, is_param);
                                 }
                             },
                             SymType::FUNCTION => {
-                                if symbol.borrow().body_range().start().to_u32() < offset && symbol.borrow().body_range().end().to_u32() > offset {
+                                let range = match is_param {
+                                    true => symbol.borrow().range().start().to_u32(),
+                                    false => symbol.borrow().body_range().start().to_u32(),
+                                };
+                                if range < offset && symbol.borrow().body_range().end().to_u32() > offset {
                                     result = Symbol::get_scope_symbol(symbol.clone(), offset, is_param);
                                 }
                             }
