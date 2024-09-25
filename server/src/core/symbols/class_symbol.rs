@@ -1,4 +1,4 @@
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -20,6 +20,7 @@ pub struct ClassSymbol {
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub range: TextRange,
+    pub body_range: TextRange,
     pub _model: Option<ModelData>,
 
     //Trait SymbolMgr
@@ -32,13 +33,14 @@ pub struct ClassSymbol {
 
 impl ClassSymbol {
 
-    pub fn new(name: String, range: TextRange, is_external: bool) -> Self {
+    pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
             name,
             is_external,
             weak_self: None,
             parent: None,
             range,
+            body_range: TextRange::new(body_start, range.end()),
             ast_indexes: vec![],
             doc_string: None,
             sections: vec![],

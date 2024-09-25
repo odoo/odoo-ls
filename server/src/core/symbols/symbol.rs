@@ -198,8 +198,8 @@ impl Symbol {
         variable
     }
 
-    pub fn add_new_function(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
-        let function = Rc::new(RefCell::new(Symbol::Function(FunctionSymbol::new(name.clone(), range.clone(), self.is_external()))));
+    pub fn add_new_function(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
+        let function = Rc::new(RefCell::new(Symbol::Function(FunctionSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         function.borrow_mut().set_weak_self(Rc::downgrade(&function));
         function.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
@@ -228,8 +228,8 @@ impl Symbol {
         function
     }
 
-    pub fn add_new_class(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
-        let class = Rc::new(RefCell::new(Symbol::Class(ClassSymbol::new(name.clone(), range.clone(), self.is_external()))));
+    pub fn add_new_class(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
+        let class = Rc::new(RefCell::new(Symbol::Class(ClassSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         class.borrow_mut().set_weak_self(Rc::downgrade(&class));
         class.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
@@ -461,6 +461,19 @@ impl Symbol {
             Symbol::Class(c) => &c.range,
             Symbol::Function(f) => &f.range,
             Symbol::Variable(v) => &v.range,
+        }
+    }
+
+    pub fn body_range(&self) -> &TextRange {
+        match self {
+            Symbol::Root(_) => panic!(),
+            Symbol::Namespace(_) => panic!(),
+            Symbol::Package(_) => panic!(),
+            Symbol::File(_) => panic!(),
+            Symbol::Compiled(_) => panic!(),
+            Symbol::Class(c) => &c.body_range,
+            Symbol::Function(f) => &f.body_range,
+            Symbol::Variable(_) => panic!(),
         }
     }
 
@@ -1528,12 +1541,12 @@ impl Symbol {
                         let typ = symbol.borrow().typ().clone();
                         match typ {
                             SymType::CLASS => {
-                                if symbol.borrow().range().start().to_u32() < offset && symbol.borrow().range().end().to_u32() > offset {
+                                if symbol.borrow().body_range().start().to_u32() < offset && symbol.borrow().body_range().end().to_u32() > offset {
                                     result = Symbol::get_scope_symbol(symbol.clone(), offset);
                                 }
                             },
                             SymType::FUNCTION => {
-                                if symbol.borrow().range().start().to_u32() < offset && symbol.borrow().range().end().to_u32() > offset {
+                                if symbol.borrow().body_range().start().to_u32() < offset && symbol.borrow().body_range().end().to_u32() > offset {
                                     result = Symbol::get_scope_symbol(symbol.clone(), offset);
                                 }
                             }
