@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 
 use crate::{constants::{BuildStatus, BuildSteps}, core::evaluation::{Context, Evaluation, EvaluationSymbol}, threads::SessionInfo};
 
@@ -33,6 +33,7 @@ pub struct FunctionSymbol {
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub range: TextRange,
+    pub body_range: TextRange,
     pub args: Vec<Argument>,
 
     //Trait SymbolMgr
@@ -46,13 +47,14 @@ pub struct FunctionSymbol {
 
 impl FunctionSymbol {
 
-    pub fn new(name: String, range: TextRange, is_external: bool) -> Self {
+    pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
             name,
             is_external,
             weak_self: None,
             parent: None,
             range,
+            body_range: TextRange::new(body_start, range.end()),
             is_static: false,
             is_property: false,
             diagnostics: HashMap::new(),

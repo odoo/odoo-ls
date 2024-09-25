@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::TextRange;
+use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry};
 use lsp_types::Diagnostic;
 use tracing::warn;
@@ -335,7 +335,8 @@ impl PythonArchBuilder {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(session, &func_def.name.id, &func_def.range);
+        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
+            session, &func_def.name.id, &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
         let mut func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
@@ -376,7 +377,8 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(session, &class_def.name.id, &class_def.range);
+        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
+            session, &class_def.name.id, &class_def.range, &class_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
         let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
