@@ -1254,6 +1254,7 @@ impl Symbol {
     pub fn invalidate_sub_functions(&mut self, session: &mut SessionInfo) {
         if vec![SymType::PACKAGE, SymType::FILE].contains(&self.typ()) {
             for func in self.iter_inner_functions() {
+                func.borrow_mut().evaluations_mut().unwrap().clear();
                 func.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                 func.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             }
