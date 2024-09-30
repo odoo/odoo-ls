@@ -110,6 +110,7 @@ impl PythonArchEval {
         } else {
             //then Symbol must be a function
             symbol.borrow_mut().as_func_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+            PythonArchEvalHooks::on_function_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
         }
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
@@ -337,9 +338,6 @@ impl PythonArchEval {
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
-            if assign.target.id.to_string() == "AbstractModel" {
-                println!("here");
-            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
