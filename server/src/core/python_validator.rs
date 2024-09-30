@@ -26,7 +26,7 @@ use super::python_utils::{self, unpack_assign};
 pub struct PythonValidator {
     file_mode: bool,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
-    pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //collect diagnostic from arch and arch_eval too from inner functions
+    pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
     current_module: Option<Rc<RefCell<Symbol>>>
 }
@@ -39,7 +39,7 @@ impl PythonValidator {
         Self {
             file_mode: true,
             sym_stack: vec![symbol],
-            diagnostics: HashMap::from([(BuildSteps::VALIDATION, vec![])]),
+            diagnostics: vec![],
             safe_imports: vec![false],
             current_module: None,
         }
@@ -70,13 +70,14 @@ impl PythonValidator {
                 trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
+                file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
                     self.validate_body(session, file_info.ast.as_ref().unwrap());
                 }
                 drop(file_info);
                 let mut file_info = file_info_rc.borrow_mut();
-                file_info.update_validation_diagnostics(self.diagnostics.clone());
+                file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymType::FUNCTION => {
                 trace!("Validating function {}", self.sym_stack[0].borrow().name());
@@ -90,8 +91,7 @@ impl PythonValidator {
                     let mut builder = PythonArchEval::new(func.clone());
                     builder.eval_arch(session);
                 }
-                self.diagnostics = func.borrow().as_func().diagnostics.clone();
-                self.diagnostics.entry(BuildSteps::VALIDATION).or_insert_with(|| vec![]);
+                self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
@@ -106,7 +106,7 @@ impl PythonValidator {
                     self.validate_body(session, body);
                     match stmt {
                         Stmt::FunctionDef(_) => {
-                            self.sym_stack[0].borrow_mut().as_func_mut().diagnostics = self.diagnostics.clone();
+                            self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     }
@@ -130,12 +130,6 @@ impl PythonValidator {
         }
     }
 
-    fn merge_diagnostics(&mut self, diags: HashMap<BuildSteps, Vec<Diagnostic>>) {
-        for (key, value) in diags.iter() {
-            self.diagnostics.entry(*key).or_insert_with(|| vec![]).extend(value.clone());
-        }
-    }
-
     fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {
         for stmt in vec_ast.iter() {
             match stmt {
@@ -149,7 +143,7 @@ impl PythonValidator {
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
-                        self.merge_diagnostics(sym.borrow_mut().as_func_mut().diagnostics.clone());
+                        self.diagnostics.extend(sym.borrow_mut().as_func_mut().diagnostics.values().flat_map(|v| v.clone()));
                     } else {
                         panic!("function not found");
                     }
@@ -174,7 +168,7 @@ impl PythonValidator {
                 },
                 Stmt::Expr(e) => {
                     let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_stack.last().unwrap().clone(), &e.range.start());
-                    self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().extend(diags);
+                    self.diagnostics.extend(diags);
                 },
                 Stmt::If(i) => {
                     self.validate_body(session, &i.body);
@@ -237,7 +231,7 @@ impl PythonValidator {
                 let module = import_result.symbol.borrow().find_module();
                 if let Some(module) = module {
                     if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
-                        self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
+                        self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30103"))),
@@ -324,7 +318,7 @@ impl PythonValidator {
                 }
                 if !found_one {
                     if main_modules.len() > 0 {
-                        self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
+                        self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30104"))),
@@ -334,7 +328,7 @@ impl PythonValidator {
                             None)
                         )
                     } else {
-                        self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
+                        self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30102"))),
@@ -346,7 +340,7 @@ impl PythonValidator {
                     }
                 }
             } else {
-                self.diagnostics.get_mut(&BuildSteps::VALIDATION).unwrap().push(Diagnostic::new(
+                self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30102"))),
