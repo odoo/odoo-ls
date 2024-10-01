@@ -1,10 +1,21 @@
 # Changelog
 
-## 0.2.6 - 2024/??/??
+## 0.2.6 - 2024/01/10
 
 ### Server
 
+- Add Function body evaluation. This is the major content of this update. The server has now the required structure to parse function
+body and infer the return value of a function. This feature is rudimentary and a lot of function will still have a return value of None,
+but the code is ready to support new python expressions!
+- fix python path acquisition from vscode settings
+- Ignore git file update to avoid useless reload of the index.
+- Add various new diagnostics
+- fix deadlock that can sometimes occurs in some file update.
+- Add support for dynamic symbols. Dynamic symbols are symbols that are added on an object after its declaration
+- improve dependency graph to support models
 - Server now reacts to WorkspaceDidChangedWatchedFiles, and will restart automatically on Odoo version change
+- Better logs for investigations: used settings, build name, etc...
+
 
 ## 0.2.5 - Beta Candidate - 2024/07/10
 ### Rustpocalypse
