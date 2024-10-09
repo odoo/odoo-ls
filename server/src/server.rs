@@ -353,9 +353,12 @@ impl Server {
         match msg {
             Message::Request(r) => {
                 match r.method.as_str() {
-                    HoverRequest::METHOD | GotoDefinition::METHOD | Completion::METHOD => {
+                    HoverRequest::METHOD | GotoDefinition::METHOD => {
                         self.sender_s_to_read.send(Message::Request(r)).unwrap();
-                    }
+                    },
+                    Completion::METHOD => {
+                        self.sender_s_to_main.send(Message::Request(r)).unwrap();
+                    },
                     ResolveCompletionItem::METHOD => {
                         info!("Got ignored CompletionItem/resolve")
                     }
