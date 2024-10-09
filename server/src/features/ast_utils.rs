@@ -51,7 +51,7 @@ impl AstUtils {
     pub fn flatten_expr(expr: &Expr) -> String {
         match expr {
             Expr::Name(n) => {
-                n.id.clone()
+                n.id.to_string()
             },
             Expr::Attribute(a) => {
                 AstUtils::flatten_expr(&a.value) + &a.attr

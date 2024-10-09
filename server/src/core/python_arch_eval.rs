@@ -484,7 +484,7 @@ impl PythonArchEval {
                 for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
                     if is_first && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
                         let mut var_bw = variable.borrow_mut();
-                        let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
+                        let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id.to_string()).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
                         symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap())));
                         symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().instance = true;
                         is_first = false;
@@ -574,7 +574,7 @@ impl PythonArchEval {
                                 let iter = iter[0].borrow();
                                 let eval_iter = &iter.evaluations().unwrap()[0];
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
-                                    let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id, &for_stmt.target.range());
+                                    let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id.to_string(), &for_stmt.target.range());
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
                                         Evaluation::eval_from_symbol(

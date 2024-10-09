@@ -297,14 +297,14 @@ impl PythonArchBuilder {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
+            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
     }
 
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
+            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
             let mut variable = variable.borrow_mut();
             if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
                 let parent = variable.parent().as_ref().unwrap().upgrade();
@@ -342,7 +342,7 @@ impl PythonArchBuilder {
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
         let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
-            session, &func_def.name.id, &func_def.range, &func_def.body.get(0).unwrap().range().start());
+            session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
         let mut func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
@@ -362,7 +362,7 @@ impl PythonArchBuilder {
         drop(sym_bw);
         //add params
         for arg in func_def.parameters.posonlyargs.iter().chain(&func_def.parameters.args) {
-            let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id, &arg.range);
+            let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
@@ -384,7 +384,7 @@ impl PythonArchBuilder {
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
         let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
-            session, &class_def.name.id, &class_def.range, &class_def.body.get(0).unwrap().range().start());
+            session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
         let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
@@ -424,7 +424,7 @@ impl PythonArchBuilder {
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
         let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id, &assign.target.range);
+            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
         self.visit_node(session, &for_stmt.body)?;
         //TODO should split evaluations as in if
