@@ -221,7 +221,11 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
         match msg {
             Message::Request(r) => {
                 let (value, error) = match r.method.as_str() {
-                    _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
+                    Completion::METHOD => {
+                        //Handle completion in main because updates has to be done before the autocompletion
+                        to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
+                    },
+                    _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
                         code: 1,
                         message: S!("Request not handled by the server"),
                         data: None
@@ -277,9 +281,6 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     },
                     GotoDefinition::METHOD => {
                         to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
-                    },
-                    Completion::METHOD => {
-                        to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
                     },
                     _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
                         code: 1,
