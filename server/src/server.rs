@@ -184,7 +184,7 @@ impl Server {
                     open_close: Some(true),
                     will_save: None,
                     will_save_wait_until: None,
-                    save: Some(lsp_types::TextDocumentSyncSaveOptions::SaveOptions(SaveOptions{include_text: Some(true)})) //TODO could deactivate if set on 'afterDelay?
+                    save: Some(lsp_types::TextDocumentSyncSaveOptions::SaveOptions(SaveOptions{include_text: Some(false)})) //TODO could deactivate if set on 'afterDelay?
                 })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Right(DefinitionOptions{

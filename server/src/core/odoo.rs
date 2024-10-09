@@ -1074,23 +1074,24 @@ impl Odoo {
         for uri in file_uris.iter() {
             let path = uri.to_file_path().unwrap();
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
-            Odoo::reload_file(session, path, None, -100, true, false);
+            Odoo::update_file_cache(session, path.clone(), None, -100);
+            Odoo::update_file_index(session, path, true, false);
         }
     }
 
     pub fn handle_did_open(session: &mut SessionInfo, params: DidOpenTextDocumentParams) {
         //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
         // that we use the same base version of the file for future incrementation.
+        let path = params.text_document.uri.to_file_path().unwrap();
+        session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
+        Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
+            range: None,
+            range_length: None,
+            text: params.text_document.text}]), params.text_document.version);
         if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
-        let path = params.text_document.uri.to_file_path().unwrap();
-        session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
-        Odoo::reload_file(session, path, Some(&vec![TextDocumentContentChangeEvent{
-            range: None,
-            range_length: None,
-            text: params.text_document.text}]),
-        params.text_document.version, true, true);
+        Odoo::update_file_index(session, path,true, true);
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
@@ -1144,29 +1145,26 @@ impl Odoo {
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
-        if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
-            return
-        }
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
-        Odoo::reload_file(session, path, Some(&params.content_changes), version, false, false);
+        Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version);
+        if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
+            return
+        }
+        Odoo::update_file_index(session, path,true, false);
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
+        let path = params.text_document.uri.to_file_path().unwrap();
+        session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
         if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave || session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
-        let path = params.text_document.uri.to_file_path().unwrap();
-        session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
-        Odoo::reload_file(session, path, Some(&vec![TextDocumentContentChangeEvent{
-            range: None,
-            range_length: None,
-            text: params.text.expect("As required in the registered capabilities, a Save notification must contains the file content")}]),
-            1, true, false);
+        Odoo::update_file_index(session, path,true, false);
     }
 
-    pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32, is_save: bool, is_open: bool) {
+    fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
             if let Err(_e) = tree { //is not part of odoo (or not in addons path)
@@ -1174,10 +1172,18 @@ impl Odoo {
             }
             let tree = tree.unwrap().clone();
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), is_save);
-            let mut mut_file_info = file_info.borrow_mut();
-            mut_file_info.publish_diagnostics(session); //To push potential syntax errors or refresh previous one
-            drop(mut_file_info);
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
+            file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
+        }
+    }
+
+    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool) {
+        if path.extension().is_some() && path.extension().unwrap() == "py" {
+            let tree = session.sync_odoo.tree_from_path(&path);
+            if let Err(_e) = tree { //is not part of odoo (or not in addons path)
+                return;
+            }
+            let tree = tree.unwrap().clone();
             let _ = SyncOdoo::_unload_path(session, &path, false);
             //build new by searching for missing symbols
             SyncOdoo::search_symbols_to_rebuild(session, &tree);
