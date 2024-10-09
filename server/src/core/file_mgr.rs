@@ -77,32 +77,27 @@ impl FileInfo {
         let mut diagnostics = vec![];
         let content = &self.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
-        let ast = ruff_python_parser::parse(source.as_str(), Mode::Module);
-        match ast {
-            Ok(module) => {
-                match module.into_syntax() {
-                    Mod::Expression(_expr) => {
-                        warn!("No support for expression-file only");
-                        self.ast = None
-                    },
-                    Mod::Module(module) => {
-                        self.ast = Some(module.body);
-                    }
-                }
+        let ast = ruff_python_parser::parse_unchecked(source.as_str(), Mode::Module);
+        for error in ast.errors().iter() {
+            diagnostics.push(Diagnostic::new(
+                Range{ start: Position::new(error.location.start().to_u32(), 0),
+                    end: Position::new(error.location.end().to_u32(), 0)},
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30001"))),
+                None,
+                error.error.to_string(),
+                None,
+                None));
+        }
+        match ast.into_syntax() {
+            Mod::Expression(_expr) => {
+                warn!("No support for expression-file only");
+                self.ast = None
             },
-            Err(err) => {
-                self.ast = None;
-                diagnostics.push(Diagnostic::new(
-                    Range{ start: Position::new(err.location.start().to_u32(), 0),
-                        end: Position::new(err.location.end().to_u32(), 0)},
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30001"))),
-                    None,
-                    err.error.to_string(),
-                    None,
-                    None));
+            Mod::Module(module) => {
+                self.ast = Some(module.body);
             }
-        };
+        }
         self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
     }
 
