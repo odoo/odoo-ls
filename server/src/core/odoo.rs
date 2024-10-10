@@ -1152,7 +1152,7 @@ impl Odoo {
         if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
-        Odoo::update_file_index(session, path,true, false);
+        Odoo::update_file_index(session, path, false, false);
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
@@ -1179,19 +1179,17 @@ impl Odoo {
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
-            let tree = session.sync_odoo.tree_from_path(&path);
-            if let Err(_e) = tree { //is not part of odoo (or not in addons path)
-                return;
-            }
-            let tree = tree.unwrap().clone();
-            let _ = SyncOdoo::_unload_path(session, &path, false);
-            //build new by searching for missing symbols
-            SyncOdoo::search_symbols_to_rebuild(session, &tree);
             if is_open || (is_save && session.sync_odoo.config.refresh_mode == RefreshMode::OnSave) {
-                    SyncOdoo::process_rebuilds(session);
+                let tree = session.sync_odoo.tree_from_path(&path);
+                if !tree.is_err() { //is part of odoo (and in addons path)
+                    let tree = tree.unwrap().clone();
+                    let _ = SyncOdoo::_unload_path(session, &path, false);
+                    SyncOdoo::search_symbols_to_rebuild(session, &tree);
+                }
+                SyncOdoo::process_rebuilds(session);
             } else {
                 if session.sync_odoo.config.refresh_mode == RefreshMode::AfterDelay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
-                    SessionInfo::request_process(session);
+                    SessionInfo::request_update_file_index(session, &path);
                 }
             }
         }

@@ -1,6 +1,6 @@
-use std::{borrow::Borrow, sync::{Arc, Mutex}, time::Instant};
+use std::{path::{Path, PathBuf}, sync::{Arc, Mutex}, time::Instant};
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
@@ -74,14 +74,26 @@ impl <'a> SessionInfo<'a> {
         }
     }
 
-    pub fn request_process(session: &mut SessionInfo) {
+    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf) {
         if let Some(sender) = &session.delayed_process_sender {
             if !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10 {
+                let tree = session.sync_odoo.tree_from_path(&path);
+                if !tree.is_err() { //is part of odoo (and in addons path)
+                    let tree = tree.unwrap().clone();
+                    let _ = SyncOdoo::_unload_path(session, &path, false);
+                    SyncOdoo::search_symbols_to_rebuild(session, &tree);
+                }
                 SyncOdoo::process_rebuilds(session);
             } else {
-                let _ = sender.send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
+                let _ = sender.send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now() }));
             }
         } else {
+            let tree = session.sync_odoo.tree_from_path(&path);
+            if !tree.is_err() { //is part of odoo (and in addons path)
+                let tree = tree.unwrap().clone();
+                let _ = SyncOdoo::_unload_path(session, &path, false);
+                SyncOdoo::search_symbols_to_rebuild(session, &tree);
+            }
             SyncOdoo::process_rebuilds(session);
         }
     }
@@ -124,11 +136,17 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
     (value, error)
 }
 
+pub struct UpdateFileIndexData {
+    pub path: PathBuf,
+    pub time: Instant,
+}
+
 pub enum DelayedProcessingMessage {
-    UPDATE_DELAY(u64),
-    PROCESS(Instant),
-    REBUILD(Instant),
-    EXIT,
+    UPDATE_DELAY(u64), //update the delay before starting any update
+    PROCESS(Instant), //Process rebuilds after delay
+    UPDATE_FILE_INDEX(UpdateFileIndexData), //update the file after delay
+    REBUILD(Instant), //reset the database after the delay
+    EXIT, //exit the thread
 }
 
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>) {
@@ -136,6 +154,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
     let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_save_delay, MAX_DELAY));
     loop {
         let mut rebuild = false;
+        let mut update_file_index = None;
         let mut delay = normal_delay;
         let msg = receiver.recv();
         match msg {
@@ -145,7 +164,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             Ok(DelayedProcessingMessage::UPDATE_DELAY(duration)) => {
                 normal_delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
             }
-            Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time)) => {
+            Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time) | DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time})) => {
                 if matches!(msg, Ok(DelayedProcessingMessage::REBUILD(_))) {
                     rebuild = true;
                 }
@@ -174,10 +193,17 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                                     to_wait = (t + delay) - std::time::Instant::now();
                                     last_time = t;
                                 }
-                            }
+                            },
+                            Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path, time: t })) => {
+                                update_file_index = Some(path);
+                                if t > last_time {
+                                    to_wait = (t + delay) - std::time::Instant::now();
+                                    last_time = t;
+                                }
+                            },
                             Err(TryRecvError::Empty) => {
                                 break;
-                            }
+                            },
                             Err(e) => {return;}
                         }
                     }
@@ -193,6 +219,14 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                         let config = session.sync_odoo.config.clone();
                         SyncOdoo::reset(&mut session, config);
                     } else {
+                        if let Some(path) = update_file_index {
+                            let tree = session.sync_odoo.tree_from_path(&path);
+                            if !tree.is_err() { //is part of odoo (and in addons path)
+                                let tree = tree.unwrap().clone();
+                                let _ = SyncOdoo::_unload_path(&mut session, &path, false);
+                                SyncOdoo::search_symbols_to_rebuild(&mut session, &tree);
+                            }
+                        }
                         SyncOdoo::process_rebuilds(&mut session);
                     }
                 }
