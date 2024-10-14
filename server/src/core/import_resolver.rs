@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Identifier, Alias};
+use ruff_python_ast::{Alias, Identifier, StmtImport};
 use crate::{constants::*, S};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
@@ -260,4 +260,58 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
         }
     }
     return Err("Symbol not found".to_string())
+}
+
+pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, base_name: String, level: Option<u32>) -> Vec<String> {
+    //A: search base of different imports
+    let _source_file_symbol_lock = source_file_symbol.borrow_mut();
+    let file_tree = _resolve_packages(
+        &_source_file_symbol_lock.paths()[0].clone(),
+        &_source_file_symbol_lock.get_tree(),
+        &_source_file_symbol_lock.typ(),
+        level,
+        from_stmt);
+    drop(_source_file_symbol_lock);
+    let (from_symbol, fallback_sym) = _get_or_create_symbol(
+        session,
+        session.sync_odoo.symbols.as_ref().unwrap().clone(),
+        &file_tree,
+        None);
+    let mut result = vec![];
+    if from_symbol.is_none() {
+        return result;
+    }
+    let from_symbol = from_symbol.unwrap();
+
+    let mut sym: Option<Rc<RefCell<Symbol>>> = Some(from_symbol.clone());
+    let mut names = vec![base_name.split(".").map(str::to_string).next().unwrap()];
+    if base_name.ends_with(".") {
+        names.push(S!(""));
+    }
+    for (index, branch) in names.iter().enumerate() {
+        if index != names.len() -1 {
+            let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
+            if next_symbol.is_empty() {
+                next_symbol = match _resolve_new_symbol(session, sym.as_ref().unwrap().clone(), &branch, None) {
+                    Ok(v) => vec![v],
+                    Err(_) => vec![]
+                }
+            }
+            if next_symbol.is_empty() {
+                sym = None;
+                break;
+            }
+            sym = Some(next_symbol[0].clone());
+        }
+    }
+    if let Some(sym) = sym {
+        let filter = names.last().unwrap();
+        for symbol in sym.borrow().all_symbols() {
+            if symbol.borrow().name().starts_with(filter) {
+                result.push(symbol.borrow().name().clone());
+            }
+        }
+    }
+
+    return result;
 }
