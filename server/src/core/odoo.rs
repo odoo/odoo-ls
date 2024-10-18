@@ -171,6 +171,9 @@ impl SyncOdoo {
                     let pathbuf = PathBuf::from(path);
                     if pathbuf.is_dir() {
                         let final_path = pathbuf.sanitize();
+                        if final_path == session.sync_odoo.config.odoo_path || session.sync_odoo.config.addons.contains(&final_path) {
+                            continue;
+                        }
                         session.log_message(MessageType::INFO, format!("Adding sys.path: {}", final_path));
                         root_symbol.add_path(final_path.clone());
                         root_symbol.as_root_mut().sys_path.push(final_path.clone());
@@ -847,7 +850,7 @@ impl Odoo {
             let odoo_conf = odoo_conf.as_object().unwrap();
             config.addons = odoo_conf.get("addons").expect("An odoo config must contains a addons value")
                 .as_array().expect("the addons value must be an array")
-                .into_iter().map(|v| v.to_string()).collect();
+                .into_iter().map(|v| v.to_string().trim_end_matches('"').trim_start_matches('"').to_string()).collect();
             config.odoo_path = odoo_conf.get("odooPath").expect("odooPath must exist").as_str().expect("odooPath must be a String").to_string();
         } else {
             config.addons = vec![];
