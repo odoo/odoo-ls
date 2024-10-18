@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionList, CompletionResponse};
 use ruff_python_ast::visitor::{walk_alias, walk_except_handler, walk_expr, walk_keyword, walk_parameter, walk_pattern, walk_pattern_keyword, walk_stmt, walk_type_param, Visitor};
-use ruff_python_ast::{Alias, ExceptHandler, Expr, Keyword, Parameter, Pattern, PatternKeyword, Stmt, StmtImport, StmtImportFrom, TypeParam};
+use ruff_python_ast::{Alias, ExceptHandler, Expr, Keyword, Parameter, Pattern, PatternKeyword, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal, TypeParam};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 use crate::core::evaluation::ExprOrIdent;
@@ -28,67 +28,230 @@ impl CompletionFeature {
         let offset = file_info.borrow().position_to_offset(line, character);
         let file_info =  file_info.borrow();
         let ast = file_info.ast.as_ref().unwrap();
-        let mut expr: Option<ExprOrIdent> = None;
-        //
-        let mut previous = None;
-        for stmt in ast.iter() {
-            if previous.is_none() {
-                previous = Some(stmt);
-                continue;
-            }
-            if stmt.range().start().to_usize() > offset { //Next stmt is too far, previous was the right one !
-                return complete_stmt(session, file_symbol, previous.unwrap(), offset);
-            } else if stmt.range().end().to_usize() > offset { //This stmt finish after the offset, so the actual is the right one !
-                return complete_stmt(session, file_symbol, stmt, offset);
-            }
-            previous = Some(stmt);
-        }
-        //if the right stmt is the last one
-        if ast.iter().last().unwrap().range().end().to_usize() < offset {
-            return complete_stmt(session, file_symbol, ast.iter().last().unwrap(), offset);
-        }
-        unreachable!("This code should not be reachable ! ");
+        return complete_vec_stmt(ast, session, file_symbol, offset)
     }
 }
 
 fn complete_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt: &Stmt, offset: usize) -> Option<CompletionResponse> {
     match stmt {
-        Stmt::FunctionDef(stmt_function_def) => None,
-        Stmt::ClassDef(stmt_class_def) => None,
-        Stmt::Return(stmt_return) => None,
-        Stmt::Delete(stmt_delete) => None,
-        Stmt::Assign(stmt_assign) => None,
-        Stmt::AugAssign(stmt_aug_assign) => None,
-        Stmt::AnnAssign(stmt_ann_assign) => None,
-        Stmt::TypeAlias(stmt_type_alias) => None,
-        Stmt::For(stmt_for) => None,
-        Stmt::While(stmt_while) => None,
-        Stmt::If(stmt_if) => None,
-        Stmt::With(stmt_with) => None,
-        Stmt::Match(stmt_match) => None,
-        Stmt::Raise(stmt_raise) => None,
-        Stmt::Try(stmt_try) => None,
-        Stmt::Assert(stmt_assert) => None,
+        Stmt::FunctionDef(stmt_function_def) => complete_function_def_stmt(session, file, stmt_function_def, offset),
+        Stmt::ClassDef(stmt_class_def) => complete_class_def_stmt(session, file, stmt_class_def, offset),
+        Stmt::Return(stmt_return) => complete_return_stmt(session, file, stmt_return, offset),
+        Stmt::Delete(stmt_delete) => complete_delete_stmt(session, file, stmt_delete, offset),
+        Stmt::Assign(stmt_assign) => complete_assign_stmt(session, file, stmt_assign, offset),
+        Stmt::AugAssign(stmt_aug_assign) => complete_aug_assign_stmt(session, file, stmt_aug_assign, offset),
+        Stmt::AnnAssign(stmt_ann_assign) => complete_ann_assign_stmt(session, file, stmt_ann_assign, offset),
+        Stmt::TypeAlias(stmt_type_alias) => complete_type_alias_stmt(session, file, stmt_type_alias, offset),
+        Stmt::For(stmt_for) => complete_for_stmt(session, file, stmt_for, offset),
+        Stmt::While(stmt_while) => complete_while_stmt(session, file, stmt_while, offset),
+        Stmt::If(stmt_if) => complete_if_stmt(session, file, stmt_if, offset),
+        Stmt::With(stmt_with) => complete_with_stmt(session, file, stmt_with, offset),
+        Stmt::Match(stmt_match) => complete_match_stmt(session, file, stmt_match, offset),
+        Stmt::Raise(stmt_raise) => complete_raise_stmt(session, file, stmt_raise, offset),
+        Stmt::Try(stmt_try) => complete_try_stmt(session, file, stmt_try, offset),
+        Stmt::Assert(stmt_assert) => complete_assert_stmt(session, file, stmt_assert, offset),
         Stmt::Import(stmt_import) => complete_import_stmt(session, file, stmt_import, offset),
-        Stmt::ImportFrom(stmt_import_from) => complete_importFrom_stmt(session, file, stmt_import_from, offset),
-        Stmt::Global(stmt_global) => None,
-        Stmt::Nonlocal(stmt_nonlocal) => None,
-        Stmt::Expr(stmt_expr) => None,
+        Stmt::ImportFrom(stmt_import_from) => complete_import_from_stmt(session, file, stmt_import_from, offset),
+        Stmt::Global(stmt_global) => complete_global_stmt(session, file, stmt_global, offset),
+        Stmt::Nonlocal(stmt_nonlocal) => complete_nonlocal_stmt(session, file, stmt_nonlocal, offset),
+        Stmt::Expr(stmt_expr) => complete_expr(&stmt_expr.value, session, file, offset),
         Stmt::Pass(stmt_pass) => None,
         Stmt::Break(stmt_break) => None,
         Stmt::Continue(stmt_continue) => None,
         Stmt::IpyEscapeCommand(stmt_ipy_escape_command) => None,
     }
+}
 
-    // Some(CompletionResponse::List(CompletionList {
-    //     is_incomplete: false,
-    //     items: vec![
-    //         CompletionItem {
-    //             label: S!("test"),
-    //             ..Default::default()
+fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: usize) -> Option<CompletionResponse> {
+    let mut previous = None;
+    for stmt in stmts.iter() {
+        if previous.is_none() {
+            previous = Some(stmt);
+            continue;
+        }
+        if stmt.range().start().to_usize() > offset { //Next stmt is too far, previous was the right one !
+            return complete_stmt(session, file_symbol, previous.unwrap(), offset);
+        } else if stmt.range().end().to_usize() > offset { //This stmt finish after the offset, so the actual is the right one !
+            return complete_stmt(session, file_symbol, stmt, offset);
+        }
+        previous = Some(stmt);
+    }
+    //if the right stmt is the last one
+    if stmts.iter().last().unwrap().range().end().to_usize() < offset {
+        return complete_stmt(session, file_symbol, stmts.iter().last().unwrap(), offset);
+    }
+    unreachable!("This code should not be reachable ! ");
+}
+
+fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_function_def: &ruff_python_ast::StmtFunctionDef, offset: usize) -> Option<CompletionResponse> {
+    if stmt_function_def.body.len() > 0 {
+        if offset < stmt_function_def.body.first().unwrap().range().start().to_usize() && stmt_function_def.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_function_def.body, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_class_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_class_def: &ruff_python_ast::StmtClassDef, offset: usize) -> Option<CompletionResponse> {
+    if stmt_class_def.body.len() > 0 {
+        if offset < stmt_class_def.body.first().unwrap().range().start().to_usize() && stmt_class_def.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_class_def.body, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_return_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_return: &ruff_python_ast::StmtReturn, offset: usize) -> Option<CompletionResponse> {
+    if stmt_return.value.is_some() {
+        return complete_expr( stmt_return.value.as_ref().unwrap(), session, file, offset);
+    }
+    None
+}
+
+fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_delete: &ruff_python_ast::StmtDelete, offset: usize) -> Option<CompletionResponse> {
+    for target in stmt_delete.targets.iter() {
+        if offset > target.range().start().to_usize() && offset < target.range().end().to_usize() {
+            return complete_expr( target, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
+    if offset > stmt_assign.value.range().start().to_usize() && offset < stmt_assign.value.range().end().to_usize() {
+        return complete_expr( &stmt_assign.value, session, file, offset);
+    }
+    None
+}
+
+fn complete_aug_assign_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_aug_assign: &ruff_python_ast::StmtAugAssign, offset: usize) -> Option<CompletionResponse> {
+    if offset > stmt_aug_assign.value.range().start().to_usize() && offset < stmt_aug_assign.value.range().end().to_usize() {
+        return complete_expr( &stmt_aug_assign.value, session, file, offset);
+    }
+    None
+}
+
+fn complete_ann_assign_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_ann_assign: &ruff_python_ast::StmtAnnAssign, offset: usize) -> Option<CompletionResponse> {
+    if stmt_ann_assign.value.is_some() {
+        if offset > stmt_ann_assign.value.as_ref().unwrap().range().start().to_usize() && offset < stmt_ann_assign.value.as_ref().unwrap().range().end().to_usize() {
+            return complete_expr( stmt_ann_assign.value.as_ref().unwrap(), session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_type_alias_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_type_alias: &ruff_python_ast::StmtTypeAlias, offset: usize) -> Option<CompletionResponse> {
+    None
+}
+
+fn complete_for_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_for: &ruff_python_ast::StmtFor, offset: usize) -> Option<CompletionResponse> {
+    if offset > stmt_for.iter.range().start().to_usize() && offset < stmt_for.iter.range().end().to_usize() {
+        return complete_expr( &stmt_for.iter, session, file, offset);
+    }
+    if stmt_for.body.len() > 0 {
+        if offset < stmt_for.body.first().unwrap().range().start().to_usize() && stmt_for.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_for.body, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_while_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_while: &ruff_python_ast::StmtWhile, offset: usize) -> Option<CompletionResponse> {
+    if offset > stmt_while.test.range().start().to_usize() && offset < stmt_while.test.range().end().to_usize() {
+        return complete_expr( &stmt_while.test, session, file, offset);
+    }
+    if stmt_while.body.len() > 0 {
+        if offset < stmt_while.body.first().unwrap().range().start().to_usize() && stmt_while.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_while.body, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_if_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_if: &ruff_python_ast::StmtIf, offset: usize) -> Option<CompletionResponse> {
+    if offset > stmt_if.test.range().start().to_usize() && offset < stmt_if.test.range().end().to_usize() {
+        return complete_expr( &stmt_if.test, session, file, offset);
+    }
+    if stmt_if.body.len() > 0 {
+        if offset < stmt_if.body.first().unwrap().range().start().to_usize() && stmt_if.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_if.body, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_with_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_with: &ruff_python_ast::StmtWith, offset: usize) -> Option<CompletionResponse> {
+    //TODO complete with items
+    // if stmt_with.items.len() > 0 {
+    //     for item in stmt_with.items.iter() {
+    //         if offset > item.range().start().to_usize() && offset < item.range().end().to_usize() {
+    //             return complete_expr( item, session, file, offset);
     //         }
-    //     ]
-    // }))
+    //     }
+    // }
+    if stmt_with.body.len() > 0 {
+        if offset < stmt_with.body.first().unwrap().range().start().to_usize() && stmt_with.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_with.body, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_match_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_match: &ruff_python_ast::StmtMatch, offset: usize) -> Option<CompletionResponse> {
+    for case in stmt_match.cases.iter() {
+        if !case.body.is_empty() {
+            if offset > case.body.first().as_ref().unwrap().range().start().to_usize() && offset < case.body.last().as_ref().unwrap().range().end().to_usize() {
+                return complete_vec_stmt(&case.body, session, file, offset);
+            }
+        }
+    }
+    None
+}
+
+fn complete_raise_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_raise: &ruff_python_ast::StmtRaise, offset: usize) -> Option<CompletionResponse> {
+    if stmt_raise.exc.is_some() {
+        if offset > stmt_raise.exc.as_ref().unwrap().range().start().to_usize() && offset < stmt_raise.exc.as_ref().unwrap().range().end().to_usize() {
+            return complete_expr( stmt_raise.exc.as_ref().unwrap(), session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_try_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_try: &ruff_python_ast::StmtTry, offset: usize) -> Option<CompletionResponse> {
+    if stmt_try.body.len() > 0 {
+        if offset < stmt_try.body.first().unwrap().range().start().to_usize() && stmt_try.body.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_try.body, session, file, offset);
+        }
+    }
+    //TODO handlers
+    /*if stmt_try.handlers.len() > 0 {
+        if offset < stmt_try.handlers.first().unwrap().range().start().to_usize() && stmt_try.handlers.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_try.handlers, session, file, offset);
+        }
+    }*/
+    if stmt_try.orelse.len() > 0 {
+        if offset < stmt_try.orelse.first().unwrap().range().start().to_usize() && stmt_try.orelse.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_try.orelse, session, file, offset);
+        }
+    }
+    if stmt_try.finalbody.len() > 0 {
+        if offset < stmt_try.finalbody.first().unwrap().range().start().to_usize() && stmt_try.finalbody.last().unwrap().range().end().to_usize() < offset {
+            return complete_vec_stmt(&stmt_try.finalbody, session, file, offset);
+        }
+    }
+    None
+}
+
+fn complete_assert_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_assert: &ruff_python_ast::StmtAssert, offset: usize) -> Option<CompletionResponse> {
+    if offset > stmt_assert.test.as_ref().range().start().to_usize() && offset < stmt_assert.test.as_ref().range().end().to_usize() {
+        return complete_expr( stmt_assert.test.as_ref(), session, file, offset);
+    }
+    if stmt_assert.msg.is_some() {
+        if offset > stmt_assert.msg.as_ref().unwrap().range().start().to_usize() && offset < stmt_assert.msg.as_ref().unwrap().range().end().to_usize() {
+            return complete_expr( stmt_assert.msg.as_ref().unwrap(), session, file, offset);
+        }
+    }
+    None
 }
 
 fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImport, offset: usize) -> Option<CompletionResponse> {
@@ -111,7 +274,7 @@ fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, s
     }))
 }
 
-fn complete_importFrom_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImportFrom, offset: usize) -> Option<CompletionResponse> {
+fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImportFrom, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
     for alias in stmt_import.names.iter() {
         if alias.name.range().end().to_usize() == offset {
@@ -131,189 +294,15 @@ fn complete_importFrom_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>
     }))
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-pub struct ExprBeforeOffsetFinder<'a> {
-    offset: TextSize,
-    expr: Option<ExprOrIdent<'a>>,
+fn complete_global_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_global: &StmtGlobal, offset: usize) -> Option<CompletionResponse> {
+    None
 }
 
-impl<'a> ExprBeforeOffsetFinder<'a> {
-
-    pub fn find_expr_before(stmt: &'a Stmt, offset: u32) -> Option<ExprOrIdent> {
-        let mut visitor = Self {
-            offset: TextSize::new(offset),
-            expr: None
-        };
-        visitor.visit_stmt(stmt);
-        visitor.expr
-    }
-
+fn complete_nonlocal_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_nonlocal: &StmtNonlocal, offset: usize) -> Option<CompletionResponse> {
+    None
 }
 
-impl<'a> Visitor<'a> for ExprBeforeOffsetFinder<'a> {
+fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: usize) -> Option<CompletionResponse> {
 
-    fn visit_expr(&mut self, expr: &'a Expr) {
-        if expr.range().contains(self.offset) {
-            walk_expr(self, expr);
-            if self.expr.is_none() {
-                self.expr = Some(ExprOrIdent::Expr(expr));
-            }
-        } else {
-            walk_expr(self, expr);
-        }
-    }
-
-    fn visit_alias(&mut self, alias: &'a Alias) {
-        walk_alias(self, alias);
-        if self.expr.is_none() {
-            if alias.name.range().contains(self.offset) {
-                self.expr = Some(ExprOrIdent::Ident(&alias.name));
-            } else if let Some(ref asname) = alias.asname {
-                if asname.range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&asname))
-                }
-            }
-        }
-    }
-
-    fn visit_except_handler(&mut self, except_handler: &'a ExceptHandler) {
-        walk_except_handler(self, except_handler);
-        if self.expr.is_none() {
-            let ExceptHandler::ExceptHandler(ref handler) = *except_handler;
-            if let Some(ref ident) = handler.name {
-                if ident.clone().range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&ident));
-                }
-            }
-        } else {
-            walk_except_handler(self, except_handler);
-        }
-    }
-
-    fn visit_parameter(&mut self, parameter: &'a Parameter) {
-        walk_parameter(self, parameter);
-        if self.expr.is_none() && parameter.name.range().contains(self.offset) {
-            self.expr = Some(ExprOrIdent::Parameter(&parameter));
-        }
-    }
-
-    fn visit_keyword(&mut self, keyword: &'a Keyword) {
-        walk_keyword(self, keyword);
-
-        if self.expr.is_none() {
-            if let Some(ref ident) = keyword.arg {
-                if ident.range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&ident));
-                }
-            }
-        } else {
-            walk_keyword(self, keyword)
-        }
-    }
-
-    fn visit_pattern_keyword(&mut self, pattern_keyword: &'a PatternKeyword) {
-        walk_pattern_keyword(self, pattern_keyword);
-
-        if self.expr.is_none() && pattern_keyword.clone().attr.range().contains(self.offset) {
-            self.expr = Some(ExprOrIdent::Ident(&pattern_keyword.attr));
-        } else {
-            walk_pattern_keyword(self, pattern_keyword);
-        }
-    }
-
-    fn visit_type_param(&mut self, type_param: &'a TypeParam) {
-        if type_param.range().contains(self.offset) {
-            if self.expr.is_none() {
-                walk_type_param(self, type_param);
-                let ident = match type_param {
-                    TypeParam::TypeVar(t) => Some(&t.name),
-                    TypeParam::ParamSpec(t) => Some(&t.name),
-                    TypeParam::TypeVarTuple(t) => Some(&t.name),
-                };
-
-                if ident.is_some() && ident.unwrap().range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(ident.unwrap()));
-                }
-
-            }
-        } else {
-            walk_type_param(self, type_param);
-        }
-    }
-
-    fn visit_pattern(&mut self, pattern: &'a Pattern) {
-        if pattern.range().contains(self.offset) {
-            if self.expr.is_none() {
-                walk_pattern(self, pattern);
-                let ident  = match pattern {
-                    Pattern::MatchMapping(mapping) => &mapping.rest,
-                    Pattern::MatchStar(mapping) => &mapping.name,
-                    Pattern::MatchAs(mapping) => &mapping.name,
-                    _ => &None
-                };
-
-                if let Some(ref ident) = ident {
-                    if ident.range().contains(self.offset) {
-                        self.expr = Some(ExprOrIdent::Ident(ident));
-                    }
-                }
-            }
-        }
-    }
-
-    fn visit_stmt(&mut self, stmt: &'a Stmt) {
-        walk_stmt(self, stmt);
-        if self.expr.is_none() {
-            let idents = match stmt {
-                Stmt::FunctionDef(stmt) => vec![&stmt.name],
-                Stmt::ClassDef(stmt) => vec![&stmt.name],
-                Stmt::ImportFrom(stmt) => if let Some(ref module) = stmt.module {vec![module]} else {vec![]},
-                Stmt::Global(stmt) => stmt.names.iter().collect(),
-                Stmt::Nonlocal(stmt) => stmt.names.iter().collect(),
-                _ => vec![],
-            };
-
-            for ident in idents {
-                if ident.range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&ident));
-                    break;
-                }
-            }
-        } else {
-            walk_stmt(self, stmt);
-        }
-    }
+    None
 }
