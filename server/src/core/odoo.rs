@@ -1167,6 +1167,7 @@ impl Odoo {
     }
 
     pub fn reload_file(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32, is_save: bool, is_open: bool) {
+        // TODO, hash file, if it is the same just skip it.
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
             if let Err(_e) = tree { //is not part of odoo (or not in addons path)
@@ -1174,10 +1175,14 @@ impl Odoo {
             }
             let tree = tree.unwrap().clone();
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), is_save);
+            // Maybe do something here?
+            let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), is_save);
             let mut mut_file_info = file_info.borrow_mut();
             mut_file_info.publish_diagnostics(session); //To push potential syntax errors or refresh previous one
             drop(mut_file_info);
+            if !file_updated{
+                return;
+            }
             let _ = SyncOdoo::_unload_path(session, &path, false);
             //build new by searching for missing symbols
             SyncOdoo::search_symbols_to_rebuild(session, &tree);
