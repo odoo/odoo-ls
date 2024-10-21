@@ -31,7 +31,7 @@ impl RootSymbol {
         self.module_symbols.insert(file.borrow().name().clone(), file.clone());
         for path in paths.iter() {
             for sys_p in self.sys_path.iter() {
-                if sys_p.is_empty() {
+                if sys_p.is_empty() || *sys_p == session.sync_odoo.config.odoo_path || session.sync_odoo.config.addons.contains(sys_p){
                     continue;
                 }
                 if path.starts_with(sys_p) {
