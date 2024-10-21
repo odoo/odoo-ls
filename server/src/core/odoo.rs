@@ -1161,7 +1161,7 @@ impl Odoo {
         Odoo::update_file_index(session, path,true, false);
     }
 
-    // return true if the file has been updated and is valid for an index reload
+    // return true if the file has been updated, is valid for an index reload, and contents have been changed
     fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> bool {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
@@ -1169,9 +1169,9 @@ impl Odoo {
                 return false;
             }
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
+            let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
-            return file_info.borrow().valid && (!file_info.borrow().opened || version >= 0);
+            return file_info.borrow().valid && (!file_info.borrow().opened || version >= 0) && file_updated;
         }
         false
     }

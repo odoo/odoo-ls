@@ -78,7 +78,10 @@ impl PythonArchBuilder {
             self.file.borrow_mut().set_in_workspace(in_workspace);
         }
         let file_info_rc = match self.file_mode {
-            true => session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false), //create ast if not in cache
+            true => {
+                let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
+                file_info
+                },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
         if self.file_mode {

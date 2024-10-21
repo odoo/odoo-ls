@@ -1271,9 +1271,8 @@ impl Symbol {
             }
             if found_one {
                 continue;
-            } else {
-                vec_to_unload.pop_front();
             }
+            vec_to_unload.pop_front();
             if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || mut_symbol.typ() == SymType::PACKAGE) {
                 info!("Unloading symbol {:?} at {:?}", mut_symbol.name(), mut_symbol.paths());
             }

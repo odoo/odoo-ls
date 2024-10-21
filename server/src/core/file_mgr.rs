@@ -4,6 +4,8 @@ use ruff_python_ast::Mod;
 use ruff_python_parser::Mode;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
@@ -24,6 +26,7 @@ pub struct FileInfo {
     pub opened: bool,
     need_push: bool,
     text_rope: Option<ropey::Rope>,
+    text_hash: u64,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
 }
 
@@ -37,10 +40,11 @@ impl FileInfo {
             opened: false,
             need_push: false,
             text_rope: None,
+            text_hash: 0,
             diagnostics: HashMap::new(),
         }
     }
-    pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) {
+    pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> bool {
         // update the file info with the given information.
         // uri: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -54,28 +58,38 @@ impl FileInfo {
             } else {
                 self.opened = true;
                 if version <= self.version && !force {
-                    return;
+                    return false;
                 }
                 self.version = version;
             }
         } else if self.version != 0 && !force {
-            return;
+            return false;
         }
         self.diagnostics.clear();
         if let Some(content) = content {
             for change in content.iter() {
                 self.apply_change(change);
             }
-            self._build_ast();
         } else {
             match fs::read_to_string(uri) {
                 Ok(content) => {
                     self.text_rope = Some(ropey::Rope::from(content.as_str()));
-                    self._build_ast()
                 },
-                Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", uri)),
+                Err(_) => {
+                    session.log_message(MessageType::ERROR, format!("Failed to read file {}", uri));
+                    return false;
+                },
             };
         }
+        let mut hasher = DefaultHasher::new();
+        self.text_rope.clone().unwrap().hash(&mut hasher);
+        let old_hash = self.text_hash;
+        self.text_hash = hasher.finish();
+        if old_hash == self.text_hash {
+            return false;
+        }
+        self._build_ast();
+        true
     }
 
     pub fn _build_ast(&mut self) {
@@ -236,16 +250,17 @@ impl FileMgr {
         Range::default()
     }
 
-    pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> Rc<RefCell<FileInfo>> {
+    pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> (bool, Rc<RefCell<FileInfo>>) {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
         //Do not modify the file if a version is not given but the file is opened
+        let mut updated: bool = false;
         if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened {
             let mut file_info_mut = (*return_info).borrow_mut();
-            file_info_mut.update(session, uri, content, version, force);
+            updated = file_info_mut.update(session, uri, content, version, force);
             drop(file_info_mut);
         }
-        return_info
+        (updated, return_info)
     }
 
     pub fn delete_path(&mut self, session: &mut SessionInfo, uri: &String) {
