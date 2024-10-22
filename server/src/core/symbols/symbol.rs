@@ -1561,34 +1561,50 @@ impl Symbol {
         return Vec::from(results) // :'( a whole copy?
     }
 
-    pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> + '_ {
+    pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
         //be returned.
-        let mut iter: Vec<Box<dyn Iterator<Item = Rc<RefCell<Symbol>>>>> = Vec::new();
+        let mut iter: Vec<Rc<RefCell<Symbol>>> = Vec::new();
         match self {
             Symbol::File(f) => {
-                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                    iter.push(symbol.clone());
+                }
             },
             Symbol::Class(c) => {
-                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                    iter.push(symbol.clone());
+                }
             },
             Symbol::Function(_) => {
-                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                    iter.push(symbol.clone());
+                }
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
-                iter.push(Box::new(m.module_symbols.values().map(|x| x.clone())));
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                    iter.push(symbol.clone());
+                }
+                for symbol in m.module_symbols.values().map(|x| x.clone()) {
+                    iter.push(symbol.clone());
+                }
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                iter.push(Box::new(self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone()))));
-                iter.push(Box::new(p.module_symbols.values().map(|x| x.clone())));
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                    iter.push(symbol.clone());
+                }
+                for symbol in p.module_symbols.values().map(|x| x.clone()) {
+                    iter.push(symbol.clone());
+                }
             },
             Symbol::Namespace(n) => {
-                iter.push(Box::new(n.directories.iter().flat_map(|x| x.module_symbols.values().map(|x| x.clone()))));
+                for symbol in n.directories.iter().flat_map(|x| x.module_symbols.values().map(|x| x.clone())) {
+                    iter.push(symbol.clone());
+                }
             },
             _ => {}
         }
-        iter.into_iter().flatten()
+        iter.into_iter()
     }
 
     /* return the Symbol (class, function or file) the closest to the given offset */
@@ -1627,6 +1643,17 @@ impl Symbol {
             }
         }
         return result
+    }
+
+    pub fn get_all_infered_names(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut results = vec![];
+        let on_symbol = on_symbol.borrow();
+        on_symbol.all_symbols().for_each(|sym| {
+            if sym.borrow().name().starts_with(name) {
+                results.push(sym.clone());
+            }
+        });
+        results
     }
 
     //infer a name, given a position
@@ -1874,6 +1901,22 @@ impl Symbol {
         for sym in self.dependencies()[3][2].iter() {
             println!("{:?}", sym.borrow().paths());
         }
+    }
+
+    pub fn get_base_distance(&self, base_name: &String, level: i32) -> i32 {
+        if self.name().eq(base_name) {
+            return level;
+        }
+        if self.typ() == SymType::CLASS {
+            for base in self.as_class_sym().bases.iter() {
+                let base = base.borrow();
+                let res = base.get_base_distance(base_name, level + 1);
+                if res != -1 {
+                    return res;
+                }
+            }
+        }
+        return -1;
     }
 
     /*fn _debug_print_graph_node(&self, acc: &mut String, level: u32) {
