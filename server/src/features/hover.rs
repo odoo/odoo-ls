@@ -26,51 +26,6 @@ impl HoverFeature {
         if evals.is_empty() {
             return None;
         };
-        //let eval = &evals[0]; //TODO handle more evaluations
-        let mut value = S!("");
-        for (index, eval) in evals.iter().enumerate() {
-            if index != 0 {
-                value += "  \n***  \n";
-            }
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
-            if symbol.is_expired() {
-                continue;
-            }
-            let symbol = symbol.upgrade().unwrap();
-            let mut context = Some(eval.symbol.context.clone());
-            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, None, &mut vec![]);
-            // BLOCK 1: (type) **name** -> infered_type
-            value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
-            // BLOCK 2: useful links
-            for typ in type_refs.iter() {
-                let typ = typ.0.upgrade();
-                if let Some(typ) = typ {
-                    let paths = &typ.borrow().paths();
-                    if paths.len() == 1 { //we won't put a link to a namespace
-                        let mut base_path = paths.first().unwrap().clone();
-                        if typ.borrow().typ() == SymType::PACKAGE {
-                            base_path = PathBuf::from(base_path).join(format!("__init__.py{}", typ.borrow().as_package().i_ext())).sanitize();
-                        }
-                        let path = FileMgr::pathname2uri(&base_path);
-                        value += "  \n***  \n";
-                        let mut range = 0;
-                        if typ.borrow().is_file_content() {
-                            range = typ.borrow().range().start().to_u32();
-                        }
-                        value += format!("See also: [{}]({}#{})  \n", typ.borrow().name().as_str(), path.as_str(), range).as_str();
-                    }
-                }
-            }
-            // BLOCK 3: documentation
-            for typ in type_refs.iter() {
-                let typ = typ.0.upgrade();
-                if let Some(typ) = typ {
-                    if typ.borrow().doc_string().is_some() {
-                        value = value + "  \n***  \n" + typ.borrow().doc_string().as_ref().unwrap();
-                    }
-                }
-            }
-        }
         let range = Some(Range {
             start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
             end: file_info.borrow().offset_to_position(range.unwrap().end().to_usize())
@@ -78,7 +33,7 @@ impl HoverFeature {
         return Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: value
+                value: HoverFeature::build_markdown_description(session, &evals)
             }),
             range: range
         });
@@ -187,6 +142,55 @@ impl HoverFeature {
         }
         //end block
         value += "  \n```";
+        value
+    }
+
+    pub fn build_markdown_description(session: &mut SessionInfo, evals: &Vec<Evaluation>) -> String {
+        //let eval = &evals[0]; //TODO handle more evaluations
+        let mut value = S!("");
+        for (index, eval) in evals.iter().enumerate() {
+            if index != 0 {
+                value += "  \n***  \n";
+            }
+            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
+            if symbol.is_expired() {
+                continue;
+            }
+            let symbol = symbol.upgrade().unwrap();
+            let mut context = Some(eval.symbol.context.clone());
+            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, None, &mut vec![]);
+            // BLOCK 1: (type) **name** -> infered_type
+            value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
+            // BLOCK 2: useful links
+            for typ in type_refs.iter() {
+                let typ = typ.0.upgrade();
+                if let Some(typ) = typ {
+                    let paths = &typ.borrow().paths();
+                    if paths.len() == 1 { //we won't put a link to a namespace
+                        let mut base_path = paths.first().unwrap().clone();
+                        if typ.borrow().typ() == SymType::PACKAGE {
+                            base_path = PathBuf::from(base_path).join(format!("__init__.py{}", typ.borrow().as_package().i_ext())).sanitize();
+                        }
+                        let path = FileMgr::pathname2uri(&base_path);
+                        value += "  \n***  \n";
+                        let mut range = 0;
+                        if typ.borrow().is_file_content() {
+                            range = typ.borrow().range().start().to_u32();
+                        }
+                        value += format!("See also: [{}]({}#{})  \n", typ.borrow().name().as_str(), path.as_str(), range).as_str();
+                    }
+                }
+            }
+            // BLOCK 3: documentation
+            for typ in type_refs.iter() {
+                let typ = typ.0.upgrade();
+                if let Some(typ) = typ {
+                    if typ.borrow().doc_string().is_some() {
+                        value = value + "  \n***  \n" + typ.borrow().doc_string().as_ref().unwrap();
+                    }
+                }
+            }
+        }
         value
     }
 }

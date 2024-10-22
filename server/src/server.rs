@@ -193,7 +193,7 @@ impl Server {
                     }
                 })),
                 completion_provider: Some(CompletionOptions {
-                    resolve_provider: Some(true),
+                    resolve_provider: Some(false),
                     trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\"")]),
                     ..CompletionOptions::default()
                 }),
