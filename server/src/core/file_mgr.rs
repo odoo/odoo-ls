@@ -20,6 +20,7 @@ pub struct FileInfo {
     pub ast: Option<Vec<ruff_python_ast::Stmt>>,
     pub version: i32,
     pub uri: String,
+    pub valid: bool, // indicates if the file contains syntax error or not
     need_push: bool,
     text_rope: Option<ropey::Rope>,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
@@ -31,6 +32,7 @@ impl FileInfo {
             ast: None,
             version: 0,
             uri,
+            valid: true,
             need_push: false,
             text_rope: None,
             diagnostics: HashMap::new(),
@@ -78,7 +80,9 @@ impl FileInfo {
         let content = &self.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
         let ast = ruff_python_parser::parse_unchecked(source.as_str(), Mode::Module);
+        self.valid = true;
         for error in ast.errors().iter() {
+            self.valid = false;
             diagnostics.push(Diagnostic::new(
                 Range{ start: Position::new(error.location.start().to_u32(), 0),
                     end: Position::new(error.location.end().to_u32(), 0)},

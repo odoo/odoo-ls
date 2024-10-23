@@ -1074,8 +1074,9 @@ impl Odoo {
         for uri in file_uris.iter() {
             let path = uri.to_file_path().unwrap();
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
-            Odoo::update_file_cache(session, path.clone(), None, -100);
+            if Odoo::update_file_cache(session, path.clone(), None, -100) {
             Odoo::update_file_index(session, path, true, false);
+            }
         }
     }
 
@@ -1084,14 +1085,15 @@ impl Odoo {
         // that we use the same base version of the file for future incrementation.
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
-        Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
+        if Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
             range: None,
             range_length: None,
-            text: params.text_document.text}]), params.text_document.version);
+                text: params.text_document.text}]), params.text_document.version) {
         if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         Odoo::update_file_index(session, path,true, true);
+        }
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
@@ -1148,11 +1150,12 @@ impl Odoo {
         let path = params.text_document.uri.to_file_path().unwrap();
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
-        Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version);
+        if Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version) {
         if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         Odoo::update_file_index(session, path, false, false);
+        }
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
@@ -1164,17 +1167,19 @@ impl Odoo {
         Odoo::update_file_index(session, path,true, false);
     }
 
-    fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) {
+    // return true if the file doesn't contains any syntax error
+    fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> bool {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
             if let Err(_e) = tree { //is not part of odoo (or not in addons path)
-                return;
+                return false;
             }
-            let tree = tree.unwrap().clone();
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
+            return file_info.borrow().valid;
         }
+        false
     }
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool) {
