@@ -1,12 +1,14 @@
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::visitor::{walk_alias, walk_except_handler, walk_expr, walk_keyword, walk_parameter, walk_pattern, walk_pattern_keyword, walk_stmt, walk_type_param, Visitor};
-use ruff_python_ast::{Alias, ExceptHandler, Expr, ExprAttribute, ExprName, Keyword, Parameter, Pattern, PatternKeyword, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal, TypeParam};
+use ruff_python_ast::{Alias, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Keyword, Parameter, Pattern, PatternKeyword, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal, TypeParam};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 use crate::constants::SymType;
 use crate::core::evaluation::{Evaluation, ExprOrIdent};
 use crate::core::import_resolver;
+use crate::core::python_arch_eval::PythonArchEval;
+use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::threads::SessionInfo;
 use crate::S;
 use crate::core::symbols::symbol::Symbol;
@@ -15,7 +17,10 @@ use crate::core::file_mgr::FileInfo;
 use super::ast_utils::ExprFinderVisitor;
 use super::hover::HoverFeature;
 
-
+pub enum ExpectedType {
+    MODEL_NAME,
+    CLASS(Rc<RefCell<Symbol>>),
+}
 
 pub struct CompletionFeature;
 
@@ -312,44 +317,164 @@ fn complete_nonlocal_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>,
 **************************** Expressions *******************************
 ********************************************************************* */
 
-fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: usize, is_param: bool, expected_type: &Vec<Evaluation>) -> Option<CompletionResponse> {
+fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     match expr {
-        Expr::BoolOp(expr_bool_op) => None,
-        Expr::Named(expr_named) => None,
-        Expr::BinOp(expr_bin_op) => None,
-        Expr::UnaryOp(expr_unary_op) => None,
-        Expr::Lambda(expr_lambda) => None,
-        Expr::If(expr_if) => None,
-        Expr::Dict(expr_dict) => None,
+        Expr::BoolOp(expr_bool_op) => compare_bool_op(session, file, expr_bool_op, offset, is_param, expected_type),
+        Expr::Named(expr_named) => compare_named(session, file, expr_named, offset, is_param, expected_type),
+        Expr::BinOp(expr_bin_op) => compare_bin_op(session, file, expr_bin_op, offset, is_param, expected_type),
+        Expr::UnaryOp(expr_unary_op) => compare_unary_op(session, file, expr_unary_op, offset, is_param, expected_type),
+        Expr::Lambda(expr_lambda) => compare_lambda(session, file, expr_lambda, offset, is_param, expected_type),
+        Expr::If(expr_if) => complete_if_expr(session, file, expr_if, offset, is_param, expected_type),
+        Expr::Dict(expr_dict) => complete_dict(session, file, expr_dict, offset, is_param, expected_type),
         Expr::Set(expr_set) => None,
         Expr::ListComp(expr_list_comp) => None,
         Expr::SetComp(expr_set_comp) => None,
         Expr::DictComp(expr_dict_comp) => None,
         Expr::Generator(expr_generator) => None,
         Expr::Await(expr_await) => None,
-        Expr::Yield(expr_yield) => None,
+        Expr::Yield(expr_yield) => complete_yield(session, file, expr_yield, offset, is_param, expected_type),
         Expr::YieldFrom(expr_yield_from) => None,
-        Expr::Compare(expr_compare) => None,
-        Expr::Call(expr_call) => None,
+        Expr::Compare(expr_compare) => complete_compare(session, file, expr_compare, offset, is_param, expected_type),
+        Expr::Call(expr_call) => complete_call(session, file, expr_call, offset, is_param, expected_type),
         Expr::FString(expr_fstring) => None,
-        Expr::StringLiteral(expr_string_literal) => None,
+        Expr::StringLiteral(expr_string_literal) => complete_string_literal(session, file, expr_string_literal, offset, is_param, expected_type),
         Expr::BytesLiteral(expr_bytes_literal) => None,
         Expr::NumberLiteral(expr_number_literal) => None,
         Expr::BooleanLiteral(expr_boolean_literal) => None,
         Expr::NoneLiteral(expr_none_literal) => None,
         Expr::EllipsisLiteral(expr_ellipsis_literal) => None,
         Expr::Attribute(expr_attribute) => complete_attribut(session, file, expr_attribute, offset, is_param, expected_type),
-        Expr::Subscript(expr_subscript) => None,
+        Expr::Subscript(expr_subscript) => complete_subscript(session, file, expr_subscript, offset, is_param, expected_type),
         Expr::Starred(expr_starred) => None,
         Expr::Name(expr_name) => complete_name(session, file, expr_name, offset, is_param, expected_type),
-        Expr::List(expr_list) => None,
+        Expr::List(expr_list) => complete_list(session, file, expr_list, offset, is_param, expected_type),
         Expr::Tuple(expr_tuple) => None,
         Expr::Slice(expr_slice) => None,
         Expr::IpyEscapeCommand(expr_ipy_escape_command) => None,
     }
 }
 
-fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr: &ExprAttribute, offset: usize, is_param: bool, expected_type: &Vec<Evaluation>) -> Option<CompletionResponse> {
+fn compare_bool_op(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_bool_op: &ruff_python_ast::ExprBoolOp, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    for value in expr_bool_op.values.iter() {
+        if offset > value.range().start().to_usize() && offset < value.range().end().to_usize() {
+            return complete_expr( value, session, file, offset, is_param, expected_type);
+        }
+    }
+    None
+}
+
+fn compare_named(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_named: &ruff_python_ast::ExprNamed, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_named.value.range().start().to_usize() && offset < expr_named.value.range().end().to_usize() {
+        return complete_expr( &expr_named.value, session, file, offset, is_param, expected_type);
+    }
+    None
+}
+
+fn compare_bin_op(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_bin_op: &ruff_python_ast::ExprBinOp, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_bin_op.left.range().start().to_usize() && offset < expr_bin_op.left.range().end().to_usize() {
+        return complete_expr( &expr_bin_op.left, session, file, offset, is_param, expected_type);
+    }
+    if offset > expr_bin_op.right.range().start().to_usize() && offset < expr_bin_op.right.range().end().to_usize() {
+        return complete_expr( &expr_bin_op.right, session, file, offset, is_param, expected_type);
+    }
+    None
+}
+
+fn compare_unary_op(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_unary_op: &ruff_python_ast::ExprUnaryOp, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_unary_op.operand.range().start().to_usize() && offset < expr_unary_op.operand.range().end().to_usize() {
+        return complete_expr( &expr_unary_op.operand, session, file, offset, is_param, expected_type);
+    }
+    None
+}
+
+fn compare_lambda(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_lambda: &ruff_python_ast::ExprLambda, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_lambda.body.range().start().to_usize() && offset < expr_lambda.body.range().end().to_usize() {
+        return complete_expr( &expr_lambda.body, session, file, offset, is_param, expected_type);
+    }
+    None
+}
+
+//Expr if, used in "a if b else c"
+fn complete_if_expr(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_if: &ExprIf, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_if.test.range().start().to_usize() && offset < expr_if.test.range().end().to_usize() {
+        return complete_expr( &expr_if.test, session, file, offset, is_param, expected_type);
+    }
+    if offset > expr_if.body.range().start().to_usize() && offset < expr_if.body.range().end().to_usize() {
+        return complete_expr( &expr_if.body, session, file, offset, is_param, expected_type);
+    }
+    if offset > expr_if.orelse.range().start().to_usize() && offset < expr_if.orelse.range().end().to_usize() {
+        return complete_expr( &expr_if.orelse, session, file, offset, is_param, expected_type);
+    }
+    None
+}
+
+fn complete_dict(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_dict: &ruff_python_ast::ExprDict, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    for dict_item in expr_dict.items.iter() {
+        if dict_item.key.is_some() {
+            if offset > dict_item.value.range().start().to_usize() && offset < dict_item.value.range().end().to_usize() {
+                return complete_expr( &dict_item.value, session, file, offset, is_param, expected_type);
+            }
+        }
+    }
+    None
+}
+
+fn complete_yield(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_yield: &ExprYield, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if expr_yield.value.is_some() && offset > expr_yield.value.as_ref().unwrap().range().start().to_usize() && offset < expr_yield.value.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_yield.value.as_ref().unwrap(), session, file, offset, is_param, expected_type);
+    }
+    None
+}
+
+fn complete_compare(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_compare: &ruff_python_ast::ExprCompare, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_compare.left.range().start().to_usize() && offset < expr_compare.left.range().end().to_usize() {
+        return complete_expr( &expr_compare.left, session, file, offset, is_param, expected_type);
+    }
+    for expr in expr_compare.comparators.iter() {
+        if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
+            return complete_expr( expr, session, file, offset, is_param, expected_type);
+        }
+    }
+    None
+}
+
+fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_call: &ruff_python_ast::ExprCall, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    if offset > expr_call.func.range().start().to_usize() && offset < expr_call.func.range().end().to_usize() {
+        return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
+    }
+    for arg in expr_call.arguments.args.iter() {
+        if offset > arg.range().start().to_usize() && offset < arg.range().end().to_usize() {
+            return complete_expr( &arg, session, file, offset, is_param, expected_type);
+        }
+    }
+    None
+}
+
+fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    let mut items = vec![];
+    for expected_type in expected_type.iter() {
+        match expected_type {
+            ExpectedType::MODEL_NAME => {
+                for model_name in session.sync_odoo.models.keys() {
+                    if model_name.starts_with(expr_string_literal.value.to_str()) && model_name != "_unknown" {
+                        items.push(CompletionItem {
+                            label: model_name.clone(),
+                            kind: Some(lsp_types::CompletionItemKind::CLASS),
+                            ..Default::default()
+                    });
+                    }
+                }
+            },
+            ExpectedType::CLASS(rc) => {},
+        }
+    }
+    return Some(CompletionResponse::List(CompletionList {
+        is_incomplete: false,
+        items: items
+    }));
+}
+
+fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr: &ExprAttribute, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let mut items = vec![];
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
     let parent = Evaluation::eval_from_ast(session, &attr.value, scope, &attr.range().start()).0;
@@ -377,7 +502,33 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
     }))
 }
 
-fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_name: &ExprName, offset: usize, is_param: bool, expected_type: &Vec<Evaluation>) -> Option<CompletionResponse> {
+fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start()).0;
+    for eval in subscripted.iter() {
+        if let Some(symbol) = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).0.upgrade() {
+            let symbol_types = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+            for symbol_type in symbol_types.iter() {
+                if let Some(symbol_type) = symbol_type.0.upgrade() {
+                    let borrowed = symbol_type.borrow();
+                    let get_item = borrowed.get_symbol(&(vec![], vec![S!("__getitem__")]), u32::MAX);
+                    if let Some(get_item) = get_item.last() {
+                        if get_item.borrow().evaluations().as_ref().unwrap().len() == 1 {
+                            let get_item_bw = get_item.borrow();
+                            let get_item_eval = get_item_bw.evaluations().as_ref().unwrap().first().unwrap();
+                            if get_item_eval.symbol.get_symbol_hook == Some(PythonArchEvalHooks::eval_get_item) {
+                                return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    complete_expr(&expr_subscript.slice, session, file, offset, false, &vec![])
+}
+
+fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_name: &ExprName, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let mut items = vec![];
     let name = expr_name.id.to_string();
     if expr_name.range.end().to_usize() == offset {
@@ -395,6 +546,16 @@ fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_nam
         is_incomplete: false,
         items
     }))
+}
+
+fn complete_list(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_list: &ruff_python_ast::ExprList, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    //TODO complete domains
+    for expr in expr_list.elts.iter() {
+        if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
+            return complete_expr( expr, session, file, offset, is_param, expected_type);
+        }
+    }
+    None
 }
 
 fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) -> CompletionItem {
