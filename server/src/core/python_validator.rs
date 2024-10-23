@@ -1,7 +1,6 @@
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtReturn, StmtTry};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{trace, warn};
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -20,7 +19,6 @@ use super::evaluation::{Evaluation, EvaluationValue};
 use super::file_mgr::FileInfo;
 use super::python_arch_builder::PythonArchBuilder;
 use super::python_arch_eval::PythonArchEval;
-use super::python_utils::{self, unpack_assign};
 
 #[derive(Debug)]
 pub struct PythonValidator {
@@ -58,7 +56,7 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        let mut symbol = self.sym_stack[0].borrow_mut();
+        let symbol = self.sym_stack[0].borrow_mut();
         self.current_module = symbol.find_module();
         if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
@@ -173,9 +171,9 @@ impl PythonValidator {
                 Stmt::If(i) => {
                     self.validate_body(session, &i.body);
                 },
-                Stmt::Break(b) => {},
-                Stmt::Continue(c) => {},
-                Stmt::Delete(d) => {
+                Stmt::Break(_) => {},
+                Stmt::Continue(_) => {},
+                Stmt::Delete(_) => {
                     //TODO
                 },
                 Stmt::For(f) => {

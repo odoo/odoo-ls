@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{constants::{BuildStatus, BuildSteps}, core::evaluation::{Context, Evaluation, EvaluationSymbol}, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps}, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 

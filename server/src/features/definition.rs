@@ -9,7 +9,7 @@ use crate::core::file_mgr::{FileMgr, FileInfo};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::features::ast_utils::AstUtils;
-use crate::utils::{PathSanitizer as _, ToFilePath};
+use crate::utils::PathSanitizer as _;
 
 
 

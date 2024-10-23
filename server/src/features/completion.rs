@@ -1,20 +1,17 @@
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
-use ruff_python_ast::visitor::{walk_alias, walk_except_handler, walk_expr, walk_keyword, walk_parameter, walk_pattern, walk_pattern_keyword, walk_stmt, walk_type_param, Visitor};
-use ruff_python_ast::{Alias, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Keyword, Parameter, Pattern, PatternKeyword, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal, TypeParam};
-use ruff_text_size::{Ranged, TextRange, TextSize};
+use ruff_python_ast::{Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
+use ruff_text_size::Ranged;
 
 use crate::constants::SymType;
-use crate::core::evaluation::{Evaluation, ExprOrIdent};
+use crate::core::evaluation::Evaluation;
 use crate::core::import_resolver;
-use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::threads::SessionInfo;
 use crate::S;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 
-use super::ast_utils::ExprFinderVisitor;
 use super::hover::HoverFeature;
 
 pub enum ExpectedType {

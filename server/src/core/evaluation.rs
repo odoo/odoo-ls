@@ -276,7 +276,7 @@ impl Evaluation {
         match self.symbol.sym {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
-                let (weak, instance) = self.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                let (weak, _instance) = self.symbol.get_symbol(session, &mut None, &mut vec![], None);
                 if let Some(sym_up) = weak.upgrade() {
                     let out_of_scope = Symbol::follow_ref(&sym_up, session, &mut None, true, false, Some(function.clone()), &mut vec![]);
                     for (weak_sym, instance) in out_of_scope {

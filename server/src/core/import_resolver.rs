@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use ruff_text_size::TextRange;
-use ruff_python_ast::{Alias, Identifier, StmtImport};
+use ruff_python_ast::{Alias, Identifier};
 use crate::{constants::*, S};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
@@ -272,7 +272,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         level,
         from_stmt);
     drop(_source_file_symbol_lock);
-    let (from_symbol, fallback_sym) = _get_or_create_symbol(
+    let (from_symbol, _fallback_sym) = _get_or_create_symbol(
         session,
         session.sync_odoo.symbols.as_ref().unwrap().clone(),
         &file_tree,
