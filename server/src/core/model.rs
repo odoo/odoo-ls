@@ -6,7 +6,6 @@ use std::collections::HashSet;
 
 use crate::threads::SessionInfo;
 
-use super::odoo::SyncOdoo;
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::symbol::Symbol;
 

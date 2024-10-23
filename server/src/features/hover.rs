@@ -1,12 +1,10 @@
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
-use tracing::warn;
 use weak_table::traits::WeakElement;
 use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use crate::core::symbols::symbol::Symbol;

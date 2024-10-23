@@ -15,7 +15,6 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::EvaluationValue;
-use super::odoo::SyncOdoo;
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,

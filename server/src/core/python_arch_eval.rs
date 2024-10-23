@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
+use ruff_python_ast::{Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace};
 use std::path::PathBuf;

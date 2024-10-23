@@ -1,7 +1,7 @@
-use weak_table::{PtrWeakHashSet, WeakHashSet};
+use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model};
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 

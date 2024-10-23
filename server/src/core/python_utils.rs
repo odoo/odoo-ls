@@ -1,5 +1,4 @@
-use ruff_python_ast::{Expr, ExprContext, ExprName, ExprTuple};
-use ruff_text_size::TextRange;
+use ruff_python_ast::{Expr, ExprName};
 use tracing::error;
 
 #[derive(Debug, Clone)]
@@ -18,8 +17,8 @@ fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
     }
     for (index, target) in targets.iter().enumerate() {
         match target {
-            Expr::Attribute(expr) => {},
-            Expr::Subscript(expr) => {},
+            Expr::Attribute(_) => {},
+            Expr::Subscript(_) => {},
             Expr::Name(expr) => {
                 res.push(Assign {
                     target: expr.clone(),
@@ -96,8 +95,8 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
 
     for (index, target) in targets.iter().enumerate() {
         match target {
-            Expr::Attribute(expr) => {},
-            Expr::Subscript(expr) => {},
+            Expr::Attribute(_) => {},
+            Expr::Subscript(_) => {},
             Expr::Name(expr) => {
                 match value {
                     Some(value) => {
