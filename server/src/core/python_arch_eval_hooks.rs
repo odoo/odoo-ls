@@ -347,7 +347,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    fn eval_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool)
+    pub fn eval_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> (Weak<RefCell<Symbol>>, bool)
     {
         if let Some(context) = context {
             let arg = context.get(&S!("args"));
