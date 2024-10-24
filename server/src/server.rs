@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Error, panic, sync::{Arc, Mutex}, thread::JoinHandle};
+use std::{collections::HashMap, io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
 
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
@@ -40,6 +40,7 @@ pub struct Server {
     sender_s_to_delayed: Sender<Message>, //unique channel server to delayed_process_thread
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
+    interrupt_rebuild_boolean: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -82,6 +83,7 @@ impl Server {
     fn init(conn: Connection, io_threads: IoThreads) -> Self {
         let mut threads = vec![];
         let sync_odoo = Arc::new(Mutex::new(SyncOdoo::new()));
+        let interrupt_rebuild_boolean = sync_odoo.lock().unwrap().interrupt_rebuild.clone();
         let mut receivers_w_to_s = vec![];
         let mut senders_s_to_main = vec![];
         let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
@@ -149,7 +151,8 @@ impl Server {
             sender_s_to_delayed: sender_s_to_delayed,
             sender_to_delayed_process: sender_to_delayed_process,
             delayed_process_thread,
-            sync_odoo: sync_odoo
+            sync_odoo: sync_odoo,
+            interrupt_rebuild_boolean: interrupt_rebuild_boolean,
         }
     }
 
@@ -354,9 +357,11 @@ impl Server {
             Message::Request(r) => {
                 match r.method.as_str() {
                     HoverRequest::METHOD | GotoDefinition::METHOD => {
+                        self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         self.sender_s_to_read.send(Message::Request(r)).unwrap();
                     },
                     Completion::METHOD => {
+                        self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         self.sender_s_to_main.send(Message::Request(r)).unwrap();
                     },
                     ResolveCompletionItem::METHOD => {
