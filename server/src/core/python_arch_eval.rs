@@ -140,7 +140,7 @@ impl PythonArchEval {
                 self.eval_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
-                self.visit_class_def(session, class_stmt, stmt);
+                self.visit_class_def(session, class_stmt);
             },
             Stmt::FunctionDef(func_stmt) => {
                 self.visit_func_def(session, func_stmt);
@@ -391,7 +391,7 @@ impl PythonArchEval {
 
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
-            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &base.range().start());
+            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &class_stmt.range().start());
             self.diagnostics.extend(eval_base.1);
             let eval_base = eval_base.0;
             if eval_base.len() == 0 {
@@ -453,7 +453,7 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef, stmt: &Stmt) {
+    fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
         let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
         if variable.is_none() {
             panic!("Class not found");
