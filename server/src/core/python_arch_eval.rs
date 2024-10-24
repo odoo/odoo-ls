@@ -606,16 +606,16 @@ impl PythonArchEval {
     }
 
     fn _visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) {
-        let mut safe = false;
+        let mut safe_import = false;
         for handler in try_stmt.handlers.iter() {
             let handler = handler.as_except_handler().unwrap();
             if let Some(type_) = &handler.type_ {
                 if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
-                    safe = true;
+                    safe_import = true;
                 }
             }
         }
-        self.safe_import.push(safe);
+        self.safe_import.push(safe_import);
         self.ast_indexes.push(0 as u16);
         for (index, stmt) in try_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
