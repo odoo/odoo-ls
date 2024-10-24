@@ -21,6 +21,7 @@ pub struct FileInfo {
     pub version: i32,
     pub uri: String,
     pub valid: bool, // indicates if the file contains syntax error or not
+    pub opened: bool,
     need_push: bool,
     text_rope: Option<ropey::Rope>,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
@@ -33,6 +34,7 @@ impl FileInfo {
             version: 0,
             uri,
             valid: true,
+            opened: false,
             need_push: false,
             text_rope: None,
             diagnostics: HashMap::new(),
@@ -50,6 +52,7 @@ impl FileInfo {
             if version == -100 {
                 self.version = 1;
             } else {
+                self.opened = true;
                 if version <= self.version && !force {
                     return;
                 }
@@ -236,9 +239,12 @@ impl FileMgr {
     pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> Rc<RefCell<FileInfo>> {
         let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
         let return_info = file_info.clone();
-        let mut file_info_mut = (*return_info).borrow_mut();
-        file_info_mut.update(session, uri, content, version, force);
-        drop(file_info_mut);
+        //Do not modify the file if a version is not given but the file is opened
+        if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened {
+            let mut file_info_mut = (*return_info).borrow_mut();
+            file_info_mut.update(session, uri, content, version, force);
+            drop(file_info_mut);
+        }
         return_info
     }
 

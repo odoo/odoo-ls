@@ -70,7 +70,7 @@ impl PythonValidator {
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
                 let file_info = file_info_rc.borrow();
-                if file_info.ast.is_some() {
+                if file_info.ast.is_some() && file_info.valid {
                     self.validate_body(session, file_info.ast.as_ref().unwrap());
                 }
                 drop(file_info);
@@ -204,16 +204,16 @@ impl PythonValidator {
     }
 
     fn visit_try(&mut self, session: &mut SessionInfo, node: &StmtTry) {
-        let mut safe = false;
+        let mut safe_import = false;
         for handler in node.handlers.iter() {
             let handler = handler.as_except_handler().unwrap();
             if let Some(type_) = &handler.type_ {
                 if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
-                    safe = true;
+                    safe_import = true;
                 }
             }
         }
-        self.safe_imports.push(safe);
+        self.safe_imports.push(safe_import);
         self.validate_body(session, &node.body);
         self.safe_imports.pop();
     }

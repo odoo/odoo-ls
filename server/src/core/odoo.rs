@@ -6,6 +6,8 @@ use crate::features::hover::HoverFeature;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use lsp_server::ResponseError;
 use lsp_types::*;
@@ -55,6 +57,7 @@ pub struct SyncOdoo {
     file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
     pub models: HashMap<String, Rc<RefCell<Model>>>,
+    pub interrupt_rebuild: Arc<AtomicBool>,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -85,6 +88,7 @@ impl SyncOdoo {
             stdlib_dir: env::current_dir().unwrap().join("typeshed").join("stdlib").sanitize(),
             modules: HashMap::new(),
             models: HashMap::new(),
+            interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
             rebuild_odoo: PtrWeakHashSet::new(),
@@ -406,6 +410,7 @@ impl SyncOdoo {
     }
 
     pub fn process_rebuilds(session: &mut SessionInfo) {
+        session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
@@ -462,6 +467,12 @@ impl SyncOdoo {
                 //TODO should delete previous first
                 let mut validator = PythonValidator::new(sym_rc);
                 validator.validate(session);
+                if session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
+                    session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+                    session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
+                    session.request_delayed_rebuild();
+                    return;
+                }
                 continue;
             }
         }
@@ -1049,7 +1060,7 @@ impl Odoo {
             let path = uri.to_file_path().unwrap();
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
             if Odoo::update_file_cache(session, path.clone(), None, -100) {
-            Odoo::update_file_index(session, path, true, false);
+                Odoo::update_file_index(session, path, true, false);
             }
         }
     }
@@ -1063,10 +1074,19 @@ impl Odoo {
             range: None,
             range_length: None,
                 text: params.text_document.text}]), params.text_document.version) {
-        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
-            return
+            if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+                return
+            }
+            Odoo::update_file_index(session, path,true, true);
         }
-        Odoo::update_file_index(session, path,true, true);
+    }
+
+    pub fn handle_did_close(session: &mut SessionInfo, params: DidCloseTextDocumentParams) {
+        let path = params.text_document.uri.to_file_path().unwrap();
+        session.log_message(MessageType::INFO, format!("File closed: {}", path.sanitize()));
+        let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path.to_str().unwrap().to_string());
+        if let Some(file_info) = file_info {
+            file_info.borrow_mut().opened = false;
         }
     }
 
@@ -1125,10 +1145,10 @@ impl Odoo {
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
         if Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version) {
-        if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
-            return
-        }
-        Odoo::update_file_index(session, path, false, false);
+            if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
+                return
+            }
+            Odoo::update_file_index(session, path, false, false);
         }
     }
 
@@ -1141,7 +1161,7 @@ impl Odoo {
         Odoo::update_file_index(session, path,true, false);
     }
 
-    // return true if the file doesn't contains any syntax error
+    // return true if the file has been updated and is valid for an index reload
     fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> bool {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
             let tree = session.sync_odoo.tree_from_path(&path);
@@ -1151,7 +1171,7 @@ impl Odoo {
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
-            return file_info.borrow().valid;
+            return file_info.borrow().valid && (!file_info.borrow().opened || version >= 0);
         }
         false
     }

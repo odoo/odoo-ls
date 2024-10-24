@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::{Arc, Mutex}, time::Instant};
+use std::{path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
@@ -75,19 +75,7 @@ impl <'a> SessionInfo<'a> {
     }
 
     pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf) {
-        if let Some(sender) = &session.delayed_process_sender {
-            if !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10 {
-                let tree = session.sync_odoo.tree_from_path(&path);
-                if !tree.is_err() { //is part of odoo (and in addons path)
-                    let tree = tree.unwrap().clone();
-                    let _ = SyncOdoo::_unload_path(session, &path, false);
-                    SyncOdoo::search_symbols_to_rebuild(session, &tree);
-                }
-                SyncOdoo::process_rebuilds(session);
-            } else {
-                let _ = sender.send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now() }));
-            }
-        } else {
+        if session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10 {
             let tree = session.sync_odoo.tree_from_path(&path);
             if !tree.is_err() { //is part of odoo (and in addons path)
                 let tree = tree.unwrap().clone();
@@ -95,6 +83,8 @@ impl <'a> SessionInfo<'a> {
                 SyncOdoo::search_symbols_to_rebuild(session, &tree);
             }
             SyncOdoo::process_rebuilds(session);
+        } else {
+            let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now() }));
         }
     }
 
@@ -109,6 +99,12 @@ impl <'a> SessionInfo<'a> {
     pub fn update_auto_refresh_delay(&self, delay: u64) {
         if let Some(sender) = &self.delayed_process_sender {
             let _ = sender.send(DelayedProcessingMessage::UPDATE_DELAY(delay));
+        }
+    }
+
+    pub fn request_delayed_rebuild(&self) {
+        if let Some(sender) = &self.delayed_process_sender {
+            let _ = sender.send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
         }
     }
 
@@ -274,7 +270,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     DidChangeConfiguration::METHOD => { Odoo::handle_did_change_configuration(&mut session, serde_json::from_value(n.params).unwrap()) }
                     DidChangeWorkspaceFolders::METHOD => { Odoo::handle_did_change_workspace_folders(&mut session, serde_json::from_value(n.params).unwrap()) }
                     DidChangeTextDocument::METHOD => { Odoo::handle_did_change(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidCloseTextDocument::METHOD => {}
+                    DidCloseTextDocument::METHOD => { Odoo::handle_did_close(&mut session, serde_json::from_value(n.params).unwrap()); }
                     DidSaveTextDocument::METHOD => { Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap()); }
                     DidRenameFiles::METHOD => { Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap()); }
                     DidCreateFiles::METHOD => { Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap()); }
