@@ -118,6 +118,9 @@ impl PythonValidator {
         symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::DONE);
         if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.typ()) {
             if !symbol.in_workspace() {
+                if !symbol.is_external() {
+                    return
+                }
                 session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &symbol.paths()[0].to_string());
             } else {
                 drop(symbol);
