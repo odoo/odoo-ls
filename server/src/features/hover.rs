@@ -48,6 +48,9 @@ impl HoverFeature {
         let mut value = S!("```python  \n");
         //type name
         let mut type_sym = symbol.typ().to_string().to_lowercase();
+        if symbol.typ() == SymType::VARIABLE && symbol.as_variable().is_import_variable {
+            type_sym = S!("import");
+        }
         if symbol.typ() == SymType::VARIABLE && symbol.as_variable().is_parameter {
             type_sym = S!("parameter");
         }
@@ -126,6 +129,12 @@ impl HoverFeature {
                             //TODO add args
                             value += format!("() -> {}", func_return_type).as_str();
                         }
+                    } else if infered_type.typ() == SymType::FILE {
+                        value += "File";
+                    } else if infered_type.typ() == SymType::PACKAGE {
+                        value += "Module";
+                    } else if infered_type.typ() == SymType::NAMESPACE {
+                        value += "Namespace";
                     } else if symbol.typ() != SymType::CLASS {
                         value += &infered_type.name();
                     }
