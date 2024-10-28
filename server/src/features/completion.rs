@@ -102,6 +102,11 @@ fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<S
 }
 
 fn complete_class_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_class_def: &ruff_python_ast::StmtClassDef, offset: usize) -> Option<CompletionResponse> {
+    for base in stmt_class_def.bases().iter() {
+        if offset > base.range().start().to_usize() && offset <= base.range().end().to_usize() {
+            return complete_expr( base, session, file, offset, false, &vec![]); //TODO only classes?
+        }
+    }
     if stmt_class_def.body.len() > 0 {
         if offset > stmt_class_def.body.first().unwrap().range().start().to_usize() && stmt_class_def.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_class_def.body, session, file, offset);
@@ -288,6 +293,18 @@ fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, s
 
 fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImportFrom, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
+    if let Some(module) = stmt_import.module.as_ref() {
+        if module.range.end().to_usize() == offset && !stmt_import.names.is_empty() {
+            let names = import_resolver::get_all_valid_names(session, file, None, S!(stmt_import.names[0].name.id.as_str()), Some(stmt_import.level));
+            for name in names {
+                items.push(CompletionItem {
+                    label: name,
+                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    ..Default::default()
+                });
+            }
+        }
+    }
     for alias in stmt_import.names.iter() {
         if alias.name.range().end().to_usize() == offset {
             let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref(), S!(alias.name.id.as_str()), Some(stmt_import.level));

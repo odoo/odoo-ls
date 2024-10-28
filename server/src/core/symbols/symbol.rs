@@ -1603,6 +1603,11 @@ impl Symbol {
                     iter.push(symbol.clone());
                 }
             },
+            Symbol::Root(root) => {
+                for symbol in root.module_symbols.values().map(|x| x.clone()) {
+                    iter.push(symbol.clone());
+                }
+            }
             _ => {}
         }
         iter.into_iter()
@@ -1646,14 +1651,30 @@ impl Symbol {
         return result
     }
 
+    /*
+    Return all the symbols that are available at a given position or in a scope for a given start name
+     */
     pub fn get_all_infered_names(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
         let mut results = vec![];
-        let on_symbol = on_symbol.borrow();
-        on_symbol.all_symbols().for_each(|sym| {
+        //get local symbols
+        on_symbol.borrow().all_symbols().for_each(|sym| {
             if sym.borrow().name().starts_with(name) {
-                results.push(sym.clone());
+                if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                    results.push(sym.clone());
+                }
             }
         });
+        //get global symbols
+        if let Some(file) = on_symbol.borrow().get_file().clone() {
+            let file = file.upgrade().unwrap();
+            file.borrow().all_symbols().for_each(|sym| {
+                if sym.borrow().name().starts_with(name) {
+                    if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                        results.push(sym.clone());
+                    }
+                }
+            });
+        }
         results
     }
 

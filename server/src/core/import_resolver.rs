@@ -1,5 +1,6 @@
 use glob::glob;
 use tracing::error;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::Path;
@@ -262,7 +263,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
     return Err("Symbol not found".to_string())
 }
 
-pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, base_name: String, level: Option<u32>) -> Vec<String> {
+pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, base_name: String, level: Option<u32>) -> HashSet<String> {
     //A: search base of different imports
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
@@ -277,7 +278,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         session.sync_odoo.symbols.as_ref().unwrap().clone(),
         &file_tree,
         None);
-    let mut result = vec![];
+    let mut result = HashSet::new();
     if from_symbol.is_none() {
         return result;
     }
@@ -308,7 +309,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         let filter = names.last().unwrap();
         for symbol in sym.borrow().all_symbols() {
             if symbol.borrow().name().starts_with(filter) {
-                result.push(symbol.borrow().name().clone());
+                result.insert(symbol.borrow().name().clone());
             }
         }
     }
