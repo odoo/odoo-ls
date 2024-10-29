@@ -445,6 +445,19 @@ impl PythonArchBuilder {
     }
 
     fn visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) -> Result<(), Error> {
+        for item in with_stmt.items.iter() {
+            if let Some(var) = item.optional_vars.as_ref() {
+                match &**var {
+                    Expr::Name(expr_name) => {
+                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                            session, &expr_name.id.to_string(), &var.range());
+                    },
+                    Expr::Tuple(_) => {continue;},
+                    Expr::List(_) => {continue;},
+                    _ => {continue;}
+                }
+            }
+        }
         self.visit_node(session, &with_stmt.body)?;
         Ok(())
     }

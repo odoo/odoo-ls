@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::vec;
+use std::{u32, vec};
 
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace};
 use std::path::PathBuf;
@@ -669,6 +669,40 @@ impl PythonArchEval {
     }
 
     fn _visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
+        for item in with_stmt.items.iter() {
+            if let Some(var) = item.optional_vars.as_ref() {
+                match &**var {
+                    Expr::Name(expr_name) => {
+                        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&expr_name.id.to_string(), &expr_name.range());
+                        if let Some(variable_rc) = variable {
+                            let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
+                            let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start());
+                            let mut evals = vec![];
+                            for eval in eval.iter() {
+                                let symbol = eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(self.file.clone()));
+                                if let Some(symbol) = symbol.0.upgrade() {
+                                    let _enter_ = symbol.borrow().get_symbol(&(vec![], vec![S!("__enter__")]), u32::MAX);
+                                    if let Some(_enter_) = _enter_.last() {
+                                        match *_enter_.borrow() {
+                                            Symbol::Function(ref func) => {
+                                                evals.extend(func.evaluations.clone());
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                            variable_rc.borrow_mut().set_evaluations(eval);
+                            self.diagnostics.extend(diags);
+                        }
+                    },
+                    Expr::Tuple(_) => {continue;},
+                    Expr::List(_) => {continue;},
+                    _ => {continue;}
+                }
+            }
+
+        }
         for (index, stmt) in with_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
             self.visit_stmt(session, stmt);
