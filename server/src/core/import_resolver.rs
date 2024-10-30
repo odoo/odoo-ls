@@ -133,10 +133,19 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
         if is_dir_cs(full_path.sanitize()) {
             let _arc_symbol = Symbol::create_from_path(session, &full_path, odoo_addons.clone(), false);
             if _arc_symbol.is_some() {
-                let _arc_symbol = _arc_symbol.unwrap();
-                session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&_arc_symbol));
-                session.sync_odoo.add_to_rebuild_arch(_arc_symbol.clone());
-                return Some(_arc_symbol);
+                let typ = _arc_symbol.as_ref().unwrap().borrow().typ();
+                match typ {
+                    SymType::NAMESPACE => {
+                        return Some(_arc_symbol.as_ref().unwrap().clone());
+                    },
+                    SymType::PACKAGE => {
+                        let _arc_symbol = _arc_symbol.as_ref().unwrap().clone();
+                        session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&_arc_symbol));
+                        session.sync_odoo.add_to_rebuild_arch(_arc_symbol.clone());
+                        return Some(_arc_symbol);
+                    },
+                    _ => {return None}
+                }
             }
         }
     }
