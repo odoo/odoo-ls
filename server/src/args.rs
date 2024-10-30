@@ -2,6 +2,7 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
+#[allow(non_snake_case)]
 pub struct Cli {
     //Do not run the server, but only extract diagnostics from the codebase, then stop.
     #[arg(short, long)]

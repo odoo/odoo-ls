@@ -201,6 +201,7 @@ impl FileMgr {
         }
     }
 
+    #[allow(non_snake_case)]
     pub fn textRange_to_temporary_Range(range: &TextRange) -> Range {
         Range::new(
             Position::new(range.start().to_u32(), 0),

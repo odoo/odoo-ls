@@ -91,7 +91,6 @@ impl PythonOdooBuilder {
     }
 
     fn _load_class_inherit(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
-        let module = symbol.find_module();
         let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
         if let Some(_inherit) = _inherit.last() {
             if _inherit.borrow().evaluations().is_none() || _inherit.borrow().evaluations().unwrap().len() == 0 {

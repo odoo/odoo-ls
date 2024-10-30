@@ -35,7 +35,7 @@ pub fn is_file_cs(path: String) -> bool {
     false
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "unix"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn is_file_cs(path: String) -> bool {
     let p = Path::new(&path);
     if p.exists() && p.is_file() {
@@ -71,7 +71,7 @@ pub fn is_dir_cs(path: String) -> bool {
     false
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "unix"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn is_dir_cs(path: String) -> bool {
     let p = Path::new(&path);
     if p.exists() && p.is_dir() {

@@ -89,10 +89,10 @@ impl CliBackend {
                                 _ => {error!("not handled method: {}", n.method)}
                             }
                         },
-                        Message::Request(r) => {
+                        Message::Request(_) => {
                             error!("No request should be sent to client as we are in cli mode.");
                         },
-                        Message::Response(r) => {
+                        Message::Response(_) => {
                             error!("No response should be sent to client as we are in cli mode.");
                         }
                     }

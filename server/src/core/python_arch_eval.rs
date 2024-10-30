@@ -562,7 +562,7 @@ impl PythonArchEval {
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
-            let (weak_symbol, instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let (weak_symbol, _instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             if let Some(symbol) = weak_symbol.upgrade() {
                 let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
                 if symbol_eval.len() == 1 && symbol_eval[0].0.upgrade().is_some() {

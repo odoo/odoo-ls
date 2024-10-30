@@ -17,7 +17,6 @@ use crate::{core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes
 
 const THREAD_MAIN_COUNT: u16 = 1;
 const THREAD_READ_COUNT: u16 = 1;
-const THREAD_REACTIVE_COUNT: u16 = 1;
 
 /**
  * Server handle connection between the client and the extension.
@@ -37,7 +36,6 @@ pub struct Server {
     senders_s_to_read: Vec<Sender<Message>>, // specific channel to threads, to handle responses
     sender_s_to_read: Sender<Message>, //unique channel server to all read threads
     delayed_process_thread: JoinHandle<()>,
-    sender_s_to_delayed: Sender<Message>, //unique channel server to delayed_process_thread
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
     interrupt_rebuild_boolean: Arc<AtomicBool>,
@@ -88,7 +86,7 @@ impl Server {
         let mut senders_s_to_main = vec![];
         let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
         let (generic_sender_s_to_main, generic_receiver_s_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
-        for i in 0..THREAD_MAIN_COUNT {
+        for _ in 0..THREAD_MAIN_COUNT {
             let (sender_s_to_main, receiver_s_to_main) = crossbeam_channel::unbounded();
             let (sender_main_to_s, receiver_main_to_s) = crossbeam_channel::unbounded();
             senders_s_to_main.push(sender_s_to_main);
@@ -106,7 +104,7 @@ impl Server {
 
         let mut senders_s_to_read = vec![];
         let (generic_sender_s_to_read, generic_receiver_s_to_read) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready read thread
-        for i in 0..THREAD_READ_COUNT {
+        for _ in 0..THREAD_READ_COUNT {
             let (sender_s_to_read, receiver_s_to_read) = crossbeam_channel::unbounded();
             let (sender_read_to_s, receiver_read_to_s) = crossbeam_channel::unbounded();
             senders_s_to_read.push(sender_s_to_read);
@@ -120,7 +118,7 @@ impl Server {
             });
         }
 
-        let (sender_s_to_delayed, receiver_s_to_delayed) = crossbeam_channel::unbounded();
+        let (_, receiver_s_to_delayed) = crossbeam_channel::unbounded();
         let (sender_delayed_to_s, receiver_delayed_to_s) = crossbeam_channel::unbounded();
         receivers_w_to_s.push(receiver_delayed_to_s);
         let so = sync_odoo.clone();
@@ -148,7 +146,6 @@ impl Server {
             sender_s_to_main: generic_sender_s_to_main,
             senders_s_to_read: senders_s_to_read,
             sender_s_to_read: generic_sender_s_to_read,
-            sender_s_to_delayed: sender_s_to_delayed,
             sender_to_delayed_process: sender_to_delayed_process,
             delayed_process_thread,
             sync_odoo: sync_odoo,
@@ -278,8 +275,7 @@ impl Server {
         let mut pid_thread = None;
         let pid = client_pid.unwrap_or(self.client_process_id);
         if pid != 0 {
-            let sender_to_main = self.sender_s_to_main.clone();
-            pid_thread = Some(self.spawn_pid_thread(pid, sender_to_main, stop_receiver));
+            pid_thread = Some(self.spawn_pid_thread(pid, stop_receiver));
         }
         loop {
             let index = select.ready();
@@ -422,7 +418,7 @@ impl Server {
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>, stop_channel: Receiver<()>) -> JoinHandle<()> {
+    fn spawn_pid_thread(&self, pid: u32, stop_channel: Receiver<()>) -> JoinHandle<()> {
         use std::process::exit;
         info!("Got PID to watch: {}", pid);
 
@@ -461,7 +457,7 @@ impl Server {
     }
 
     #[cfg(target_os = "windows")]
-    fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>, stop_channel: Receiver<()>) -> JoinHandle<()> {
+    fn spawn_pid_thread(&self, pid: u32, stop_channel: Receiver<()>) -> JoinHandle<()> {
         use std::process::exit;
         use winapi::um::processthreadsapi::OpenProcess;
         use winapi::um::winnt::PROCESS_QUERY_INFORMATION;

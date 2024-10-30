@@ -93,7 +93,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
     // Ex: for "a, *b, c, d = 1, 2, 3, 4, 5" return [("a", None, 1), ("b", None, (2, 3)), ("c", None, 4), ("d", None, 5)] //TODO
     let mut res: Vec<Assign> = Vec::new();
 
-    for (index, target) in targets.iter().enumerate() {
+    for target in targets.iter() {
         match target {
             Expr::Attribute(_) => {},
             Expr::Subscript(_) => {},
