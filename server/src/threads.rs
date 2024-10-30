@@ -69,8 +69,8 @@ impl <'a> SessionInfo<'a> {
                     }
                 }
             },
-            Ok(msg) => return Err(ServerError::ServerError("Not an answer.".to_string())),
-            Err(RecvError) => return Err(ServerError::ServerError("Server disconnected".to_string())),
+            Ok(_) => return Err(ServerError::ServerError("Not a Response.".to_string())),
+            Err(_) => return Err(ServerError::ServerError("Server disconnected".to_string())),
         }
     }
 
@@ -123,7 +123,7 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
     let value = match &result {
         Ok(Some(r)) => Some(serde_json::json!(r)),
         Ok(None) => Some(serde_json::Value::Null),
-        Err(e) => None
+        Err(_) => None
     };
     let mut error = None;
     if result.is_err() {
@@ -137,6 +137,7 @@ pub struct UpdateFileIndexData {
     pub time: Instant,
 }
 
+#[allow(non_camel_case_types)]
 pub enum DelayedProcessingMessage {
     UPDATE_DELAY(u64), //update the delay before starting any update
     PROCESS(Instant), //Process rebuilds after delay
@@ -190,7 +191,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                                     last_time = t;
                                 }
                             },
-                            Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path, time: t })) => {
+                            Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: t })) => {
                                 update_file_index = Some(path);
                                 if t > last_time {
                                     to_wait = (t + delay) - std::time::Instant::now();
@@ -200,7 +201,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                             Err(TryRecvError::Empty) => {
                                 break;
                             },
-                            Err(e) => {return;}
+                            Err(_) => {return;}
                         }
                     }
                 }
@@ -227,7 +228,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     }
                 }
             }
-            Err(e) => {
+            Err(_) => {
                 return;
             }
         }
@@ -237,7 +238,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
 pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     loop {
         let msg = generic_receiver.recv();
-        if let Err(e) = msg {
+        if let Err(_) = msg {
             error!("Got an RecvError, exiting thread");
             break;
         }
@@ -282,7 +283,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     _ => {error!("Notification not handled by main thread: {}", n.method)}
                 }
             },
-            Message::Response(r) => {
+            Message::Response(_) => {
                 error!("Error: Responses should not arrives in generic channel. Exiting thread");
                 break;
             }
@@ -293,7 +294,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
 pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>) {
     loop {
         let msg = generic_receiver.recv();
-        if let Err(e) = msg {
+        if let Err(_) = msg {
             error!("Got an RecvError, exiting thread");
             break;
         }
@@ -327,7 +328,7 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     _ => {error!("Notification not handled by read thread: {}", r.method)}
                 }
             },
-            Message::Response(r) => {
+            Message::Response(_) => {
                 error!("Error: Responses should not arrives in generic channel. Exiting thread");
                 break;
             }

@@ -1,16 +1,14 @@
 use ruff_text_size::{TextSize, TextRange};
-use serde_json::{Value, json};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::constants::*;
 use crate::core::evaluation::{Context, Evaluation};
 use crate::core::model::Model;
-use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
-use crate::utils::{MaxTextSize, PathSanitizer as _};
+use crate::utils::{PathSanitizer as _};
 use crate::S;
 use core::panic;
 use std::collections::{HashMap, VecDeque};
@@ -170,7 +168,7 @@ impl Symbol {
         compiled
     }
 
-    pub fn add_new_variable(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
+    pub fn add_new_variable(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
         let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name.clone(), range.clone(), self.is_external()))));
         variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));
         variable.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -200,7 +198,7 @@ impl Symbol {
         variable
     }
 
-    pub fn add_new_function(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
+    pub fn add_new_function(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
         let function = Rc::new(RefCell::new(Symbol::Function(FunctionSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         function.borrow_mut().set_weak_self(Rc::downgrade(&function));
         function.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -230,7 +228,7 @@ impl Symbol {
         function
     }
 
-    pub fn add_new_class(&mut self, session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
+    pub fn add_new_class(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
         let class = Rc::new(RefCell::new(Symbol::Class(ClassSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         class.borrow_mut().set_weak_self(Rc::downgrade(&class));
         class.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -390,11 +388,11 @@ impl Symbol {
 
     pub fn doc_string(&self) -> &Option<String> {
         match self {
-            Symbol::Root(r) => &None,
-            Symbol::Namespace(n) => &None,
-            Symbol::Package(p) => &None,
-            Symbol::File(f) => &None,
-            Symbol::Compiled(c) => &None,
+            Symbol::Root(_) => &None,
+            Symbol::Namespace(_) => &None,
+            Symbol::Package(_) => &None,
+            Symbol::File(_) => &None,
+            Symbol::Compiled(_) => &None,
             Symbol::Class(c) => &c.doc_string,
             Symbol::Function(f) => &f.doc_string,
             Symbol::Variable(v) => &v.doc_string,
@@ -403,11 +401,11 @@ impl Symbol {
 
     pub fn set_doc_string(&mut self, doc_string: Option<String>) {
         match self {
-            Symbol::Root(r) => panic!(),
-            Symbol::Namespace(n) => panic!(),
-            Symbol::Package(p) => panic!(),
-            Symbol::File(f) => panic!(),
-            Symbol::Compiled(c) => panic!(),
+            Symbol::Root(_) => panic!(),
+            Symbol::Namespace(_) => panic!(),
+            Symbol::Package(_) => panic!(),
+            Symbol::File(_) => panic!(),
+            Symbol::Compiled(_) => panic!(),
             Symbol::Class(c) => c.doc_string = doc_string,
             Symbol::Function(f) => f.doc_string = doc_string,
             Symbol::Variable(v) => v.doc_string = doc_string,
@@ -416,7 +414,7 @@ impl Symbol {
 
     pub fn is_external(&self) -> bool {
         match self {
-            Symbol::Root(r) => false,
+            Symbol::Root(_) => false,
             Symbol::Namespace(n) => n.is_external,
             Symbol::Package(p) => p.is_external(),
             Symbol::File(f) => f.is_external,
@@ -428,7 +426,7 @@ impl Symbol {
     }
     pub fn set_is_external(&mut self, external: bool) {
         match self {
-            Symbol::Root(r) => {},
+            Symbol::Root(_) => {},
             Symbol::Namespace(n) => n.is_external = external,
             Symbol::Package(PackageSymbol::Module(m)) => m.is_external = external,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.is_external = external,
@@ -442,24 +440,24 @@ impl Symbol {
 
     pub fn has_range(&self) -> bool {
         match self {
-            Symbol::Root(r) => false,
-            Symbol::Namespace(n) => false,
-            Symbol::Package(p) => false,
-            Symbol::File(f) => false,
-            Symbol::Compiled(c) => false,
-            Symbol::Class(c) => true,
-            Symbol::Function(f) => true,
-            Symbol::Variable(v) => true,
+            Symbol::Root(_) => false,
+            Symbol::Namespace(_) => false,
+            Symbol::Package(_) => false,
+            Symbol::File(_) => false,
+            Symbol::Compiled(_) => false,
+            Symbol::Class(_) => true,
+            Symbol::Function(_) => true,
+            Symbol::Variable(_) => true,
         }
     }
 
     pub fn range(&self) -> &TextRange {
         match self {
-            Symbol::Root(r) => panic!(),
-            Symbol::Namespace(n) => panic!(),
-            Symbol::Package(p) => panic!(),
-            Symbol::File(f) => panic!(),
-            Symbol::Compiled(c) => panic!(),
+            Symbol::Root(_) => panic!(),
+            Symbol::Namespace(_) => panic!(),
+            Symbol::Package(_) => panic!(),
+            Symbol::File(_) => panic!(),
+            Symbol::Compiled(_) => panic!(),
             Symbol::Class(c) => &c.range,
             Symbol::Function(f) => &f.range,
             Symbol::Variable(v) => &v.range,
@@ -481,14 +479,14 @@ impl Symbol {
 
     pub fn has_ast_indexes(&self) -> bool {
         match self {
-            Symbol::Variable(v) => true,
-            Symbol::Class(c) => true,
-            Symbol::Function(f) => true,
-            Symbol::File(f) => false,
-            Symbol::Compiled(c) => false,
-            Symbol::Namespace(n) => false,
-            Symbol::Package(p) => false,
-            Symbol::Root(r) => false,
+            Symbol::Variable(_) => true,
+            Symbol::Class(_) => true,
+            Symbol::Function(_) => true,
+            Symbol::File(_) => false,
+            Symbol::Compiled(_) => false,
+            Symbol::Namespace(_) => false,
+            Symbol::Package(_) => false,
+            Symbol::Root(_) => false,
         }
     }
 
@@ -497,11 +495,11 @@ impl Symbol {
             Symbol::Variable(v) => Some(&v.ast_indexes),
             Symbol::Class(c) => Some(&c.ast_indexes),
             Symbol::Function(f) => Some(&f.ast_indexes),
-            Symbol::File(f) => None,
-            Symbol::Compiled(c) => None,
-            Symbol::Namespace(n) => None,
-            Symbol::Package(p) => None,
-            Symbol::Root(r) => None,
+            Symbol::File(_) => None,
+            Symbol::Compiled(_) => None,
+            Symbol::Namespace(_) => None,
+            Symbol::Package(_) => None,
+            Symbol::Root(_) => None,
         }
     }
 
@@ -510,11 +508,11 @@ impl Symbol {
             Symbol::Variable(v) => &mut v.ast_indexes,
             Symbol::Class(c) => &mut c.ast_indexes,
             Symbol::Function(f) => &mut f.ast_indexes,
-            Symbol::File(f) => panic!(),
-            Symbol::Compiled(c) => panic!(),
-            Symbol::Namespace(n) => panic!(),
-            Symbol::Package(p) => panic!(),
-            Symbol::Root(r) => panic!(),
+            Symbol::File(_) => panic!(),
+            Symbol::Compiled(_) => panic!(),
+            Symbol::Namespace(_) => panic!(),
+            Symbol::Package(_) => panic!(),
+            Symbol::Root(_) => panic!(),
         }
     }
 
@@ -547,7 +545,7 @@ impl Symbol {
 
     fn set_parent(&mut self, parent: Option<Weak<RefCell<Symbol>>>) {
         match self {
-            Symbol::Root(r) => panic!(),
+            Symbol::Root(_) => panic!(),
             Symbol::Namespace(n) => n.parent = parent,
             Symbol::Package(p) => p.set_parent(parent),
             Symbol::File(f) => f.parent = parent,
@@ -565,9 +563,9 @@ impl Symbol {
             Symbol::Package(p) => p.paths(),
             Symbol::File(f) => vec![f.path.clone()],
             Symbol::Compiled(c) => vec![c.path.clone()],
-            Symbol::Class(c) => vec![],
-            Symbol::Function(f) => vec![],
-            Symbol::Variable(v) => vec![],
+            Symbol::Class(_) => vec![],
+            Symbol::Function(_) => vec![],
+            Symbol::Variable(_) => vec![],
         }
     }
     pub fn add_path(&mut self, path: String) {
@@ -576,61 +574,61 @@ impl Symbol {
             Symbol::Namespace(n) => {
                 n.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::new() });
             },
-            Symbol::Package(p) => {},
-            Symbol::File(f) => {},
-            Symbol::Compiled(c) => {},
-            Symbol::Class(c) => {},
-            Symbol::Function(f) => {},
-            Symbol::Variable(v) => {},
+            Symbol::Package(_) => {},
+            Symbol::File(_) => {},
+            Symbol::Compiled(_) => {},
+            Symbol::Class(_) => {},
+            Symbol::Function(_) => {},
+            Symbol::Variable(_) => {},
         }
     }
 
     pub fn dependencies(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4] {
         match self {
-            Symbol::Root(r) => panic!("No dependencies on Root"),
+            Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &n.dependencies,
             Symbol::Package(p) => p.dependencies(),
             Symbol::File(f) => &f.dependencies,
-            Symbol::Compiled(c) => panic!("No dependencies on Compiled"),
-            Symbol::Class(c) => panic!("No dependencies on Class"),
-            Symbol::Function(f) => panic!("No dependencies on Function"),
-            Symbol::Variable(v) => panic!("No dependencies on Variable"),
+            Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
+            Symbol::Class(_) => panic!("No dependencies on Class"),
+            Symbol::Function(_) => panic!("No dependencies on Function"),
+            Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
     pub fn dependencies_mut(&mut self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4] {
         match self {
-            Symbol::Root(r) => panic!("No dependencies on Root"),
+            Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &mut n.dependencies,
             Symbol::Package(p) => p.dependencies_as_mut(),
             Symbol::File(f) => &mut f.dependencies,
-            Symbol::Compiled(c) => panic!("No dependencies on Compiled"),
-            Symbol::Class(c) => panic!("No dependencies on Class"),
-            Symbol::Function(f) => panic!("No dependencies on Function"),
-            Symbol::Variable(v) => panic!("No dependencies on Variable"),
+            Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
+            Symbol::Class(_) => panic!("No dependencies on Class"),
+            Symbol::Function(_) => panic!("No dependencies on Function"),
+            Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
     pub fn dependents(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3] {
         match self {
-            Symbol::Root(r) => panic!("No dependencies on Root"),
+            Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &n.dependents,
             Symbol::Package(p) => p.dependents(),
             Symbol::File(f) => &f.dependents,
-            Symbol::Compiled(c) => panic!("No dependencies on Compiled"),
-            Symbol::Class(c) => panic!("No dependencies on Class"),
-            Symbol::Function(f) => panic!("No dependencies on Function"),
-            Symbol::Variable(v) => panic!("No dependencies on Variable"),
+            Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
+            Symbol::Class(_) => panic!("No dependencies on Class"),
+            Symbol::Function(_) => panic!("No dependencies on Function"),
+            Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
     pub fn dependents_as_mut(&mut self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3] {
         match self {
-            Symbol::Root(r) => panic!("No dependencies on Root"),
+            Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &mut n.dependents,
             Symbol::Package(p) => p.dependents_as_mut(),
             Symbol::File(f) => &mut f.dependents,
-            Symbol::Compiled(c) => panic!("No dependencies on Compiled"),
-            Symbol::Class(c) => panic!("No dependencies on Class"),
-            Symbol::Function(f) => panic!("No dependencies on Function"),
-            Symbol::Variable(v) => panic!("No dependencies on Variable"),
+            Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
+            Symbol::Class(_) => panic!("No dependencies on Class"),
+            Symbol::Function(_) => panic!("No dependencies on Function"),
+            Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
     pub fn has_modules(&self) -> bool {
@@ -647,43 +645,43 @@ impl Symbol {
             },
             Symbol::Package(PackageSymbol::Module(m)) => Box::new(m.module_symbols.values()),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => Box::new(p.module_symbols.values()),
-            Symbol::File(f) => panic!("No module symbol on File"),
-            Symbol::Compiled(c) => panic!("No module symbol on Compiled"),
-            Symbol::Class(c) => panic!("No module symbol on Class"),
-            Symbol::Function(f) => panic!("No module symbol on Function"),
-            Symbol::Variable(v) => panic!("No module symbol on Variable"),
+            Symbol::File(_) => panic!("No module symbol on File"),
+            Symbol::Compiled(_) => panic!("No module symbol on Compiled"),
+            Symbol::Class(_c) => panic!("No module symbol on Class"),
+            Symbol::Function(_) => panic!("No module symbol on Function"),
+            Symbol::Variable(_) => panic!("No module symbol on Variable"),
         }
     }
     pub fn in_workspace(&self) -> bool {
         match self {
-            Symbol::Root(r) => false,
+            Symbol::Root(_) => false,
             Symbol::Namespace(n) => n.in_workspace,
             Symbol::Package(PackageSymbol::Module(m)) => m.in_workspace,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace,
             Symbol::File(f) => f.in_workspace,
-            Symbol::Compiled(c) => panic!(),
-            Symbol::Class(c) => panic!(),
-            Symbol::Function(f) => panic!(),
-            Symbol::Variable(v) => panic!(),
+            Symbol::Compiled(_) => panic!(),
+            Symbol::Class(_) => panic!(),
+            Symbol::Function(_) => panic!(),
+            Symbol::Variable(_) => panic!(),
         }
     }
     pub fn set_in_workspace(&mut self, in_workspace: bool) {
         match self {
-            Symbol::Root(r) => panic!(),
+            Symbol::Root(_) => panic!(),
             Symbol::Namespace(n) => n.in_workspace = in_workspace,
             Symbol::Package(PackageSymbol::Module(m)) => m.in_workspace = in_workspace,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace = in_workspace,
             Symbol::File(f) => f.in_workspace = in_workspace,
-            Symbol::Compiled(c) => panic!(),
-            Symbol::Class(c) => panic!(),
-            Symbol::Function(f) => panic!(),
-            Symbol::Variable(v) => panic!(),
+            Symbol::Compiled(_) => panic!(),
+            Symbol::Class(_) => panic!(),
+            Symbol::Function(_) => panic!(),
+            Symbol::Variable(_) => panic!(),
         }
     }
     pub fn build_status(&self, step:BuildSteps) -> BuildStatus {
         match self {
-            Symbol::Root(r) => {panic!()},
-            Symbol::Namespace(n) => {panic!()},
+            Symbol::Root(_) => {panic!()},
+            Symbol::Namespace(_) => {panic!()},
             Symbol::Package(PackageSymbol::Module(m)) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -712,7 +710,7 @@ impl Symbol {
                 }
             },
             Symbol::Compiled(_) => todo!(),
-            Symbol::Class(c) => todo!(),
+            Symbol::Class(_) => todo!(),
             Symbol::Function(f) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -727,8 +725,8 @@ impl Symbol {
     }
     pub fn set_build_status(&mut self, step:BuildSteps, status: BuildStatus) {
         match self {
-            Symbol::Root(r) => {panic!()},
-            Symbol::Namespace(n) => {panic!()},
+            Symbol::Root(_) => {panic!()},
+            Symbol::Namespace(_) => {panic!()},
             Symbol::Package(PackageSymbol::Module(m)) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -757,7 +755,7 @@ impl Symbol {
                 }
             },
             Symbol::Compiled(_) => panic!(),
-            Symbol::Class(c) => panic!(),
+            Symbol::Class(_) => panic!(),
             Symbol::Function(f) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -776,56 +774,56 @@ impl Symbol {
             Symbol::File(f) => {
                 f.symbols.iter()
             }
-            Symbol::Root(r) => panic!(),
-            Symbol::Namespace(n) => panic!(),
+            Symbol::Root(_) => panic!(),
+            Symbol::Namespace(_) => panic!(),
             Symbol::Package(PackageSymbol::Module(m)) => {
                 m.symbols.iter()
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
                 p.symbols.iter()
             }
-            Symbol::Compiled(c) => panic!(),
+            Symbol::Compiled(_) => panic!(),
             Symbol::Class(c) => {
                 c.symbols.iter()
             },
             Symbol::Function(f) => {
                 f.symbols.iter()
             },
-            Symbol::Variable(v) => panic!(),
+            Symbol::Variable(_) => panic!(),
         }
     }
     pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
         match self {
-            Symbol::File(f) => { None },
-            Symbol::Root(r) => { None },
-            Symbol::Namespace(n) => { None },
-            Symbol::Package(p) => { None },
-            Symbol::Compiled(c) => { None },
-            Symbol::Class(c) => { None },
+            Symbol::File(_) => { None },
+            Symbol::Root(_) => { None },
+            Symbol::Namespace(_) => { None },
+            Symbol::Package(_) => { None },
+            Symbol::Compiled(_) => { None },
+            Symbol::Class(_) => { None },
             Symbol::Function(f) => Some(&f.evaluations),
             Symbol::Variable(v) => Some(&v.evaluations),
         }
     }
     pub fn evaluations_mut(&mut self) -> Option<&mut Vec<Evaluation>> {
         match self {
-            Symbol::File(f) => { None },
-            Symbol::Root(r) => { None },
-            Symbol::Namespace(n) => { None },
-            Symbol::Package(p) => { None },
-            Symbol::Compiled(c) => { None },
-            Symbol::Class(c) => { None },
+            Symbol::File(_) => { None },
+            Symbol::Root(_) => { None },
+            Symbol::Namespace(_) => { None },
+            Symbol::Package(_) => { None },
+            Symbol::Compiled(_) => { None },
+            Symbol::Class(_) => { None },
             Symbol::Function(f) => Some(&mut f.evaluations),
             Symbol::Variable(v) => Some(&mut v.evaluations),
         }
     }
     pub fn set_evaluations(&mut self, data: Vec<Evaluation>) {
         match self {
-            Symbol::File(f) => { panic!() },
-            Symbol::Root(r) => { panic!() },
-            Symbol::Namespace(n) => { panic!() },
-            Symbol::Package(p) => { panic!() },
-            Symbol::Compiled(c) => { panic!() },
-            Symbol::Class(c) => { panic!() },
+            Symbol::File(_) => { panic!() },
+            Symbol::Root(_) => { panic!() },
+            Symbol::Namespace(_) => { panic!() },
+            Symbol::Package(_) => { panic!() },
+            Symbol::Compiled(_) => { panic!() },
+            Symbol::Class(_) => { panic!() },
             Symbol::Function(f) => { f.evaluations = data; },
             Symbol::Variable(v) => v.evaluations = data,
         }
@@ -835,28 +833,28 @@ impl Symbol {
         static EMPTY_VEC: Vec<(BuildSteps, Vec<String>)> = Vec::new();
         match self {
             Symbol::File(f) => { &f.not_found_paths },
-            Symbol::Root(r) => { &EMPTY_VEC },
-            Symbol::Namespace(n) => { &EMPTY_VEC },
+            Symbol::Root(_) => { &EMPTY_VEC },
+            Symbol::Namespace(_) => { &EMPTY_VEC },
             Symbol::Package(PackageSymbol::Module(m)) => { &m.not_found_paths },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => { &p.not_found_paths },
-            Symbol::Compiled(c) => { &EMPTY_VEC },
-            Symbol::Class(c) => { &EMPTY_VEC },
-            Symbol::Function(f) => { &EMPTY_VEC },
-            Symbol::Variable(v) => &EMPTY_VEC,
+            Symbol::Compiled(_) => { &EMPTY_VEC },
+            Symbol::Class(_) => { &EMPTY_VEC },
+            Symbol::Function(_) => { &EMPTY_VEC },
+            Symbol::Variable(_) => &EMPTY_VEC,
         }
     }
 
     pub fn not_found_paths_mut(&mut self) -> &mut Vec<(BuildSteps, Vec<String>)> {
         match self {
             Symbol::File(f) => { &mut f.not_found_paths },
-            Symbol::Root(r) => { panic!("no not_found_path on Root") },
-            Symbol::Namespace(n) => { panic!("no not_found_path on Namespace") },
+            Symbol::Root(_) => { panic!("no not_found_path on Root") },
+            Symbol::Namespace(_) => { panic!("no not_found_path on Namespace") },
             Symbol::Package(PackageSymbol::Module(m)) => { &mut m.not_found_paths },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => { &mut p.not_found_paths },
-            Symbol::Compiled(c) => { panic!("no not_found_path on Compiled") },
-            Symbol::Class(c) => { panic!("no not_found_path on Class") },
-            Symbol::Function(f) => { panic!("no not_found_path on Function") },
-            Symbol::Variable(v) => panic!("no not_found_path on Variable"),
+            Symbol::Compiled(_) => { panic!("no not_found_path on Compiled") },
+            Symbol::Class(_) => { panic!("no not_found_path on Class") },
+            Symbol::Function(_) => { panic!("no not_found_path on Function") },
+            Symbol::Variable(_) => panic!("no not_found_path on Variable"),
         }
     }
 
@@ -1079,14 +1077,14 @@ impl Symbol {
             }
         }
         match self {
-            Symbol::Root(r) => panic!("There is no dependencies on Root Symbol"),
+            Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => &n.dependencies[step as usize][level as usize],
             Symbol::Package(p) => &p.dependencies()[step as usize][level as usize],
             Symbol::File(f) => &f.dependencies[step as usize][level as usize],
-            Symbol::Compiled(c) => panic!("There is no dependencies on Compiled Symbol"),
-            Symbol::Class(c) => panic!("There is no dependencies on Class Symbol"),
-            Symbol::Function(f) => panic!("There is no dependencies on Function Symbol"),
-            Symbol::Variable(v) => panic!("There is no dependencies on Variable Symbol"),
+            Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
+            Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
+            Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
+            Symbol::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
         }
     }
 
@@ -1095,14 +1093,14 @@ impl Symbol {
             panic!("Can't get dependencies for syntax step")
         }
         match self {
-            Symbol::Root(r) => panic!("There is no dependencies on Root Symbol"),
+            Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => &n.dependencies[step as usize],
             Symbol::Package(p) => &p.dependencies()[step as usize],
             Symbol::File(f) => &f.dependencies[step as usize],
-            Symbol::Compiled(c) => panic!("There is no dependencies on Compiled Symbol"),
-            Symbol::Class(c) => panic!("There is no dependencies on Class Symbol"),
-            Symbol::Function(f) => panic!("There is no dependencies on Function Symbol"),
-            Symbol::Variable(v) => panic!("There is no dependencies on Variable Symbol"),
+            Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
+            Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
+            Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
+            Symbol::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
         }
     }
 
@@ -1120,14 +1118,14 @@ impl Symbol {
             }
         }
         match self {
-            Symbol::Root(r) => panic!("There is no dependencies on Root Symbol"),
+            Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => &n.dependents[level as usize][step as usize],
             Symbol::Package(p) => &p.dependents()[level as usize][step as usize],
             Symbol::File(f) => &f.dependents[level as usize][step as usize],
-            Symbol::Compiled(c) => panic!("There is no dependencies on Compiled Symbol"),
-            Symbol::Class(c) => panic!("There is no dependencies on Class Symbol"),
-            Symbol::Function(f) => panic!("There is no dependencies on Function Symbol"),
-            Symbol::Variable(v) => panic!("There is no dependencies on Variable Symbol"),
+            Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
+            Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
+            Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
+            Symbol::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
         }
     }
 
@@ -1247,7 +1245,7 @@ impl Symbol {
         }
     }
 
-    pub fn invalidate_sub_functions(&mut self, session: &mut SessionInfo) {
+    pub fn invalidate_sub_functions(&mut self, _session: &mut SessionInfo) {
         if vec![SymType::PACKAGE, SymType::FILE].contains(&self.typ()) {
             for func in self.iter_inner_functions() {
                 func.borrow_mut().evaluations_mut().unwrap().clear();
@@ -1262,7 +1260,7 @@ impl Symbol {
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while vec_to_unload.len() > 0 {
             let ref_to_unload = vec_to_unload.front().unwrap().clone();
-            let mut mut_symbol = ref_to_unload.borrow_mut();
+            let mut_symbol = ref_to_unload.borrow_mut();
             // Unload children first
             let mut found_one = false;
             for sym in mut_symbol.all_symbols() {
@@ -1402,16 +1400,16 @@ impl Symbol {
                 Symbol::Function(f) => { f.symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::Module(m)) => { m.symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::PythonPackage(p)) => { p.symbols.remove(symbol.borrow().name()); },
-                Symbol::Compiled(c) => { panic!("A compiled symbol can not contain python code") },
-                Symbol::Namespace(n) => { panic!("A namespace can not contain python code") },
-                Symbol::Root(r) => { panic!("Root can not contain python code") },
-                Symbol::Variable(v) => { panic!("A variable can not contain python code") }
+                Symbol::Compiled(_) => { panic!("A compiled symbol can not contain python code") },
+                Symbol::Namespace(_) => { panic!("A namespace can not contain python code") },
+                Symbol::Root(_) => { panic!("Root can not contain python code") },
+                Symbol::Variable(_) => { panic!("A variable can not contain python code") }
             };
         } else {
             match self {
-                Symbol::Class(c) => { panic!("A class can not contain a file structure") },
-                Symbol::File(f) => { panic!("A file can not contain a file structure"); },
-                Symbol::Function(f) => { panic!("A function can not contain a file structure") },
+                Symbol::Class(_) => { panic!("A class can not contain a file structure") },
+                Symbol::File(_) => { panic!("A file can not contain a file structure"); },
+                Symbol::Function(_) => { panic!("A function can not contain a file structure") },
                 Symbol::Package(PackageSymbol::Module(m)) => { m.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::PythonPackage(p)) => { p.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Compiled(c) => { c.module_symbols.remove(symbol.borrow().name()); },
@@ -1421,7 +1419,7 @@ impl Symbol {
                     }
                 },
                 Symbol::Root(r) => { r.module_symbols.remove(symbol.borrow().name()); },
-                Symbol::Variable(v) => { panic!("A variable can not contain a file structure"); }
+                Symbol::Variable(_) => { panic!("A variable can not contain a file structure"); }
             };
         }
         symbol.borrow_mut().set_parent(None);
@@ -1484,7 +1482,7 @@ impl Symbol {
                 return res
             },
             _ => {
-                let mut vec = VecDeque::new();
+                let vec = VecDeque::new();
                 return vec
             }
         }
@@ -1539,7 +1537,7 @@ impl Symbol {
                             None => {}
                         }
                     }
-                    let mut next_sym_refs = Symbol::next_refs(session, &sym, &mut vec![]);
+                    let next_sym_refs = Symbol::next_refs(session, &sym, &mut vec![]);
                     index += 1;
                     if next_sym_refs.len() >= 1 {
                         results.pop_front();
@@ -1562,12 +1560,12 @@ impl Symbol {
         //be returned.
         let mut iter: Vec<Rc<RefCell<Symbol>>> = Vec::new();
         match self {
-            Symbol::File(f) => {
+            Symbol::File(_) => {
                 for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
             },
-            Symbol::Class(c) => {
+            Symbol::Class(_) => {
                 for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }

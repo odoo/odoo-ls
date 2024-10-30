@@ -14,6 +14,8 @@ use crate::core::file_mgr::FileInfo;
 
 use super::hover::HoverFeature;
 
+
+#[allow(non_camel_case_types)]
 pub enum ExpectedType {
     MODEL_NAME,
     CLASS(Rc<RefCell<Symbol>>),
@@ -63,10 +65,10 @@ fn complete_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt: &S
         Stmt::Global(stmt_global) => complete_global_stmt(session, file, stmt_global, offset),
         Stmt::Nonlocal(stmt_nonlocal) => complete_nonlocal_stmt(session, file, stmt_nonlocal, offset),
         Stmt::Expr(stmt_expr) => complete_expr(&stmt_expr.value, session, file, offset, false, &vec![]),
-        Stmt::Pass(stmt_pass) => None,
-        Stmt::Break(stmt_break) => None,
-        Stmt::Continue(stmt_continue) => None,
-        Stmt::IpyEscapeCommand(stmt_ipy_escape_command) => None,
+        Stmt::Pass(_) => None,
+        Stmt::Break(_) => None,
+        Stmt::Continue(_) => None,
+        Stmt::IpyEscapeCommand(_) => None,
     }
 }
 
@@ -344,31 +346,31 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Lambda(expr_lambda) => compare_lambda(session, file, expr_lambda, offset, is_param, expected_type),
         Expr::If(expr_if) => complete_if_expr(session, file, expr_if, offset, is_param, expected_type),
         Expr::Dict(expr_dict) => complete_dict(session, file, expr_dict, offset, is_param, expected_type),
-        Expr::Set(expr_set) => None,
-        Expr::ListComp(expr_list_comp) => None,
-        Expr::SetComp(expr_set_comp) => None,
-        Expr::DictComp(expr_dict_comp) => None,
-        Expr::Generator(expr_generator) => None,
-        Expr::Await(expr_await) => None,
+        Expr::Set(_) => None,
+        Expr::ListComp(_) => None,
+        Expr::SetComp(_) => None,
+        Expr::DictComp(_) => None,
+        Expr::Generator(_) => None,
+        Expr::Await(_) => None,
         Expr::Yield(expr_yield) => complete_yield(session, file, expr_yield, offset, is_param, expected_type),
-        Expr::YieldFrom(expr_yield_from) => None,
+        Expr::YieldFrom(_) => None,
         Expr::Compare(expr_compare) => complete_compare(session, file, expr_compare, offset, is_param, expected_type),
         Expr::Call(expr_call) => complete_call(session, file, expr_call, offset, is_param, expected_type),
-        Expr::FString(expr_fstring) => None,
+        Expr::FString(_) => None,
         Expr::StringLiteral(expr_string_literal) => complete_string_literal(session, file, expr_string_literal, offset, is_param, expected_type),
-        Expr::BytesLiteral(expr_bytes_literal) => None,
-        Expr::NumberLiteral(expr_number_literal) => None,
-        Expr::BooleanLiteral(expr_boolean_literal) => None,
-        Expr::NoneLiteral(expr_none_literal) => None,
-        Expr::EllipsisLiteral(expr_ellipsis_literal) => None,
+        Expr::BytesLiteral(_) => None,
+        Expr::NumberLiteral(_) => None,
+        Expr::BooleanLiteral(_) => None,
+        Expr::NoneLiteral(_) => None,
+        Expr::EllipsisLiteral(_) => None,
         Expr::Attribute(expr_attribute) => complete_attribut(session, file, expr_attribute, offset, is_param, expected_type),
         Expr::Subscript(expr_subscript) => complete_subscript(session, file, expr_subscript, offset, is_param, expected_type),
-        Expr::Starred(expr_starred) => None,
+        Expr::Starred(_) => None,
         Expr::Name(expr_name) => complete_name(session, file, expr_name, offset, is_param, expected_type),
         Expr::List(expr_list) => complete_list(session, file, expr_list, offset, is_param, expected_type),
-        Expr::Tuple(expr_tuple) => None,
-        Expr::Slice(expr_slice) => None,
-        Expr::IpyEscapeCommand(expr_ipy_escape_command) => None,
+        Expr::Tuple(_) => None,
+        Expr::Slice(_) => None,
+        Expr::IpyEscapeCommand(_) => None,
     }
 }
 
@@ -483,7 +485,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     }
                 }
             },
-            ExpectedType::CLASS(rc) => {},
+            ExpectedType::CLASS(_) => {},
         }
     }
     return Some(CompletionResponse::List(CompletionList {
@@ -581,7 +583,6 @@ fn complete_list(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_lis
 }
 
 fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) -> CompletionItem {
-    let cl_to_complete = symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
     let typ = Symbol::follow_ref(symbol, session, &mut None, true, true, None, &mut vec![]);
     let mut label_details = Some(CompletionItemLabelDetails {
         detail: None,
@@ -613,8 +614,8 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                                             description: Some(expr_string_literal.value.to_string()),
                                         })
                                     },
-                                    Expr::BytesLiteral(expr_bytes_literal) => None,
-                                    Expr::NumberLiteral(expr_number_literal) => {
+                                    Expr::BytesLiteral(_) => None,
+                                    Expr::NumberLiteral(_) => {
                                         Some(CompletionItemLabelDetails {
                                             detail: None,
                                             description: Some(S!("Number")),
@@ -626,19 +627,19 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                                             description: Some(expr_boolean_literal.value.to_string()),
                                         })
                                     },
-                                    Expr::NoneLiteral(expr_none_literal) => {
+                                    Expr::NoneLiteral(_) => {
                                         Some(CompletionItemLabelDetails {
                                             detail: None,
                                             description: Some(S!("None")),
                                         })
                                     },
-                                    Expr::EllipsisLiteral(expr_ellipsis_literal) => None,
+                                    Expr::EllipsisLiteral(_) => None,
                                     _ => {None}
                                 }
                             },
-                            crate::core::evaluation::EvaluationValue::DICT(vec) => None,
-                            crate::core::evaluation::EvaluationValue::LIST(vec) => None,
-                            crate::core::evaluation::EvaluationValue::TUPLE(vec) => None,
+                            crate::core::evaluation::EvaluationValue::DICT(_) => None,
+                            crate::core::evaluation::EvaluationValue::LIST(_) => None,
+                            crate::core::evaluation::EvaluationValue::TUPLE(_) => None,
                         }
                     } else {
                         None
@@ -662,8 +663,8 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                                             description: Some(expr_string_literal.value.to_string()),
                                         })
                                     },
-                                    Expr::BytesLiteral(expr_bytes_literal) => None,
-                                    Expr::NumberLiteral(expr_number_literal) => {
+                                    Expr::BytesLiteral(_) => None,
+                                    Expr::NumberLiteral(_) => {
                                         Some(CompletionItemLabelDetails {
                                             detail: None,
                                             description: Some(S!("Number")),
@@ -675,19 +676,19 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                                             description: Some(expr_boolean_literal.value.to_string()),
                                         })
                                     },
-                                    Expr::NoneLiteral(expr_none_literal) => {
+                                    Expr::NoneLiteral(_) => {
                                         Some(CompletionItemLabelDetails {
                                             detail: None,
                                             description: Some(S!("None")),
                                         })
                                     },
-                                    Expr::EllipsisLiteral(expr_ellipsis_literal) => None,
+                                    Expr::EllipsisLiteral(_) => None,
                                     _ => {None}
                                 }
                             },
-                            crate::core::evaluation::EvaluationValue::DICT(vec) => None,
-                            crate::core::evaluation::EvaluationValue::LIST(vec) => None,
-                            crate::core::evaluation::EvaluationValue::TUPLE(vec) => None,
+                            crate::core::evaluation::EvaluationValue::DICT(_) => None,
+                            crate::core::evaluation::EvaluationValue::LIST(_) => None,
+                            crate::core::evaluation::EvaluationValue::TUPLE(_) => None,
                         }
                     } else {
                         //TODO
