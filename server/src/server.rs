@@ -166,7 +166,6 @@ impl Server {
         if let Some(initialize_params) = initialize_params.process_id {
             self.client_process_id = initialize_params;
         }
-        //TODO if no workspace_folders, use root_uri
         if let Some(workspace_folders) = initialize_params.workspace_folders {
             let mut sync_odoo = self.sync_odoo.lock().unwrap();
             let file_mgr = sync_odoo.get_file_mgr();
@@ -175,6 +174,12 @@ impl Server {
                 let path = FileMgr::uri2pathname(added.uri.as_str());
                 file_mgr.add_workspace_folder(path);
             }
+        } else if let Some( root_uri) = initialize_params.root_uri.as_ref() {
+            let mut sync_odoo = self.sync_odoo.lock().unwrap();
+            let file_mgr = sync_odoo.get_file_mgr();
+            let mut file_mgr = file_mgr.borrow_mut();
+            let path = FileMgr::uri2pathname(root_uri.as_str());
+            file_mgr.add_workspace_folder(path);
         }
         let initialize_data = InitializeResult {
             server_info: Some(ServerInfo {
