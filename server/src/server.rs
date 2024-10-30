@@ -411,7 +411,7 @@ impl Server {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>, stop_channel: Receiver<()>) -> JoinHandle<()> {
         use std::process::exit;
         info!("Got PID to watch: {}", pid);
@@ -450,7 +450,7 @@ impl Server {
         })
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
     fn spawn_pid_thread(&self, pid: u32, sender_s_to_main: Sender<Message>, stop_channel: Receiver<()>) -> JoinHandle<()> {
         use std::process::exit;
         use winapi::um::processthreadsapi::OpenProcess;
