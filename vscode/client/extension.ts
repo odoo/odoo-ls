@@ -301,9 +301,11 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
         const pythonPath = await getPythonPath(context);
 
         global.SERVER_PID = 0;
-        let serverPath = "./odoo_ls_server.exe";
-        if (process.platform !== 'win32') {
-            serverPath = "./odoo_ls_server"
+        let serverPath = "./win/odoo_ls_server.exe";
+        if (process.platform === 'darwin') {
+            serverPath = "./macos/odoo_ls_server"
+        } else if (process.platform !== 'win32') {
+            serverPath = "./linux/odoo_ls_server"
         }
 
         if (context.extensionMode === ExtensionMode.Development) {
