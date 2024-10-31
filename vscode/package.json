@@ -113,6 +113,12 @@
           "maximum": 15000,
           "markdownDescription": "Define the delay the server has to wait before refreshing data after an update."
         },
+        "Odoo.autocompletion.filterModelNames": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Only show model names from module dependencies"
+        },
         "Odoo.diagMissingImportLevel": {
           "scope": "window",
           "type": "string",

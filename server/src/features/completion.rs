@@ -481,28 +481,30 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 for (model_name, model) in models.iter() {
                     if model_name.starts_with(expr_string_literal.value.to_str()) && model_name != "_unknown" {
                         let label = model_name.clone();
+                        let mut label_details = None;
+                        let mut sort_text = Some(format!("_{}", label.clone()));
 
+                    
                         let model_class_syms = model.borrow().get_main_symbols(session, None,&mut None);
                         let modules = model_class_syms.iter().flat_map(|model_rc| 
                             model_rc.borrow().find_module());
                         let required_modules = modules.filter(|module| 
                             !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name, &mut None));
                         let dep_names: Vec<String> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
-
-                        let (label_details, sort_text) = if !dep_names.is_empty() {
-                            (
-                                Some(CompletionItemLabelDetails {
-                                    detail: None,
-                                    description: Some(S!(format!(
-                                        "require {}",
-                                        dep_names.join(", ")
-                                    ))),
-                                }),
-                                Some(label.clone()),
-                            )
-                        } else {
-                            (None, Some(format!("_{}", label.clone())))
+                        if !dep_names.is_empty() {
+                            if !session.sync_odoo.config.ac_filter_model_names{
+                                continue
+                            }
+                            label_details = Some(CompletionItemLabelDetails {
+                                detail: None,
+                                description: Some(S!(format!(
+                                    "require {}",
+                                    dep_names.join(", ")
+                                ))),
+                            });
+                            sort_text = Some(label.clone());
                         };
+
                         items.push(CompletionItem {
                             label,
                             kind: Some(lsp_types::CompletionItemKind::CLASS),

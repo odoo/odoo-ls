@@ -769,6 +769,7 @@ impl Odoo {
         //values for sync block
         let mut _refresh_mode : RefreshMode = RefreshMode::OnSave;
         let mut _auto_save_delay : u64 = 2000;
+        let mut _ac_filter_model_names : bool = true;
         let mut _diag_missing_imports : DiagMissingImportsMode = DiagMissingImportsMode::All;
         let mut selected_configuration: String = S!("");
         let mut configurations = serde_json::Map::new();
@@ -794,6 +795,26 @@ impl Odoo {
                             _auto_save_delay = 2000
                         }
                     },
+                    "autocompletion" => {
+                        if let Some(autocompletion_config) = value.as_object() {
+                            for (key, value) in autocompletion_config {
+                                match key.as_str() {
+                                    "filterModelNames" =>{
+                                        if let Some(ac_filter_model_names) = value.as_bool() {
+                                            _ac_filter_model_names = ac_filter_model_names;
+                                        } else {
+                                            session.log_message(MessageType::ERROR, String::from("Unable to parse autocompletion.ac_filter_model_names . Setting it to true"));
+                                        }
+                                    }
+                                    _ => {
+                                        session.log_message(MessageType::ERROR, format!("Unknown autocompletion config key: autocompletion.{}", key));
+                                    },
+                                }
+                            }
+                        } else {
+                            session.log_message(MessageType::ERROR, String::from("Unable to parse autocompletion_config"));
+                        }
+                    },
                     "diagMissingImportLevel" => {
                         if let Some(diag_import_level) = value.as_str() {
                             _diag_missing_imports = match DiagMissingImportsMode::from_str(diag_import_level) {
@@ -817,7 +838,7 @@ impl Odoo {
                     },
                     "serverLogLevel" => {
                         //Too late, set it with command line
-                    }
+                    },
                     _ => {
                         session.log_message(MessageType::ERROR, format!("Unknown config key: {}", key));
                     },
@@ -842,6 +863,7 @@ impl Odoo {
         config.python_path = python_path.clone();
         config.refresh_mode = _refresh_mode;
         config.auto_save_delay = _auto_save_delay;
+        config.ac_filter_model_names = _ac_filter_model_names;
         config.diag_missing_imports = _diag_missing_imports;
 
         debug!("Final config: {:?}", config);
