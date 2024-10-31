@@ -70,22 +70,19 @@ def build_package(session: nox.Session) -> None:
     copy_dir(session, "../server/typeshed", "typeshed")
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
     if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
-        session.run("mkdir", "linux", external=True)
-        session.run("cp", "../server/target/release/odoo_ls_server", "linux/odoo_ls_server", external=True)
+        session.run("cp", "../server/target/release/odoo_ls_server", "linux_odoo_ls_server", external=True)
     if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.exe").is_file():
-        session.run("mkdir", "win", external=True)
-        session.run("cp", "../server/target/release/odoo_ls_server.exe", "win/odoo_ls_server.exe", external=True)
+        session.run("cp", "../server/target/release/odoo_ls_server.exe", "win_odoo_ls_server.exe", external=True)
     if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
-        session.run("mkdir", "macos", external=True)
-        session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos/odoo_ls_server", external=True)
+        session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", external=True)
-    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux").is_dir():
-        session.run("rm", "-r", "linux", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("win").is_dir():
-        session.run("rm", "-r", "win", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("macos").is_dir():
-        session.run("rm", "-r", "macos", external=True)
+    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux_odoo_ls_server").is_file():
+        session.run("rm", "-r", "linux_odoo_ls_server", external=True)
+    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("win_odoo_ls_server.exe").is_file():
+        session.run("rm", "-r", "win_odoo_ls_server.exe", external=True)
+    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("macos_odoo_ls_server").is_file():
+        session.run("rm", "-r", "macos_odoo_ls_server", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "CHANGELOG.md", external=True)
@@ -98,22 +95,19 @@ def build_package_prerelease(session: nox.Session) -> None:
     copy_dir(session, "../server/typeshed", "typeshed")
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
     if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
-        session.run("mkdir", "linux", external=True)
-        session.run("cp", "../server/target/release/odoo_ls_server", "linux/odoo_ls_server", external=True)
+        session.run("cp", "../server/target/release/odoo_ls_server", "linux_odoo_ls_server", external=True)
     if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.exe").is_file():
-        session.run("mkdir", "win", external=True)
-        session.run("cp", "../server/target/release/odoo_ls_server.exe", "win/odoo_ls_server.exe", external=True)
+        session.run("cp", "../server/target/release/odoo_ls_server.exe", "win_odoo_ls_server.exe", external=True)
     if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
-        session.run("mkdir", "macos", external=True)
-        session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos/odoo_ls_server", external=True)
+        session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", "--pre-release", external=True)
-    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux").is_dir():
-        session.run("rm", "-r", "linux", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("win").is_dir():
-        session.run("rm", "-r", "win", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("macos").is_dir():
-        session.run("rm", "-r", "macos", external=True)
+    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux_odoo_ls_server").is_file():
+        session.run("rm", "-r", "linux_odoo_ls_server", external=True)
+    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("win_odoo_ls_server.exe").is_file():
+        session.run("rm", "-r", "win_odoo_ls_server.exe", external=True)
+    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("macos_odoo_ls_server").is_file():
+        session.run("rm", "-r", "macos_odoo_ls_server", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "CHANGELOG.md", external=True)
