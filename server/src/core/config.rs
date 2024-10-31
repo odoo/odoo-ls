@@ -73,6 +73,7 @@ pub struct Config {
     pub no_typeshed: bool,
     pub additional_stubs: Vec<String>,
     pub stdlib: String,
+    pub ac_filter_model_names: bool, // AC: Only show model names from module dependencies 
 }
 
 impl Config {
@@ -88,6 +89,7 @@ impl Config {
             no_typeshed: false,
             additional_stubs: vec![],
             stdlib: "".to_string(),
+            ac_filter_model_names: false,
         }
     }
 }
