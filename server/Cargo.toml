@@ -31,3 +31,10 @@ ctrlc = "3.4.4"
 once_cell = "1.20.1"
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.29.0", features = ["process"] }
+
+[[bench]]
+name = "iai_profiler"
+harness = false
+
+[dev-dependencies]
+iai-callgrind = "0.14.0"
