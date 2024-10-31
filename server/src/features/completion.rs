@@ -7,6 +7,7 @@ use crate::constants::SymType;
 use crate::core::evaluation::Evaluation;
 use crate::core::import_resolver;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
+use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
 use crate::S;
 use crate::core::symbols::symbol::Symbol;
@@ -470,20 +471,47 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
 
 fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let mut items = vec![];
+    let current_module: Rc<RefCell<Symbol>> = file.borrow().find_module().expect("Completion requested outside an odoo module");
+    let models = session.sync_odoo.models.clone();
     for expected_type in expected_type.iter() {
         match expected_type {
             ExpectedType::MODEL_NAME => {
-                for model_name in session.sync_odoo.models.keys() {
+                for (model_name, model) in models.iter() {
                     if model_name.starts_with(expr_string_literal.value.to_str()) && model_name != "_unknown" {
+                        let label = model_name.clone();
+
+                        let model_class_syms = model.borrow().get_main_symbols(session, None,&mut None);
+                        let modules = model_class_syms.iter().flat_map(|model_rc| 
+                            model_rc.borrow().find_module());
+                        let required_modules = modules.filter(|module| 
+                            !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name, &mut None));
+                        let dep_names: Vec<String> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
+
+                        let (label_details, sort_text) = if !dep_names.is_empty() {
+                            (
+                                Some(CompletionItemLabelDetails {
+                                    detail: None,
+                                    description: Some(S!(format!(
+                                        "require {}",
+                                        dep_names.join(", ")
+                                    ))),
+                                }),
+                                Some(label.clone()),
+                            )
+                        } else {
+                            (None, Some(format!("_{}", label.clone())))
+                        };
                         items.push(CompletionItem {
-                            label: model_name.clone(),
+                            label,
                             kind: Some(lsp_types::CompletionItemKind::CLASS),
+                            label_details,
+                            sort_text,
                             ..Default::default()
                     });
                     }
                 }
             },
-            ExpectedType::CLASS(rc) => {},
+            ExpectedType::CLASS(_) => {},
         }
     }
     return Some(CompletionResponse::List(CompletionList {
