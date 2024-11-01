@@ -142,16 +142,17 @@ async function displayUpdatedNotification(context: ExtensionContext) {
         return
     }
 
-    const selection = await window.showInformationMessage(
+    window.showInformationMessage(
         "The Odoo extension has been updated.",
         "Show changelog",
         "Dismiss"
-    )
-    switch (selection) {
-        case "Show changelog":
-            ChangelogWebview.render(context);
-            break;
-    }
+    ).then(selection => {
+        switch (selection) {
+            case "Show changelog":
+                ChangelogWebview.render(context);
+                break;
+        }
+    });
 }
 
 function updateLastRecordedVersion(context: ExtensionContext) {
