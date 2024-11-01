@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.7 - 2024/31/10
+
+### Server
+
+- Now include macos binary (arm processors)
+- Any requests (Hover, autocompletion, ...) is now able to cut any running rebuild, resulting in a way more reactive experience.
+- Basic autocompletion implementation. The server should be able to parse ast and understand what you want to autocomplete. However, the results could be incomplete or incorrect at this point, we will improve that in the next versions
+- Use hashs to detect if opened files are differents than the disk version to avoid useless computations.
+- Prevent file update if the change is leading to syntaxically wrong ast. The index will be rebuilt only if user fix the syntax errors. It avoid useless computations
+- Update file cache immediatly, even if reload are delayed by settings. It allows autocompletion to be aware of changes.
+- Delay the symbol cleaning to the file reload and not on update, to not drop symbols that could be used by autocompletion or other requests
+- Now handle setups where odoo community path or addons path are paths that are in sys.path.
+- Fix evaluation of classes having a base class with the same name.
+- Fix parsing of empty modules with only a manifest file
+- Basic With statement evaluation
+- Improve Hover informations for imports expressions (especially for files, packages, namespaces)
+- use root_uri as fallback if no workspace_folder is provided (root_uri is deprecated though)
+- Implement a profiling setup with iai-callgrind
+- various cleaning
+
+#### New diagnostics / odoo helpers
+
+- Add deprecation warning on any use/import of odoo.tests.common.Form after Odoo 17.0
+- Autocompletion of Model names in self.env[""] expressions. Autocompleted model names will indicates if a new dependency is required. This comes with a new settings allowing you to choose between 'only available models' or 'all models with an hint'
+
 ## 0.2.6 - 2024/01/10
 
 ### Server

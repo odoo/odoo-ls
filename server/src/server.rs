@@ -13,7 +13,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
+use crate::{constants::EXTENSION_VERSION, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
 
 const THREAD_MAIN_COUNT: u16 = 1;
 const THREAD_READ_COUNT: u16 = 1;
@@ -181,7 +181,7 @@ impl Server {
         let initialize_data = InitializeResult {
             server_info: Some(ServerInfo {
                 name: "Odoo Language Server".to_string(),
-                version: Some("0.2.0".to_string())
+                version: Some(EXTENSION_VERSION.to_string())
             }),
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
