@@ -168,10 +168,10 @@ impl PythonValidator {
                     self.visit_ann_assign(session, a);
                 },
                 Stmt::Expr(e) => {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_stack.last().unwrap().clone(), &e.range.start());
-                    self.diagnostics.extend(diags);
+                    self.validate_expr(session, &e.value);
                 },
                 Stmt::If(i) => {
+                    self.validate_expr(session, &i.test);
                     self.validate_body(session, &i.body);
                 },
                 Stmt::Break(_) => {},
@@ -189,6 +189,11 @@ impl PythonValidator {
                 }
             }
         }
+    }
+
+    fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr) {
+        let (_eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), &expr.range().start());
+        self.diagnostics.extend(diags);
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
