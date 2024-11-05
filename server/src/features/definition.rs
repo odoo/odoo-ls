@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
+use generational_arena::Index;
 use ruff_text_size::TextRange;
 use lsp_types::{GotoDefinitionResponse, Location, Range};
 
@@ -18,7 +19,7 @@ pub struct DefinitionFeature {}
 impl DefinitionFeature {
 
     pub fn get_location(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: &Index,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32

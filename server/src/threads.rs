@@ -1,6 +1,7 @@
 use std::{path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
+use generational_arena::Index;
 use lsp_server::{Message, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
@@ -10,7 +11,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, warn};
 
-use crate::{core::{config::RefreshMode, odoo::{Odoo, SyncOdoo}}, server::ServerError, S};
+use crate::{core::{config::RefreshMode, odoo::{Odoo, SyncOdoo}, symbols::symbol::Symbol}, server::ServerError, S};
 
 pub struct SessionInfo<'a> {
     sender: Sender<Message>,
@@ -116,6 +117,16 @@ impl <'a> SessionInfo<'a> {
             sync_odoo,
             delayed_process_sender: delayed_process_sender
         }
+    }
+
+    /* shortens get item expression */
+    pub fn get_sym(&self, index: Index) -> Option<&Symbol> {
+        self.sync_odoo.symbol_arena.get(index)
+    }
+
+    /* shortens get item expression */
+    pub fn get_sym_mut(&mut self, index: Index) -> Option<&mut Symbol> {
+        self.sync_odoo.symbol_arena.get_mut(index)
     }
 }
 

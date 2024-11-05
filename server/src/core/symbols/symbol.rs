@@ -1,3 +1,4 @@
+use generational_arena::{Arena, Index};
 use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
@@ -11,7 +12,7 @@ use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer as _};
 use crate::S;
 use core::panic;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
@@ -44,10 +45,10 @@ pub enum Symbol {
 }
 
 impl Symbol {
-    pub fn new_root() -> Rc<RefCell<Self>> {
-        let root = Rc::new(RefCell::new(Symbol::Root(RootSymbol::new())));
-        root.borrow_mut().set_weak_self(Rc::downgrade(&root));
-        root
+    pub fn new_root(arena: &mut Arena<Symbol>) -> Index {
+        let index = arena.insert(Symbol::Root(RootSymbol::new()));
+        arena[index].self_index = index;
+        index
     }
 
     //Create a sub-symbol that is representing a file
@@ -516,21 +517,21 @@ impl Symbol {
         }
     }
 
-    pub fn weak_self(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn self_index(&self) -> Option<Index> {
         match self {
-            Symbol::Root(r) => r.weak_self.clone(),
-            Symbol::Namespace(n) => n.weak_self.clone(),
-            Symbol::Package(PackageSymbol::Module(m)) => m.weak_self.clone(),
-            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self.clone(),
-            Symbol::File(f) => f.weak_self.clone(),
-            Symbol::Compiled(c) => c.weak_self.clone(),
-            Symbol::Class(c) => c.weak_self.clone(),
-            Symbol::Function(f) => f.weak_self.clone(),
-            Symbol::Variable(v) => v.weak_self.clone(),
+            Symbol::Root(r) => r.self_index.clone(),
+            Symbol::Namespace(n) => n.self_index.clone(),
+            Symbol::Package(PackageSymbol::Module(m)) => m.self_index.clone(),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.self_index.clone(),
+            Symbol::File(f) => f.self_index.clone(),
+            Symbol::Compiled(c) => c.self_index.clone(),
+            Symbol::Class(c) => c.self_index.clone(),
+            Symbol::Function(f) => f.self_index.clone(),
+            Symbol::Variable(v) => v.self_index.clone(),
         }
     }
 
-    pub fn parent(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn parent(&self) -> Option<Index> {
         match self {
             Symbol::Root(r) => r.parent.clone(),
             Symbol::Namespace(n) => n.parent.clone(),
@@ -543,7 +544,7 @@ impl Symbol {
         }
     }
 
-    fn set_parent(&mut self, parent: Option<Weak<RefCell<Symbol>>>) {
+    fn set_parent(&mut self, parent: Option<Index>) {
         match self {
             Symbol::Root(_) => panic!(),
             Symbol::Namespace(n) => n.parent = parent,
@@ -637,7 +638,7 @@ impl Symbol {
             _ => {false}
         }
     }
-    pub fn all_module_symbol(&self) -> Box<dyn Iterator<Item = &Rc<RefCell<Symbol>>> + '_> {
+    pub fn all_module_symbol(&self) -> Box<dyn Iterator<Item = &Index> + '_> {
         match self {
             Symbol::Root(r) => Box::new(r.module_symbols.values()),
             Symbol::Namespace(n) => {
@@ -859,7 +860,7 @@ impl Symbol {
     }
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
-    pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Index, require_module: bool) -> Option<Index> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let path_str = path.sanitize();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
@@ -932,10 +933,10 @@ impl Symbol {
         res
     }
 
-    pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Index> {
         let symbol_tree_files: &Vec<String> = &tree.0;
         let symbol_tree_content: &Vec<String> = &tree.1;
-        let mut iter_sym: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut iter_sym: Vec<Index> = vec![];
         if symbol_tree_files.len() != 0 {
             let _mod_iter_sym = self.get_module_symbol(&symbol_tree_files[0]);
             if _mod_iter_sym.is_none() {
@@ -1088,7 +1089,7 @@ impl Symbol {
         }
     }
 
-    pub fn get_all_dependencies(&self, step: BuildSteps) -> &Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
+    pub fn get_all_dependencies(&self, step: BuildSteps) -> &Vec<HashSet<Index>> {
         if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
@@ -1245,7 +1246,7 @@ impl Symbol {
         }
     }
 
-    pub fn invalidate_sub_functions(&mut self, _session: &mut SessionInfo) {
+    pub fn invalidate_sub_functions(&mut self) {
         if vec![SymType::PACKAGE, SymType::FILE].contains(&self.typ()) {
             for func in self.iter_inner_functions() {
                 func.borrow_mut().evaluations_mut().unwrap().clear();
@@ -1255,7 +1256,7 @@ impl Symbol {
         }
     }
 
-    pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+    pub fn unload(session: &mut SessionInfo, symbol: Index) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while vec_to_unload.len() > 0 {
@@ -1301,16 +1302,6 @@ impl Symbol {
         }
     }
 
-    pub fn get_rc(&self) -> Option<Rc<RefCell<Symbol>>> {
-        if self.weak_self().is_none() {
-            return None;
-        }
-        if let Some(v) = &self.weak_self() {
-            return Some(v.upgrade().unwrap());
-        }
-        None
-    }
-
     pub fn is_file_content(&self) -> bool{
         match self {
             Symbol::Root(_) | Symbol::Namespace(_) | Symbol::Package(_) | Symbol::File(_) | Symbol::Compiled(_) => false,
@@ -1330,23 +1321,23 @@ impl Symbol {
         return Symbol::is_symbol_in_parents(&parent, to_test);
     }
 
-    fn set_weak_self(&mut self, weak_self: Weak<RefCell<Symbol>>) {
+    fn set_self_index(&mut self, self_index: Index) {
         match self {
-            Symbol::Root(r) => r.weak_self = Some(weak_self),
-            Symbol::Namespace(n) => n.weak_self = Some(weak_self),
-            Symbol::Package(PackageSymbol::Module(m)) => m.weak_self = Some(weak_self),
-            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self = Some(weak_self),
-            Symbol::File(f) => f.weak_self = Some(weak_self),
-            Symbol::Compiled(c) => c.weak_self = Some(weak_self),
-            Symbol::Class(c) => c.weak_self = Some(weak_self),
-            Symbol::Function(f) => f.weak_self = Some(weak_self),
-            Symbol::Variable(v) => v.weak_self = Some(weak_self),
+            Symbol::Root(r) => r.self_index = Some(self_index),
+            Symbol::Namespace(n) => n.self_index = Some(self_index),
+            Symbol::Package(PackageSymbol::Module(m)) => m.self_index = Some(self_index),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.self_index = Some(self_index),
+            Symbol::File(f) => f.self_index = Some(self_index),
+            Symbol::Compiled(c) => c.self_index = Some(self_index),
+            Symbol::Class(c) => c.self_index = Some(self_index),
+            Symbol::Function(f) => f.self_index = Some(self_index),
+            Symbol::Variable(v) => v.self_index = Some(self_index),
         }
     }
 
-    pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Index> {
         if sym_types.contains(&self.typ()) {
-            return self.weak_self().clone();
+            return self.self_index().clone();
         }
         if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
             return None;
@@ -1357,8 +1348,8 @@ impl Symbol {
         return None;
     }
 
-    pub fn has_rc_in_parents(&self, rc: Rc<RefCell<Symbol>>, stop_same_file: bool) -> bool {
-        if Rc::ptr_eq(&self.weak_self().unwrap().upgrade().unwrap(), &rc) {
+    pub fn has_rc_in_parents(&self, rc: Index, stop_same_file: bool) -> bool {
+        if Rc::ptr_eq(&self.self_index().unwrap().upgrade().unwrap(), &rc) {
             return true;
         }
         if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
@@ -1424,9 +1415,9 @@ impl Symbol {
         symbol.borrow_mut().set_parent(None);
     }
 
-    pub fn get_file(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn get_file(&self) -> Option<Index> {
         if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE {
-            return self.weak_self().clone();
+            return self.self_index().clone();
         }
         if self.parent().is_some() {
             return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().get_file();
@@ -1434,9 +1425,9 @@ impl Symbol {
         return None;
     }
 
-    pub fn parent_file_or_function(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn parent_file_or_function(&self) -> Option<Index> {
         if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE || self.typ() == SymType::FUNCTION {
-            return self.weak_self().clone();
+            return self.self_index().clone();
         }
         if self.parent().is_some() {
             return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().parent_file_or_function();
@@ -1444,13 +1435,13 @@ impl Symbol {
         return None;
     }
 
-    pub fn find_module(&self) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn find_module(&self, session: &mut SessionInfo) -> Option<Index> {
         match self {
             Symbol::Package(PackageSymbol::Module(m)) => {return self.get_rc();}
             _ => {}
         }
         if let Some(parent) = self.parent().as_ref() {
-            return parent.upgrade().unwrap().borrow().find_module();
+            return parent.upgrade().unwrap().borrow().find_module(session);
         }
         return None;
     }
@@ -1467,7 +1458,7 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(Index, bool)> {
         match symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
+use generational_arena::Index;
 use lsp_types::notification::ShowMessage;
 use lsp_types::MessageType;
 use ruff_python_ast::Expr;
@@ -17,13 +18,13 @@ use crate::S;
 use super::evaluation::EvaluationValue;
 
 pub struct PythonOdooBuilder {
-    symbol: Rc<RefCell<Symbol>>,
+    symbol: Index,
     diagnostics: Vec<Diagnostic>,
 }
 
 impl PythonOdooBuilder {
 
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonOdooBuilder {
+    pub fn new(symbol: Index) -> PythonOdooBuilder {
         PythonOdooBuilder {
             symbol: symbol,
             diagnostics: vec![]

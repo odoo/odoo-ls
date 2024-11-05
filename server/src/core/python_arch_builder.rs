@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
+use generational_arena::Index;
 use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry, StmtWith};
 use lsp_types::Diagnostic;
@@ -26,16 +27,16 @@ use super::symbols::function_symbol::Argument;
 
 #[derive(Debug)]
 pub struct PythonArchBuilder {
-    file: Rc<RefCell<Symbol>>,
+    file: Index,
     file_mode: bool,
     current_step: BuildSteps,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<Index>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>
 }
 
 impl PythonArchBuilder {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
+    pub fn new(symbol: Index) -> PythonArchBuilder {
         PythonArchBuilder {
             file: symbol.clone(), //dummy, evaluated in load_arch
             file_mode: false, //dummy, evaluated in load_arch

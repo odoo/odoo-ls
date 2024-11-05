@@ -1,4 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
+use generational_arena::Index;
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::Ranged;
@@ -27,7 +28,7 @@ pub struct CompletionFeature;
 impl CompletionFeature {
 
     pub fn autocomplete(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: &Index,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
