@@ -195,7 +195,7 @@
                   "default": "python3",
                   "description": "the python that will be used if you don't have the python extension"
                 },
-                "addonsPath": {
+                "addons": {
                   "type": "array",
                   "default": [],
                   "description": "paths of addons",

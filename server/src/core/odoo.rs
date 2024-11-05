@@ -872,7 +872,7 @@ impl Odoo {
         if configurations.contains_key(&selected_configuration) {
             let odoo_conf = configurations.get(&selected_configuration).unwrap();
             let odoo_conf = odoo_conf.as_object().unwrap();
-            config.addons = odoo_conf.get("addons").expect("An odoo config must contains a addons value")
+            config.addons = odoo_conf.get("validatedAddonsPaths").expect("An odoo config must contains a addons value")
                 .as_array().expect("the addons value must be an array")
                 .into_iter().map(|v| v.as_str().unwrap().to_string()).collect();
             config.odoo_path = odoo_conf.get("odooPath").expect("odooPath must exist").as_str().expect("odooPath must be a String").to_string();

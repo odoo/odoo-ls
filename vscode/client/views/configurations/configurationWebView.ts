@@ -130,7 +130,7 @@ export class ConfigurationWebView {
             cspSource: webview.cspSource,
             nonce: nonce,
             odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null,
-            pythonExtensionMode: global.IS_PYTHON_EXTENSION_READY,  
+            pythonExtensionMode: global.IS_PYTHON_EXTENSION_READY,
         };
         return ejs.render(htmlFile, data);
     }
@@ -148,7 +148,7 @@ export class ConfigurationWebView {
         if (configs[this.configId]["rawOdooPath"] != rawOdooPath) {
             changes.push("rawOdooPath");
         }
-        
+
         if (configs[this.configId]["name"] != name) {
             changes.push("name");
         }
@@ -184,7 +184,7 @@ export class ConfigurationWebView {
         if (workspace.getConfiguration().get("Odoo.selectedConfigurations") == this.configId) {
             ConfigurationsChange.fire(changes);
         }
-        
+
         if (changes.includes('name')){
             this._updateWebviewTitle(this._panel, name)
         }
@@ -303,7 +303,7 @@ export class ConfigurationWebView {
                 version: version
             });
         };
-        
+
         let versions = this._context.globalState.get('Odoo.configsVersion', {});
         const odoo = await evaluateOdooPath(rawOdooPath);
         if (odoo){
