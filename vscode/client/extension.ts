@@ -35,14 +35,14 @@ import {
     ConfigurationsChange,
     clientStopped
 } from './common/events'
-import { 
-    IInterpreterDetails, 
-    getInterpreterDetails, 
-    initializePython, 
-    onDidChangePythonInterpreter, 
-    onDidChangePythonInterpreterEvent 
+import {
+    IInterpreterDetails,
+    getInterpreterDetails,
+    initializePython,
+    onDidChangePythonInterpreter,
+    onDidChangePythonInterpreterEvent
 } from "./common/python";
-import { evaluateOdooPath, getCurrentConfig } from "./common/utils";
+import { evaluateOdooPath, getCurrentConfig, validateAddonPath } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
 import {
@@ -118,7 +118,7 @@ function setMissingStateVariables(context: ExtensionContext) {
     let globalVariables = new Map<string, any>([
         ["Odoo.nextConfigId", stateInit["Odoo.nextConfigId"]],
         ["Odoo.stateVersion", stateInit["Odoo.stateVersion"]],
-        ["Odoo.lastRecordedVersion", context.extension.packageJSON.version], 
+        ["Odoo.lastRecordedVersion", context.extension.packageJSON.version],
     ]);
 
     for (let key of globalVariables.keys()) {
@@ -364,7 +364,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                 }
             })
         );
-        global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","\\\\")};
+        global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","/")};
         if (autoStart) {
             await client.start();
         }
@@ -395,7 +395,7 @@ function deleteOldFiles(context: ExtensionContext) {
             const files = fs.readdirSync(logDir.fsPath).filter(fn => fn.startsWith('odoo_logs_'));
             let dateLimit = new Date();
             dateLimit.setDate(dateLimit.getDate() - 2);
-        
+
             for (const file of files) {
                 const date = extractDateFromFileName(file);
                 if (date && date < dateLimit) {
@@ -407,37 +407,70 @@ function deleteOldFiles(context: ExtensionContext) {
 }
 
 async function checkAddons(context: ExtensionContext) {
-    let files = await workspace.findFiles('**/__manifest__.py')
     let currentConfig = await getCurrentConfig(context);
-    if (currentConfig) {
-        let missingFiles = files.filter(file => {
-            return !(
-                currentConfig.addons.some((addon) => file.fsPath.replaceAll("\\","/").startsWith(addon)) ||
-                file.fsPath.replaceAll("\\","/").startsWith(currentConfig.odooPath)
-            )
-        })
-        let missingPaths = [...new Set(missingFiles.map(file => {
-            let filePath = file.fsPath.split(path.sep)
-            return filePath.slice(0, filePath.length - 2).join(path.sep)
-        }))]
-        if (missingPaths.length > 0) {
-            global.LSCLIENT.warn("Missing addon paths : " + JSON.stringify(missingPaths))
-            window.showWarningMessage(
-                `We detected addon paths that weren't added in the current configuration. Would you like to add them?`,
-                "Update current configuration",
-                "View Paths",
-                "Ignore"
-            ).then(selection => {
-                switch (selection) {
-                    case ("Update current configuration"):
-                        ConfigurationWebView.render(context, currentConfig);
-                        break
-                    case ("View Paths"):
-                        global.LSCLIENT.outputChannel.show();
-                        break
-                }
-            });
+    if (!currentConfig) {
+        return
+    }
+    const validAddons = [];
+    const invalidAddons = [];
+    for (const addonPath of currentConfig.addons) {
+        const validationResult = await validateAddonPath(addonPath);
+
+        if (validationResult !== null) {
+            validAddons.push(validationResult);
+        } else {
+            invalidAddons.push(addonPath);
         }
+    }
+    if (invalidAddons.length > 0) {
+        const invalidPathsMessage = invalidAddons.join("\n");
+
+        window.showWarningMessage(
+            `The following addon paths in this configuration seem invalid: (${invalidPathsMessage}). Would you like to change the configuration?`,
+            "Update current configuration",
+            "Ignore"
+        ).then(selection => {
+            switch (selection) {
+                case "Update current configuration":
+                    ConfigurationWebView.render(context, currentConfig);
+                    break;
+            }
+        });
+    }
+    let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
+    configs[currentConfig.id]["validatedAddonsPaths"] = validAddons;
+    workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
+
+    // Check if workspace folders could also be addons folder
+    currentConfig = configs[currentConfig.id];
+    let files = await workspace.findFiles('**/__manifest__.py')
+    let missingFiles = files.filter(file => {
+        return !(
+            currentConfig.addons.some((addon) => file.fsPath.replaceAll("\\", "/").startsWith(addon)) ||
+            file.fsPath.replaceAll("\\", "/").startsWith(currentConfig.odooPath)
+        )
+    })
+    let missingPaths = [...new Set(missingFiles.map(file => {
+        let filePath = file.fsPath.split(path.sep)
+        return filePath.slice(0, filePath.length - 2).join(path.sep)
+    }))]
+    if (missingPaths.length > 0) {
+        global.LSCLIENT.warn("Missing addon paths : " + JSON.stringify(missingPaths))
+        window.showWarningMessage(
+            "We detected addon paths that weren't added in the current configuration. Would you like to add them?",
+            "Update current configuration",
+            "View Paths",
+            "Ignore"
+        ).then(selection => {
+            switch (selection) {
+                case ("Update current configuration"):
+                    ConfigurationWebView.render(context, currentConfig);
+                    break
+                case ("View Paths"):
+                    global.LSCLIENT.outputChannel.show();
+                    break
+            }
+        });
     }
 }
 
@@ -464,7 +497,7 @@ async function checkOdooPath(context: ExtensionContext) {
         })
         return
     }
-    
+
 
     let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.file(odoo.path)) : true
     if (!odooFound) {
@@ -520,7 +553,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 await setStatusConfig(context);
                 const RELOAD_ON_CHANGE = ["rawOdooPath","addons","pythonPath"];
                 if (changes && (changes.some(r=> RELOAD_ON_CHANGE.includes(r)))) {
-                    
+
                     await checkOdooPath(context);
                     await checkAddons(context);
                     if (client.diagnostics) client.diagnostics.clear();
@@ -545,13 +578,13 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             selectedConfigurationChange.event(async (oldConfig) => {
                 try {
                     if (!global.CAN_QUEUE_CONFIG_CHANGE) return;
-    
+
                     if (global.CLIENT_IS_STOPPING) {
                         global.CAN_QUEUE_CONFIG_CHANGE = false;
                         await waitForClientStop();
                         global.CAN_QUEUE_CONFIG_CHANGE = true;
                     }
-    
+
                     let client = global.LSCLIENT;
                     const config = await getCurrentConfig(context)
                     if (config) {
@@ -802,7 +835,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         validateState(context);
         handleMigration(context)
 
-        
+
         await initStatusBar(context);
         await initializeSubscriptions(context);
 
@@ -880,7 +913,7 @@ export async function getStandalonePythonVersion(context: ExtensionContext): Pro
 
     const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
 
-    return semver.parse(versionString)  
+    return semver.parse(versionString)
 }
 
 async function checkStandalonePythonVersion(context: ExtensionContext): Promise<boolean>{

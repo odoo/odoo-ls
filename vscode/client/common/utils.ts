@@ -1,5 +1,6 @@
-import { ExtensionContext, Uri, Webview, workspace} from "vscode";
+import { ExtensionContext, Uri, Webview, window, workspace } from "vscode";
 import * as fs from 'fs';
+import * as path from "path";
 import { URI } from "vscode-languageclient";
 import untildify from 'untildify';
 import * as readline from 'readline';
@@ -17,7 +18,7 @@ import * as readline from 'readline';
  * @returns A URI pointing to the file/resource
  */
 export function getUri(webview: Webview, extensionUri: Uri, pathList: string[]) {
-  return webview.asWebviewUri(Uri.joinPath(extensionUri, ...pathList));
+	return webview.asWebviewUri(Uri.joinPath(extensionUri, ...pathList));
 }
 
 export function getNonce() {
@@ -33,42 +34,76 @@ export function getNonce() {
 
 export async function getCurrentConfig(context: ExtensionContext) {
 	const configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-    const activeConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
+	const activeConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
 
 	// if config is disabled return nothing
-	if(activeConfig == -1 || !configs[activeConfig]){
+	if (activeConfig == -1 || !configs[activeConfig]) {
 		return null;
 	}
-    return (Object.keys(configs[activeConfig]).length !== 0? configs[activeConfig] : null);
+	return (Object.keys(configs[activeConfig]).length !== 0 ? configs[activeConfig] : null);
 }
 
-export async function evaluateOdooPath(odooPath){
-	if(!odooPath){
+export function isReallyModule(directoryPath: string, moduleName: string): boolean {
+	const fullPath = path.join(directoryPath, moduleName, "__manifest__.py");
+	return fs.existsSync(fullPath) && fs.lstatSync(fullPath).isFile();
+}
+
+export function isAddonPath(directoryPath: string): boolean {
+	return fs.existsSync(directoryPath) && fs.statSync(directoryPath).isDirectory() && fs.readdirSync(directoryPath).some((name) =>
+		isReallyModule(directoryPath, name)
+	);
+}
+
+export async function fillTemplate(template, vars = {}) {
+	const handler = new Function('vars', [
+		'const tagged = ( ' + Object.keys(vars).join(', ') + ' ) =>',
+		'`' + template + '`',
+		'return tagged(...Object.values(vars))'
+	].join('\n'));
+	try {
+		return handler(vars);
+	} catch (error) {
+		if (error instanceof ReferenceError) {
+			const missingVariableMatch = error.message.match(/(\w+) is not defined/);
+			if (missingVariableMatch) {
+				const missingVariable = missingVariableMatch[1];
+				window.showErrorMessage(`Invalid path template paramater "${missingVariable}". Only "workspaceFolder" and "userHome" are currently supported`)
+			}
+		}
+		throw error;
+	}
+}
+
+export async function validateAddonPath(addonPath) {
+	const workspaceFolders = workspace.workspaceFolders;
+	addonPath = addonPath.replaceAll("\\", "/");
+	for (const i in workspaceFolders) {
+		const folder = workspaceFolders[i];
+		const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
+		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
+		const filledPath = path.resolve(await fillTemplate(addonPath, PATH_VAR_LOCAL)).replaceAll("\\", "/");
+		if (filledPath && isAddonPath(filledPath)) {
+			return filledPath;
+		}
+	}
+	return null;
+}
+
+export async function evaluateOdooPath(odooPath) {
+	if (!odooPath) {
 		return
 	}
 	const workspaceFolders = workspace.workspaceFolders;
-	odooPath = odooPath.replaceAll("\\","/");
-
-	const fillTemplate = (template, vars = {}) => {
-		const handler = new Function('vars', [
-			'const tagged = ( ' + Object.keys(vars).join(', ') + ' ) =>',
-			'`' + template + '`',
-			'return tagged(...Object.values(vars))'
-		].join('\n'));
-		const res = handler(vars)
-		return res;
-	};
+	odooPath = odooPath.replaceAll("\\", "/");
 
 
-	for (const i in workspaceFolders){
+	for (const i in workspaceFolders) {
 		const folder = workspaceFolders[i];
-		let PATH_VAR_LOCAL = global.PATH_VARIABLES;
-		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\","/");
-		odooPath = fillTemplate(odooPath,PATH_VAR_LOCAL);
-		const version = await getOdooVersion(odooPath);
-		if (version){
-			global.PATH_VARIABLES["workspaceFolder"] = folder.uri.path.replaceAll("\\","/"); 
-			return {"path": odooPath,"version": version};
+		global.PATH_VARIABLES["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
+		const filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/");
+		const version = await getOdooVersion(filledOdooPath);
+		if (version) {
+			return { "path": odooPath, "version": version };
 		}
 	}
 	return null;
