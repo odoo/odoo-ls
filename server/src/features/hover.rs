@@ -1,3 +1,4 @@
+use generational_arena::Index;
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
 use weak_table::traits::WeakElement;
@@ -17,7 +18,7 @@ pub struct HoverFeature {}
 
 impl HoverFeature {
 
-    pub fn get_hover(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
+    pub fn get_hover(session: &mut SessionInfo, file_symbol: &Index, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
         let offset = file_info.borrow().position_to_offset(line, character);
         let (analyse_ast_result, range): (AnalyzeAstResult, Option<TextRange>) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
         let evals = analyse_ast_result.evaluations;

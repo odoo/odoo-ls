@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::{u32, vec};
 
+use generational_arena::Index;
 use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
@@ -30,17 +31,17 @@ use super::symbols::function_symbol::FunctionSymbol;
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
-    file: Rc<RefCell<Symbol>>,
+    file: Index,
     file_mode: bool,
     current_step: BuildSteps,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<Index>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
     ast_indexes: Vec<u16>,
 }
 
 impl PythonArchEval {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
+    pub fn new(symbol: Index) -> PythonArchEval {
         PythonArchEval {
             file: symbol.clone(), //dummy, evaluated in eval_arch
             file_mode: false, //dummy, evaluated in eval_arch

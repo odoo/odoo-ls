@@ -1,3 +1,5 @@
+use generational_arena::Index;
+
 use crate::{threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
@@ -8,8 +10,8 @@ pub struct RootSymbol {
     pub name: String,
     pub paths: Vec<String>,
     pub sys_path: Vec<String>, //sys path are stored in paths too, but this list identifies them
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    pub self_index: Option<Index>,
+    pub parent: Option<Index>,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
 }
 
@@ -20,7 +22,7 @@ impl RootSymbol {
             name: S!("Root"),
             paths: vec![],
             sys_path: vec![],
-            weak_self: None,
+            self_index: None,
             parent: None,
             module_symbols: HashMap::new(),
         }

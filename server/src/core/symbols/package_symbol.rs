@@ -1,3 +1,4 @@
+use generational_arena::Index;
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model, threads::SessionInfo, S};
@@ -28,13 +29,13 @@ impl PackageSymbol {
             PackageSymbol::Module(m) => &m.name,
         }
     }
-    pub fn parent(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn parent(&self) -> Option<Index> {
         match self {
             PackageSymbol::Module(m) => m.parent.clone(),
             PackageSymbol::PythonPackage(p) => p.parent.clone()
         }
     }
-    pub fn set_parent(&mut self, parent: Option<Weak<RefCell<Symbol>>>) {
+    pub fn set_parent(&mut self, parent: Option<Index>) {
         match self {
             PackageSymbol::Module(m) => m.parent = parent,
             PackageSymbol::PythonPackage(p) => p.parent = parent,
@@ -102,8 +103,8 @@ pub struct PythonPackageSymbol {
     pub path: String,
     pub i_ext: String,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    pub self_index: Option<Index>,
+    pub parent: Option<Index>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
@@ -130,7 +131,7 @@ impl PythonPackageSymbol {
             path,
             is_external,
             i_ext: S!(""),
-            weak_self: None,
+            self_index: None,
             parent: None,
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,

@@ -1,3 +1,4 @@
+use generational_arena::Index;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{trace, warn};
@@ -23,17 +24,17 @@ use super::python_arch_eval::PythonArchEval;
 #[derive(Debug)]
 pub struct PythonValidator {
     file_mode: bool,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<Index>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
-    current_module: Option<Rc<RefCell<Symbol>>>
+    current_module: Option<Index>
 }
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on symbol containing code (file and functions only. Not class, variable, namespace).
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(symbol: Index) -> Self {
         Self {
             file_mode: true,
             sym_stack: vec![symbol],
