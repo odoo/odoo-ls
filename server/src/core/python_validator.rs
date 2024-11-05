@@ -176,14 +176,20 @@ impl PythonValidator {
                 },
                 Stmt::Break(_) => {},
                 Stmt::Continue(_) => {},
-                Stmt::Delete(_) => {
-                    //TODO
+                Stmt::Delete(d) => {
+                    for target in d.targets.iter() {
+                        self.validate_expr(session, target);
+                    }
                 },
                 Stmt::For(f) => {
-                    //TODO check condition ? if some checks has to be done on single Expr
+                    self.validate_expr(session, &f.iter);
                     self.validate_body(session, &f.body);
                 },
-                Stmt::Return(r) => {},
+                Stmt::Return(r) => {
+                    if let Some(value) = &r.value {
+                        self.validate_expr(session, value);
+                    }
+                },
                 _ => {
                     trace!("Stmt not handled");
                 }
@@ -254,11 +260,13 @@ impl PythonValidator {
     }
 
     fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
-
+        if let Some(value) = &assign.value {
+            self.validate_expr(session, &value);
+        }
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
-
+        self.validate_expr(session, &assign.value);
     }
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
