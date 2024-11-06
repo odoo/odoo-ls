@@ -473,7 +473,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
 
 fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let mut items = vec![];
-    let current_module: Rc<RefCell<Symbol>> = file.borrow().find_module().expect("Completion requested outside an odoo module");
+    let current_module = file.borrow().find_module();
     let models = session.sync_odoo.models.clone();
     for expected_type in expected_type.iter() {
         match expected_type {
@@ -485,25 +485,27 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                         let mut sort_text = Some(format!("_{}", label.clone()));
 
                     
-                        let model_class_syms = model.borrow().get_main_symbols(session, None,&mut None);
-                        let modules = model_class_syms.iter().flat_map(|model_rc| 
-                            model_rc.borrow().find_module());
-                        let required_modules = modules.filter(|module| 
-                            !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name, &mut None));
-                        let dep_names: Vec<String> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
-                        if !dep_names.is_empty() {
-                            if !session.sync_odoo.config.ac_filter_model_names{
-                                continue
-                            }
-                            label_details = Some(CompletionItemLabelDetails {
-                                detail: None,
-                                description: Some(S!(format!(
-                                    "require {}",
-                                    dep_names.join(", ")
-                                ))),
-                            });
-                            sort_text = Some(label.clone());
-                        };
+                        if let Some(ref current_module) = current_module {
+                            let model_class_syms = model.borrow().get_main_symbols(session, None,&mut None);
+                            let modules = model_class_syms.iter().flat_map(|model_rc| 
+                                model_rc.borrow().find_module());
+                            let required_modules = modules.filter(|module| 
+                                !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name, &mut None));
+                            let dep_names: Vec<String> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
+                            if !dep_names.is_empty() {
+                                if !session.sync_odoo.config.ac_filter_model_names{
+                                    continue
+                                }
+                                label_details = Some(CompletionItemLabelDetails {
+                                    detail: None,
+                                    description: Some(S!(format!(
+                                        "require {}",
+                                        dep_names.join(", ")
+                                    ))),
+                                });
+                                sort_text = Some(label.clone());
+                            };
+                        }
 
                         items.push(CompletionItem {
                             label,
