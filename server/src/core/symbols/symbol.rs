@@ -11,7 +11,7 @@ use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer as _};
 use crate::S;
 use core::panic;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
@@ -1603,6 +1603,67 @@ impl Symbol {
             _ => {}
         }
         iter.into_iter()
+    }
+
+    //store in result all available members for self: sub symbols, base class elements and models symbols
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>) {
+        if acc.is_none() {
+            *acc = Some(HashSet::new());
+        }
+        let tree = symbol.borrow().get_tree();
+        if acc.as_mut().unwrap().contains(&tree) {
+            return;
+        }
+        acc.as_mut().unwrap().insert(tree);
+        let typ = symbol.borrow().typ().clone();
+        match typ {
+            SymType::CLASS => {
+                for symbol in symbol.borrow().all_symbols() {
+                    let name = symbol.borrow().name().clone();
+                    if let Some(vec) = result.get_mut(&name) {
+                        vec.push((symbol, None));
+                    } else {
+                        result.insert(name.clone(), vec![(symbol, None)]);
+                    }
+                }
+                let bases = symbol.borrow().as_class_sym().bases.clone();
+                for base in bases.iter() {
+                    //no comodel as we will process only model in base class (overrided _name?)
+                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc);
+                }
+                if with_co_models {
+                    let sym = symbol.borrow();
+                    let model_data = sym.as_class_sym()._model.as_ref();
+                    if let Some(model_data) = model_data {
+                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                        if let Some(model) = model {
+                            for model_sym in model.borrow().all_symbols(session, from_module) {
+                                if !Rc::ptr_eq(symbol, &model_sym.0) {
+                                    for s in model_sym.0.borrow().all_symbols() {
+                                        let name = s.borrow().name().clone();
+                                        if let Some(vec) = result.get_mut(&name) {
+                                            vec.push((s, Some(model_sym.0.borrow().name().clone())));
+                                        } else {
+                                            result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            _ => {
+                for symbol in symbol.borrow().all_symbols() {
+                    let name = symbol.borrow().name().clone();
+                    if let Some(vec) = result.get_mut(&name) {
+                        vec.push((symbol, None));
+                    } else {
+                        result.insert(name.clone(), vec![(symbol, None)]);
+                    }
+                }
+            }
+        }
     }
 
     /* return the Symbol (class, function or file) the closest to the given offset */

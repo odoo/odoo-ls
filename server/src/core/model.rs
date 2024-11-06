@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::rc::Weak;
+use lsp_types::MessageType;
 use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
@@ -118,6 +119,30 @@ impl Model {
             }
         }
         res
+    }
+
+    /* Return all symbols that build this model. 
+        It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
+    */
+    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<String>)> {
+        let mut symbol = Vec::new();
+        for s in self.symbols.iter() {
+            if let Some(from_module) = from_module.as_ref() {
+                let module = s.borrow().find_module();
+                if let Some(module) = module {
+                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+                        symbol.push((s, None));
+                    } else {
+                        symbol.push((s, Some(module.borrow().as_module_package().dir_name.clone())));
+                    }
+                } else {
+                    session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
+                }
+            } else {
+                symbol.push((s.clone(), None));
+            }
+        }
+        symbol
     }
 
     pub fn add_dependent(&mut self, symbol: &Rc<RefCell<Symbol>>) {
