@@ -10,8 +10,7 @@ export interface IInterpreterDetails {
     resource?: Uri;
 }
 
-export const onDidChangePythonInterpreterEvent = new EventEmitter<IInterpreterDetails>();
-export const onDidChangePythonInterpreter: Event<IInterpreterDetails> = onDidChangePythonInterpreterEvent.event;
+export const onDidChangePythonInterpreterEvent = new EventEmitter();
 
 let _api: PythonExtension | undefined;
 async function getPythonExtensionAPI(): Promise<PythonExtension | undefined> {
@@ -28,8 +27,8 @@ export async function initializePython(disposables: Disposable[]): Promise<void>
 
         if (api) {
             disposables.push(
-                api.environments.onDidChangeActiveEnvironmentPath((e) => {
-                    onDidChangePythonInterpreterEvent.fire({ path: [e.path], resource: e.resource?.uri });
+                api.environments.onDidChangeActiveEnvironmentPath((_) => {
+                    onDidChangePythonInterpreterEvent.fire(null);
                 }),
             );
 
