@@ -253,12 +253,26 @@ export class ConfigurationWebView {
                     };
                     window.showOpenDialog(addonsFolderOptions).then(fileUri => {
                         if (fileUri && fileUri[0]) {
-                            this.addons = [...this.addons, fileUri[0].fsPath];
+                            this.addons = [...this.addons, ];
                             webview.postMessage({
-                                command: "render_addons",
-                                addons: this.addons,
+                                command: "read_addons_folder",
+                                addonPath: fileUri[0].fsPath,
                             });
                         }
+                    });
+                    break;
+                case "add_addons_path":
+                    const addonPath = message.addonPath;
+                    if (!addonPath){
+                        break;
+                    }
+                    this.addons = [...this.addons, addonPath];
+                    webview.postMessage({
+                        command: "clear_addons_folder",
+                    });
+                    webview.postMessage({
+                        command: "render_addons",
+                        addons: this.addons,
                     });
                     break;
                 case "delete_addons_folder":

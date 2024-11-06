@@ -26,18 +26,31 @@ window.addEventListener("message", event => {
       else {
         pathHelper.innerHTML = '<p id="path-helper-invalid">No Odoo installation detected.</p>';
       }
+      break
+    case "read_addons_folder":
+      const addonInput = document.getElementById('addons-folder-input');
+      addonInput.focus();
+      addonInput.setAttribute("value", message.addonPath);
+      break
+    case "clear_addons_folder":
+      const addonInputField = document.getElementById('addons-folder-input');
+      addonInputField.focus();
+      addonInputField.setAttribute("value", '');
+      break
   }
 });
 
 function main() {
-  const addFolderButton = document.getElementById('add-folder-button');
+  const addFolderButton = document.getElementById('config-addons-path-button');
+  const addAddonPathButton = document.getElementById('add-addon-path-button');
   const pathTextfield = document.getElementById('config-path-textfield');
   const pathButton = document.getElementById('config-path-button');
   const pythonPathButton = document.getElementById('config-python-path-button');
   const saveButton = document.getElementById('save-button');
   const deleteButton = document.getElementById('delete-button');
 
-  addFolderButton.addEventListener("click", addFolderClick);
+  addFolderButton.addEventListener("vsc-click", addFolderClick);
+  addAddonPathButton.addEventListener("click", addAddonPathClick);
   pathTextfield.addEventListener("vsc-change", updateVersion);
   pathButton.addEventListener('vsc-click', openOdooFolder);
   if (pythonPathButton){
@@ -46,10 +59,10 @@ function main() {
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
 
-  // Send a message to notify the extension 
+  // Send a message to notify the extension
   // that the DOM is loaded and ready.
   vscode.postMessage({
-    command: 'view_ready' 
+    command: 'view_ready'
   });
 }
 
@@ -79,6 +92,13 @@ function openPythonPath() {
 function addFolderClick() {
   vscode.postMessage({
     command: "add_addons_folder"
+  });
+}
+
+function addAddonPathClick() {
+  vscode.postMessage({
+    command: "add_addons_path",
+    addonPath: document.getElementById("addons-folder-input").value,
   });
 }
 
@@ -120,7 +140,7 @@ function renderAddonsTree(addons) {
       tooltip: 'Delete',
     },
   ];
-  
+
   let data = [];
   for (let i = 0; i < addons.length; i++) {
     data.push({icons, actions, label: addons[i]});
