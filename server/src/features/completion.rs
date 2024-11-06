@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
@@ -539,12 +540,15 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                 let parent_sym_types = Symbol::follow_ref(&parent_sym, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     if let Some(parent_sym_type) = parent_sym_type.0.upgrade() {
-                        let parent_borrowed = parent_sym_type.borrow();
-                        let all_symbols = parent_borrowed.all_symbols();
-                        drop(parent_borrowed);
-                        for sym in all_symbols {
-                            if sym.borrow().name().starts_with(attr.attr.id.as_str()) {
-                                items.push(build_completion_item_from_symbol(session, &sym));
+                        let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+                        let from_module = parent_sym_type.borrow().find_module().clone();
+                        Symbol::all_members(&parent_sym_type, session, &mut all_symbols, true, from_module, &mut None);
+                        for (_symbol_name, symbols) in all_symbols {
+                            //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
+                            for (final_sym, dep) in symbols.iter() {
+                                if final_sym.borrow().name().starts_with(attr.attr.id.as_str()) {
+                                    items.push(build_completion_item_from_symbol(session, final_sym, dep.clone()));
+                                }
                             }
                         }
                     }
@@ -614,7 +618,8 @@ fn complete_list(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_lis
     None
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) -> CompletionItem {
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dependency: Option<String>) -> CompletionItem {
+    //TODO use dependency to show it? or to filter depending of configuration
     let typ = Symbol::follow_ref(symbol, session, &mut None, true, true, None, &mut vec![]);
     let mut label_details = Some(CompletionItemLabelDetails {
         detail: None,
