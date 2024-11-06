@@ -103,7 +103,7 @@ export async function evaluateOdooPath(odooPath) {
 		const filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/");
 		const version = await getOdooVersion(filledOdooPath);
 		if (version) {
-			return { "path": odooPath, "version": version };
+			return { "path": filledOdooPath, "version": version };
 		}
 	}
 	return null;
@@ -137,4 +137,11 @@ export async function getOdooVersion(odooPath: URI) {
 		// Folder is invalid if odoo/release.py was never found
 		return null;
 	}
+}
+
+export function areUniquelyEqual<T>(a: Array<T>, b: Array<T>): boolean {
+	if (!(Array.isArray(a) && Array.isArray(b))) return false;
+	const setA = new Set(a);
+	const setB = new Set(b);
+	return setA.size === setB.size && [...setA].every(val => setB.has(val));
 }

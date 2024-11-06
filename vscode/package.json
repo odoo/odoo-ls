@@ -188,7 +188,7 @@
                 "odooPath": {
                   "type": "string",
                   "default": "",
-                  "description": "DO NOT MODIFY"
+                  "description": "Internal use: modify at your own risk"
                 },
                 "pythonPath": {
                   "type": "string",
@@ -199,6 +199,15 @@
                   "type": "array",
                   "default": [],
                   "description": "paths of addons",
+                  "items": {
+                    "type": "string",
+                    "default": ""
+                  }
+                },
+                "validatedAddonsPaths": {
+                  "type": "array",
+                  "default": [],
+                  "description": "Internal use: modify at your own risk",
                   "items": {
                     "type": "string",
                     "default": ""

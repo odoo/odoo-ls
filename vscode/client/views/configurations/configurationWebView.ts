@@ -1,6 +1,5 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, workspace, ConfigurationTarget } from "vscode";
 import { getUri, getNonce, evaluateOdooPath } from "../../common/utils";
-import {ConfigurationsChange} from "../../common/events"
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -142,7 +141,6 @@ export class ConfigurationWebView {
     private _saveConfig(configs: any, rawOdooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
-        global.CLIENT_IS_SAVING = false;
 
 
         if (configs[this.configId]["rawOdooPath"] != rawOdooPath) {
@@ -175,27 +173,23 @@ export class ConfigurationWebView {
         configs[this.configId] = {
             "id": this.configId,
             "name": name,
-            "odooPath":  untildify(rawOdooPath),
+            "odooPath": configs[this.configId]["odooPath"],
             "rawOdooPath": untildify(rawOdooPath),
             "addons": addons,
             "pythonPath": untildify(pythonPath),
+            "validatedAddonsPaths": configs[this.configId]["validatedAddonsPaths"],
         };
         workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
-        if (workspace.getConfiguration().get("Odoo.selectedConfigurations") == this.configId) {
-            ConfigurationsChange.fire(changes);
-        }
 
         if (changes.includes('name')){
             this._updateWebviewTitle(this._panel, name)
         }
-        global.CLIENT_IS_SAVING = true;
     }
 
     private _deleteConfig(configs: any): void {
         delete configs[this.configId]
         workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
         this.dispose()
-        ConfigurationsChange.fire(null);
     }
     /**
      * Sets up an event listener to listen for messages passed from the webview context and
