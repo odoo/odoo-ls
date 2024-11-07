@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 use lsp_types::{GotoDefinitionResponse, Location, Range};
 
 use crate::constants::SymType;
@@ -29,15 +29,29 @@ impl DefinitionFeature {
             return None;
         }
         let mut links = vec![];
-        for eval in analyse_ast_result.evaluations.iter() {
+        let mut evaluations = analyse_ast_result.evaluations.clone();
+        let mut index = 0;
+        while index < evaluations.len() {
+            let eval = evaluations[index].clone();
             let sym_ref = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let loc_sym = sym_ref.0.upgrade();
             if loc_sym.is_none() {
+                index += 1;
                 continue;
             }
             let symbol =loc_sym.unwrap();
             let file = symbol.borrow().get_file();
             if let Some(file) = file {
+                //if the symbol is at the given offset, let's take the next evaluation instead
+                if Rc::ptr_eq(&file.upgrade().unwrap(), &file_symbol) && symbol.borrow().has_range() && symbol.borrow().range().contains(TextSize::new(offset as u32)) {
+                    evaluations.remove(index);
+                    let symbol = symbol.borrow();
+                    let sym_eval = symbol.evaluations();
+                    if let Some(sym_eval) = sym_eval.clone() {
+                        evaluations = [evaluations.clone(), sym_eval.clone()].concat();
+                    }
+                    continue;
+                }
                 for path in file.upgrade().unwrap().borrow().paths().iter() {
                     match symbol.borrow().typ() {
                         SymType::PACKAGE => {
@@ -52,8 +66,13 @@ impl DefinitionFeature {
                             } else {
                                 let get_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
                                 if let Some(eval_sym) = get_sym.0.upgrade() {
-                                    eval_sym.borrow().range().clone()
+                                    if eval_sym.borrow().has_range() {
+                                        eval_sym.borrow().range().clone()
+                                    } else {
+                                        TextRange::default()
+                                    }
                                 } else {
+                                    index += 1;
                                     continue;
                                 }
                             };
@@ -65,6 +84,7 @@ impl DefinitionFeature {
                     }
                 }
             }
+            index += 1;
         }
         Some(GotoDefinitionResponse::Array(links))
     }
