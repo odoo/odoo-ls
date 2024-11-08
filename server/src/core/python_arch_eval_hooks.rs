@@ -309,6 +309,21 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             value: None
         });
     }},
+    PythonArchEvalFunctionHook { tree: (vec![S!("odoo"), S!("models")], vec![S!("BaseModel"), S!("browse")]),
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>| {
+        let mut browse: std::cell::RefMut<Symbol> = symbol.borrow_mut();
+        browse.evaluations_mut().unwrap().clear();
+        browse.evaluations_mut().unwrap().push(Evaluation {
+            symbol: EvaluationSymbol::new_self(
+                HashMap::new(),
+                None,
+                None,
+            ),
+            range: None,
+            value: None
+        });
+    }},
 ]});
 
 pub struct PythonArchEvalHooks {
