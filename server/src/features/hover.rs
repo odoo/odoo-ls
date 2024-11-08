@@ -5,6 +5,7 @@ use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use crate::core::symbols::symbol::Symbol;
@@ -107,19 +108,36 @@ impl HoverFeature {
                         let func_eval = infered_type.evaluations();
                         let mut func_return_type = S!("");
                         if let Some(func_eval) = func_eval {
-                            let max_eval: i32 = func_eval.len() as i32 -1;
-                            for (eval_index, eval) in func_eval.iter().enumerate() {
+                            let mut type_names = HashSet::new();
+                            for eval in func_eval.iter() {
                                 let s = eval.symbol.get_symbol(session, context, &mut vec![], None).0;
                                 if let Some(s) = s.upgrade() {
-                                    func_return_type += s.borrow().name(); //TODO should do a followref?
+                                    let s_types = Symbol::follow_ref(&s, session, context, true, false, None, &mut vec![]);
+                                    for (s_type, _instance) in s_types.iter() {
+                                        if let Some(s_type) = s_type.upgrade() {
+                                            let typ = s_type.borrow();
+                                            if typ.typ() == SymType::VARIABLE {
+                                                //if fct is a variable, it means that evaluation is None.
+                                                type_names.insert("Any".to_string());
+                                            } else {
+                                                type_names.insert(typ.name().clone());
+                                            }
+                                        } else {
+                                            type_names.insert("Any".to_string());
+                                        }
+                                    }
                                 } else {
-                                    func_return_type += "None";
+                                    type_names.insert("None".to_string());
                                 }
-                                if eval_index != max_eval as usize {
+                            }
+                            let max_eval: i32 = type_names.len() as i32 -1;
+                            for (index, type_name) in type_names.iter().enumerate() {
+                                func_return_type += type_name.as_str();
+                                if index != max_eval as usize {
                                     func_return_type += " | ";
                                 }
                             }
-                            if func_eval.len() == 0 {
+                            if type_names.len() == 0 {
                                 func_return_type += "None";
                             }
                         }
