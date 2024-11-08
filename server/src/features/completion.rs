@@ -479,13 +479,19 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
     for expected_type in expected_type.iter() {
         match expected_type {
             ExpectedType::MODEL_NAME => {
+                let prefix = expr_string_literal.value.to_str();
+                let prefix_head = match prefix.rfind('.') {
+                    Some(index) => &prefix[..=index],
+                    None => "",
+                };
                 for (model_name, model) in models.iter() {
-                    if model_name.starts_with(expr_string_literal.value.to_str()) && model_name != "_unknown" {
+                    if model_name.starts_with(prefix) && model_name != "_unknown" {
                         let label = model_name.clone();
+                        let insert_text = model_name.strip_prefix(prefix_head).map(|s| s.to_string());
                         let mut label_details = None;
                         let mut sort_text = Some(format!("_{}", label.clone()));
 
-                    
+
                         if let Some(ref current_module) = current_module {
                             let model_class_syms = model.borrow().get_main_symbols(session, None,&mut None);
                             let modules = model_class_syms.iter().flat_map(|model_rc| 
@@ -510,6 +516,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
 
                         items.push(CompletionItem {
                             label,
+                            insert_text,
                             kind: Some(lsp_types::CompletionItemKind::CLASS),
                             label_details,
                             sort_text,
