@@ -75,16 +75,18 @@ export async function fillTemplate(template, vars = {}) {
 }
 
 export async function validateAddonPath(addonPath) {
-	const workspaceFolders = workspace.workspaceFolders;
 	addonPath = addonPath.replaceAll("\\", "/");
-	for (const i in workspaceFolders) {
-		const folder = workspaceFolders[i];
+	for (const folder of workspace.workspaceFolders) {
 		const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
 		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
-		const filledPath = path.resolve(await fillTemplate(addonPath, PATH_VAR_LOCAL)).replaceAll("\\", "/");
-		if (filledPath && isAddonPath(filledPath)) {
-			return filledPath;
-		}
+		let filledPath = path.resolve(await fillTemplate(addonPath, PATH_VAR_LOCAL)).replaceAll("\\", "/");
+		if (!filledPath) continue;
+		do {
+			if (isAddonPath(filledPath)) {
+				return filledPath;
+			}
+			filledPath = path.dirname(filledPath);
+		} while (path.parse(filledPath).root != filledPath);
 	}
 	return null;
 }
@@ -93,18 +95,19 @@ export async function evaluateOdooPath(odooPath) {
 	if (!odooPath) {
 		return
 	}
-	const workspaceFolders = workspace.workspaceFolders;
 	odooPath = odooPath.replaceAll("\\", "/");
 
 
-	for (const i in workspaceFolders) {
-		const folder = workspaceFolders[i];
+	for (const folder of workspace.workspaceFolders) {
 		global.PATH_VARIABLES["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
-		const filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/");
-		const version = await getOdooVersion(filledOdooPath);
-		if (version) {
-			return { "path": filledOdooPath, "version": version };
-		}
+		let filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/");
+		do {
+			const version = await getOdooVersion(filledOdooPath);
+			if (version) {
+				return { "path": filledOdooPath, "version": version };
+			}
+			filledOdooPath = path.dirname(filledOdooPath);
+		} while (path.parse(filledOdooPath).root != filledOdooPath);
 	}
 	return null;
 }
