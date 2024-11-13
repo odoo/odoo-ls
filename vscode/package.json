@@ -57,6 +57,11 @@
         "command": "odoo.testCrashMessage",
         "title": "Open the crash notification",
         "category": "Odoo"
+      },
+      {
+        "command": "odoo.disablePythonLanguageServerCommand",
+        "title": "Set Python extension LanugageServer to None (Does nothing if python extension is not active)",
+        "category": "Odoo"
       }
     ],
     "views": {},
@@ -118,6 +123,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Only show model names from module dependencies"
+        },
+        "Odoo.disablePythonLanguageServer": {
+          "scope": "window",
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Set LanugageServer setting on Python extension to None on workspace level after user input (Does nothing if python extension is not active or already set to `None`)"
         },
         "Odoo.diagMissingImportLevel": {
           "scope": "window",

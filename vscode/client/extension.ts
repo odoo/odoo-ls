@@ -111,7 +111,6 @@ function validateState(context: ExtensionContext) {
 
 function setMissingStateVariables(context: ExtensionContext) {
     const globalStateKeys = context.globalState.keys();
-    const workspaceStateKeys = context.workspaceState.keys();
     let globalVariables = new Map<string, any>([
         ["Odoo.nextConfigId", stateInit["Odoo.nextConfigId"]],
         ["Odoo.stateVersion", stateInit["Odoo.stateVersion"]],
@@ -233,7 +232,7 @@ async function changeSelectedConfig(context: ExtensionContext, configId: Number)
     await workspace.getConfiguration().update("Odoo.selectedConfiguration", configId, ConfigurationTarget.Workspace);
 }
 
-async function find_last_log_file(context: ExtensionContext, pid: number) {
+async function findLastLogFile(context: ExtensionContext, pid: number) {
     let prefix = "odoo_logs";
     let suffix =  `.${pid}.log`
     let cwd = path.join(__dirname, "..", "..");
@@ -279,7 +278,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
         "Cancel"
     );
 
-    let log_file = await find_last_log_file(context, pid);
+    let log_file = await findLastLogFile(context, pid);
 
     switch (selection) {
         case ("Send crash report"):
@@ -295,6 +294,9 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
     let client : LanguageClient;
     try {
         global.CURRENT_PYTHON_PATH = await getPythonPath(context);
+        if (workspace.getConfiguration('Odoo').get('disablePythonLanguageServer')){
+            displayDisablePythonLSMessage();
+        }
 
         global.SERVER_PID = 0;
         let serverPath = "./win_odoo_ls_server.exe";
@@ -562,6 +564,9 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     global.IS_LOADING = false;
                 }
                 await setStatusConfig(context);
+                if (event.affectsConfiguration("Odoo.disablePythonLanguageServer") && workspace.getConfiguration('Odoo').get('disablePythonLanguageServer')){
+                    displayDisablePythonLSMessage()
+                }
             }
             catch (error) {
                 global.LSCLIENT?.error(error);
@@ -704,6 +709,9 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 await displayCrashMessage(context, error, global.SERVER_PID, 'odoo.clickStatusBar')
             }
         }),
+        commands.registerCommand(
+            "odoo.disablePythonLanguageServerCommand", setPythonLSNone
+        )
     );
 
     if (context.extensionMode === ExtensionMode.Development) {
@@ -860,4 +868,36 @@ async function getPythonPath(context, outputLogs: boolean = true): Promise<strin
         global.OUTPUT_CHANNEL.appendLine("[INFO] Using Python at : ".concat(pythonPath));
     }
     return pythonPath
+}
+
+async function setPythonLSNone() {
+    await workspace.getConfiguration('python').update('languageServer', 'None', ConfigurationTarget.Workspace)
+        .then(
+            () => window.showInformationMessage('Python language server set to None for current workspace for Odoo LS to function properly'),
+            (error) => window.showErrorMessage(`Failed to update setting: ${error}`)
+        );
+}
+
+async function displayDisablePythonLSMessage() {
+    if (!global.IS_PYTHON_EXTENSION_READY){
+        return
+    }
+    // if python.languageServer is already None do not show the pop-up
+    if (workspace.getConfiguration('python').get("languageServer") == "None"){
+        return
+    }
+    window.showInformationMessage(
+        "Disable Python Addon Language server for a better experience",
+        "Yes",
+        "No",
+        "Don't Show again",
+    ).then(async selection => {
+        switch (selection) {
+            case "Yes":
+                await setPythonLSNone();
+                break;
+            case "Don't Show again":
+                await workspace.getConfiguration('Odoo').update('disablePythonLanguageServer', false, ConfigurationTarget.Global)
+        }
+    });
 }
