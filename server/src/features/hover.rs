@@ -211,7 +211,17 @@ impl HoverFeature {
                 let typ = typ.0.upgrade();
                 if let Some(typ) = typ {
                     if typ.borrow().doc_string().is_some() {
-                        value = value + "  \n***  \n" + typ.borrow().doc_string().as_ref().unwrap();
+                        // Replace leading spaces with nbsps to avoid it being parsed as a Markdown Codeblock
+                        let ds = typ.borrow().doc_string().as_ref().unwrap()
+                        .lines()
+                        .map(|line| {
+                            let leading_spaces = line.chars().take_while(|&ch| ch == ' ').count();
+                            let nbsp_replacement = "&nbsp;".repeat(leading_spaces);
+                            format!("{}{}", nbsp_replacement, &line[leading_spaces..])
+                        })
+                        .collect::<Vec<String>>()
+                        .join("\n\n");
+                        value = value + "  \n***  \n" + &ds;
                     }
                 }
             }
