@@ -61,21 +61,7 @@ impl DefinitionFeature {
                             });
                         },
                         _ => {
-                            let range = if eval.range.is_some() {
-                                eval.range.unwrap().clone()
-                            } else {
-                                let get_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                                if let Some(eval_sym) = get_sym.0.upgrade() {
-                                    if eval_sym.borrow().has_range() {
-                                        eval_sym.borrow().range().clone()
-                                    } else {
-                                        TextRange::default()
-                                    }
-                                } else {
-                                    index += 1;
-                                    continue;
-                                }
-                            };
+                            let range = symbol.borrow().range().clone();
                             links.push(Location{
                                 uri: FileMgr::pathname2uri(path),
                                 range: session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, path, &range)
