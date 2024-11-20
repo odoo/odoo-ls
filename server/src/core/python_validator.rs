@@ -168,27 +168,38 @@ impl PythonValidator {
                     self.visit_ann_assign(session, a);
                 },
                 Stmt::Expr(e) => {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_stack.last().unwrap().clone(), &e.range.start());
-                    self.diagnostics.extend(diags);
+                    self.validate_expr(session, &e.value);
                 },
                 Stmt::If(i) => {
+                    self.validate_expr(session, &i.test);
                     self.validate_body(session, &i.body);
                 },
                 Stmt::Break(_) => {},
                 Stmt::Continue(_) => {},
-                Stmt::Delete(_) => {
-                    //TODO
+                Stmt::Delete(d) => {
+                    for target in d.targets.iter() {
+                        self.validate_expr(session, target);
+                    }
                 },
                 Stmt::For(f) => {
-                    //TODO check condition ? if some checks has to be done on single Expr
+                    self.validate_expr(session, &f.iter);
                     self.validate_body(session, &f.body);
                 },
-                Stmt::Return(r) => {},
+                Stmt::Return(r) => {
+                    if let Some(value) = &r.value {
+                        self.validate_expr(session, value);
+                    }
+                },
                 _ => {
                     trace!("Stmt not handled");
                 }
             }
         }
+    }
+
+    fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr) {
+        let (_eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), &expr.range().start());
+        self.diagnostics.extend(diags);
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
@@ -249,11 +260,13 @@ impl PythonValidator {
     }
 
     fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
-
+        if let Some(value) = &assign.value {
+            self.validate_expr(session, &value);
+        }
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
-
+        self.validate_expr(session, &assign.value);
     }
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
