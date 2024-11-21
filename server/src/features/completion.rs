@@ -771,7 +771,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, &vec![Evaluation::eval_from_symbol(&Rc::downgrade(symbol))])
+                value: HoverFeature::build_markdown_description(session, None, &vec![Evaluation::eval_from_symbol(&Rc::downgrade(symbol))])
             })),
         ..Default::default()
     }
