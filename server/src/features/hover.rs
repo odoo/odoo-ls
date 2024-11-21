@@ -1,13 +1,15 @@
+use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
 use weak_table::traits::WeakElement;
-use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation, EvaluationSymbolWeak};
+use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+use std::u32;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
@@ -32,7 +34,7 @@ impl HoverFeature {
         return Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, &evals)
+                value: HoverFeature::build_markdown_description(session, Some(file_symbol.clone()), &evals)
             }),
             range: range
         });
@@ -170,7 +172,7 @@ impl HoverFeature {
         value
     }
 
-    pub fn build_markdown_description(session: &mut SessionInfo, evals: &Vec<Evaluation>) -> String {
+    pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>) -> String {
         //let eval = &evals[0]; //TODO handle more evaluations
         let mut value = S!("");
         for (index, eval) in evals.iter().enumerate() {
@@ -184,6 +186,54 @@ impl HoverFeature {
             let symbol = symbol.upgrade().unwrap();
             let mut context = Some(eval.symbol.context.clone());
             let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, None, &mut vec![]);
+            //search for a constant evaluation like a model name
+            if let Some(eval_value) = eval.value.as_ref() {
+                match eval_value {
+                    crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) => {
+                        let str = expr.value.to_string();
+                        let model = session.sync_odoo.models.get(&str).cloned();
+                        if let Some(model) = model {
+                            if let Some(file_symbol) = file_symbol.as_ref() {
+                                let from_module = file_symbol.borrow().find_module();
+                                let main_class = model.borrow().get_main_symbols(session, from_module.clone(), &mut None);
+                                for main_class in main_class.iter() {
+                                    let main_class = main_class.borrow();
+                                    let main_class_module = main_class.find_module();
+                                    if let Some(main_class_module) = main_class_module {
+                                        value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
+                                        if main_class.doc_string().is_some() {
+                                            value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                                        }
+                                        let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
+                                        other_imps.sort_by(|x, y| {
+                                            if x.1.is_none() && y.1.is_some() {
+                                                return std::cmp::Ordering::Less;
+                                            } else if x.1.is_some() && y.1.is_none() {
+                                                return std::cmp::Ordering::Greater;
+                                            } else {
+                                                return x.0.borrow().find_module().unwrap().borrow().name().cmp(&y.0.borrow().find_module().unwrap().borrow().name());
+                                            }
+                                        });
+                                        value += format!("  \n***  \n").as_str();
+                                        for other_imp in other_imps.iter() {
+                                            let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
+                                            if other_imp.1.is_none() {
+                                                value += format!("inherited in {}  \n", mod_name).as_str();
+                                            } else {
+                                                value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
+                                            }
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                        continue;
+                    },
+                    _ => {
+                    }
+                }
+            }
             // BLOCK 1: (type) **name** -> infered_type
             value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
