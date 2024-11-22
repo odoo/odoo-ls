@@ -103,14 +103,7 @@ impl PythonOdooBuilder {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
                             symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![S!(s.value.to_str())];
                         },
-                        EvaluationValue::LIST(l) => {
-                            for e in l {
-                                if let Expr::StringLiteral(s) = e {
-                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
-                                }
-                            }
-                        },
-                        EvaluationValue::TUPLE(l) => {
+                        EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
                                     symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
