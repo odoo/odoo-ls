@@ -21,7 +21,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
-use super::evaluation::ContextValue;
+use super::evaluation::{ContextValue, EvaluationSymbolType};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
@@ -192,7 +192,7 @@ impl PythonArchEval {
         let sym_ref_cl = sym_ref.clone();
         let syms_followed = Symbol::follow_ref(&sym_ref_cl, session, &mut None, false, false, None, &mut self.diagnostics);
         for sym in syms_followed.iter() {
-            let (weak_sym, _instance) = sym.clone();
+            let weak_sym = sym.weak.clone();
             let sym = weak_sym.upgrade().unwrap();
             if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
                 let file_sym = sym_ref.borrow().get_file();
@@ -310,7 +310,7 @@ impl PythonArchEval {
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).0.upgrade() {
+                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -348,7 +348,7 @@ impl PythonArchEval {
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).0.upgrade() {
+                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -415,7 +415,7 @@ impl PythonArchEval {
                 continue;
             }
             let eval_base = &eval_base[0];
-            let symbol_weak = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
+            let symbol_weak = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None).weak;
             let symbol = symbol_weak.upgrade().unwrap();
             let ref_sym = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
             if ref_sym.len() > 1 {
@@ -430,7 +430,7 @@ impl PythonArchEval {
                 ));
                 continue;
             }
-            let eval_base = &ref_sym[0].0;
+            let eval_base = &ref_sym[0].weak;
             let symbol = eval_base.upgrade().unwrap();
             if symbol.borrow().typ() != SymType::COMPILED {
                 if symbol.borrow().typ() != SymType::CLASS {
@@ -487,7 +487,7 @@ impl PythonArchEval {
                         let mut var_bw = variable.borrow_mut();
                         let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id.to_string()).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
                         symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap())));
-                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().instance = true;
+                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().symbol_type = EvaluationSymbolType::Instance;
                         is_first = false;
                         continue;
                     }
@@ -562,11 +562,11 @@ impl PythonArchEval {
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
-            let (weak_symbol, _instance) = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let weak_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).weak;
             if let Some(symbol) = weak_symbol.upgrade() {
                 let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
-                if symbol_eval.len() == 1 && symbol_eval[0].0.upgrade().is_some() {
-                    let symbol_type_rc = symbol_eval[0].0.upgrade().unwrap();
+                if symbol_eval.len() == 1 && symbol_eval[0].weak.upgrade().is_some() {
+                    let symbol_type_rc = symbol_eval[0].weak.upgrade().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
                     if symbol_type.typ() == SymType::CLASS {
                         let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false);
@@ -579,7 +579,7 @@ impl PythonArchEval {
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
                                         Evaluation::eval_from_symbol(
-                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None).0
+                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None).weak
                                         )
                                     );
                                 }
@@ -681,7 +681,7 @@ impl PythonArchEval {
                             let mut evals = vec![];
                             for eval in eval.iter() {
                                 let symbol = eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(self.file.clone()));
-                                if let Some(symbol) = symbol.0.upgrade() {
+                                if let Some(symbol) = symbol.weak.upgrade() {
                                     let _enter_ = symbol.borrow().get_symbol(&(vec![], vec![S!("__enter__")]), u32::MAX);
                                     if let Some(_enter_) = _enter_.last() {
                                         match *_enter_.borrow() {

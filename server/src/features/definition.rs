@@ -34,7 +34,7 @@ impl DefinitionFeature {
         while index < evaluations.len() {
             let eval = evaluations[index].clone();
             let sym_ref = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let loc_sym = sym_ref.0.upgrade();
+            let loc_sym = sym_ref.weak.upgrade();
             if loc_sym.is_none() {
                 index += 1;
                 continue;
