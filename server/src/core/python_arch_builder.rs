@@ -137,8 +137,8 @@ impl PythonArchBuilder {
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
                     let all = Symbol::follow_ref(all, session, &mut None, false, true, None, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
-                        if !all.0.is_expired() {
-                            let all = all.0.upgrade();
+                        if !all.weak.is_expired() {
+                            let all = all.weak.upgrade();
                             if let Some(all) = all {
                                 let all = (*all).borrow();
                                 if all.evaluations().is_some() && all.evaluations().unwrap().len() == 1 {
@@ -182,7 +182,7 @@ impl PythonArchBuilder {
                     let mut sym_bw = sym.borrow_mut();
                     let evaluation = &sym_bw.as_variable_mut().evaluations[0];
                     let evaluated_type = &evaluation.symbol;
-                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).0;
+                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).weak;
                     if !evaluated_type.is_expired() {
                         let evaluated_type = evaluated_type.upgrade().unwrap();
                         let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();

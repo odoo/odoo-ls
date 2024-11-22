@@ -543,10 +543,10 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
         let parent = Evaluation::eval_from_ast(session, &attr.value, scope, &attr.range().start()).0;
 
         for parent_eval in parent.iter() {
-            if let Some(parent_sym) = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).0.upgrade() {
+            if let Some(parent_sym) = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).weak.upgrade() {
                 let parent_sym_types = Symbol::follow_ref(&parent_sym, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
-                    if let Some(parent_sym_type) = parent_sym_type.0.upgrade() {
+                    if let Some(parent_sym_type) = parent_sym_type.weak.upgrade() {
                         let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
                         let from_module = parent_sym_type.borrow().find_module().clone();
                         Symbol::all_members(&parent_sym_type, session, &mut all_symbols, true, from_module, &mut None);
@@ -573,10 +573,10 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start()).0;
     for eval in subscripted.iter() {
-        if let Some(symbol) = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).0.upgrade() {
+        if let Some(symbol) = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).weak.upgrade() {
             let symbol_types = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
             for symbol_type in symbol_types.iter() {
-                if let Some(symbol_type) = symbol_type.0.upgrade() {
+                if let Some(symbol_type) = symbol_type.weak.upgrade() {
                     let borrowed = symbol_type.borrow();
                     let get_item = borrowed.get_symbol(&(vec![], vec![S!("__getitem__")]), u32::MAX);
                     if let Some(get_item) = get_item.last() {
@@ -638,13 +638,13 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
             description: Some(S!("Any")),
         })
     } else if typ.len() == 1 {
-        label_details= match typ[0].0.upgrade().unwrap().borrow().typ() {
+        label_details= match typ[0].weak.upgrade().unwrap().borrow().typ() {
             SymType::CLASS => Some(CompletionItemLabelDetails {
                 detail: None,
-                description: Some(typ[0].0.upgrade().unwrap().borrow().name().clone()),
+                description: Some(typ[0].weak.upgrade().unwrap().borrow().name().clone()),
             }),
             SymType::VARIABLE => {
-                let var_upgraded = typ[0].0.upgrade().unwrap();
+                let var_upgraded = typ[0].weak.upgrade().unwrap();
                 let var = var_upgraded.borrow();
                 if var.evaluations().as_ref().unwrap().len() == 1 {
                     if var.evaluations().as_ref().unwrap()[0].value.is_some() {
@@ -693,7 +693,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                 }
             },
             SymType::FUNCTION => {
-                let func_upgraded = typ[0].0.upgrade().unwrap();
+                let func_upgraded = typ[0].weak.upgrade().unwrap();
                 let func = func_upgraded.borrow();
                 if func.evaluations().as_ref().unwrap().len() == 1 { //TODO handle multiple evaluations
                     if func.evaluations().as_ref().unwrap()[0].value.is_some() {
