@@ -37,6 +37,7 @@ impl VariableSymbol {
     }
 
     pub fn is_type_alias(&self) -> bool {
+        //TODO it does not use get_symbol call, and only evaluate "sym" from EvaluationSymbol
         return self.evaluations.len() >= 1 && self.evaluations.iter().all(|x| !x.symbol.is_instance().unwrap_or(true)) && !self.is_import_variable;
     }
 
