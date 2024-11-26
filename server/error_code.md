@@ -138,4 +138,8 @@ key parsing error
 "Module XXXX depends on YYYY which is not found. Please review your addons paths".
 The module XXXX create a dependency on YYYY, but this module is not found with the current addon path.
 
+### OLS30311
+"First Argument to super must be a class"
 
+### OLS30311
+"Super calls outside a class scope must have at least one argument"

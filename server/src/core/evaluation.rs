@@ -1,6 +1,6 @@
 use ruff_python_ast::{Expr, Identifier, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use lsp_types::Diagnostic;
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -574,22 +574,66 @@ impl Evaluation {
                             //TODO handle call on class instance
                         } else {
                             if base_sym.borrow().get_tree() == (vec![S!("builtins")], vec![S!("super")]){
-                                match parent.borrow().get_in_parents(&vec![SymType::CLASS], true){
-                                    None => (), // TODO, diagnostic? or just leave empty
-                                    Some(parent_class) =>
-                                        evals.push(Evaluation{
-                                            symbol: EvaluationSymbol {
-                                                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                                    weak: parent_class.clone(),
-                                                    symbol_type: EvaluationSymbolType::Super,
-                                                }),
-                                                context: HashMap::new(),
-                                                factory: None,
-                                                get_symbol_hook: None,
-                                            },
-                                            value: None,
-                                            range: Some(expr.range)
-                                        })
+                                //  - If 1st argument exists, we add that class with symbol_type Super
+                                let super_class = if !expr.arguments.is_empty(){
+                                    let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer);
+                                    diagnostics.extend(diags);
+                                    if class_eval.len() != 1 {
+                                        return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                                    }
+                                    let class_sym_weak_eval= class_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics, None);
+                                    class_sym_weak_eval.weak.upgrade().and_then(|class_sym|
+                                        if class_sym.borrow().typ() != SymType::CLASS  || !matches!(class_sym_weak_eval.symbol_type, EvaluationSymbolType::Class){
+                                            diagnostics.push(Diagnostic::new(
+                                                Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
+                                                Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
+                                                Some(DiagnosticSeverity::ERROR),
+                                                Some(NumberOrString::String(S!("OLS30311"))),
+                                                Some(EXTENSION_NAME.to_string()),
+                                                S!("First Argument to super must be a class"),
+                                                None,
+                                                None
+                                                )
+                                            );
+                                            None
+                                        } else {
+                                            Some(class_sym_weak_eval.weak.clone())
+                                        }
+                                    )
+                                //  - Otherwise we get the encapsulating class
+                                } else {
+                                    match parent.borrow().get_in_parents(&vec![SymType::CLASS], true){
+                                        None => {
+                                            diagnostics.push(Diagnostic::new(
+                                                Range::new(Position::new(expr.range().start().to_u32(), 0),
+                                                Position::new(expr.range().end().to_u32(), 0)),
+                                                Some(DiagnosticSeverity::ERROR),
+                                                Some(NumberOrString::String(S!("OLS30312"))),
+                                                Some(EXTENSION_NAME.to_string()),
+                                                S!("Super calls outside a class scope must have at least one argument"),
+                                                None,
+                                                None
+                                                )
+                                            );
+                                            None
+                                        },
+                                        Some(parent_class) => Some(parent_class.clone())
+                                    }
+                                };
+                                if let Some(super_class) = super_class{
+                                    evals.push(Evaluation{
+                                        symbol: EvaluationSymbol {
+                                            sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                                                weak: super_class,
+                                                symbol_type: EvaluationSymbolType::Super,
+                                            }),
+                                            context: HashMap::new(),
+                                            factory: None,
+                                            get_symbol_hook: None,
+                                        },
+                                        value: None,
+                                        range: Some(expr.range)
+                                    });
                                 }
                             } else {
                                 //TODO diagnostic __new__ call parameters
