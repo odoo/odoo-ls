@@ -7,13 +7,21 @@ use crate::{constants::{BuildStatus, BuildSteps}, core::evaluation::{Context, Ev
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
+#[derive(Debug, PartialEq)]
+pub enum ArgumentType {
+    POS_ONLY,
+    ARG,
+    KWARG,
+    VARARG,
+    KWORD_ONLY,
+}
+
 #[derive(Debug)]
 pub struct Argument {
     pub symbol: Weak<RefCell<Symbol>>, //always a weak to a symbol of the function
     //other informations about arg
     pub default_value: Option<Evaluation>,
-    pub is_args: bool,
-    pub is_kwargs: bool,
+    pub arg_type: ArgumentType,
 }
 
 #[derive(Debug)]
@@ -107,7 +115,7 @@ impl FunctionSymbol {
 
     pub fn can_be_in_class(&self) -> bool {
         for arg in self.args.iter() {
-            if !arg.is_kwargs && !arg.is_args { //is_args is technically false, as func(*self) is possible, but reaaaaally weird, so let's assume nobody do that
+            if arg.arg_type != ArgumentType::KWARG && arg.arg_type != ArgumentType::KWORD_ONLY {
                 return true;
             }
         }
