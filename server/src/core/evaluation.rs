@@ -561,6 +561,7 @@ impl Evaluation {
 
                 print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
                 */
+                let valid_signatures = Evaluation::find_valid_signatures(session, &base_eval, &expr);
                 if base_eval.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
@@ -774,6 +775,67 @@ impl Evaluation {
         }
         AnalyzeAstResult { evaluations: evals, effective_sym, factory, diagnostics }
     }
+
+    fn find_valid_signatures(session: &mut SessionInfo, signatures: &Vec<Evaluation>, exprCall: &ExprCall, called_on_object: bool) -> Vec<Evaluation> {
+        let mut valid_signatures = vec![];
+        for signature_eval in signatures.iter() {
+            let (signature_symbol, instance) = signature_eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            if signature_symbol.is_expired() {
+                continue;
+            }
+            let signature = signature_symbol.upgrade().unwrap();
+            let signature = signature.borrow();
+            if signature.typ() == SymType::FUNCTION {
+                let function = signature.as_func();
+                let mut pos_arg_count = 0;
+                let mut has_varargs = false;
+                let mut has_kwargs = false;
+                let mut hit_kword = false;
+                let mut kwords = vec![];
+                let first_kword = if exprCall.arguments.keywords.is_empty() {
+                    None
+                } else {
+                    Some(exprCall.arguments.keywords[0].arg.as_ref().unwrap().to_string().clone())
+                };
+                for arg in function.args.iter() {
+                    if let Some(symbol) = arg.symbol.upgrade() {
+                        if first_kword.is_some() && symbol.borrow().name() == first_kword.as_ref().unwrap() {
+                            hit_kword = true;
+                        }
+                    }
+                    match arg.arg_type {
+                        ArgumentType::POS_ONLY => {pos_arg_count += 1;},
+                        ArgumentType::ARG => {
+                            if !hit_kword {
+                                pos_arg_count += 1;
+                            } else {
+                                kwords.push(arg.symbol.upgrade().unwrap().borrow().name().clone());
+                            }
+                        },
+                        ArgumentType::KWARG => {has_kwargs = true;},
+                        ArgumentType::VARARG => {has_varargs = true;},
+                        ArgumentType::KWORD_ONLY => {kwords.push(arg.symbol.upgrade().unwrap().borrow().name().clone());},
+                    }
+                }
+                if pos_arg_count != exprCall.arguments.args.len() + called_on_object as usize && !has_varargs {
+                    continue; //not enough arguments
+                }
+                //check that all keywords are in the function
+                for kword in exprCall.arguments.keywords.iter() {
+                    if !kwords.contains(&kword.arg.as_ref().unwrap().to_string()) {
+                        continue;
+                    }
+                }
+                //check that all parameters are used
+                if kwords.len() > exprCall.arguments.keywords.len() || (kwords.len() < exprCall.arguments.keywords.len() && !has_kwargs) {
+                    continue;
+                }
+                valid_signatures.push(signature_eval.clone());
+            }
+        }
+        valid_signatures
+    }
+
 }
 
 impl EvaluationSymbol {
