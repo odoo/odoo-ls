@@ -66,6 +66,15 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         let range = id.range().clone();
         id.set_evaluations(vec![Evaluation::new_list(odoo, values, range.clone())]);
     }},
+    /*PythonArchEvalFileHook { file_tree: vec![S!("odoo"), S!("models")],
+                        content_tree: vec![S!("BaseModel"), S!("search_count")],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        let values: Vec<ruff_python_ast::Expr> = Vec::new();
+        let mut id = symbol.borrow_mut();
+        let range = id.range().clone();
+        id.set_evaluations(vec![Evaluation::eval_from_symbol(odoo, values, range.clone())]);
+    }},*/
     PythonArchEvalFileHook {file_tree: vec![S!("odoo"), S!("api")],
                             content_tree: vec![S!("Environment"), S!("cr")],
                             if_exist_only: true,
@@ -310,6 +319,12 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             range: None,
             value: None
         });
+        let func = search.as_func_mut();
+        if func.args.len() == 6 {
+            if let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade() {
+                arg_symbol.borrow_mut().set_evaluations(vec![Evaluation::new_domain(odoo)]);
+            }
+        }
     }},
     PythonArchEvalFunctionHook { tree: (vec![S!("odoo"), S!("models")], vec![S!("BaseModel"), S!("browse")]),
                         if_exist_only: true,

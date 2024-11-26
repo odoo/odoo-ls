@@ -1,4 +1,4 @@
-use ruff_python_ast::{Expr, Identifier, Operator, Parameter};
+use ruff_python_ast::{Expr, ExprCall, Identifier, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
@@ -12,8 +12,10 @@ use crate::S;
 
 use super::file_mgr::FileMgr;
 use super::python_validator::PythonValidator;
+use super::symbols::function_symbol::ArgumentType;
 use super::symbols::symbol::Symbol;
 use super::symbols::symbol_mgr::SectionIndex;
+
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -152,6 +154,7 @@ enum EvaluationSymbolPtr {
     WEAK(EvaluationSymbolWeak),
     SELF,
     ARG(u32),
+    DOMAIN,
     NONE,
     #[default]
     ANY
@@ -229,6 +232,19 @@ impl Evaluation {
         }
     }
 
+    pub fn new_domain(odoo: &mut SyncOdoo) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::DOMAIN,
+                context: HashMap::new(),
+                factory: None,
+                get_symbol_hook: None
+            },
+            value: None,
+            range: None
+        }
+    }
+
     pub fn new_constant(odoo: &mut SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
         let tree_value = match &values {
             Expr::StringLiteral(_s) => {
@@ -279,6 +295,7 @@ impl Evaluation {
         }
     }
 
+    //return the evaluation but valid outside of the given function scope
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
         let mut res = vec![];
         match self.symbol.sym {
@@ -301,7 +318,7 @@ impl Evaluation {
                     }
                 }
             },
-            EvaluationSymbolPtr::SELF | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE | EvaluationSymbolPtr::ANY => {
+            EvaluationSymbolPtr::SELF | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE | EvaluationSymbolPtr::ANY |EvaluationSymbolPtr::DOMAIN => {
                 res.push(self.clone());
             },
         }
@@ -668,6 +685,15 @@ impl Evaluation {
                             }
                         }
                         if base_sym.borrow().evaluations().is_some() {
+                            let is_in_validation = match parent.borrow().typ().clone() {
+                                SymType::FUNCTION | SymType::FILE | SymType::PACKAGE => {
+                                    parent.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                                },
+                                _ => {false}
+                            };
+                            if is_in_validation {
+                                diagnostics.extend(Evaluation::validate_call_arguments(session, &base_sym.borrow(), expr));
+                            }
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
                                 let mut e = eval.clone();
                                 e.symbol.context.extend(context.as_mut().unwrap().clone());
@@ -836,6 +862,85 @@ impl Evaluation {
         valid_signatures
     }
 
+    fn validate_call_arguments(session: &mut SessionInfo, function: &Symbol, exprCall: &ExprCall) -> Vec<Diagnostic> {
+        /*let arg_index = 0;
+        for arg in exprCall.arguments.args.iter() {
+            //match arg with argument from function
+            arg_index += 1;
+        }
+        for arg in exprCall.arguments.keywords.iter() {
+            //match arg with argument from function
+            arg_index += 1;
+        }
+        for arg in base_sym.borrow().as_func().args.iter() {
+            if let Some(symbol) = arg.symbol.upgrade() {
+                if symbol.borrow().evaluations().unwrap_or(&vec![]).len() == 1 {
+                    match symbol.borrow().evaluations().unwrap()[0].symbol.sym.clone() {
+                        EvaluationSymbolPtr::DOMAIN => {
+                            let range = symbol.borrow().evaluations().unwrap()[0].range.clone();
+                            if let Some(value) = symbol.borrow().evaluations().unwrap()[0].value.as_ref() {
+                                diagnostics.extend(Evaluation::validate_domain(session, value, range));
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        }*/
+    }
+
+    fn validate_domain(session: &mut SessionInfo, value: &EvaluationValue, range: Option<TextRange>) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        let range =  range.unwrap();
+        /*let from_module = None;
+        let model = None;
+        let domain = None;*/
+        match value {
+            EvaluationValue::ANY() => {},
+            EvaluationValue::CONSTANT(_) | EvaluationValue::DICT(_) | EvaluationValue::TUPLE(_) => {
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30313"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Domains should be a list of tuples"),
+                    None,
+                    None,
+                ));
+            },
+            EvaluationValue::LIST(vec) => {
+                for e in vec.iter() {
+                    match e {
+                        Expr::Tuple(t) => {
+                            if t.elts.len() != 3 {
+                                diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30314"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Domain tuple should have 3 elements"),
+                                    None,
+                                    None,
+                                ));
+                            }
+                        },
+                        _ => {
+                            diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(e.range().start().to_u32(), 0), Position::new(e.range().end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30313"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Domain should be a list of tuples"),
+                                None,
+                                None,
+                            ));
+                        }
+                    }
+                }
+            },
+        }
+        diagnostics
+    }
 }
 
 impl EvaluationSymbol {
@@ -859,6 +964,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ARG(_) => None,
             EvaluationSymbolPtr::NONE => None,
             EvaluationSymbolPtr::SELF => Some(true),
+            EvaluationSymbolPtr::DOMAIN => Some(false), //domain is always used for types
             EvaluationSymbolPtr::WEAK(w) => Some(matches!(w.symbol_type, EvaluationSymbolType::Instance))
         }
     }
@@ -891,7 +997,10 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::WEAK(w) => {
                 w.clone()
             },
-            EvaluationSymbolPtr::ANY | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::ANY => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::ARG(_) => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
             EvaluationSymbolPtr::SELF => {
                 match full_context.get(&S!("parent")) {
                     Some(p) => {
