@@ -543,13 +543,14 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
         let parent = Evaluation::eval_from_ast(session, &attr.value, scope, &attr.range().start()).0;
 
         for parent_eval in parent.iter() {
-            if let Some(parent_sym) = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).weak.upgrade() {
+            let parent_sym_eval_weak = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone()));
+            if let Some(parent_sym) = parent_sym_eval_weak.weak.upgrade() {
                 let parent_sym_types = Symbol::follow_ref(&parent_sym, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
-                    if let Some(parent_sym_type) = parent_sym_type.weak.upgrade() {
+                    if let Some(parent_sym) = parent_sym_type.weak.upgrade() {
                         let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
-                        let from_module = parent_sym_type.borrow().find_module().clone();
-                        Symbol::all_members(&parent_sym_type, session, &mut all_symbols, true, from_module, &mut None);
+                        let from_module = parent_sym.borrow().find_module().clone();
+                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, Some(parent_sym_eval_weak.symbol_type));
                         for (_symbol_name, symbols) in all_symbols {
                             //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                             for (final_sym, dep) in symbols.iter() {

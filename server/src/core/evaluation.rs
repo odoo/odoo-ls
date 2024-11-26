@@ -644,7 +644,7 @@ impl Evaluation {
                 for ibase in bases.iter() {
                     let base_loc = ibase.weak.upgrade();
                     if let Some(base_loc) = base_loc {
-                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true);
+                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, matches!(base_ref.symbol_type, EvaluationSymbolType::Super));
                         for diagnostic in attributes_diagnostics.iter_mut(){
                             diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
                         }

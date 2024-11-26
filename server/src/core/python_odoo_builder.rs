@@ -172,7 +172,7 @@ impl PythonOdooBuilder {
     }
 
     fn _get_attribute(&mut self, session: &mut SessionInfo, loc_sym: &mut Symbol, attr: &String) -> Option<EvaluationValue> {
-        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false);
+        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false, false);
         if attr_sym.len() == 0 {
             return None;
         }
