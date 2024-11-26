@@ -1,8 +1,10 @@
-use ruff_python_ast::{Expr, Identifier, Operator, Parameter};
+use ruff_python_ast::{Expr, ExprCall, Identifier, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
+use std::cmp::min;
 use std::collections::HashMap;
+use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::constants::*;
@@ -12,8 +14,10 @@ use crate::S;
 
 use super::file_mgr::FileMgr;
 use super::python_validator::PythonValidator;
+use super::symbols::function_symbol::{Argument, ArgumentType, FunctionSymbol};
 use super::symbols::symbol::Symbol;
 use super::symbols::symbol_mgr::SectionIndex;
+
 
 #[derive(Debug, Clone)]
 pub enum EvaluationValue {
@@ -134,7 +138,7 @@ pub type Context = HashMap<String, ContextValue>;
  */
 type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EvaluationSymbolType {
     Instance,
     Class,
@@ -152,6 +156,7 @@ enum EvaluationSymbolPtr {
     WEAK(EvaluationSymbolWeak),
     SELF,
     ARG(u32),
+    DOMAIN,
     NONE,
     #[default]
     ANY
@@ -229,6 +234,19 @@ impl Evaluation {
         }
     }
 
+    pub fn new_domain(odoo: &mut SyncOdoo) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::DOMAIN,
+                context: HashMap::new(),
+                factory: None,
+                get_symbol_hook: None
+            },
+            value: None,
+            range: None
+        }
+    }
+
     pub fn new_constant(odoo: &mut SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
         let tree_value = match &values {
             Expr::StringLiteral(_s) => {
@@ -279,6 +297,7 @@ impl Evaluation {
         }
     }
 
+    //return the evaluation but valid outside of the given function scope
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
         let mut res = vec![];
         match self.symbol.sym {
@@ -301,7 +320,7 @@ impl Evaluation {
                     }
                 }
             },
-            EvaluationSymbolPtr::SELF | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE | EvaluationSymbolPtr::ANY => {
+            EvaluationSymbolPtr::SELF | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE | EvaluationSymbolPtr::ANY |EvaluationSymbolPtr::DOMAIN => {
                 res.push(self.clone());
             },
         }
@@ -562,6 +581,8 @@ impl Evaluation {
                 print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
                 */
                 if base_eval.len() != 1 {
+                    /*TODO if multiple evals are found, we could maybe try to validate that they all have the same signature in case of diamond inheritance?
+                    However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let mut context = Some(base_eval[0].symbol.context.clone());
@@ -667,6 +688,25 @@ impl Evaluation {
                             }
                         }
                         if base_sym.borrow().evaluations().is_some() {
+                            let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                            let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                                SymType::FUNCTION | SymType::FILE | SymType::PACKAGE => {
+                                    parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                                },
+                                _ => {false}
+                            };
+                            if is_in_validation {
+                                let mut on_instance = !base_sym.borrow().as_func().is_static;
+                                if on_instance {
+                                    //check that the call is indeed done on an instance
+                                    on_instance = context.as_ref().unwrap().get_key_value(&S!("is_attr_of_instance"))
+                                    .unwrap_or((&S!("is_attr"), &ContextValue::BOOLEAN(false))).1.as_bool();
+                                }
+                                diagnostics.extend(Evaluation::validate_call_arguments(session,
+                                    &base_sym.borrow().as_func(),
+                                    expr,
+                                    on_instance));
+                            }
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
                                 let mut e = eval.clone();
                                 e.symbol.context.extend(context.as_mut().unwrap().clone());
@@ -687,6 +727,7 @@ impl Evaluation {
                 let bases = Symbol::follow_ref(&base_ref.weak.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.weak.upgrade();
+                    let base_instance = ibase.symbol_type == EvaluationSymbolType::Instance || ibase.symbol_type == EvaluationSymbolType::Super;
                     if let Some(base_loc) = base_loc {
                         let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, matches!(base_ref.symbol_type, EvaluationSymbolType::Super));
                         for diagnostic in attributes_diagnostics.iter_mut(){
@@ -695,6 +736,9 @@ impl Evaluation {
                         diagnostics.extend(attributes_diagnostics);
                         if !attributes.is_empty() {
                             let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap()));
+                            if base_instance {
+                                context.as_mut().unwrap().insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(true));
+                            }
                             eval.symbol.context = context.as_ref().unwrap().clone();
                             eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
                             evals.push(eval);
@@ -774,6 +818,172 @@ impl Evaluation {
         }
         AnalyzeAstResult { evaluations: evals, effective_sym, factory, diagnostics }
     }
+
+    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, exprCall: &ExprCall, is_on_instance: bool) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        //validate pos args first
+        let mut arg_index = 0;
+        let mut number_pos_arg = 0;
+        let mut vararg_index = i32::MAX;
+        let mut kwarg_index = i32::MAX;
+        for (index, arg) in function.args.iter().enumerate() {
+            match arg.arg_type {
+                ArgumentType::POS_ONLY | ArgumentType::ARG => {
+                    number_pos_arg += 1;
+                }
+                ArgumentType::VARARG => {
+                    vararg_index = index as i32;
+                },
+                ArgumentType::KWARG => {
+                    kwarg_index = index as i32;
+                },
+                _ => {}
+            }
+        }
+        if is_on_instance {
+            //check that there is at least one positional argument
+            let mut pos_arg = false;
+            for arg in function.args.iter() {
+                match arg.arg_type {
+                    ArgumentType::ARG | ArgumentType::VARARG | ArgumentType::POS_ONLY => {
+                        pos_arg = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            if !pos_arg {
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30315"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("{} takes 0 positional arguments, but at least 1 is given", function.name),
+                    None,
+                    None,
+                ));
+                return diagnostics;
+            }
+            arg_index += 1;
+        }
+        for arg in exprCall.arguments.args.iter() {
+            //match arg with argument from function
+            let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
+            if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30315"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("{} takes {} positional arguments, but at least {} is given", function.name, number_pos_arg, arg_index + 1),
+                    None,
+                    None,
+                ));
+                return diagnostics;
+            }
+            if function_arg.unwrap().arg_type != ArgumentType::VARARG {
+                //positional or arg
+                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap(), arg));
+            }
+            arg_index += 1;
+        }
+        let min_arg_for_kword = arg_index;
+        for arg in exprCall.arguments.keywords.iter() {
+            if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionnary of keywords, like in self.func(a, b, **any_kwargs)
+                let mut found_one = false;
+                for func_arg in function.args.iter().skip(min_arg_for_kword as usize) {
+                    if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {
+                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value));
+                        found_one = true;
+                        break;
+                    }
+                }
+                if !found_one && kwarg_index == i32::MAX {
+                    diagnostics.push(Diagnostic::new(
+                        Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
+                        Some(DiagnosticSeverity::ERROR),
+                        Some(NumberOrString::String(S!("OLS30316"))),
+                        Some(EXTENSION_NAME.to_string()),
+                        format!("{} got an unexpected keyword argument '{}'", function.name, arg_identifier.id),
+                        None,
+                        None,
+                    ))
+                }
+            }
+        }
+        diagnostics
+    }
+
+    fn validate_domain(session: &mut SessionInfo, value: &EvaluationValue, range: Option<TextRange>) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        let range =  range.unwrap();
+        /*let from_module = None;
+        let model = None;
+        let domain = None;*/
+        match value {
+            EvaluationValue::ANY() => {},
+            EvaluationValue::CONSTANT(_) | EvaluationValue::DICT(_) | EvaluationValue::TUPLE(_) => {
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30313"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Domains should be a list of tuples"),
+                    None,
+                    None,
+                ));
+            },
+            EvaluationValue::LIST(vec) => {
+                for e in vec.iter() {
+                    match e {
+                        Expr::Tuple(t) => {
+                            if t.elts.len() != 3 {
+                                diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30314"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Domain tuple should have 3 elements"),
+                                    None,
+                                    None,
+                                ));
+                            }
+                        },
+                        _ => {
+                            diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(e.range().start().to_u32(), 0), Position::new(e.range().end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30313"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Domain should be a list of tuples"),
+                                None,
+                                None,
+                            ));
+                        }
+                    }
+                }
+            },
+        }
+        diagnostics
+    }
+    
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        if let Some(symbol) = function_arg.symbol.upgrade() {
+            if symbol.borrow().evaluations().unwrap_or(&vec![]).len() == 1 {
+                match symbol.borrow().evaluations().unwrap()[0].symbol.sym.clone() {
+                    EvaluationSymbolPtr::DOMAIN => {
+                        let range = symbol.borrow().evaluations().unwrap()[0].range.clone();
+                        if let Some(value) = symbol.borrow().evaluations().unwrap()[0].value.as_ref() {
+                            diagnostics.extend(Evaluation::validate_domain(session, value, range));
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
+        diagnostics
+    }
 }
 
 impl EvaluationSymbol {
@@ -797,6 +1007,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ARG(_) => None,
             EvaluationSymbolPtr::NONE => None,
             EvaluationSymbolPtr::SELF => Some(true),
+            EvaluationSymbolPtr::DOMAIN => Some(false), //domain is always used for types
             EvaluationSymbolPtr::WEAK(w) => Some(matches!(w.symbol_type, EvaluationSymbolType::Instance))
         }
     }
@@ -829,7 +1040,10 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::WEAK(w) => {
                 w.clone()
             },
-            EvaluationSymbolPtr::ANY | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::ANY => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::ARG(_) => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
+            EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{weak: Weak::new(), symbol_type: EvaluationSymbolType::Class},
             EvaluationSymbolPtr::SELF => {
                 match full_context.get(&S!("parent")) {
                     Some(p) => {
