@@ -21,7 +21,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::import_resolver::ImportResult;
-use super::symbols::function_symbol::Argument;
+use super::symbols::function_symbol::{Argument, ArgumentType};
 
 
 #[derive(Debug)]
@@ -367,14 +367,49 @@ impl PythonArchBuilder {
         }
         drop(sym_bw);
         //add params
-        for arg in func_def.parameters.posonlyargs.iter().chain(&func_def.parameters.args) {
+        for arg in func_def.parameters.posonlyargs.iter() {
             let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: None,
-                is_args: false,
-                is_kwargs: false,
+                arg_type: ArgumentType::POS_ONLY
+            });
+        }
+        for arg in func_def.parameters.args.iter() {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::ARG
+            });
+        }
+        if let Some(arg) = &func_def.parameters.vararg {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::VARARG
+            });
+        }
+        for arg in func_def.parameters.kwonlyargs.iter() {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::KWORD_ONLY
+            });
+        }
+        if let Some(arg) = &func_def.parameters.kwarg {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::KWARG
             });
         }
         //visit body
