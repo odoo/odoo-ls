@@ -79,7 +79,7 @@ export async function validateAddonPath(addonPath) {
 	for (const folder of workspace.workspaceFolders) {
 		const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
 		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
-		let filledPath = path.resolve(await fillTemplate(addonPath, PATH_VAR_LOCAL)).replaceAll("\\", "/");
+		let filledPath = path.resolve(await fillTemplate(addonPath, PATH_VAR_LOCAL)).replaceAll("\\", "/").trim();
 		if (!filledPath) continue;
 		do {
 			if (isAddonPath(filledPath)) {
@@ -100,7 +100,7 @@ export async function evaluateOdooPath(odooPath) {
 
 	for (const folder of workspace.workspaceFolders) {
 		global.PATH_VARIABLES["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
-		let filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/");
+		let filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/").trim();
 		do {
 			const version = await getOdooVersion(filledOdooPath);
 			if (version) {
