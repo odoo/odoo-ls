@@ -153,3 +153,13 @@ The provided domain is not a list of tuples. A domain should be in the form [("f
 
 "Domain tuple should have 3 elements".
 Tuples in a domain should contains 3 elements: ("field", "operator", "value")
+
+### OLS30313
+
+"XXX takes Y positional arguments but Z was given".
+Number of positional arguments given as parameter to the function is wrong.
+
+### OLS30314
+
+"XXX got an unexpected keyword argument 'YYY'".
+You gave a named parameter that is not present in the function definition.
