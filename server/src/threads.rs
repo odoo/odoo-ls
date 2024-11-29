@@ -16,7 +16,7 @@ pub struct SessionInfo<'a> {
     sender: Sender<Message>,
     receiver: Receiver<Message>,
     pub sync_odoo: &'a mut SyncOdoo,
-    delayed_process_sender: Option<Sender<DelayedProcessingMessage>> //option, because not available in read thread (by convention, no real need to not provide it)
+    delayed_process_sender: Option<Sender<DelayedProcessingMessage>>
 }
 
 impl <'a> SessionInfo<'a> {
@@ -109,12 +109,12 @@ impl <'a> SessionInfo<'a> {
     }
 
     /* use it for test or tools, that do not need to connect to the server, and only want a fake session to use SyncOdoo */
-    pub fn new_from_custom_channel(sender: Sender<Message>, receiver: Receiver<Message>, sync_odoo: &'a mut SyncOdoo, delayed_process_sender: Option<Sender<DelayedProcessingMessage>>) -> Self {
+    pub fn new_from_custom_channel(sender: Sender<Message>, receiver: Receiver<Message>, sync_odoo: &'a mut SyncOdoo) -> Self {
         Self {
             sender,
             receiver,
             sync_odoo,
-            delayed_process_sender: delayed_process_sender
+            delayed_process_sender: None
         }
     }
 }
@@ -146,7 +146,7 @@ pub enum DelayedProcessingMessage {
     EXIT, //exit the thread
 }
 
-pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>) {
+pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
     let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_save_delay, MAX_DELAY));
     loop {
@@ -210,7 +210,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                         sender: sender_session.clone(),
                         receiver: receiver_session.clone(),
                         sync_odoo: &mut sync_odoo.lock().unwrap(),
-                        delayed_process_sender: None
+                        delayed_process_sender: Some(delayed_process_sender.clone())
                     };
                     if rebuild {
                         let config = session.sync_odoo.config.clone();
@@ -291,7 +291,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
     }
 }
 
-pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>) {
+pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     loop {
         let msg = generic_receiver.recv();
         if let Err(_) = msg {
@@ -303,7 +303,7 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             sender: sender.clone(),
             receiver: receiver.clone(),
             sync_odoo: &mut sync_odoo.lock().unwrap(), //TODO work on read access
-            delayed_process_sender: None
+            delayed_process_sender: Some(delayed_process_sender.clone()),
         };
         match msg {
             Message::Request(r) => {

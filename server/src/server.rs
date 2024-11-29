@@ -112,8 +112,9 @@ impl Server {
             threads.push({
                 let sync_odoo = sync_odoo.clone();
                 let generic_receiver_s_to_read = generic_receiver_s_to_read.clone();
+                let sender_to_delayed_process = sender_to_delayed_process.clone();
                 std::thread::spawn(move || {
-                    message_processor_thread_read(sync_odoo, generic_receiver_s_to_read.clone(), sender_read_to_s.clone(), receiver_s_to_read.clone());
+                    message_processor_thread_read(sync_odoo, generic_receiver_s_to_read.clone(), sender_read_to_s.clone(), receiver_s_to_read.clone(), sender_to_delayed_process);
                 })
             });
         }
@@ -122,8 +123,9 @@ impl Server {
         let (sender_delayed_to_s, receiver_delayed_to_s) = crossbeam_channel::unbounded();
         receivers_w_to_s.push(receiver_delayed_to_s);
         let so = sync_odoo.clone();
+        let delayed_process_sender_to_delayed_process = sender_to_delayed_process.clone();
         let delayed_process_thread = std::thread::spawn(move || {
-            delayed_changes_process_thread(sender_delayed_to_s, receiver_s_to_delayed, receiver_delayed_process, so)
+            delayed_changes_process_thread(sender_delayed_to_s, receiver_s_to_delayed, receiver_delayed_process, so, delayed_process_sender_to_delayed_process)
         });
 
         // let (sender_to_server, receiver_to_server) = crossbeam_channel::unbounded();
