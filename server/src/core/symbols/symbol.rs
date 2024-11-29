@@ -1717,7 +1717,7 @@ impl Symbol {
         //get local symbols
         on_symbol.borrow().all_symbols().for_each(|sym| {
             if sym.borrow().name().starts_with(name) {
-                if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                     results.push(sym.clone());
                 }
             }
@@ -1727,7 +1727,7 @@ impl Symbol {
             let file = file.upgrade().unwrap();
             file.borrow().all_symbols().for_each(|sym| {
                 if sym.borrow().name().starts_with(name) {
-                    if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                    if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                         results.push(sym.clone());
                     }
                 }
