@@ -53,21 +53,25 @@ impl DefinitionFeature {
                     continue;
                 }
                 for path in file.upgrade().unwrap().borrow().paths().iter() {
-                    match symbol.borrow().typ() {
-                        SymType::PACKAGE => {
-                            links.push(Location{
+                    links.push(
+                        match symbol.borrow().typ() {
+                            SymType::PACKAGE => Location{
                                 uri: FileMgr::pathname2uri(&PathBuf::from(path).join(format!("__init__.py{}", symbol.borrow().as_package().i_ext())).sanitize()),
                                 range: Range::default()
-                            });
-                        },
-                        _ => {
-                            let range = symbol.borrow().range().clone();
-                            links.push(Location{
+                            },
+                            SymType::FILE => Location{
                                 uri: FileMgr::pathname2uri(path),
-                                range: session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, path, &range)
-                            });
+                                range: Range::default()
+                            },
+                            _ => {
+                                let range = symbol.borrow().range().clone();
+                                Location{
+                                    uri: FileMgr::pathname2uri(path),
+                                    range: session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, path, &range)
+                                }
+                            }
                         }
-                    }
+                    );
                 }
             }
             index += 1;
