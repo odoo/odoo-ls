@@ -696,11 +696,16 @@ impl Evaluation {
                                 _ => {false}
                             };
                             if is_in_validation {
-                                diagnostics.extend(Evaluation::validate_call_arguments(session, 
-                                    &base_sym.borrow().as_func(), 
-                                    expr, 
-                                    context.as_ref().unwrap().get_key_value(&S!("is_attr"))
-                                        .unwrap_or((&S!("is_attr"), &ContextValue::BOOLEAN(false))).1.as_bool()));
+                                let mut on_instance = !base_sym.borrow().as_func().is_static;
+                                if on_instance {
+                                    //check that the call is indeed done on an instance
+                                    on_instance = context.as_ref().unwrap().get_key_value(&S!("is_attr_of_instance"))
+                                    .unwrap_or((&S!("is_attr"), &ContextValue::BOOLEAN(false))).1.as_bool();
+                                }
+                                diagnostics.extend(Evaluation::validate_call_arguments(session,
+                                    &base_sym.borrow().as_func(),
+                                    expr,
+                                    on_instance));
                             }
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
                                 let mut e = eval.clone();
@@ -722,6 +727,7 @@ impl Evaluation {
                 let bases = Symbol::follow_ref(&base_ref.weak.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.weak.upgrade();
+                    let base_instance = ibase.1;
                     if let Some(base_loc) = base_loc {
                         let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, matches!(base_ref.symbol_type, EvaluationSymbolType::Super));
                         for diagnostic in attributes_diagnostics.iter_mut(){
@@ -730,7 +736,9 @@ impl Evaluation {
                         diagnostics.extend(attributes_diagnostics);
                         if !attributes.is_empty() {
                             let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap()));
-                            context.as_mut().unwrap().insert(S!("is_attr"), ContextValue::BOOLEAN(true));
+                            if base_instance {
+                                context.as_mut().unwrap().insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(true));
+                            }
                             eval.symbol.context = context.as_ref().unwrap().clone();
                             eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
                             evals.push(eval);
@@ -890,7 +898,7 @@ impl Evaluation {
                         break;
                     }
                 }
-                if !found_one {
+                if !found_one && kwarg_index == i32::MAX {
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                         Some(DiagnosticSeverity::ERROR),
