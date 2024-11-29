@@ -46,10 +46,10 @@ impl PythonArchBuilder {
         }
     }
 
-    pub fn load_arch(&mut self, session: &mut SessionInfo) -> Result<(), Error> {
+    pub fn load_arch(&mut self, session: &mut SessionInfo) {
         let symbol = &self.sym_stack[0];
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
-            return Ok(()); // nothing to extract
+            return; // nothing to extract
         }
         {
             let file = symbol.borrow();
@@ -84,6 +84,9 @@ impl PythonArchBuilder {
                 },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
+        if !file_info_rc.borrow().valid {
+            return
+        }
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
@@ -97,7 +100,7 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
-            self.visit_node(session, &ast)?;
+            self.visit_node(session, &ast);
             self._resolve_all_symbols(session);
             if self.file_mode {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
@@ -110,7 +113,6 @@ impl PythonArchBuilder {
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        Ok(())
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
@@ -236,7 +238,7 @@ impl PythonArchBuilder {
                     self.visit_for(session, for_stmt)?;
                 },
                 Stmt::With(with_stmt) => {
-                    self.visit_with(session, with_stmt);
+                    self.visit_with(session, with_stmt)?;
                 },
                 _ => {}
             }
