@@ -138,7 +138,7 @@ pub type Context = HashMap<String, ContextValue>;
  */
 type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EvaluationSymbolType {
     Instance,
     Class,
@@ -727,7 +727,7 @@ impl Evaluation {
                 let bases = Symbol::follow_ref(&base_ref.weak.upgrade().unwrap(), session, &mut None, false, false, None, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.weak.upgrade();
-                    let base_instance = ibase.1;
+                    let base_instance = ibase.symbol_type == EvaluationSymbolType::Instance || ibase.symbol_type == EvaluationSymbolType::Super;
                     if let Some(base_loc) = base_loc {
                         let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, matches!(base_ref.symbol_type, EvaluationSymbolType::Super));
                         for diagnostic in attributes_diagnostics.iter_mut(){
@@ -856,7 +856,7 @@ impl Evaluation {
                 diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30313"))),
+                    Some(NumberOrString::String(S!("OLS30315"))),
                     Some(EXTENSION_NAME.to_string()),
                     format!("{} takes 0 positional arguments, but at least 1 is given", function.name),
                     None,
@@ -873,7 +873,7 @@ impl Evaluation {
                 diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30313"))),
+                    Some(NumberOrString::String(S!("OLS30315"))),
                     Some(EXTENSION_NAME.to_string()),
                     format!("{} takes {} positional arguments, but at least {} is given", function.name, number_pos_arg, arg_index + 1),
                     None,
@@ -902,7 +902,7 @@ impl Evaluation {
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                         Some(DiagnosticSeverity::ERROR),
-                        Some(NumberOrString::String(S!("OLS30314"))),
+                        Some(NumberOrString::String(S!("OLS30316"))),
                         Some(EXTENSION_NAME.to_string()),
                         format!("{} got an unexpected keyword argument '{}'", function.name, arg_identifier.id),
                         None,
