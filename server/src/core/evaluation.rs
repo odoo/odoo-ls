@@ -891,7 +891,7 @@ impl Evaluation {
         for arg in exprCall.arguments.keywords.iter() {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionnary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
-                for func_arg in function.args.iter().skip(min_arg_for_kword as usize) {
+                for func_arg in function.args.iter().skip(min(min_arg_for_kword, vararg_index) as usize) {
                     if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {
                         diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value));
                         found_one = true;
