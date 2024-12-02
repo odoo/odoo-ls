@@ -141,5 +141,5 @@ The module XXXX create a dependency on YYYY, but this module is not found with t
 ### OLS30311
 "First Argument to super must be a class"
 
-### OLS30311
+### OLS30312
 "Super calls outside a class scope must have at least one argument"
