@@ -3,7 +3,7 @@ use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::constants::*;
-use crate::core::evaluation::{Context, Evaluation};
+use crate::core::evaluation::{Context, Evaluation, EvaluationSymbolType, EvaluationSymbolWeak};
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -1467,14 +1467,14 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolWeak> {
         match symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
                     //TODO context is modified in each for loop, which is wrong if a key in context is specific to one result!
                     let sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
-                    if !sym.0.is_expired() {
+                    if !sym.weak.is_expired() {
                         res.push_back(sym);
                     }
                 }
@@ -1487,11 +1487,15 @@ impl Symbol {
         }
     }
 
-    pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolWeak> {
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
         if results.is_empty() {
-            return vec![(Rc::downgrade(symbol), symbol.borrow().typ() == SymType::VARIABLE)];
+            return vec![
+                EvaluationSymbolWeak{
+                    weak: Rc::downgrade(symbol),
+                    symbol_type: match symbol.borrow().typ(){SymType::VARIABLE => EvaluationSymbolType::Instance, _ => EvaluationSymbolType::Class}}
+                ];
         }
         //there is a 'next_ref'. Remove "parent" from context if any
         if context.is_some() {
@@ -1500,8 +1504,8 @@ impl Symbol {
         let can_eval_external = !symbol.borrow().is_external();
         let mut index = 0;
         while index < results.len() {
-            let (sym, instance) = &results[index];
-            let sym = sym.upgrade();
+            let next_ref = &results[index];
+            let sym = next_ref.weak.upgrade();
             if sym.is_none() {
                 index += 1;
                 continue;
@@ -1510,7 +1514,7 @@ impl Symbol {
             let sym = sym.borrow();
             match *sym {
                 Symbol::Variable(ref v) => {
-                    if stop_on_type && !instance && !v.is_import_variable {
+                    if stop_on_type && !matches!(next_ref.symbol_type, EvaluationSymbolType::Instance) && !v.is_import_variable {
                         index += 1;
                         continue;
                     }
@@ -1606,7 +1610,7 @@ impl Symbol {
     }
 
     //store in result all available members for self: sub symbols, base class elements and models symbols
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>) {
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, symbol_type: Option<EvaluationSymbolType>) {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -1618,35 +1622,37 @@ impl Symbol {
         let typ = symbol.borrow().typ().clone();
         match typ {
             SymType::CLASS => {
-                for symbol in symbol.borrow().all_symbols() {
-                    let name = symbol.borrow().name().clone();
-                    if let Some(vec) = result.get_mut(&name) {
-                        vec.push((symbol, None));
-                    } else {
-                        result.insert(name.clone(), vec![(symbol, None)]);
+                // Skip current class symbols for super
+                if !(matches!(symbol_type, Some(EvaluationSymbolType::Super))){
+                    for symbol in symbol.borrow().all_symbols() {
+                        let name = symbol.borrow().name().clone();
+                        if let Some(vec) = result.get_mut(&name) {
+                            vec.push((symbol, None));
+                        } else {
+                            result.insert(name.clone(), vec![(symbol, None)]);
+                        }
                     }
                 }
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
-                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc);
+                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, None);
                 }
-                if with_co_models {
-                    let sym = symbol.borrow();
-                    let model_data = sym.as_class_sym()._model.as_ref();
-                    if let Some(model_data) = model_data {
-                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
-                        if let Some(model) = model {
-                            for model_sym in model.borrow().all_symbols(session, from_module) {
-                                if !Rc::ptr_eq(symbol, &model_sym.0) {
-                                    for s in model_sym.0.borrow().all_symbols() {
-                                        let name = s.borrow().name().clone();
-                                        if let Some(vec) = result.get_mut(&name) {
-                                            vec.push((s, Some(model_sym.0.borrow().name().clone())));
-                                        } else {
-                                            result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
-                                        }
-                                    }
+                if !with_co_models { return }
+                let sym = symbol.borrow();
+                let model_data = sym.as_class_sym()._model.as_ref();
+                if model_data.is_none() { return }
+                let model_data = model_data.unwrap();
+                let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                if let Some(model) = model {
+                    for model_sym in model.borrow().all_symbols(session, from_module) {
+                        if !Rc::ptr_eq(symbol, &model_sym.0) {
+                            for s in model_sym.0.borrow().all_symbols() {
+                                let name = s.borrow().name().clone();
+                                if let Some(vec) = result.get_mut(&name) {
+                                    vec.push((s, Some(model_sym.0.borrow().name().clone())));
+                                } else {
+                                    result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
                                 }
                             }
                         }
@@ -1665,7 +1671,6 @@ impl Symbol {
             }
         }
     }
-
     /* return the Symbol (class, function or file) the closest to the given offset */
     pub fn get_scope_symbol(file_symbol: Rc<RefCell<Symbol>>, offset: u32, is_param: bool) -> Rc<RefCell<Symbol>> {
         let mut result = file_symbol.clone();
@@ -1712,7 +1717,7 @@ impl Symbol {
         //get local symbols
         on_symbol.borrow().all_symbols().for_each(|sym| {
             if sym.borrow().name().starts_with(name) {
-                if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                     results.push(sym.clone());
                 }
             }
@@ -1722,7 +1727,7 @@ impl Symbol {
             let file = file.upgrade().unwrap();
             file.borrow().all_symbols().for_each(|sym| {
                 if sym.borrow().name().starts_with(name) {
-                    if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                    if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                         results.push(sym.clone());
                     }
                 }
@@ -1799,7 +1804,7 @@ impl Symbol {
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
+    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool, is_super: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut diagnostics: Vec<Diagnostic> = vec![];
         self.member_symbol_hook(session, name, &mut diagnostics);
@@ -1811,12 +1816,14 @@ impl Symbol {
                 return (vec![mod_sym], diagnostics);
             }
         }
-        let content_sym = self.get_sub_symbol(name, u32::MAX);
-        if content_sym.len() >= 1 {
-            if all {
-                result.extend(content_sym);
-            } else {
-                return (content_sym, diagnostics);
+        if !is_super{
+            let content_sym = self.get_sub_symbol(name, u32::MAX);
+            if content_sym.len() >= 1 {
+                if all {
+                    result.extend(content_sym);
+                } else {
+                    return (content_sym, diagnostics);
+                }
             }
         }
         if self.typ() == SymType::CLASS && self.as_class_sym()._model.is_some() && !prevent_comodel {
@@ -1832,7 +1839,7 @@ impl Symbol {
                         if self.is_equal(&loc_sym) {
                             continue;
                         }
-                        let (attribut, att_diagnostic) = loc_sym.borrow().get_member_symbol(session, name, None, true, all);
+                        let (attribut, att_diagnostic) = loc_sym.borrow().get_member_symbol(session, name, None, true, all, false);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             result.extend(attribut);
@@ -1848,7 +1855,7 @@ impl Symbol {
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
-                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all);
+                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all, false);
                     diagnostics.extend(s_diagnostic);
                     if s.len() != 0 {
                     if all {

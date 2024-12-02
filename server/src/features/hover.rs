@@ -1,13 +1,13 @@
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
 use weak_table::traits::WeakElement;
-use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation};
+use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation, EvaluationSymbolWeak};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
@@ -43,7 +43,7 @@ impl HoverFeature {
     parameters:   (type_sym)  symbol: infered_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<(Weak<RefCell<Symbol>>, bool)>, context: &mut Option<Context>) -> String {
+    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<EvaluationSymbolWeak>, context: &mut Option<Context>) -> String {
         let symbol = rc_symbol.borrow();
         //python code balise
         let mut value = S!("```python  \n");
@@ -66,13 +66,13 @@ impl HoverFeature {
         value += &format!("({}) ", type_sym);
         //variable name
         let mut single_func_eval = false;
-        if infered_types.len() == 1 && infered_types[0].0.upgrade().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].0.upgrade().unwrap().borrow().as_func().is_property {
+        if infered_types.len() == 1 && infered_types[0].weak.upgrade().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].weak.upgrade().unwrap().borrow().as_func().is_property {
             //display 'def' only if there is only a single evaluation to a function
             single_func_eval = true;
             value += "def ";
             value += &symbol.name();
             //display args
-            let function = infered_types[0].0.upgrade().unwrap();
+            let function = infered_types[0].weak.upgrade().unwrap();
             let function = function.borrow();
             let function = function.as_func();
             value += "(";
@@ -96,7 +96,7 @@ impl HoverFeature {
             value += "(";
         }
         for (index, infered_type) in infered_types.iter().enumerate() {
-            let infered_type = infered_type.0.upgrade();
+            let infered_type = infered_type.weak.upgrade();
             if let Some(infered_type) = infered_type {
                 if Rc::ptr_eq(rc_symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
                     if infered_type.borrow().typ() != SymType::CLASS {
@@ -110,11 +110,11 @@ impl HoverFeature {
                         if let Some(func_eval) = func_eval {
                             let mut type_names = HashSet::new();
                             for eval in func_eval.iter() {
-                                let s = eval.symbol.get_symbol(session, context, &mut vec![], None).0;
+                                let s = eval.symbol.get_symbol(session, context, &mut vec![], None).weak;
                                 if let Some(s) = s.upgrade() {
-                                    let s_types = Symbol::follow_ref(&s, session, context, true, false, None, &mut vec![]);
-                                    for (s_type, _instance) in s_types.iter() {
-                                        if let Some(s_type) = s_type.upgrade() {
+                                    let weak_eval_symbols = Symbol::follow_ref(&s, session, context, true, false, None, &mut vec![]);
+                                    for weak_eval_symbol in weak_eval_symbols.iter() {
+                                        if let Some(s_type) = weak_eval_symbol.weak.upgrade() {
                                             let typ = s_type.borrow();
                                             if typ.typ() == SymType::VARIABLE {
                                                 //if fct is a variable, it means that evaluation is None.
@@ -177,7 +177,7 @@ impl HoverFeature {
             if index != 0 {
                 value += "  \n***  \n";
             }
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
+            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).weak;
             if symbol.is_expired() {
                 continue;
             }
@@ -188,7 +188,7 @@ impl HoverFeature {
             value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
-                let typ = typ.0.upgrade();
+                let typ = typ.weak.upgrade();
                 if let Some(typ) = typ {
                     let paths = &typ.borrow().paths();
                     if paths.len() == 1 { //we won't put a link to a namespace
@@ -208,7 +208,7 @@ impl HoverFeature {
             }
             // BLOCK 3: documentation
             for typ in type_refs.iter() {
-                let typ = typ.0.upgrade();
+                let typ = typ.weak.upgrade();
                 if let Some(typ) = typ {
                     if typ.borrow().doc_string().is_some() {
                         value = value + "  \n***  \n" + typ.borrow().doc_string().as_ref().unwrap();

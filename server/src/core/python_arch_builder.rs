@@ -46,10 +46,10 @@ impl PythonArchBuilder {
         }
     }
 
-    pub fn load_arch(&mut self, session: &mut SessionInfo) -> Result<(), Error> {
+    pub fn load_arch(&mut self, session: &mut SessionInfo) {
         let symbol = &self.sym_stack[0];
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
-            return Ok(()); // nothing to extract
+            return; // nothing to extract
         }
         {
             let file = symbol.borrow();
@@ -84,6 +84,9 @@ impl PythonArchBuilder {
                 },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
+        if !file_info_rc.borrow().valid {
+            return
+        }
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
@@ -97,7 +100,7 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
-            self.visit_node(session, &ast)?;
+            self.visit_node(session, &ast);
             self._resolve_all_symbols(session);
             if self.file_mode {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
@@ -110,7 +113,6 @@ impl PythonArchBuilder {
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        Ok(())
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
@@ -137,8 +139,8 @@ impl PythonArchBuilder {
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
                     let all = Symbol::follow_ref(all, session, &mut None, false, true, None, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
-                        if !all.0.is_expired() {
-                            let all = all.0.upgrade();
+                        if !all.weak.is_expired() {
+                            let all = all.weak.upgrade();
                             if let Some(all) = all {
                                 let all = (*all).borrow();
                                 if all.evaluations().is_some() && all.evaluations().unwrap().len() == 1 {
@@ -182,7 +184,7 @@ impl PythonArchBuilder {
                     let mut sym_bw = sym.borrow_mut();
                     let evaluation = &sym_bw.as_variable_mut().evaluations[0];
                     let evaluated_type = &evaluation.symbol;
-                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).0;
+                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).weak;
                     if !evaluated_type.is_expired() {
                         let evaluated_type = evaluated_type.upgrade().unwrap();
                         let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
@@ -236,7 +238,7 @@ impl PythonArchBuilder {
                     self.visit_for(session, for_stmt)?;
                 },
                 Stmt::With(with_stmt) => {
-                    self.visit_with(session, with_stmt);
+                    self.visit_with(session, with_stmt)?;
                 },
                 _ => {}
             }
