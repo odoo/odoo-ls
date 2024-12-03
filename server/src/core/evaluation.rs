@@ -928,69 +928,68 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_domain(session: &mut SessionInfo, value: &EvaluationValue, range: Option<TextRange>) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
-        let range =  range.unwrap();
+        if !matches!(value, Expr::List(_)) {
+            return diagnostics;
+        }
         /*let from_module = None;
         let model = None;
         let domain = None;*/
-        match value {
-            EvaluationValue::ANY() => {},
-            EvaluationValue::CONSTANT(_) | EvaluationValue::DICT(_) | EvaluationValue::TUPLE(_) => {
-                diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30313"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Domains should be a list of tuples"),
-                    None,
-                    None,
-                ));
-            },
-            EvaluationValue::LIST(vec) => {
-                for e in vec.iter() {
-                    match e {
-                        Expr::Tuple(t) => {
-                            if t.elts.len() != 3 {
-                                diagnostics.push(Diagnostic::new(
-                                    Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
-                                    Some(DiagnosticSeverity::ERROR),
-                                    Some(NumberOrString::String(S!("OLS30314"))),
-                                    Some(EXTENSION_NAME.to_string()),
-                                    format!("Domain tuple should have 3 elements"),
-                                    None,
-                                    None,
-                                ));
-                            }
-                        },
-                        _ => {
-                            diagnostics.push(Diagnostic::new(
-                                Range::new(Position::new(e.range().start().to_u32(), 0), Position::new(e.range().end().to_u32(), 0)),
-                                Some(DiagnosticSeverity::ERROR),
-                                Some(NumberOrString::String(S!("OLS30313"))),
-                                Some(EXTENSION_NAME.to_string()),
-                                format!("Domain should be a list of tuples"),
-                                None,
-                                None,
-                            ));
-                        }
+        let need_tuple = 0;
+        for item in value.as_list_expr().unwrap().elts.iter() {
+            match item {
+                Expr::Tuple(t) => {
+                    if t.elts.len() != 3 {
+                        diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30314"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("Domain tuple should have 3 elements"),
+                            None,
+                            None,
+                        ));
+                    } else {
+                        Evaluation::validate_tuple_search_domain(session, &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
+                },
+                Expr::List(l) => {
+                    if l.elts.len() != 3 {
+                        diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(l.range().start().to_u32(), 0), Position::new(l.range().end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30314"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("Domain tuple should have 3 elements"),
+                            None,
+                            None,
+                        ));
+                    } else {
+                        Evaluation::validate_tuple_search_domain(session, &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
+                    }
+                },
+                Expr::StringLiteral(s) => {
+
+                },
+                _ => {//do not handle for now
                 }
-            },
+            }
         }
         diagnostics
     }
-    
+
+    fn validate_tuple_search_domain(session: &mut SessionInfo, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+        
+    }
+
     fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if let Some(symbol) = function_arg.symbol.upgrade() {
             if symbol.borrow().evaluations().unwrap_or(&vec![]).len() == 1 {
                 match symbol.borrow().evaluations().unwrap()[0].symbol.sym.clone() {
                     EvaluationSymbolPtr::DOMAIN => {
-                        let range = symbol.borrow().evaluations().unwrap()[0].range.clone();
-                        if let Some(value) = symbol.borrow().evaluations().unwrap()[0].value.as_ref() {
-                            diagnostics.extend(Evaluation::validate_domain(session, value, range));
-                        }
+                        diagnostics.extend(Evaluation::validate_domain(session, arg));
                     },
                     _ => {}
                 }
