@@ -3,7 +3,7 @@ use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::constants::*;
-use crate::core::evaluation::{Context, Evaluation, EvaluationSymbolType, EvaluationSymbolWeak};
+use crate::core::evaluation::{Context, Evaluation, EvaluationSymbolWeak};
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -1494,7 +1494,8 @@ impl Symbol {
             return vec![
                 EvaluationSymbolWeak{
                     weak: Rc::downgrade(symbol),
-                    symbol_type: match symbol.borrow().typ(){SymType::VARIABLE => EvaluationSymbolType::Instance, _ => EvaluationSymbolType::Class}}
+                    instance: symbol.borrow().typ() == SymType::VARIABLE,
+                    is_super: false,}
                 ];
         }
         //there is a 'next_ref'. Remove "parent" from context if any
@@ -1514,7 +1515,7 @@ impl Symbol {
             let sym = sym.borrow();
             match *sym {
                 Symbol::Variable(ref v) => {
-                    if stop_on_type && !matches!(next_ref.symbol_type, EvaluationSymbolType::Instance) && !v.is_import_variable {
+                    if stop_on_type && !next_ref.instance && !v.is_import_variable {
                         index += 1;
                         continue;
                     }
@@ -1610,7 +1611,7 @@ impl Symbol {
     }
 
     //store in result all available members for self: sub symbols, base class elements and models symbols
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, symbol_type: Option<EvaluationSymbolType>) {
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -1623,7 +1624,7 @@ impl Symbol {
         match typ {
             SymType::CLASS => {
                 // Skip current class symbols for super
-                if !(matches!(symbol_type, Some(EvaluationSymbolType::Super))){
+                if !is_super{
                     for symbol in symbol.borrow().all_symbols() {
                         let name = symbol.borrow().name().clone();
                         if let Some(vec) = result.get_mut(&name) {
@@ -1636,7 +1637,7 @@ impl Symbol {
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
-                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, None);
+                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
                 }
                 if !with_co_models { return }
                 let sym = symbol.borrow();
