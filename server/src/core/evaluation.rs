@@ -614,7 +614,17 @@ impl Evaluation {
                                             );
                                             None
                                         } else {
-                                            Some(class_sym_weak_eval.weak.clone())
+                                            let mut is_instance = false;
+                                            if expr.arguments.args.len() >= 2 {
+                                                let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent.clone(), max_infer);
+                                                diagnostics.extend(diags);
+                                                if object_or_type_eval.len() != 1 {
+                                                    return Some((class_sym_weak_eval.weak.clone(), is_instance))
+                                                }
+                                                let object_or_type_weak_eval= object_or_type_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics, None);
+                                                is_instance = object_or_type_weak_eval.instance;
+                                            }
+                                            Some((class_sym_weak_eval.weak.clone(), is_instance))
                                         }
                                     )
                                 //  - Otherwise we get the encapsulating class
@@ -634,15 +644,15 @@ impl Evaluation {
                                             );
                                             None
                                         },
-                                        Some(parent_class) => Some(parent_class.clone())
+                                        Some(parent_class) => Some((parent_class.clone(), true))
                                     }
                                 };
-                                if let Some(super_class) = super_class{
+                                if let Some((super_class, instance)) = super_class{
                                     evals.push(Evaluation{
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                                                 weak: super_class,
-                                                instance: true, // TODO, handle when it is false
+                                                instance, 
                                                 is_super: true,
                                             }),
                                             context: HashMap::new(),
