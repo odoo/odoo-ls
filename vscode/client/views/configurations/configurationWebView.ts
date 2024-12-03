@@ -1,6 +1,5 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, workspace, ConfigurationTarget } from "vscode";
 import { getUri, getNonce, evaluateOdooPath } from "../../common/utils";
-import {ConfigurationsChange} from "../../common/events"
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -130,7 +129,7 @@ export class ConfigurationWebView {
             cspSource: webview.cspSource,
             nonce: nonce,
             odooVersion: configsVersion ? configsVersion[`${this.configId}`] : null,
-            pythonExtensionMode: global.IS_PYTHON_EXTENSION_READY,  
+            pythonExtensionMode: global.IS_PYTHON_EXTENSION_READY,
         };
         return ejs.render(htmlFile, data);
     }
@@ -142,13 +141,12 @@ export class ConfigurationWebView {
     private _saveConfig(configs: any, rawOdooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
-        global.CLIENT_IS_SAVING = false;
 
 
         if (configs[this.configId]["rawOdooPath"] != rawOdooPath) {
             changes.push("rawOdooPath");
         }
-        
+
         if (configs[this.configId]["name"] != name) {
             changes.push("name");
         }
@@ -175,27 +173,23 @@ export class ConfigurationWebView {
         configs[this.configId] = {
             "id": this.configId,
             "name": name,
-            "odooPath":  untildify(rawOdooPath),
+            "odooPath": configs[this.configId]["odooPath"],
             "rawOdooPath": untildify(rawOdooPath),
             "addons": addons,
             "pythonPath": untildify(pythonPath),
+            "validatedAddonsPaths": configs[this.configId]["validatedAddonsPaths"],
         };
         workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
-        if (workspace.getConfiguration().get("Odoo.selectedConfigurations") == this.configId) {
-            ConfigurationsChange.fire(changes);
-        }
-        
+
         if (changes.includes('name')){
             this._updateWebviewTitle(this._panel, name)
         }
-        global.CLIENT_IS_SAVING = true;
     }
 
     private _deleteConfig(configs: any): void {
         delete configs[this.configId]
         workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
         this.dispose()
-        ConfigurationsChange.fire(null);
     }
     /**
      * Sets up an event listener to listen for messages passed from the webview context and
@@ -253,12 +247,26 @@ export class ConfigurationWebView {
                     };
                     window.showOpenDialog(addonsFolderOptions).then(fileUri => {
                         if (fileUri && fileUri[0]) {
-                            this.addons = [...this.addons, fileUri[0].fsPath];
+                            this.addons = [...this.addons, ];
                             webview.postMessage({
-                                command: "render_addons",
-                                addons: this.addons,
+                                command: "read_addons_folder",
+                                addonPath: fileUri[0].fsPath,
                             });
                         }
+                    });
+                    break;
+                case "add_addons_path":
+                    const addonPath = message.addonPath;
+                    if (!addonPath){
+                        break;
+                    }
+                    this.addons = [...this.addons, addonPath];
+                    webview.postMessage({
+                        command: "clear_addons_folder",
+                    });
+                    webview.postMessage({
+                        command: "render_addons",
+                        addons: this.addons,
                     });
                     break;
                 case "delete_addons_folder":
@@ -303,7 +311,7 @@ export class ConfigurationWebView {
                 version: version
             });
         };
-        
+
         let versions = this._context.globalState.get('Odoo.configsVersion', {});
         const odoo = await evaluateOdooPath(rawOdooPath);
         if (odoo){

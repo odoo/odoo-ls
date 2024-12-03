@@ -72,8 +72,21 @@
                 <vscode-scrollable id="addons-scrollable">
                     <vscode-tree id="addons-tree"></vscode-tree>
                 </vscode-scrollable>
-                <div id="add-folder-container" class="button-container">
-                    <span id="add-folder-button" class="button"><vscode-icon name="add"></vscode-icon>&nbsp;Add folder</span>
+
+                <div id="textbox-button-container" class="button-container">
+                    <vscode-textfield id="addons-folder-input" placeholder="Enter folder path">
+                    <vscode-icon
+                        label="Select Addons path"
+                        title="Select Addons path"
+                        slot="content-after"
+                        name="folder-opened"
+                        id="config-addons-path-button"
+                        action-icon
+                    >
+                    </vscode-textfield>
+                    <span id="add-addon-path-button" class="button">
+                        <vscode-icon name="add"></vscode-icon>&nbsp;Add Addons Folder
+                    </span>
                 </div>
             </vscode-form-group>
             <vscode-form-group id="config-control">
