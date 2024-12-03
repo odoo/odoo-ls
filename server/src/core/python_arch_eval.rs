@@ -497,14 +497,18 @@ impl PythonArchEval {
                                                     &arg.parameter.annotation.as_ref().unwrap(),
                                                     self.sym_stack.last().unwrap().clone(),
                                                     &func_stmt.range.start());
-                        variable.borrow_mut().set_evaluations(eval);
+                        let mut var_bw = variable.borrow_mut();
+                        let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id.to_string()).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
+                        symbol.borrow_mut().set_evaluations(eval);
                         self.diagnostics.extend(diags);
                     } else if arg.default.is_some() {
                         let (eval, diags) = Evaluation::eval_from_ast(session,
                                                     arg.default.as_ref().unwrap(),
                                                     self.sym_stack.last().unwrap().clone(),
                                                     &func_stmt.range.start());
-                        variable.borrow_mut().set_evaluations(eval);
+                        let mut var_bw = variable.borrow_mut();
+                        let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id.to_string()).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
+                        symbol.borrow_mut().set_evaluations(eval);
                         self.diagnostics.extend(diags);
                     }
                 }
