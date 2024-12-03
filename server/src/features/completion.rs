@@ -550,7 +550,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                     if let Some(parent_sym) = parent_sym_type.weak.upgrade() {
                         let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
                         let from_module = parent_sym.borrow().find_module().clone();
-                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, Some(parent_sym_eval_weak.symbol_type));
+                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval_weak.is_super);
                         for (_symbol_name, symbols) in all_symbols {
                             //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                             for (final_sym, dep) in symbols.iter() {
