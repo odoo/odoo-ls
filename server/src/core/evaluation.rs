@@ -599,8 +599,12 @@ impl Evaluation {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                                     }
                                     let class_sym_weak_eval= class_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics, None);
-                                    class_sym_weak_eval.weak.upgrade().and_then(|class_sym|
-                                        if class_sym.borrow().typ() != SymType::CLASS  || class_sym_weak_eval.instance {
+                                    class_sym_weak_eval.weak.upgrade().and_then(|class_sym|{
+                                        let class_sym_weak_eval = &Symbol::follow_ref(&class_sym, session, &mut None, false, false, None, &mut diagnostics)[0];
+                                        if class_sym_weak_eval.weak.upgrade().unwrap().borrow().typ() != SymType::CLASS{
+                                            return None;
+                                        }
+                                        if class_sym_weak_eval.instance {
                                             diagnostics.push(Diagnostic::new(
                                                 Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
                                                 Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
@@ -621,12 +625,15 @@ impl Evaluation {
                                                 if object_or_type_eval.len() != 1 {
                                                     return Some((class_sym_weak_eval.weak.clone(), is_instance))
                                                 }
-                                                let object_or_type_weak_eval= object_or_type_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics, None);
+                                                let object_or_type_weak_eval = &Symbol::follow_ref(
+                                                    &object_or_type_eval[0].symbol.get_symbol(
+                                                        session, &mut context, &mut diagnostics, None).weak.upgrade().unwrap(),
+                                                        session, &mut None, false, false, None, &mut diagnostics)[0];
                                                 is_instance = object_or_type_weak_eval.instance;
                                             }
                                             Some((class_sym_weak_eval.weak.clone(), is_instance))
                                         }
-                                    )
+                                    })
                                 //  - Otherwise we get the encapsulating class
                                 } else {
                                     match parent.borrow().get_in_parents(&vec![SymType::CLASS], true){
@@ -652,7 +659,7 @@ impl Evaluation {
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                                                 weak: super_class,
-                                                instance, 
+                                                instance,
                                                 is_super: true,
                                             }),
                                             context: HashMap::new(),
