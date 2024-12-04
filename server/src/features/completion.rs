@@ -584,7 +584,7 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
                         if get_item.borrow().evaluations().as_ref().unwrap().len() == 1 {
                             let get_item_bw = get_item.borrow();
                             let get_item_eval = get_item_bw.evaluations().as_ref().unwrap().first().unwrap();
-                            if get_item_eval.symbol.get_symbol_hook == Some(PythonArchEvalHooks::eval_get_item) {
+                            if get_item_eval.symbol.get_symbol_hook == Some(PythonArchEvalHooks::eval_env_get_item) {
                                 return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
                             }
                         }
