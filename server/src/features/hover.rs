@@ -151,7 +151,7 @@ impl HoverFeature {
                         }
                     } else if infered_type.typ() == SymType::FILE {
                         value += "File";
-                    } else if infered_type.typ() == SymType::PACKAGE {
+                    } else if matches!(infered_type.typ(), SymType::PACKAGE(_)) {
                         value += "Module";
                     } else if infered_type.typ() == SymType::NAMESPACE {
                         value += "Namespace";
@@ -243,7 +243,7 @@ impl HoverFeature {
                     let paths = &typ.borrow().paths();
                     if paths.len() == 1 { //we won't put a link to a namespace
                         let mut base_path = paths.first().unwrap().clone();
-                        if typ.borrow().typ() == SymType::PACKAGE {
+                        if matches!(typ.borrow().typ(), SymType::PACKAGE(_)) {
                             base_path = PathBuf::from(base_path).join(format!("__init__.py{}", typ.borrow().as_package().i_ext())).sanitize();
                         }
                         let path = FileMgr::pathname2uri(&base_path);

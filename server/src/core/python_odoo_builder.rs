@@ -38,7 +38,7 @@ impl PythonOdooBuilder {
         let mut path = symbol.paths()[0].clone();
         if vec![SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED].contains(&symbol.typ()) {
             return;
-        } else if symbol.typ() == SymType::PACKAGE {
+        } else if matches!(symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__").with_extension(S!("py") + symbol.as_package().i_ext().as_str()).sanitize();
         }
         symbol.set_build_status(BuildSteps::ODOO, BuildStatus::IN_PROGRESS);
