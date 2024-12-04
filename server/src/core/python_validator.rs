@@ -47,7 +47,7 @@ impl PythonValidator {
         let file_symbol = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
         let file_symbol = file_symbol.borrow();
         let mut path = file_symbol.paths()[0].clone();
-        if file_symbol.typ() == SymType::PACKAGE {
+        if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
         }
         let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
@@ -64,7 +64,7 @@ impl PythonValidator {
         let sym_type = symbol.typ().clone();
         drop(symbol);
         match sym_type {
-            SymType::FILE | SymType::PACKAGE => {
+            SymType::FILE | SymType::PACKAGE(_) => {
                 trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
@@ -116,7 +116,7 @@ impl PythonValidator {
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::DONE);
-        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.typ()) {
+        if matches!(&symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             if !symbol.in_workspace() {
                 if !symbol.is_external() {
                     return

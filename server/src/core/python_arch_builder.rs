@@ -59,13 +59,13 @@ impl PythonArchBuilder {
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
         }
-        trace!("evaluating {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
+        trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = match self.file.borrow().typ() {
             SymType::FILE => {
                 self.file.borrow().paths()[0].clone()
             },
-            SymType::PACKAGE => {
+            SymType::PACKAGE(_) => {
                 PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
             },
             _ => panic!("invalid symbol type to extract path")

@@ -78,7 +78,7 @@ impl PythonArchEval {
             SymType::FILE => {
                 self.file.borrow().paths()[0].clone()
             },
-            SymType::PACKAGE => {
+            SymType::PACKAGE(_) => {
                 PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
             },
             _ => panic!("invalid symbol type to extract path")

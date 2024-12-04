@@ -807,7 +807,7 @@ fn get_completion_item_kind(symbol: &Rc<RefCell<Symbol>>) -> CompletionItemKind 
     match symbol.borrow().typ() {
         SymType::ROOT => CompletionItemKind::TEXT,
         SymType::NAMESPACE => CompletionItemKind::FOLDER,
-        SymType::PACKAGE => CompletionItemKind::MODULE,
+        SymType::PACKAGE(_) => CompletionItemKind::MODULE,
         SymType::FILE => CompletionItemKind::FILE,
         SymType::COMPILED => CompletionItemKind::FILE,
         SymType::VARIABLE => CompletionItemKind::VARIABLE,

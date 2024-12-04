@@ -2,6 +2,8 @@ use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
+use crate::constants::BuildSteps;
+
 use super::symbol::Symbol;
 
 
@@ -19,6 +21,7 @@ pub struct NamespaceSymbol {
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub in_workspace: bool,
+    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>, //used for path that should be imported automatically (used for modules in odoo.addons)
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
 }
@@ -39,6 +42,7 @@ impl NamespaceSymbol {
             is_external,
             weak_self: None,
             parent: None,
+            not_found_paths: vec![],
             in_workspace: false,
             dependencies: [
                 vec![ //ARCH
