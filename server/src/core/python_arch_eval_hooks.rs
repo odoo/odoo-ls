@@ -258,7 +258,21 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                 true,
                 HashMap::new(),
                 None,
-                Some(PythonArchEvalHooks::eval_get_item)
+                Some(PythonArchEvalHooks::eval_env_get_item)
+            ),
+            value: None,
+            range: None
+        }]);
+    }},
+    PythonArchEvalFunctionHook { tree: (vec![S!("odoo"), S!("modules"), S!("registry")], vec![S!("Registry"), S!("__getitem__")]),
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>| {
+        symbol.borrow_mut().set_evaluations(vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(Weak::new(),
+                true,
+                HashMap::new(),
+                None,
+                Some(PythonArchEvalHooks::eval_registry_get_item)
             ),
             value: None,
             range: None
@@ -393,7 +407,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    pub fn eval_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
         if let Some(context) = context {
             let arg = context.get(&S!("args"));
@@ -466,7 +480,14 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        EvaluationSymbolWeak{weak: Weak::new(), instance: false, is_super: false}
+        EvaluationSymbolWeak{weak: Weak::new(), instance: true, is_super: false}
+    }
+
+    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    {
+        let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, file_symbol);
+        result.instance = false;
+        result
     }
 
     fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
