@@ -1,5 +1,5 @@
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -168,20 +168,34 @@ impl PythonValidator {
                     self.visit_ann_assign(session, a);
                 },
                 Stmt::Expr(e) => {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_stack.last().unwrap().clone(), &e.range.start());
-                    self.diagnostics.extend(diags);
+                    self.validate_expr(session, &e.value, &e.value.start());
                 },
                 Stmt::If(i) => {
+                    self.validate_expr(session, &i.test, &i.test.start());
                     self.validate_body(session, &i.body);
+                    for elses in i.elif_else_clauses.iter() {
+                        if let  Some(test) = &elses.test {
+                            self.validate_expr(session, test, &test.start());
+                        }
+                        self.validate_body(session, &elses.body);
+                    }
                 },
                 Stmt::Break(_) => {},
                 Stmt::Continue(_) => {},
-                Stmt::Delete(_) => {
-                    //TODO
+                Stmt::Delete(d) => {
+                    for target in d.targets.iter() {
+                        self.validate_expr(session, target, &target.start());
+                    }
                 },
                 Stmt::For(f) => {
-                    //TODO check condition ? if some checks has to be done on single Expr
+                    self.validate_expr(session, &f.target, &f.target.start());
                     self.validate_body(session, &f.body);
+                    self.validate_body(session, &f.orelse);
+                },
+                Stmt::While(w) => {
+                    self.validate_expr(session, &w.test, &w.test.start());
+                    self.validate_body(session, &w.body);
+                    self.validate_body(session, &w.orelse);
                 },
                 Stmt::Return(r) => {},
                 _ => {
@@ -355,5 +369,10 @@ impl PythonValidator {
         } else {
             //TODO do we want to raise something?
         }
+    }
+
+    fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
+        let (eval, diags) = Evaluation::eval_from_ast(session, &expr, self.sym_stack.last().unwrap().clone(), &max_infer);
+        self.diagnostics.extend(diags);
     }
 }

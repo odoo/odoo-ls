@@ -48,7 +48,7 @@ pub fn setup_server() -> SyncOdoo {
     config.no_typeshed = false;
 
     let (s, r) = crossbeam_channel::unbounded();
-    let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server, None);
+    let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
     SyncOdoo::init(&mut session, config);
 
     server

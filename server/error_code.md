@@ -138,4 +138,28 @@ key parsing error
 "Module XXXX depends on YYYY which is not found. Please review your addons paths".
 The module XXXX create a dependency on YYYY, but this module is not found with the current addon path.
 
+### OLS30311
+"First Argument to super must be a class"
 
+### OLS30312
+"Super calls outside a class scope must have at least one argument"
+
+### OLS30313
+
+"Domains should be a list of tuples".
+The provided domain is not a list of tuples. A domain should be in the form [("field", "operator", "value")]
+
+### OLS30314
+
+"Domain tuple should have 3 elements".
+Tuples in a domain should contains 3 elements: ("field", "operator", "value")
+
+### OLS30315
+
+"XXX takes Y positional arguments but Z was given".
+Number of positional arguments given as parameter to the function is wrong.
+
+### OLS30316
+
+"XXX got an unexpected keyword argument 'YYY'".
+You gave a named parameter that is not present in the function definition.
