@@ -27,7 +27,7 @@ use super::class_symbol::ClassSymbol;
 use super::compiled_symbol::CompiledSymbol;
 use super::file_symbol::FileSymbol;
 use super::namespace_symbol::{NamespaceDirectory, NamespaceSymbol};
-use super::package_symbol::PackageSymbol;
+use super::package_symbol::{PackageSymbol, PythonPackageSymbol};
 use super::symbol_mgr::SymbolMgr;
 use super::variable_symbol::VariableSymbol;
 
@@ -307,6 +307,19 @@ impl Symbol {
         }
     }
 
+    pub fn as_python_package(&self) -> &PythonPackageSymbol {
+        match self {
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a python package")}
+        }
+    }
+    pub fn as_python_package_mut(&mut self) -> &mut PythonPackageSymbol {
+        match self {
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a python package")}
+        }
+    }
+
     pub fn as_variable(&self) -> &VariableSymbol {
         match self {
             Symbol::Variable(v) => v,
@@ -364,7 +377,8 @@ impl Symbol {
         match self {
             Symbol::Root(_) => SymType::ROOT,
             Symbol::Namespace(_) => SymType::NAMESPACE,
-            Symbol::Package(_) => SymType::PACKAGE,
+            Symbol::Package(PackageSymbol::Module(_)) => SymType::PACKAGE(PackageType::MODULE),
+            Symbol::Package(PackageSymbol::PythonPackage(_)) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
             Symbol::File(_) => SymType::FILE,
             Symbol::Compiled(_) => SymType::COMPILED,
             Symbol::Class(_) => SymType::CLASS,
@@ -865,7 +879,6 @@ impl Symbol {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             return Some(parent.borrow_mut().add_new_file(session, &name, &path_str));
         }
-
         if parent.borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = parent.borrow_mut().add_new_module_package(session, &name, path);
             if let Some(module) = module {
@@ -1143,12 +1156,6 @@ impl Symbol {
                 panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
             }
         }
-        if self.typ() != SymType::FILE && self.typ() != SymType::PACKAGE {
-            panic!("Dependencies should be only on files");
-        }
-        if symbol.typ() != SymType::FILE && symbol.typ() != SymType::PACKAGE {
-            panic!("Dependencies should be only on files");
-        }
         let step_i = step as usize;
         let level_i = dep_level as usize;
         self.dependencies_mut()[step_i][level_i].insert(symbol.get_rc().unwrap());
@@ -1179,7 +1186,7 @@ impl Symbol {
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let sym_to_inv = ref_to_inv.borrow();
-            if [SymType::FILE, SymType::PACKAGE].contains(&sym_to_inv.typ()) {
+            if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_)) {
                 if *step == BuildSteps::ARCH {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH as usize].iter().enumerate() {
                         for sym in hashset {
@@ -1246,7 +1253,7 @@ impl Symbol {
     }
 
     pub fn invalidate_sub_functions(&mut self, _session: &mut SessionInfo) {
-        if vec![SymType::PACKAGE, SymType::FILE].contains(&self.typ()) {
+        if matches!(&self.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             for func in self.iter_inner_functions() {
                 func.borrow_mut().evaluations_mut().unwrap().clear();
                 func.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
@@ -1271,7 +1278,7 @@ impl Symbol {
                 continue;
             }
             vec_to_unload.pop_front();
-            if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || mut_symbol.typ() == SymType::PACKAGE) {
+            if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || matches!(mut_symbol.typ(), SymType::PACKAGE(_))) {
                 info!("Unloading symbol {:?} at {:?}", mut_symbol.name(), mut_symbol.paths());
             }
             //unload symbol
@@ -1280,7 +1287,7 @@ impl Symbol {
             drop(mut_symbol);
             parent.remove_symbol(ref_to_unload.clone());
             drop(parent);
-            if vec![SymType::FILE, SymType::PACKAGE].contains(&ref_to_unload.borrow().typ()) {
+            if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
             match *ref_to_unload.borrow_mut() {
@@ -1348,7 +1355,7 @@ impl Symbol {
         if sym_types.contains(&self.typ()) {
             return self.weak_self().clone();
         }
-        if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
+        if stop_same_file && matches!(&self.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             return None;
         }
         if self.parent().is_some() {
@@ -1361,7 +1368,7 @@ impl Symbol {
         if Rc::ptr_eq(&self.weak_self().unwrap().upgrade().unwrap(), &rc) {
             return true;
         }
-        if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
+        if stop_same_file && matches!(&self.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             return false;
         }
         if self.parent().is_some() {
@@ -1425,7 +1432,7 @@ impl Symbol {
     }
 
     pub fn get_file(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE {
+        if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
@@ -1435,7 +1442,7 @@ impl Symbol {
     }
 
     pub fn parent_file_or_function(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE || self.typ() == SymType::FUNCTION {
+        if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) || self.typ() == SymType::FUNCTION {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
@@ -1743,7 +1750,7 @@ impl Symbol {
         //TODO implement 'super' behaviour in hooks
         let on_symbol = on_symbol.borrow();
         results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
-        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.typ()) {
+        if results.len() == 0 && !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
             let mut parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
             while parent.borrow().typ() == SymType::CLASS {
                 let _parent = parent.borrow().parent().unwrap().upgrade().unwrap();

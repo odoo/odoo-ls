@@ -55,7 +55,7 @@ impl DefinitionFeature {
                 for path in file.upgrade().unwrap().borrow().paths().iter() {
                     links.push(
                         match symbol.borrow().typ() {
-                            SymType::PACKAGE => Location{
+                            SymType::PACKAGE(_) => Location{
                                 uri: FileMgr::pathname2uri(&PathBuf::from(path).join(format!("__init__.py{}", symbol.borrow().as_package().i_ext())).sanitize()),
                                 range: Range::default()
                             },

@@ -575,17 +575,17 @@ impl SyncOdoo {
         {
             let odoo_sym = self.symbols.as_ref().unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
             let odoo_sym = odoo_sym[0].clone();
-            for addon_path in odoo_sym.borrow().paths().iter() {
-                if path.starts_with(addon_path) {
-                    let path = path.strip_prefix(addon_path).unwrap().to_path_buf();
-                    let mut tree: Tree = (vec![S!("odoo"), S!("addons")], vec![]);
-                    path.components().for_each(|c| {
-                        tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
-                    });
-                    if vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
-                        tree.0.pop();
-                    }
-                    return Ok(tree);
+                for addon_path in odoo_sym.borrow().paths().iter() {
+                    if path.starts_with(addon_path) {
+                        let path = path.strip_prefix(addon_path).unwrap().to_path_buf();
+                        let mut tree: Tree = (vec![S!("odoo"), S!("addons")], vec![]);
+                        path.components().for_each(|c| {
+                            tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
+                        });
+                        if vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
+                            tree.0.pop();
+                        }
+                        return Ok(tree);
                 }
             }
         }
@@ -718,7 +718,7 @@ impl SyncOdoo {
         while symbols.len() > 0 {
             let s = symbols.pop();
             if let Some(s) = s {
-                if s.borrow().in_workspace() && vec![SymType::FILE, SymType::PACKAGE].contains(&s.borrow().typ()) {
+                if s.borrow().in_workspace() && matches!(&s.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
                     session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
                 }
                 symbols.extend(s.borrow().all_module_symbol().map(|x| {x.clone()}) );

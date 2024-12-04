@@ -165,7 +165,7 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
                     SymType::NAMESPACE => {
                         return Some(_arc_symbol.as_ref().unwrap().clone());
                     },
-                    SymType::PACKAGE => {
+                    SymType::PACKAGE(_) => {
                         let _arc_symbol = _arc_symbol.as_ref().unwrap().clone();
                         session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&_arc_symbol));
                         session.sync_odoo.add_to_rebuild_arch(_arc_symbol.clone());
@@ -186,7 +186,7 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
         if lvl > Path::new(file_path).components().count() as u32 {
             panic!("Level is too high!")
         }
-        if *file_sym_type == SymType::PACKAGE {
+        if matches!(*file_sym_type, SymType::PACKAGE(_)) {
             lvl -= 1;
         }
         if lvl == 0 {

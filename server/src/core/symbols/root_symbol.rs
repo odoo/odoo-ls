@@ -1,4 +1,4 @@
-use crate::{threads::SessionInfo, S};
+use crate::{constants::BuildSteps, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
@@ -11,6 +11,7 @@ pub struct RootSymbol {
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>, //used for path that should be imported but not dependent of something (roots nodes, like odoo/odoo)
 }
 
 impl RootSymbol {
@@ -20,6 +21,7 @@ impl RootSymbol {
             name: S!("Root"),
             paths: vec![],
             sys_path: vec![],
+            not_found_paths: vec![],
             weak_self: None,
             parent: None,
             module_symbols: HashMap::new(),

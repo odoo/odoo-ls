@@ -705,7 +705,7 @@ impl Evaluation {
                         if base_sym.borrow().evaluations().is_some() {
                             let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
                             let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                                SymType::FUNCTION | SymType::FILE | SymType::PACKAGE => {
+                                SymType::FUNCTION | SymType::FILE | SymType::PACKAGE(_) => {
                                     parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
                                 },
                                 _ => {false}
