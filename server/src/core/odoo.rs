@@ -64,6 +64,7 @@ pub struct SyncOdoo {
     rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub state_init: InitState,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub must_reload_paths: Vec<(Weak<RefCell<Symbol>>, String)>,
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
     pub need_rebuild: bool //if true, the next process_rebuilds will drop everything and rebuild everything
 }
@@ -95,6 +96,7 @@ impl SyncOdoo {
             rebuild_validation: PtrWeakHashSet::new(),
             state_init: InitState::NOT_READY,
             not_found_symbols: PtrWeakHashSet::new(),
+            must_reload_paths: vec![],
             load_odoo_addons: true,
             need_rebuild: false,
         };
@@ -279,7 +281,8 @@ impl SyncOdoo {
         }
         let root_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let config_odoo_path = session.sync_odoo.config.odoo_path.clone();
-        let added_symbol = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol, false);
+        let added_symbol = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol.clone(), false);
+        added_symbol.as_ref().unwrap().borrow_mut().as_python_package_mut().self_import = true;
         session.sync_odoo.add_to_rebuild_arch(added_symbol.unwrap());
         SyncOdoo::process_rebuilds(session);
         //search common odoo addons path
@@ -409,8 +412,25 @@ impl SyncOdoo {
         }
     }
 
+    fn add_from_self_reload(session: &mut SessionInfo) {
+        for (weak_sym, path) in session.sync_odoo.must_reload_paths.clone().iter() {
+            if let Some(parent) = weak_sym.upgrade() {
+                let in_addons = parent.borrow().get_tree() == tree(vec!["odoo", "addons"], vec![]);
+                let new_symbol = Symbol::create_from_path(session, &PathBuf::from(path), parent, in_addons);
+                if new_symbol.is_some() {
+                    let new_symbol = new_symbol.as_ref().unwrap().clone();
+                    if matches!(new_symbol.borrow().typ(), SymType::PACKAGE(PackageType::MODULE)) {
+                        session.sync_odoo.modules.insert(new_symbol.borrow().name().clone(), Rc::downgrade(&new_symbol));
+                    }
+                    session.sync_odoo.add_to_rebuild_arch(new_symbol.clone());
+                }
+            }
+        }
+    }
+
     pub fn process_rebuilds(session: &mut SessionInfo) {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+        SyncOdoo::add_from_self_reload(session);
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
@@ -574,7 +594,7 @@ impl SyncOdoo {
         //First check in odoo, before anywhere else
         {
             let odoo_sym = self.symbols.as_ref().unwrap().borrow().get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
-            let odoo_sym = odoo_sym[0].clone();
+            if let Some(odoo_sym) = odoo_sym.get(0).cloned() {
                 for addon_path in odoo_sym.borrow().paths().iter() {
                     if path.starts_with(addon_path) {
                         let path = path.strip_prefix(addon_path).unwrap().to_path_buf();
@@ -586,6 +606,7 @@ impl SyncOdoo {
                             tree.0.pop();
                         }
                         return Ok(tree);
+                    }
                 }
             }
         }

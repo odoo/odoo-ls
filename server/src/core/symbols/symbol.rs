@@ -1283,12 +1283,24 @@ impl Symbol {
             }
             //unload symbol
             let parent = mut_symbol.parent().as_ref().unwrap().upgrade().unwrap().clone();
-            let mut parent = parent.borrow_mut();
+            let mut parent_bw = parent.borrow_mut();
             drop(mut_symbol);
-            parent.remove_symbol(ref_to_unload.clone());
-            drop(parent);
+            parent_bw.remove_symbol(ref_to_unload.clone());
+            drop(parent_bw);
             if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
+            }
+            //check if we should not reimport automatically
+            match ref_to_unload.borrow().typ() {
+                SymType::PACKAGE(PackageType::MODULE) => {
+                    session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
+                },
+                SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
+                    if ref_to_unload.borrow().as_python_package().self_import {
+                        session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
+                    }
+                }
+                _ => {}
             }
             match *ref_to_unload.borrow_mut() {
                 Symbol::Package(PackageSymbol::Module(ref mut m)) => {
