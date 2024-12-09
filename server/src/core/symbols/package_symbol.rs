@@ -110,6 +110,7 @@ pub struct PythonPackageSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub in_workspace: bool,
+    pub self_import: bool,
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
@@ -138,6 +139,7 @@ impl PythonPackageSymbol {
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             in_workspace: false,
+            self_import: false, //indicates that if unloaded, the symbol should be added in the rebuild automatically as nothing depends on it (used for root packages)
             module_symbols: HashMap::new(),
             sections: vec![],
             symbols: HashMap::new(),

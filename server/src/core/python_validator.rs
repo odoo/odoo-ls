@@ -1,5 +1,5 @@
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -47,7 +47,7 @@ impl PythonValidator {
         let file_symbol = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
         let file_symbol = file_symbol.borrow();
         let mut path = file_symbol.paths()[0].clone();
-        if file_symbol.typ() == SymType::PACKAGE {
+        if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
         }
         let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
@@ -64,7 +64,7 @@ impl PythonValidator {
         let sym_type = symbol.typ().clone();
         drop(symbol);
         match sym_type {
-            SymType::FILE | SymType::PACKAGE => {
+            SymType::FILE | SymType::PACKAGE(_) => {
                 trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 let file_info_rc = self.get_file_info(session.sync_odoo).clone();
@@ -116,7 +116,7 @@ impl PythonValidator {
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::DONE);
-        if vec![SymType::FILE, SymType::PACKAGE].contains(&symbol.typ()) {
+        if matches!(&symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             if !symbol.in_workspace() {
                 if !symbol.is_external() {
                     return
@@ -168,20 +168,34 @@ impl PythonValidator {
                     self.visit_ann_assign(session, a);
                 },
                 Stmt::Expr(e) => {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &e.value, self.sym_stack.last().unwrap().clone(), &e.range.start());
-                    self.diagnostics.extend(diags);
+                    self.validate_expr(session, &e.value, &e.value.start());
                 },
                 Stmt::If(i) => {
+                    self.validate_expr(session, &i.test, &i.test.start());
                     self.validate_body(session, &i.body);
+                    for elses in i.elif_else_clauses.iter() {
+                        if let  Some(test) = &elses.test {
+                            self.validate_expr(session, test, &test.start());
+                        }
+                        self.validate_body(session, &elses.body);
+                    }
                 },
                 Stmt::Break(_) => {},
                 Stmt::Continue(_) => {},
-                Stmt::Delete(_) => {
-                    //TODO
+                Stmt::Delete(d) => {
+                    for target in d.targets.iter() {
+                        self.validate_expr(session, target, &target.start());
+                    }
                 },
                 Stmt::For(f) => {
-                    //TODO check condition ? if some checks has to be done on single Expr
+                    self.validate_expr(session, &f.target, &f.target.start());
                     self.validate_body(session, &f.body);
+                    self.validate_body(session, &f.orelse);
+                },
+                Stmt::While(w) => {
+                    self.validate_expr(session, &w.test, &w.test.start());
+                    self.validate_body(session, &w.body);
+                    self.validate_body(session, &w.orelse);
                 },
                 Stmt::Return(r) => {},
                 _ => {
@@ -355,5 +369,10 @@ impl PythonValidator {
         } else {
             //TODO do we want to raise something?
         }
+    }
+
+    fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
+        let (eval, diags) = Evaluation::eval_from_ast(session, &expr, self.sym_stack.last().unwrap().clone(), &max_infer);
+        self.diagnostics.extend(diags);
     }
 }

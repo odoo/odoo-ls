@@ -17,11 +17,18 @@ pub fn flatten_tree(tree: &Tree) -> Vec<String> {
     vec![tree.0.clone(), tree.1.clone()].concat()
 }
 
+
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+pub enum PackageType{
+    PYTHON_PACKAGE,
+    MODULE
+}
+
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
     ROOT,
     NAMESPACE,
-    PACKAGE,
+    PACKAGE(PackageType),
     FILE,
     COMPILED,
     VARIABLE,
