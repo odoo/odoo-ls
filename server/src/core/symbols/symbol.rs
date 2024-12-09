@@ -1511,10 +1511,18 @@ impl Symbol {
         let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
         if results.is_empty() {
             return vec![
-                EvaluationSymbolWeak{
-                    weak: Rc::downgrade(symbol),
-                    instance: symbol.borrow().typ() == SymType::VARIABLE,
-                    is_super: false,}
+                    EvaluationSymbolWeak::new(
+                        Rc::downgrade(symbol),
+                        // If I am here with a variable, that means i do not know actually if it is
+                        // Otherwise, what, always false?
+                        match *symbol.borrow() {
+                            Symbol::Variable(_) => {
+                                None
+                            },
+                            _ => Some(false),
+                        },
+                        false
+                    )
                 ];
         }
         //there is a 'next_ref'. Remove "parent" from context if any
@@ -1534,7 +1542,7 @@ impl Symbol {
             let sym = sym.borrow();
             match *sym {
                 Symbol::Variable(ref v) => {
-                    if stop_on_type && !next_ref.instance && !v.is_import_variable {
+                    if stop_on_type && !matches!(next_ref.get_is_instance(), Some(true)) && !v.is_import_variable {
                         index += 1;
                         continue;
                     }

@@ -44,7 +44,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             env.set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(env_class),
-                    true,
+                    Some(true),
                     context,
                     None,
                     None,
@@ -84,7 +84,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             symbol.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(cursor_sym.last().unwrap()),
-                    true,
+                    Some(true),
                     HashMap::new(),
                     None,
                     Some(PythonArchEvalHooks::eval_test_cursor)
@@ -108,7 +108,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             symbol.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(env_model),
-                    true,
+                    Some(true),
                     context,
                     None,
                     None
@@ -255,7 +255,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         func: |odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>| {
         symbol.borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Weak::new(),
-                true,
+                Some(true),
                 HashMap::new(),
                 None,
                 Some(PythonArchEvalHooks::eval_env_get_item)
@@ -269,7 +269,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         func: |odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>| {
         symbol.borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Weak::new(),
-                true,
+                Some(true),
                 HashMap::new(),
                 None,
                 Some(PythonArchEvalHooks::eval_registry_get_item)
@@ -435,7 +435,7 @@ impl PythonArchEvalHooks {
                             if symbols.len() > 0 {
                                 for s in symbols.iter() {
                                     if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name, &mut None) {
-                                        return EvaluationSymbolWeak{weak: Rc::downgrade(s), instance: true, is_super: false};
+                                        return EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false);
                                     }
                                 }
                                 //still here? If from module is set, dependencies are not met
@@ -480,13 +480,13 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        EvaluationSymbolWeak{weak: Weak::new(), instance: true, is_super: false}
+        EvaluationSymbolWeak::new(Weak::new(), Some(true), false)
     }
 
     pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
         let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, file_symbol);
-        result.instance = false;
+        result.set_is_instance(Some(false));
         result
     }
 
@@ -495,7 +495,7 @@ impl PythonArchEvalHooks {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
             if test_cursor_sym.len() > 0 {
-                    return EvaluationSymbolWeak{weak: Rc::downgrade(test_cursor_sym.last().unwrap()), instance: true, is_super: false};
+                    return EvaluationSymbolWeak::new(Rc::downgrade(test_cursor_sym.last().unwrap()), Some(true), false);
             } else {
                     return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
             }
@@ -536,7 +536,7 @@ impl PythonArchEvalHooks {
         get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
                 Rc::downgrade(return_sym.last().unwrap()),
-                true,
+                Some(true),
                 HashMap::new(),
                 None,
                 Some(PythonArchEvalHooks::eval_get)
@@ -557,7 +557,7 @@ impl PythonArchEvalHooks {
         }
         let comodel = comodel.unwrap().as_string();
         //TODO let comodel_sym = odoo.models.get(comodel);
-        EvaluationSymbolWeak{weak: Weak::new(), instance: false, is_super: false}
+        EvaluationSymbolWeak::new(Weak::new(), Some(false), false)
     }
 
     fn _update_get_eval_relational(symbol: Rc<RefCell<Symbol>>) {
@@ -568,7 +568,7 @@ impl PythonArchEvalHooks {
         get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
                 Weak::new(),
-                true,
+                Some(true),
                 HashMap::new(),
                 None,
                 Some(PythonArchEvalHooks::eval_relational)

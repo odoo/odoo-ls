@@ -487,7 +487,7 @@ impl PythonArchEval {
                         let mut var_bw = variable.borrow_mut();
                         let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id.to_string()).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
                         symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap())));
-                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().instance = true;
+                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().set_is_instance(Some(true));
                         is_first = false;
                         continue;
                     }
