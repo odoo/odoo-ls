@@ -7,6 +7,7 @@ use ruff_text_size::{Ranged, TextRange};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace};
+use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
 use crate::constants::*;
@@ -21,7 +22,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
-use super::evaluation::ContextValue;
+use super::evaluation::{ContextValue, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
@@ -190,7 +191,9 @@ impl PythonArchEval {
     ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
     fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<Symbol>>, from_sym: &Rc<RefCell<Symbol>>) -> bool {
         let sym_ref_cl = sym_ref.clone();
-        let syms_followed = Symbol::follow_ref(&sym_ref_cl, session, &mut None, false, false, None, &mut self.diagnostics);
+        let syms_followed = Symbol::follow_ref(&EvaluationSymbolWeak::new(
+            Rc::downgrade(&sym_ref_cl), None, false
+        ), session, &mut None, false, false, None, &mut self.diagnostics);
         for sym in syms_followed.iter() {
             let weak_sym = sym.weak.clone();
             let sym = weak_sym.upgrade().unwrap();
@@ -236,7 +239,7 @@ impl PythonArchEval {
                 let import_sym_ref = _import_result.symbol.clone();
                 let has_loop = self.check_for_loop_evaluation(session, import_sym_ref, &variable);
                 if !has_loop { //anti-loop. We want to be sure we are not evaluating to the same sym
-                    variable.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(&_import_result.symbol))]);
+                    variable.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(&_import_result.symbol), None)]);
                     let file_of_import_symbol = _import_result.symbol.borrow().get_file();
                     if let Some(import_file) = file_of_import_symbol {
                         let import_file = import_file.upgrade().unwrap();
@@ -415,9 +418,8 @@ impl PythonArchEval {
                 continue;
             }
             let eval_base = &eval_base[0];
-            let symbol_weak = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None).weak;
-            let symbol = symbol_weak.upgrade().unwrap();
-            let ref_sym = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+            let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, true, false, None, &mut vec![]);
             if ref_sym.len() > 1 {
                 self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
@@ -486,8 +488,7 @@ impl PythonArchEval {
                     if is_first && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
                         let mut var_bw = variable.borrow_mut();
                         let symbol = var_bw.as_func_mut().symbols.get(&arg.parameter.name.id.to_string()).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
-                        symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap())));
-                        symbol.borrow_mut().evaluations_mut().unwrap().last_mut().unwrap().symbol.get_weak_mut().instance = true;
+                        symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap()), Some(true)));
                         is_first = false;
                         continue;
                     }
@@ -566,9 +567,9 @@ impl PythonArchEval {
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
-            let weak_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).weak;
-            if let Some(symbol) = weak_symbol.upgrade() {
-                let symbol_eval = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
+            let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            if !eval_symbol.weak.is_expired() {
+                let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
                 if symbol_eval.len() == 1 && symbol_eval[0].weak.upgrade().is_some() {
                     let symbol_type_rc = symbol_eval[0].weak.upgrade().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
@@ -581,9 +582,11 @@ impl PythonArchEval {
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id.to_string(), &for_stmt.target.range());
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
+                                    let symbol = &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None);
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
                                         Evaluation::eval_from_symbol(
-                                            &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None).weak
+                                            &symbol.weak,
+                                            symbol.instance
                                         )
                                     );
                                 }

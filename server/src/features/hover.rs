@@ -112,9 +112,9 @@ impl HoverFeature {
                         if let Some(func_eval) = func_eval {
                             let mut type_names = HashSet::new();
                             for eval in func_eval.iter() {
-                                let s = eval.symbol.get_symbol(session, context, &mut vec![], None).weak;
-                                if let Some(s) = s.upgrade() {
-                                    let weak_eval_symbols = Symbol::follow_ref(&s, session, context, true, false, None, &mut vec![]);
+                                let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
+                                if !eval_symbol.weak.is_expired(){
+                                    let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
                                     for weak_eval_symbol in weak_eval_symbols.iter() {
                                         if let Some(s_type) = weak_eval_symbol.weak.upgrade() {
                                             let typ = s_type.borrow();
@@ -179,13 +179,12 @@ impl HoverFeature {
             if index != 0 {
                 value += "  \n***  \n";
             }
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).weak;
-            if symbol.is_expired() {
+            let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let Some(symbol) = eval_symbol.weak.upgrade() else {
                 continue;
-            }
-            let symbol = symbol.upgrade().unwrap();
+            };
             let mut context = Some(eval.symbol.context.clone());
-            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, None, &mut vec![]);
+            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
             //search for a constant evaluation like a model name
             if let Some(eval_value) = eval.value.as_ref() {
                 match eval_value {
