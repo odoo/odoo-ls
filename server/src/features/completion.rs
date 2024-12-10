@@ -3,9 +3,10 @@ use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::Ranged;
+use weak_table::traits::WeakElement;
 
 use crate::constants::SymType;
-use crate::core::evaluation::Evaluation;
+use crate::core::evaluation::{Evaluation, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -544,8 +545,8 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
 
         for parent_eval in parent.iter() {
             let parent_sym_eval_weak = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone()));
-            if let Some(parent_sym) = parent_sym_eval_weak.weak.upgrade() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym, session, &mut None, true, false, None, &mut vec![]);
+            if !parent_sym_eval_weak.weak.is_expired() {
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval_weak, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     if let Some(parent_sym) = parent_sym_type.weak.upgrade() {
                         let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
@@ -574,8 +575,9 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start()).0;
     for eval in subscripted.iter() {
-        if let Some(symbol) = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone())).weak.upgrade() {
-            let symbol_types = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+        let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone()));
+        if !eval_symbol.weak.is_expired() {
+            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, true, false, None, &mut vec![]);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.weak.upgrade() {
                     let borrowed = symbol_type.borrow();
@@ -628,7 +630,11 @@ fn complete_list(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_lis
 
 fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dependency: Option<String>) -> CompletionItem {
     //TODO use dependency to show it? or to filter depending of configuration
-    let typ = Symbol::follow_ref(symbol, session, &mut None, true, true, None, &mut vec![]);
+    let typ = Symbol::follow_ref(&EvaluationSymbolWeak::new(
+        Rc::downgrade(symbol),
+        None,
+        false,
+    ), session, &mut None, true, true, None, &mut vec![]);
     let mut label_details = Some(CompletionItemLabelDetails {
         detail: None,
         description: None,
@@ -771,7 +777,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, None, &vec![Evaluation::eval_from_symbol(&Rc::downgrade(symbol))])
+                value: HoverFeature::build_markdown_description(session, None, &vec![Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None)])
             })),
         ..Default::default()
     }
