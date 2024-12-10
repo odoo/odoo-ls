@@ -354,16 +354,19 @@ impl PythonArchBuilder {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
+        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
-        let mut func_sym = sym_bw.as_func_mut();
+        let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
                 func_sym.is_static = true;
             }
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
                 func_sym.is_property = true;
+            }
+            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "overload" {
+                func_sym.is_overloaded = true;
             }
         }
         if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {
