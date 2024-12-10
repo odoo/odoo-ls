@@ -1506,16 +1506,14 @@ impl Symbol {
         }
     }
 
-    pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolWeak> {
+    pub fn follow_ref(evaluation: &EvaluationSymbolWeak, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolWeak> {
+        let Some(symbol) = evaluation.weak.upgrade() else {
+            return vec![evaluation.clone()];
+        };
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
         if results.is_empty() {
-            return vec![
-                EvaluationSymbolWeak{
-                    weak: Rc::downgrade(symbol),
-                    instance: symbol.borrow().typ() == SymType::VARIABLE,
-                    is_super: false,}
-                ];
+            return vec![evaluation.clone()];
         }
         //there is a 'next_ref'. Remove "parent" from context if any
         if context.is_some() {
@@ -1534,7 +1532,7 @@ impl Symbol {
             let sym = sym.borrow();
             match *sym {
                 Symbol::Variable(ref v) => {
-                    if stop_on_type && !next_ref.instance && !v.is_import_variable {
+                    if stop_on_type && !next_ref.is_instance().unwrap_or(false) && !v.is_import_variable {
                         index += 1;
                         continue;
                     }

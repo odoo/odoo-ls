@@ -20,6 +20,7 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
+use super::evaluation::EvaluationSymbolWeak;
 use super::import_resolver::ImportResult;
 use super::symbols::function_symbol::{Argument, ArgumentType};
 
@@ -50,6 +51,10 @@ impl PythonArchBuilder {
         let symbol = &self.sym_stack[0];
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to extract
+        }
+        
+        if self.sym_stack[0].borrow().name() == "account_payment" {
+            println!("here");
         }
         {
             let file = symbol.borrow();
@@ -137,7 +142,9 @@ impl PythonArchBuilder {
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
-                    let all = Symbol::follow_ref(all, session, &mut None, false, true, None, &mut self.diagnostics);
+                    let all = Symbol::follow_ref(&EvaluationSymbolWeak::new(
+                        Rc::downgrade(all), None, false
+                    ), session, &mut None, false, true, None, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
                         if !all.weak.is_expired() {
                             let all = all.weak.upgrade();
@@ -379,9 +386,13 @@ impl PythonArchBuilder {
         for arg in func_def.parameters.args.iter() {
             let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
+            let mut default = None;
+            if arg.default.is_some() {
+                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
+            }
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
-                default_value: None,
+                default_value: default,
                 arg_type: ArgumentType::ARG
             });
         }
