@@ -870,6 +870,9 @@ impl Evaluation {
     }
 
     fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, exprCall: &ExprCall, is_on_instance: bool) -> Vec<Diagnostic> {
+        if function.is_overloaded() {
+            return vec![];
+        }
         let mut diagnostics = vec![];
         //validate pos args first
         let mut arg_index = 0;

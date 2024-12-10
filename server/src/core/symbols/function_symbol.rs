@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{constants::{BuildStatus, BuildSteps}, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, SymType}, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -43,6 +43,7 @@ pub struct FunctionSymbol {
     pub range: TextRange,
     pub body_range: TextRange,
     pub args: Vec<Argument>,
+    pub is_overloaded: bool, //used for @overload decorator. Only indicates if the decorator is present. Use is_overloaded() to know if this function is overloaded
 
     //Trait SymbolMgr
     //--- Body content
@@ -76,7 +77,8 @@ impl FunctionSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
-            args: vec![]
+            args: vec![],
+            is_overloaded: false,
         };
         res._init_symbol_mgr();
         res
@@ -117,6 +119,22 @@ impl FunctionSymbol {
         for arg in self.args.iter() {
             if arg.arg_type != ArgumentType::KWARG && arg.arg_type != ArgumentType::KWORD_ONLY {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    /* Return true if a previous implementation has the @overload decorator or has it itself */
+    pub fn is_overloaded(&self) -> bool {
+        if self.is_overloaded {
+            return true;
+        }
+        if let Some(parent) = &self.parent {
+            if let Some(parent) = parent.upgrade() {
+                let previous_defs = parent.borrow().get_content_symbol(&self.name, self.range.start().to_u32());
+                if previous_defs.len() > 1 && previous_defs.last().unwrap().borrow().typ() == SymType::FUNCTION {
+                    return previous_defs.last().unwrap().borrow().as_func().is_overloaded;
+                }
             }
         }
         return false;
