@@ -38,7 +38,7 @@ impl PythonOdooBuilder {
         let mut path = symbol.paths()[0].clone();
         if vec![SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED].contains(&symbol.typ()) {
             return;
-        } else if symbol.typ() == SymType::PACKAGE {
+        } else if matches!(symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__").with_extension(S!("py") + symbol.as_package().i_ext().as_str()).sanitize();
         }
         symbol.set_build_status(BuildSteps::ODOO, BuildStatus::IN_PROGRESS);
@@ -103,14 +103,7 @@ impl PythonOdooBuilder {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
                             symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![S!(s.value.to_str())];
                         },
-                        EvaluationValue::LIST(l) => {
-                            for e in l {
-                                if let Expr::StringLiteral(s) = e {
-                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
-                                }
-                            }
-                        },
-                        EvaluationValue::TUPLE(l) => {
+                        EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
                                     symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
@@ -179,7 +172,7 @@ impl PythonOdooBuilder {
     }
 
     fn _get_attribute(&mut self, session: &mut SessionInfo, loc_sym: &mut Symbol, attr: &String) -> Option<EvaluationValue> {
-        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false);
+        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false, false);
         if attr_sym.len() == 0 {
             return None;
         }

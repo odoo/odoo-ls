@@ -3,7 +3,7 @@ use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::constants::*;
-use crate::core::evaluation::{Context, Evaluation};
+use crate::core::evaluation::{Context, Evaluation, EvaluationSymbolWeak};
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -27,7 +27,7 @@ use super::class_symbol::ClassSymbol;
 use super::compiled_symbol::CompiledSymbol;
 use super::file_symbol::FileSymbol;
 use super::namespace_symbol::{NamespaceDirectory, NamespaceSymbol};
-use super::package_symbol::PackageSymbol;
+use super::package_symbol::{PackageSymbol, PythonPackageSymbol};
 use super::symbol_mgr::SymbolMgr;
 use super::variable_symbol::VariableSymbol;
 
@@ -307,6 +307,19 @@ impl Symbol {
         }
     }
 
+    pub fn as_python_package(&self) -> &PythonPackageSymbol {
+        match self {
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a python package")}
+        }
+    }
+    pub fn as_python_package_mut(&mut self) -> &mut PythonPackageSymbol {
+        match self {
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a python package")}
+        }
+    }
+
     pub fn as_variable(&self) -> &VariableSymbol {
         match self {
             Symbol::Variable(v) => v,
@@ -364,7 +377,8 @@ impl Symbol {
         match self {
             Symbol::Root(_) => SymType::ROOT,
             Symbol::Namespace(_) => SymType::NAMESPACE,
-            Symbol::Package(_) => SymType::PACKAGE,
+            Symbol::Package(PackageSymbol::Module(_)) => SymType::PACKAGE(PackageType::MODULE),
+            Symbol::Package(PackageSymbol::PythonPackage(_)) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
             Symbol::File(_) => SymType::FILE,
             Symbol::Compiled(_) => SymType::COMPILED,
             Symbol::Class(_) => SymType::CLASS,
@@ -865,7 +879,6 @@ impl Symbol {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             return Some(parent.borrow_mut().add_new_file(session, &name, &path_str));
         }
-
         if parent.borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = parent.borrow_mut().add_new_module_package(session, &name, path);
             if let Some(module) = module {
@@ -1143,12 +1156,6 @@ impl Symbol {
                 panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
             }
         }
-        if self.typ() != SymType::FILE && self.typ() != SymType::PACKAGE {
-            panic!("Dependencies should be only on files");
-        }
-        if symbol.typ() != SymType::FILE && symbol.typ() != SymType::PACKAGE {
-            panic!("Dependencies should be only on files");
-        }
         let step_i = step as usize;
         let level_i = dep_level as usize;
         self.dependencies_mut()[step_i][level_i].insert(symbol.get_rc().unwrap());
@@ -1179,7 +1186,7 @@ impl Symbol {
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let sym_to_inv = ref_to_inv.borrow();
-            if [SymType::FILE, SymType::PACKAGE].contains(&sym_to_inv.typ()) {
+            if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_)) {
                 if *step == BuildSteps::ARCH {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH as usize].iter().enumerate() {
                         for sym in hashset {
@@ -1246,7 +1253,7 @@ impl Symbol {
     }
 
     pub fn invalidate_sub_functions(&mut self, _session: &mut SessionInfo) {
-        if vec![SymType::PACKAGE, SymType::FILE].contains(&self.typ()) {
+        if matches!(&self.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             for func in self.iter_inner_functions() {
                 func.borrow_mut().evaluations_mut().unwrap().clear();
                 func.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
@@ -1271,17 +1278,29 @@ impl Symbol {
                 continue;
             }
             vec_to_unload.pop_front();
-            if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || mut_symbol.typ() == SymType::PACKAGE) {
+            if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || matches!(mut_symbol.typ(), SymType::PACKAGE(_))) {
                 info!("Unloading symbol {:?} at {:?}", mut_symbol.name(), mut_symbol.paths());
             }
             //unload symbol
             let parent = mut_symbol.parent().as_ref().unwrap().upgrade().unwrap().clone();
-            let mut parent = parent.borrow_mut();
+            let mut parent_bw = parent.borrow_mut();
             drop(mut_symbol);
-            parent.remove_symbol(ref_to_unload.clone());
-            drop(parent);
-            if vec![SymType::FILE, SymType::PACKAGE].contains(&ref_to_unload.borrow().typ()) {
+            parent_bw.remove_symbol(ref_to_unload.clone());
+            drop(parent_bw);
+            if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
+            }
+            //check if we should not reimport automatically
+            match ref_to_unload.borrow().typ() {
+                SymType::PACKAGE(PackageType::MODULE) => {
+                    session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
+                },
+                SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
+                    if ref_to_unload.borrow().as_python_package().self_import {
+                        session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
+                    }
+                }
+                _ => {}
             }
             match *ref_to_unload.borrow_mut() {
                 Symbol::Package(PackageSymbol::Module(ref mut m)) => {
@@ -1348,7 +1367,7 @@ impl Symbol {
         if sym_types.contains(&self.typ()) {
             return self.weak_self().clone();
         }
-        if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
+        if stop_same_file && matches!(&self.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             return None;
         }
         if self.parent().is_some() {
@@ -1361,7 +1380,7 @@ impl Symbol {
         if Rc::ptr_eq(&self.weak_self().unwrap().upgrade().unwrap(), &rc) {
             return true;
         }
-        if stop_same_file && vec![SymType::FILE, SymType::PACKAGE].contains(&self.typ()) {
+        if stop_same_file && matches!(&self.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             return false;
         }
         if self.parent().is_some() {
@@ -1425,7 +1444,7 @@ impl Symbol {
     }
 
     pub fn get_file(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE {
+        if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
@@ -1435,7 +1454,7 @@ impl Symbol {
     }
 
     pub fn parent_file_or_function(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if self.typ() == SymType::FILE || self.typ() == SymType::PACKAGE || self.typ() == SymType::FUNCTION {
+        if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) || self.typ() == SymType::FUNCTION {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
@@ -1467,14 +1486,14 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolWeak> {
         match symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
                     //TODO context is modified in each for loop, which is wrong if a key in context is specific to one result!
                     let sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
-                    if !sym.0.is_expired() {
+                    if !sym.weak.is_expired() {
                         res.push_back(sym);
                     }
                 }
@@ -1487,11 +1506,14 @@ impl Symbol {
         }
     }
 
-    pub fn follow_ref(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<(Weak<RefCell<Symbol>>, bool)> {
+    pub fn follow_ref(evaluation: &EvaluationSymbolWeak, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolWeak> {
+        let Some(symbol) = evaluation.weak.upgrade() else {
+            return vec![evaluation.clone()];
+        };
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
         if results.is_empty() {
-            return vec![(Rc::downgrade(symbol), symbol.borrow().typ() == SymType::VARIABLE)];
+            return vec![evaluation.clone()];
         }
         //there is a 'next_ref'. Remove "parent" from context if any
         if context.is_some() {
@@ -1500,8 +1522,8 @@ impl Symbol {
         let can_eval_external = !symbol.borrow().is_external();
         let mut index = 0;
         while index < results.len() {
-            let (sym, instance) = &results[index];
-            let sym = sym.upgrade();
+            let next_ref = &results[index];
+            let sym = next_ref.weak.upgrade();
             if sym.is_none() {
                 index += 1;
                 continue;
@@ -1510,7 +1532,7 @@ impl Symbol {
             let sym = sym.borrow();
             match *sym {
                 Symbol::Variable(ref v) => {
-                    if stop_on_type && !instance && !v.is_import_variable {
+                    if stop_on_type && !next_ref.is_instance().unwrap_or(false) && !v.is_import_variable {
                         index += 1;
                         continue;
                     }
@@ -1606,7 +1628,7 @@ impl Symbol {
     }
 
     //store in result all available members for self: sub symbols, base class elements and models symbols
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>) {
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -1618,35 +1640,37 @@ impl Symbol {
         let typ = symbol.borrow().typ().clone();
         match typ {
             SymType::CLASS => {
-                for symbol in symbol.borrow().all_symbols() {
-                    let name = symbol.borrow().name().clone();
-                    if let Some(vec) = result.get_mut(&name) {
-                        vec.push((symbol, None));
-                    } else {
-                        result.insert(name.clone(), vec![(symbol, None)]);
+                // Skip current class symbols for super
+                if !is_super{
+                    for symbol in symbol.borrow().all_symbols() {
+                        let name = symbol.borrow().name().clone();
+                        if let Some(vec) = result.get_mut(&name) {
+                            vec.push((symbol, None));
+                        } else {
+                            result.insert(name.clone(), vec![(symbol, None)]);
+                        }
                     }
                 }
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
-                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc);
+                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
                 }
-                if with_co_models {
-                    let sym = symbol.borrow();
-                    let model_data = sym.as_class_sym()._model.as_ref();
-                    if let Some(model_data) = model_data {
-                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
-                        if let Some(model) = model {
-                            for model_sym in model.borrow().all_symbols(session, from_module) {
-                                if !Rc::ptr_eq(symbol, &model_sym.0) {
-                                    for s in model_sym.0.borrow().all_symbols() {
-                                        let name = s.borrow().name().clone();
-                                        if let Some(vec) = result.get_mut(&name) {
-                                            vec.push((s, Some(model_sym.0.borrow().name().clone())));
-                                        } else {
-                                            result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
-                                        }
-                                    }
+                if !with_co_models { return }
+                let sym = symbol.borrow();
+                let model_data = sym.as_class_sym()._model.as_ref();
+                if model_data.is_none() { return }
+                let model_data = model_data.unwrap();
+                let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                if let Some(model) = model {
+                    for model_sym in model.borrow().all_symbols(session, from_module) {
+                        if !Rc::ptr_eq(symbol, &model_sym.0) {
+                            for s in model_sym.0.borrow().all_symbols() {
+                                let name = s.borrow().name().clone();
+                                if let Some(vec) = result.get_mut(&name) {
+                                    vec.push((s, Some(model_sym.0.borrow().name().clone())));
+                                } else {
+                                    result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
                                 }
                             }
                         }
@@ -1665,7 +1689,6 @@ impl Symbol {
             }
         }
     }
-
     /* return the Symbol (class, function or file) the closest to the given offset */
     pub fn get_scope_symbol(file_symbol: Rc<RefCell<Symbol>>, offset: u32, is_param: bool) -> Rc<RefCell<Symbol>> {
         let mut result = file_symbol.clone();
@@ -1712,7 +1735,7 @@ impl Symbol {
         //get local symbols
         on_symbol.borrow().all_symbols().for_each(|sym| {
             if sym.borrow().name().starts_with(name) {
-                if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                     results.push(sym.clone());
                 }
             }
@@ -1722,7 +1745,7 @@ impl Symbol {
             let file = file.upgrade().unwrap();
             file.borrow().all_symbols().for_each(|sym| {
                 if sym.borrow().name().starts_with(name) {
-                    if position.is_none() || position.unwrap() > sym.borrow().range().end().to_u32() {
+                    if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                         results.push(sym.clone());
                     }
                 }
@@ -1737,7 +1760,7 @@ impl Symbol {
         //TODO implement 'super' behaviour in hooks
         let on_symbol = on_symbol.borrow();
         results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
-        if results.len() == 0 && !vec![SymType::FILE, SymType::PACKAGE, SymType::ROOT].contains(&on_symbol.typ()) {
+        if results.len() == 0 && !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
             let mut parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
             while parent.borrow().typ() == SymType::CLASS {
                 let _parent = parent.borrow().parent().unwrap().upgrade().unwrap();
@@ -1799,7 +1822,7 @@ impl Symbol {
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
+    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool, is_super: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut diagnostics: Vec<Diagnostic> = vec![];
         self.member_symbol_hook(session, name, &mut diagnostics);
@@ -1811,12 +1834,14 @@ impl Symbol {
                 return (vec![mod_sym], diagnostics);
             }
         }
-        let content_sym = self.get_sub_symbol(name, u32::MAX);
-        if content_sym.len() >= 1 {
-            if all {
-                result.extend(content_sym);
-            } else {
-                return (content_sym, diagnostics);
+        if !is_super{
+            let content_sym = self.get_sub_symbol(name, u32::MAX);
+            if content_sym.len() >= 1 {
+                if all {
+                    result.extend(content_sym);
+                } else {
+                    return (content_sym, diagnostics);
+                }
             }
         }
         if self.typ() == SymType::CLASS && self.as_class_sym()._model.is_some() && !prevent_comodel {
@@ -1832,7 +1857,7 @@ impl Symbol {
                         if self.is_equal(&loc_sym) {
                             continue;
                         }
-                        let (attribut, att_diagnostic) = loc_sym.borrow().get_member_symbol(session, name, None, true, all);
+                        let (attribut, att_diagnostic) = loc_sym.borrow().get_member_symbol(session, name, None, true, all, false);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             result.extend(attribut);
@@ -1848,7 +1873,7 @@ impl Symbol {
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
-                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all);
+                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all, false);
                     diagnostics.extend(s_diagnostic);
                     if s.len() != 0 {
                     if all {

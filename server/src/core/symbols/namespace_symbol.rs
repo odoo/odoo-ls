@@ -2,6 +2,8 @@ use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
+use crate::constants::BuildSteps;
+
 use super::symbol::Symbol;
 
 

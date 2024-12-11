@@ -138,4 +138,49 @@ key parsing error
 "Module XXXX depends on YYYY which is not found. Please review your addons paths".
 The module XXXX create a dependency on YYYY, but this module is not found with the current addon path.
 
+### OLS30311
+"First Argument to super must be a class"
 
+### OLS30312
+"Super calls outside a class scope must have at least one argument"
+
+### OLS30313
+
+"Domains should be a list of tuples".
+The provided domain is not a list of tuples. A domain should be in the form [("field", "operator", "value")]
+
+### OLS30314
+
+"Domain tuple should have 3 elements".
+Tuples in a domain should contains 3 elements: ("field", "operator", "value")
+
+### OLS30315
+
+"XXX takes Y positional arguments but Z was given".
+Number of positional arguments given as parameter to the function is wrong.
+
+### OLS30316
+
+"XXX got an unexpected keyword argument 'YYY'".
+You gave a named parameter that is not present in the function definition.
+
+### OLS30317
+
+"A String value in tuple should contains '&', '|' or '!'".
+You gave a named parameter that is not present in the function definition.
+
+### OLS30318
+
+"Invalid comparison operator".
+Tuples in search domains should be of one of these values:
+"=", "!=", ">", ">=", "<", "<=", "=?", "=like", "like", "not like", "ilike", "not ilike", "=ilike", "in", "not in", "child_of", "parent_of", "any", "not any"
+
+### OLS30319
+
+"Missing tuple after a search domain operator".
+If you use a search domain operator (&, ! or |), they should be followed by tuples or lists.
+
+### OLS30320
+
+"Invalid search domain field: XXX is not a member of YYY".
+In a search domain, the first element of a tuple must be a member of the model, or of any model in a relation if expression contains "." (see documentation)

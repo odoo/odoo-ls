@@ -1,13 +1,15 @@
+use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
 use weak_table::traits::WeakElement;
-use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation};
+use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
+use std::u32;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
@@ -32,7 +34,7 @@ impl HoverFeature {
         return Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, &evals)
+                value: HoverFeature::build_markdown_description(session, Some(file_symbol.clone()), &evals)
             }),
             range: range
         });
@@ -43,7 +45,7 @@ impl HoverFeature {
     parameters:   (type_sym)  symbol: infered_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<(Weak<RefCell<Symbol>>, bool)>, context: &mut Option<Context>) -> String {
+    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<EvaluationSymbolWeak>, context: &mut Option<Context>) -> String {
         let symbol = rc_symbol.borrow();
         //python code balise
         let mut value = S!("```python  \n");
@@ -66,13 +68,13 @@ impl HoverFeature {
         value += &format!("({}) ", type_sym);
         //variable name
         let mut single_func_eval = false;
-        if infered_types.len() == 1 && infered_types[0].0.upgrade().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].0.upgrade().unwrap().borrow().as_func().is_property {
+        if infered_types.len() == 1 && infered_types[0].weak.upgrade().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].weak.upgrade().unwrap().borrow().as_func().is_property {
             //display 'def' only if there is only a single evaluation to a function
             single_func_eval = true;
             value += "def ";
             value += &symbol.name();
             //display args
-            let function = infered_types[0].0.upgrade().unwrap();
+            let function = infered_types[0].weak.upgrade().unwrap();
             let function = function.borrow();
             let function = function.as_func();
             value += "(";
@@ -96,7 +98,7 @@ impl HoverFeature {
             value += "(";
         }
         for (index, infered_type) in infered_types.iter().enumerate() {
-            let infered_type = infered_type.0.upgrade();
+            let infered_type = infered_type.weak.upgrade();
             if let Some(infered_type) = infered_type {
                 if Rc::ptr_eq(rc_symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
                     if infered_type.borrow().typ() != SymType::CLASS {
@@ -110,11 +112,11 @@ impl HoverFeature {
                         if let Some(func_eval) = func_eval {
                             let mut type_names = HashSet::new();
                             for eval in func_eval.iter() {
-                                let s = eval.symbol.get_symbol(session, context, &mut vec![], None).0;
-                                if let Some(s) = s.upgrade() {
-                                    let s_types = Symbol::follow_ref(&s, session, context, true, false, None, &mut vec![]);
-                                    for (s_type, _instance) in s_types.iter() {
-                                        if let Some(s_type) = s_type.upgrade() {
+                                let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
+                                if !eval_symbol.weak.is_expired(){
+                                    let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
+                                    for weak_eval_symbol in weak_eval_symbols.iter() {
+                                        if let Some(s_type) = weak_eval_symbol.weak.upgrade() {
                                             let typ = s_type.borrow();
                                             if typ.typ() == SymType::VARIABLE {
                                                 //if fct is a variable, it means that evaluation is None.
@@ -149,7 +151,7 @@ impl HoverFeature {
                         }
                     } else if infered_type.typ() == SymType::FILE {
                         value += "File";
-                    } else if infered_type.typ() == SymType::PACKAGE {
+                    } else if matches!(infered_type.typ(), SymType::PACKAGE(_)) {
                         value += "Module";
                     } else if infered_type.typ() == SymType::NAMESPACE {
                         value += "Namespace";
@@ -170,30 +172,77 @@ impl HoverFeature {
         value
     }
 
-    pub fn build_markdown_description(session: &mut SessionInfo, evals: &Vec<Evaluation>) -> String {
+    pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>) -> String {
         //let eval = &evals[0]; //TODO handle more evaluations
         let mut value = S!("");
         for (index, eval) in evals.iter().enumerate() {
             if index != 0 {
                 value += "  \n***  \n";
             }
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).0;
-            if symbol.is_expired() {
+            let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let Some(symbol) = eval_symbol.weak.upgrade() else {
                 continue;
-            }
-            let symbol = symbol.upgrade().unwrap();
+            };
             let mut context = Some(eval.symbol.context.clone());
-            let type_refs = Symbol::follow_ref(&symbol, session, &mut context, true, false, None, &mut vec![]);
+            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
+            //search for a constant evaluation like a model name
+            if let Some(eval_value) = eval.value.as_ref() {
+                match eval_value {
+                    crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) => {
+                        let str = expr.value.to_string();
+                        let model = session.sync_odoo.models.get(&str).cloned();
+                        if let Some(model) = model {
+                            if let Some(file_symbol) = file_symbol.as_ref() {
+                                let from_module = file_symbol.borrow().find_module();
+                                let main_class = model.borrow().get_main_symbols(session, from_module.clone(), &mut None);
+                                for main_class in main_class.iter() {
+                                    let main_class = main_class.borrow();
+                                    let main_class_module = main_class.find_module();
+                                    if let Some(main_class_module) = main_class_module {
+                                        value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
+                                        if main_class.doc_string().is_some() {
+                                            value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                                        }
+                                        let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
+                                        other_imps.sort_by(|x, y| {
+                                            if x.1.is_none() && y.1.is_some() {
+                                                return std::cmp::Ordering::Less;
+                                            } else if x.1.is_some() && y.1.is_none() {
+                                                return std::cmp::Ordering::Greater;
+                                            } else {
+                                                return x.0.borrow().find_module().unwrap().borrow().name().cmp(&y.0.borrow().find_module().unwrap().borrow().name());
+                                            }
+                                        });
+                                        value += format!("  \n***  \n").as_str();
+                                        for other_imp in other_imps.iter() {
+                                            let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
+                                            if other_imp.1.is_none() {
+                                                value += format!("inherited in {}  \n", mod_name).as_str();
+                                            } else {
+                                                value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
+                                            }
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                        continue;
+                    },
+                    _ => {
+                    }
+                }
+            }
             // BLOCK 1: (type) **name** -> infered_type
             value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
-                let typ = typ.0.upgrade();
+                let typ = typ.weak.upgrade();
                 if let Some(typ) = typ {
                     let paths = &typ.borrow().paths();
                     if paths.len() == 1 { //we won't put a link to a namespace
                         let mut base_path = paths.first().unwrap().clone();
-                        if typ.borrow().typ() == SymType::PACKAGE {
+                        if matches!(typ.borrow().typ(), SymType::PACKAGE(_)) {
                             base_path = PathBuf::from(base_path).join(format!("__init__.py{}", typ.borrow().as_package().i_ext())).sanitize();
                         }
                         let path = FileMgr::pathname2uri(&base_path);
@@ -208,7 +257,7 @@ impl HoverFeature {
             }
             // BLOCK 3: documentation
             for typ in type_refs.iter() {
-                let typ = typ.0.upgrade();
+                let typ = typ.weak.upgrade();
                 if let Some(typ) = typ {
                     if typ.borrow().doc_string().is_some() {
                         value = value + "  \n***  \n" + typ.borrow().doc_string().as_ref().unwrap();

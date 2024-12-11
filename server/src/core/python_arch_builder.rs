@@ -20,8 +20,9 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
+use super::evaluation::EvaluationSymbolWeak;
 use super::import_resolver::ImportResult;
-use super::symbols::function_symbol::Argument;
+use super::symbols::function_symbol::{Argument, ArgumentType};
 
 
 #[derive(Debug)]
@@ -46,10 +47,14 @@ impl PythonArchBuilder {
         }
     }
 
-    pub fn load_arch(&mut self, session: &mut SessionInfo) -> Result<(), Error> {
+    pub fn load_arch(&mut self, session: &mut SessionInfo) {
         let symbol = &self.sym_stack[0];
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
-            return Ok(()); // nothing to extract
+            return; // nothing to extract
+        }
+        
+        if self.sym_stack[0].borrow().name() == "account_payment" {
+            println!("here");
         }
         {
             let file = symbol.borrow();
@@ -59,13 +64,13 @@ impl PythonArchBuilder {
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
         }
-        trace!("evaluating {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
+        trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = match self.file.borrow().typ() {
             SymType::FILE => {
                 self.file.borrow().paths()[0].clone()
             },
-            SymType::PACKAGE => {
+            SymType::PACKAGE(_) => {
                 PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
             },
             _ => panic!("invalid symbol type to extract path")
@@ -84,6 +89,9 @@ impl PythonArchBuilder {
                 },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
+        if !file_info_rc.borrow().valid {
+            return
+        }
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
@@ -97,7 +105,7 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
-            self.visit_node(session, &ast)?;
+            self.visit_node(session, &ast);
             self._resolve_all_symbols(session);
             if self.file_mode {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
@@ -110,7 +118,6 @@ impl PythonArchBuilder {
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        Ok(())
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
@@ -135,10 +142,12 @@ impl PythonArchBuilder {
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
-                    let all = Symbol::follow_ref(all, session, &mut None, false, true, None, &mut self.diagnostics);
+                    let all = Symbol::follow_ref(&EvaluationSymbolWeak::new(
+                        Rc::downgrade(all), None, false
+                    ), session, &mut None, false, true, None, &mut self.diagnostics);
                     if let Some(all) = all.get(0) {
-                        if !all.0.is_expired() {
-                            let all = all.0.upgrade();
+                        if !all.weak.is_expired() {
+                            let all = all.weak.upgrade();
                             if let Some(all) = all {
                                 let all = (*all).borrow();
                                 if all.evaluations().is_some() && all.evaluations().unwrap().len() == 1 {
@@ -182,7 +191,7 @@ impl PythonArchBuilder {
                     let mut sym_bw = sym.borrow_mut();
                     let evaluation = &sym_bw.as_variable_mut().evaluations[0];
                     let evaluated_type = &evaluation.symbol;
-                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).0;
+                    let evaluated_type = evaluated_type.get_symbol(session, &mut None, &mut self.diagnostics, None).weak;
                     if !evaluated_type.is_expired() {
                         let evaluated_type = evaluated_type.upgrade().unwrap();
                         let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
@@ -236,7 +245,7 @@ impl PythonArchBuilder {
                     self.visit_for(session, for_stmt)?;
                 },
                 Stmt::With(with_stmt) => {
-                    self.visit_with(session, with_stmt);
+                    self.visit_with(session, with_stmt)?;
                 },
                 _ => {}
             }
@@ -345,16 +354,19 @@ impl PythonArchBuilder {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
+        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
-        let mut func_sym = sym_bw.as_func_mut();
+        let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
                 func_sym.is_static = true;
             }
             if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
                 func_sym.is_property = true;
+            }
+            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "overload" {
+                func_sym.is_overloaded = true;
             }
         }
         if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {
@@ -365,14 +377,53 @@ impl PythonArchBuilder {
         }
         drop(sym_bw);
         //add params
-        for arg in func_def.parameters.posonlyargs.iter().chain(&func_def.parameters.args) {
+        for arg in func_def.parameters.posonlyargs.iter() {
             let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: None,
-                is_args: false,
-                is_kwargs: false,
+                arg_type: ArgumentType::POS_ONLY
+            });
+        }
+        for arg in func_def.parameters.args.iter() {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let mut default = None;
+            if arg.default.is_some() {
+                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
+            }
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: default,
+                arg_type: ArgumentType::ARG
+            });
+        }
+        if let Some(arg) = &func_def.parameters.vararg {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::VARARG
+            });
+        }
+        for arg in func_def.parameters.kwonlyargs.iter() {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.parameter.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::KWORD_ONLY
+            });
+        }
+        if let Some(arg) = &func_def.parameters.kwarg {
+            let param = sym.borrow_mut().add_new_variable(session, &arg.name.id.to_string(), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::KWARG
             });
         }
         //visit body
