@@ -554,8 +554,8 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                         Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval_weak.is_super);
                         for (_symbol_name, symbols) in all_symbols {
                             //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
-                            for (final_sym, dep) in symbols.iter() {
-                                if final_sym.borrow().name().starts_with(attr.attr.id.as_str()) {
+                            if _symbol_name.starts_with(attr.attr.id.as_str()) {
+                                if let Some((final_sym, dep)) = symbols.first() {
                                     items.push(build_completion_item_from_symbol(session, final_sym, dep.clone()));
                                 }
                             }
