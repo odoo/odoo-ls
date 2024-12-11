@@ -1651,30 +1651,30 @@ impl Symbol {
                         }
                     }
                 }
-                let bases = symbol.borrow().as_class_sym().bases.clone();
-                for base in bases.iter() {
-                    //no comodel as we will process only model in base class (overrided _name?)
-                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
-                }
-                if !with_co_models { return }
-                let sym = symbol.borrow();
-                let model_data = sym.as_class_sym()._model.as_ref();
-                if model_data.is_none() { return }
-                let model_data = model_data.unwrap();
-                let model = session.sync_odoo.models.get(&model_data.name).cloned();
-                if let Some(model) = model {
-                    for model_sym in model.borrow().all_symbols(session, from_module) {
-                        if !Rc::ptr_eq(symbol, &model_sym.0) {
-                            for s in model_sym.0.borrow().all_symbols() {
-                                let name = s.borrow().name().clone();
-                                if let Some(vec) = result.get_mut(&name) {
-                                    vec.push((s, Some(model_sym.0.borrow().name().clone())));
-                                } else {
-                                    result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
+                if with_co_models {
+                    let sym = symbol.borrow();
+                    let model_data =  sym.as_class_sym()._model.as_ref();
+                    if let Some(model_data) = model_data {
+                        if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
+                            for model_sym in model.borrow().all_symbols(session, from_module.clone()) {
+                                if !Rc::ptr_eq(symbol, &model_sym.0) {
+                                    for s in model_sym.0.borrow().all_symbols() {
+                                        let name = s.borrow().name().clone();
+                                        if let Some(vec) = result.get_mut(&name) {
+                                            vec.push((s, Some(model_sym.0.borrow().name().clone())));
+                                        } else {
+                                            result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                }
+                let bases = symbol.borrow().as_class_sym().bases.clone();
+                for base in bases.iter() {
+                    //no comodel as we will process only model in base class (overrided _name?)
+                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
                 }
             },
             _ => {
