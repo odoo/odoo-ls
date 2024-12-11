@@ -163,3 +163,19 @@ Number of positional arguments given as parameter to the function is wrong.
 
 "XXX got an unexpected keyword argument 'YYY'".
 You gave a named parameter that is not present in the function definition.
+
+### OLS30317
+
+"A String value in tuple should contains '&', '|' or '!'".
+You gave a named parameter that is not present in the function definition.
+
+### OLS30318
+
+"Invalid comparison operator".
+Tuples in search domains should be of one of these values:
+"=", "!=", ">", ">=", "<", "<=", "=?", "=like", "like", "not like", "ilike", "not ilike", "=ilike", "in", "not in", "child_of", "parent_of", "any", "not any"
+
+### OLS30319
+
+"Missing tuple after a search domain operator".
+If you use a search domain operator (&, ! or |), they should be followed by tuples or lists.
