@@ -2,7 +2,7 @@ use ruff_python_ast::{Expr, ExprCall, Identifier, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::i32;
 use std::rc::{Rc, Weak};
@@ -756,6 +756,7 @@ impl Evaluation {
                                 diagnostics.extend(Evaluation::validate_call_arguments(session,
                                     &base_sym.borrow().as_func(),
                                     expr,
+                                    context.as_ref().unwrap().get_key_value(&S!("parent")).unwrap_or((&S!(""), &ContextValue::SYMBOL(Weak::new()))).1.as_symbol(),
                                     on_instance));
                             }
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
@@ -869,7 +870,7 @@ impl Evaluation {
         AnalyzeAstResult { evaluations: evals, effective_sym, factory, diagnostics }
     }
 
-    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, exprCall: &ExprCall, is_on_instance: bool) -> Vec<Diagnostic> {
+    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, exprCall: &ExprCall, on_object: Weak<RefCell<Symbol>>, is_on_instance: bool) -> Vec<Diagnostic> {
         if function.is_overloaded() {
             return vec![];
         }
@@ -938,7 +939,7 @@ impl Evaluation {
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
                 //positional or arg
-                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap(), arg));
+                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap(), arg, on_object.clone()));
             }
             arg_index += 1;
         }
@@ -950,7 +951,7 @@ impl Evaluation {
                 let mut found_one = false;
                 for (arg_index, func_arg) in function.args.iter().skip(to_skip as usize).enumerate() {
                     if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {
-                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value));
+                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone()));
                         min_index_called_arg_with_kw = arg_index as i32 + to_skip;
                         found_one = true;
                         break;
@@ -984,7 +985,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_domain(session: &mut SessionInfo, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if !matches!(value, Expr::List(_)) {
             return diagnostics;
@@ -992,10 +993,11 @@ impl Evaluation {
         /*let from_module = None;
         let model = None;
         let domain = None;*/
-        let need_tuple = 0;
+        let mut need_tuple = 0;
         for item in value.as_list_expr().unwrap().elts.iter() {
             match item {
                 Expr::Tuple(t) => {
+                    need_tuple = max(need_tuple - 1, 0);
                     if t.elts.len() != 3 {
                         diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
@@ -1007,10 +1009,11 @@ impl Evaluation {
                             None,
                         ));
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::List(l) => {
+                    need_tuple = max(need_tuple - 1, 0);
                     if l.elts.len() != 3 {
                         diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(l.range().start().to_u32(), 0), Position::new(l.range().end().to_u32(), 0)),
@@ -1022,30 +1025,89 @@ impl Evaluation {
                             None,
                         ));
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::StringLiteral(s) => {
-
+                    let value = s.value.to_string();
+                    match value.as_str() {
+                        "&" | "|" => {
+                            if need_tuple == 0 {
+                                need_tuple = 1;
+                            }
+                            need_tuple += 1;
+                        },
+                        "!"  => {
+                            if need_tuple == 0 {
+                                need_tuple = 1;
+                            }
+                        }
+                        _ => {
+                            diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30317"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("A String value in tuple should contains '&', '|' or '!'"),
+                                None,
+                                None,
+                            ));
+                        }
+                    }
                 },
                 _ => {//do not handle for now
                 }
             }
         }
+        if need_tuple > 0 {
+            diagnostics.push(Diagnostic::new(
+                Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30319"))),
+                Some(EXTENSION_NAME.to_string()),
+                format!("Missing tuple after a search domain operator"),
+                None,
+                None,
+            ));
+        }
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
-        
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+        //parameter 1
+        if let Some(on_object) = on_object.upgrade() { //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
+
+        }
+        //parameter 2
+        match elt2 {
+            Expr::StringLiteral(s) => {
+                match s.value.to_str() {
+                    "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
+                    "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
+                    _ => {
+                        diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30318"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("Invalid comparison operator"),
+                            None,
+                            None,
+                        ));
+                    }
+                }
+            },
+            _ => {}
+        }
     }
 
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<RefCell<Symbol>>) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if let Some(symbol) = function_arg.symbol.upgrade() {
             if symbol.borrow().evaluations().unwrap_or(&vec![]).len() == 1 {
                 match symbol.borrow().evaluations().unwrap()[0].symbol.sym.clone() {
                     EvaluationSymbolPtr::DOMAIN => {
-                        diagnostics.extend(Evaluation::validate_domain(session, arg));
+                        diagnostics.extend(Evaluation::validate_domain(session, on_object, arg));
                     },
                     _ => {}
                 }
