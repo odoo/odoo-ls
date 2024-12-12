@@ -450,7 +450,7 @@ impl PythonArchEval {
                     if !Rc::ptr_eq(&self.file, &file_symbol) {
                         self.file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), self.current_step, BuildSteps::ARCH);
                     }
-                    loc_sym.borrow_mut().as_class_sym_mut().bases.insert(symbol);
+                    loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
                 }
             }
         }

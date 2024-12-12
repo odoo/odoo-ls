@@ -15,7 +15,7 @@ pub struct ClassSymbol {
     pub name: String,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub bases: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub bases: Vec<Weak<RefCell<Symbol>>>,
     pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
@@ -46,7 +46,7 @@ impl ClassSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
-            bases: PtrWeakHashSet::new(),
+            bases: vec![],
             _model: None,
         };
         res._init_symbol_mgr();
@@ -57,7 +57,11 @@ impl ClassSymbol {
         if checked.is_none() {
             *checked = Some(PtrWeakHashSet::new());
         }
-        for b in self.bases.iter() {
+        for base_weak in self.bases.iter() {
+            let b = match base_weak.upgrade(){
+                Some(b) => b,
+                None => continue
+            };
             if Rc::ptr_eq(&b, base) {
                 return true;
             }

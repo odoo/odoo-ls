@@ -1674,7 +1674,7 @@ impl Symbol {
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
-                    Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
+                    Symbol::all_members(&base.upgrade().unwrap(), session, result, false, from_module.clone(), acc, false);
                 }
             },
             _ => {
@@ -1912,6 +1912,10 @@ impl Symbol {
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
+                let base = match base.upgrade(){
+                    Some(b) => b,
+                    None => continue
+                };
                 let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, only_fields, all, false);
                     diagnostics.extend(s_diagnostic);
                     if s.len() != 0 {
@@ -2074,6 +2078,10 @@ impl Symbol {
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
+                let base = match base.upgrade(){
+                    Some(b) => b,
+                    None => continue
+                };
                 let base = base.borrow();
                 let res = base.get_base_distance(base_name, level + 1);
                 if res != -1 {
