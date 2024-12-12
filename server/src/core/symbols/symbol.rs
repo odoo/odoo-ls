@@ -1850,28 +1850,37 @@ impl Symbol {
     :param: from_module: optional, can change the from_module of the given class */
     pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, only_fields: bool, all: bool, is_super: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut visited_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+        let mut extend_result = |syms: Vec<Rc<RefCell<Symbol>>>| {
+            syms.iter().for_each(|sym|{
+                if !visited_symbols.contains(sym){
+                    visited_symbols.insert(sym.clone());
+                    result.push(sym.clone());
+                }
+            });
+        };
         let mut diagnostics: Vec<Diagnostic> = vec![];
         self.member_symbol_hook(session, name, &mut diagnostics);
         let mod_sym = self.get_module_symbol(name);
         if let Some(mod_sym) = mod_sym {
             if !only_fields {
                 if all {
-                    result.push(mod_sym);
+                    extend_result(vec![mod_sym]);
                 } else {
                     return (vec![mod_sym], diagnostics);
                 }
             }
         }
         if !is_super{
-            let mut content_sym = self.get_sub_symbol(name, u32::MAX);
+            let mut content_syms = self.get_sub_symbol(name, u32::MAX);
             if only_fields {
-                content_sym = content_sym.iter().filter(|x| x.borrow().is_field(session)).map(|x| x.clone()).collect();
+                content_syms = content_syms.iter().filter(|x| x.borrow().is_field(session)).map(|x| x.clone()).collect();
             }
-            if content_sym.len() >= 1 {
+            if content_syms.len() >= 1 {
                 if all {
-                    result.extend(content_sym);
+                    extend_result(content_syms);
                 } else {
-                    return (content_sym, diagnostics);
+                    return (content_syms, diagnostics);
                 }
             }
         }
@@ -1888,21 +1897,18 @@ impl Symbol {
                         if self.is_equal(&model_symbol) {
                             continue;
                         }
-                        let (attribut, att_diagnostic) = model_symbol.borrow().get_member_symbol(session, name, None, true, true, all, false);
+                        let (attributs, att_diagnostic) = model_symbol.borrow().get_member_symbol(session, name, None, true, true, all, false);
                         diagnostics.extend(att_diagnostic);
                         if all {
-                            result.extend(attribut);
+                            extend_result(attributs);
                         } else {
-                            if attribut.len() != 0 {
-                                return (attribut, diagnostics);
+                            if attributs.len() != 0 {
+                                return (attributs, diagnostics);
                             }
                         }
                     }
                 }
             }
-        }
-        if !all && result.len() != 0 {
-            return (result, diagnostics);
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
@@ -1910,7 +1916,7 @@ impl Symbol {
                     diagnostics.extend(s_diagnostic);
                     if s.len() != 0 {
                     if all {
-                        result.extend(s);
+                        extend_result(s);
                     } else {
                         return (s, diagnostics);
                     }
