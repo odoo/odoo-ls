@@ -348,9 +348,13 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             value: None
         });
         let func = search.as_func_mut();
-        if func.args.len() == 6 {
+        if func.args.len() > 1 {
             if let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade() {
-                arg_symbol.borrow_mut().set_evaluations(vec![Evaluation::new_domain(odoo)]);
+                if arg_symbol.borrow().name().eq(&S!("domain")) {
+                    arg_symbol.borrow_mut().set_evaluations(vec![Evaluation::new_domain(odoo)]);
+                } else {
+                    println!("domain not found on search signature")
+                }
             }
         }
     }},
