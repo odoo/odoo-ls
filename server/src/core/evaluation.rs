@@ -607,7 +607,7 @@ impl Evaluation {
 
                 print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
                 */
-                if base_eval.len() != 1 {
+                if base_eval.len() == 0 {
                     /*TODO if multiple evals are found, we could maybe try to validate that they all have the same signature in case of diamond inheritance?
                     However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -750,8 +750,8 @@ impl Evaluation {
                                 let mut on_instance = !base_sym.borrow().as_func().is_static;
                                 if on_instance {
                                     //check that the call is indeed done on an instance
-                                    on_instance = context.as_ref().unwrap().get_key_value(&S!("is_attr_of_instance"))
-                                    .unwrap_or((&S!("is_attr"), &ContextValue::BOOLEAN(false))).1.as_bool();
+                                    on_instance = context.as_ref().unwrap().get(&S!("is_attr_of_instance"))
+                                    .unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
                                 }
                                 let from_module = parent.borrow().find_module();
                                 diagnostics.extend(Evaluation::validate_call_arguments(session,
@@ -775,7 +775,8 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if base_evals.len() != 1 || base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).weak.is_expired() {
+                // TODO handle multiple base_evals
+                if base_evals.len() == 0 || (base_evals.len() > 0 && base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).weak.is_expired()) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
@@ -789,13 +790,16 @@ impl Evaluation {
                         }
                         diagnostics.extend(attributes_diagnostics);
                         if !attributes.is_empty() {
-                            let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attributes.first().unwrap()), None);
                             if ibase.instance.unwrap_or(false) {
                                 context.as_mut().unwrap().insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(true));
                             }
-                            eval.symbol.context = context.as_ref().unwrap().clone();
-                            eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
-                            evals.push(eval);
+                            attributes.iter().for_each(|attribute|{
+                                let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
+                                eval.symbol.context = context.as_ref().unwrap().clone();
+                                eval.symbol.context.insert(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
+                                evals.push(eval);
+                            });
+                            context.as_mut().unwrap().remove(&S!("is_attr_of_instance"));
                         }
                     }
                 }
@@ -826,7 +830,8 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                if eval_left.len() != 1 || eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).weak.is_expired() { //TODO set context?
+                // TODO handle multiple eval_left
+                if eval_left.len() == 0 || (eval_left.len() > 0 && eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).weak.is_expired()) { //TODO set context?
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None); //TODO set context?
