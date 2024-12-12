@@ -179,3 +179,8 @@ Tuples in search domains should be of one of these values:
 
 "Missing tuple after a search domain operator".
 If you use a search domain operator (&, ! or |), they should be followed by tuples or lists.
+
+### OLS30320
+
+"Invalid search domain field: XXX is not a member of YYY".
+In a search domain, the first element of a tuple must be a member of the model, or of any model in a relation if expression contains "." (see documentation)
