@@ -1076,7 +1076,41 @@ impl Evaluation {
     fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         //parameter 1
         if let Some(on_object) = on_object.upgrade() { //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
-
+            match elt1 {
+                Expr::StringLiteral(s) => {
+                    let value = s.value.to_string();
+                    let split_expr = value.split(".");
+                    let mut obj = Some(on_object);
+                    for name in split_expr {
+                        if let Some(object) = &obj {
+                            let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
+                                &name.to_string(),
+                                None,
+                                false,
+                                true,
+                                false);
+                            if symbols.is_empty() {
+                                diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30320"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Invalid search domain field: {} is not a member of {}", name, object.borrow().name()),
+                                    None,
+                                    None,
+                                ));
+                                break;
+                            }
+                            for s in symbols.iter() {
+                                //todo follow relational fields
+                                //obj = symbols.first().unwrap().weak.upgrade().unwrap();
+                            }
+                            obj = None;
+                        }
+                    }
+                },
+                _ => {}
+            }
         }
         //parameter 2
         match elt2 {
