@@ -1817,25 +1817,56 @@ impl Symbol {
         }
     }
 
+    pub fn is_field(&self, session: &mut SessionInfo) -> bool {
+        match self.typ() {
+            SymType::VARIABLE => {
+                if let Some(evals) = self.evaluations().as_ref() {
+                    for eval in evals.iter() {
+                        let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                        for eval_weak in eval_weaks.iter() {
+                            if let Some(symbol) = eval_weak.weak.upgrade() {
+                                let tree = flatten_tree(&symbol.borrow().get_tree());
+                                if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+                                    if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+                                "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                false
+            },
+            _ => {false}
+        }
+    }
+
     /* similar to get_symbol: will return the symbol that is under this one with the specified name.
     However, if the symbol is a class or a model, it will search in the base class or in comodel classes
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
-    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, all: bool, is_super: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
+    pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, only_fields: bool, all: bool, is_super: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut diagnostics: Vec<Diagnostic> = vec![];
         self.member_symbol_hook(session, name, &mut diagnostics);
         let mod_sym = self.get_module_symbol(name);
         if let Some(mod_sym) = mod_sym {
-            if all {
-                result.push(mod_sym);
-            } else {
-                return (vec![mod_sym], diagnostics);
+            if !only_fields {
+                if all {
+                    result.push(mod_sym);
+                } else {
+                    return (vec![mod_sym], diagnostics);
+                }
             }
         }
         if !is_super{
-            let content_sym = self.get_sub_symbol(name, u32::MAX);
+            let mut content_sym = self.get_sub_symbol(name, u32::MAX);
+            if only_fields {
+                content_sym = content_sym.iter().filter(|x| x.borrow().is_field(session)).map(|x| x.clone()).collect();
+            }
             if content_sym.len() >= 1 {
                 if all {
                     result.extend(content_sym);
@@ -1852,17 +1883,19 @@ impl Symbol {
                     from_module = self.find_module();
                 }
                 if let Some(from_module) = from_module {
-                    let loc_symbols = model.clone().borrow().get_symbols(session, from_module);
-                    for loc_sym in loc_symbols {
-                        if self.is_equal(&loc_sym) {
+                    let model_symbols = model.clone().borrow().get_symbols(session, from_module);
+                    for model_symbol in model_symbols {
+                        if self.is_equal(&model_symbol) {
                             continue;
                         }
-                        let (attribut, att_diagnostic) = loc_sym.borrow().get_member_symbol(session, name, None, true, all, false);
+                        let (attribut, att_diagnostic) = model_symbol.borrow().get_member_symbol(session, name, None, true, true, all, false);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             result.extend(attribut);
                         } else {
-                            return (attribut, diagnostics);
+                            if attribut.len() != 0 {
+                                return (attribut, diagnostics);
+                            }
                         }
                     }
                 }
@@ -1873,7 +1906,7 @@ impl Symbol {
         }
         if self.typ() == SymType::CLASS {
             for base in self.as_class_sym().bases.iter() {
-                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, all, false);
+                let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, only_fields, all, false);
                     diagnostics.extend(s_diagnostic);
                     if s.len() != 0 {
                     if all {

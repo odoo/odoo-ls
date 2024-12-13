@@ -14,7 +14,7 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
-use super::evaluation::EvaluationValue;
+use super::evaluation::{Evaluation, EvaluationValue};
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
@@ -78,6 +78,7 @@ impl PythonOdooBuilder {
             }
             self._load_class_inherits(session, &mut s_to_build);
             self._load_class_attributes(session, &mut s_to_build);
+            self._add_magic_fields(session, &mut s_to_build);
             let model = session.sync_odoo.models.get_mut(&s_to_build.as_class_sym()._model.as_ref().unwrap().name).cloned();
             if model.is_none() {
                 let model = Model::new(s_to_build.as_class_sym()._model.as_ref().unwrap().name.clone(), sym.clone());
@@ -172,7 +173,7 @@ impl PythonOdooBuilder {
     }
 
     fn _get_attribute(&mut self, session: &mut SessionInfo, loc_sym: &mut Symbol, attr: &String) -> Option<EvaluationValue> {
-        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false, false);
+        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false, false, false);
         if attr_sym.len() == 0 {
             return None;
         }
@@ -269,6 +270,49 @@ impl PythonOdooBuilder {
             symbol.as_class_sym_mut()._model.as_mut().unwrap().fold_name = S!(s.value.to_str());
         } else {
             symbol.as_class_sym_mut()._model.as_mut().unwrap().fold_name = S!("fold");
+        }
+    }
+
+    fn _add_magic_fields(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
+        //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
+        //id
+        let id = symbol.add_new_variable(session, &S!("id"), &symbol.range().clone());
+        let id_field = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("fields")], vec![S!("Id")]), u32::MAX);
+        if !id_field.is_empty() {
+            id.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(id_field.last().unwrap()), Some(true)));
+        }
+        //display_name
+        let display_name = symbol.add_new_variable(session, &S!("display_name"), &symbol.range().clone());
+        let char_field = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("fields")], vec![S!("Char")]), u32::MAX);
+        if !char_field.is_empty() {
+            display_name.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(char_field.last().unwrap()), Some(true)));
+        }
+        //if log_access
+        if symbol.as_class_sym()._model.as_ref().unwrap().log_access {
+            //create_uid
+            let create_uid = symbol.add_new_variable(session, &S!("create_uid"), &symbol.range().clone());
+            let many2one_field = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("fields")], vec![S!("Many2one")]), u32::MAX);
+            if !many2one_field.is_empty() {
+                create_uid.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(many2one_field.last().unwrap()), Some(true)));
+            }
+            //create_date
+            let create_date = symbol.add_new_variable(session, &S!("create_date"), &symbol.range().clone());
+            let datetime_field = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("fields")], vec![S!("Datetime")]), u32::MAX);
+            if !datetime_field.is_empty() {
+                create_date.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(datetime_field.last().unwrap()), Some(true)));
+            }
+            //write_uid
+            let write_uid = symbol.add_new_variable(session, &S!("write_uid"), &symbol.range().clone());
+            let many2one_field = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("fields")], vec![S!("Many2one")]), u32::MAX);
+            if !many2one_field.is_empty() {
+                write_uid.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(many2one_field.last().unwrap()), Some(true)));
+            }
+            //write_date
+            let write_date = symbol.add_new_variable(session, &S!("write_date"), &symbol.range().clone());
+            let datetime_field = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("fields")], vec![S!("Datetime")]), u32::MAX);
+            if !datetime_field.is_empty() {
+                write_date.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(datetime_field.last().unwrap()), Some(true)));
+            }
         }
     }
 

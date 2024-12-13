@@ -753,10 +753,13 @@ impl Evaluation {
                                     on_instance = context.as_ref().unwrap().get_key_value(&S!("is_attr_of_instance"))
                                     .unwrap_or((&S!("is_attr"), &ContextValue::BOOLEAN(false))).1.as_bool();
                                 }
+                                let from_module = parent.borrow().find_module();
                                 diagnostics.extend(Evaluation::validate_call_arguments(session,
                                     &base_sym.borrow().as_func(),
                                     expr,
                                     context.as_ref().unwrap().get_key_value(&S!("parent")).unwrap_or((&S!(""), &ContextValue::SYMBOL(Weak::new()))).1.as_symbol(),
+                                    
+                                    from_module,
                                     on_instance));
                             }
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
@@ -780,7 +783,7 @@ impl Evaluation {
                 for ibase in bases.iter() {
                     let base_loc = ibase.weak.upgrade();
                     if let Some(base_loc) = base_loc {
-                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, true, base_ref.is_super);
+                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, base_ref.is_super);
                         for diagnostic in attributes_diagnostics.iter_mut(){
                             diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
                         }
@@ -870,7 +873,7 @@ impl Evaluation {
         AnalyzeAstResult { evaluations: evals, effective_sym, factory, diagnostics }
     }
 
-    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, exprCall: &ExprCall, on_object: Weak<RefCell<Symbol>>, is_on_instance: bool) -> Vec<Diagnostic> {
+    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, exprCall: &ExprCall, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, is_on_instance: bool) -> Vec<Diagnostic> {
         if function.is_overloaded() {
             return vec![];
         }
@@ -939,7 +942,7 @@ impl Evaluation {
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
                 //positional or arg
-                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap(), arg, on_object.clone()));
+                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap(), arg, on_object.clone(), from_module.clone()));
             }
             arg_index += 1;
         }
@@ -951,7 +954,7 @@ impl Evaluation {
                 let mut found_one = false;
                 for (arg_index, func_arg) in function.args.iter().skip(to_skip as usize).enumerate() {
                     if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {
-                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone()));
+                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone(), from_module.clone()));
                         min_index_called_arg_with_kw = arg_index as i32 + to_skip;
                         found_one = true;
                         break;
@@ -985,7 +988,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if !matches!(value, Expr::List(_)) {
             return diagnostics;
@@ -1009,7 +1012,7 @@ impl Evaluation {
                             None,
                         ));
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), from_module.clone(), &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::List(l) => {
@@ -1025,7 +1028,7 @@ impl Evaluation {
                             None,
                         ));
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), from_module.clone(), &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::StringLiteral(s) => {
@@ -1073,7 +1076,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         //parameter 1
         if let Some(on_object) = on_object.upgrade() { //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
             match elt1 {
@@ -1085,9 +1088,10 @@ impl Evaluation {
                         if let Some(object) = &obj {
                             let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
                                 &name.to_string(),
-                                None,
+                                from_module.clone(),
                                 false,
                                 true,
+                                false,
                                 false);
                             if symbols.is_empty() {
                                 diagnostics.push(Diagnostic::new(
@@ -1099,6 +1103,13 @@ impl Evaluation {
                                     None,
                                     None,
                                 ));
+                                let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
+                                    &name.to_string(),
+                                    from_module,
+                                    false,
+                                    true,
+                                    false,
+                                    false);
                                 break;
                             }
                             for s in symbols.iter() {
@@ -1135,13 +1146,13 @@ impl Evaluation {
         }
     }
 
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<RefCell<Symbol>>) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if let Some(symbol) = function_arg.symbol.upgrade() {
             if symbol.borrow().evaluations().unwrap_or(&vec![]).len() == 1 {
                 match symbol.borrow().evaluations().unwrap()[0].symbol.sym.clone() {
                     EvaluationSymbolPtr::DOMAIN => {
-                        diagnostics.extend(Evaluation::validate_domain(session, on_object, arg));
+                        diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
                     },
                     _ => {}
                 }
