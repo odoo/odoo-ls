@@ -926,6 +926,10 @@ impl Evaluation {
             arg_index += 1;
         }
         for arg in exprCall.arguments.args.iter() {
+            if arg.is_starred_expr() {
+                //TODO try to unpack the starred
+                return diagnostics;
+            }
             //match arg with argument from function
             let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
             if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
@@ -947,15 +951,17 @@ impl Evaluation {
             arg_index += 1;
         }
         let min_arg_for_kword = arg_index;
-        let mut min_index_called_arg_with_kw = arg_index;
+        let mut found_pos_arg_with_kw = arg_index;
         let to_skip = min(min_arg_for_kword, vararg_index);
         for arg in exprCall.arguments.keywords.iter() {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionnary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
-                for (arg_index, func_arg) in function.args.iter().skip(to_skip as usize).enumerate() {
+                for func_arg in function.args.iter().skip(to_skip as usize) {
                     if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {
                         diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone(), from_module.clone()));
-                        min_index_called_arg_with_kw = arg_index as i32 + to_skip;
+                        if func_arg.arg_type == ArgumentType::ARG {
+                            found_pos_arg_with_kw += 1;
+                        }
                         found_one = true;
                         break;
                     }
@@ -971,9 +977,12 @@ impl Evaluation {
                         None,
                     ))
                 }
+            } else {
+                // if arg is None, it means that it is a **arg
+                found_pos_arg_with_kw = number_pos_arg;
             }
         }
-        if min_index_called_arg_with_kw + 1 < number_pos_arg {
+        if found_pos_arg_with_kw + 1 < number_pos_arg {
             diagnostics.push(Diagnostic::new(
                 Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                 Some(DiagnosticSeverity::ERROR),
@@ -1103,13 +1112,6 @@ impl Evaluation {
                                     None,
                                     None,
                                 ));
-                                let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
-                                    &name.to_string(),
-                                    from_module,
-                                    false,
-                                    true,
-                                    false,
-                                    false);
                                 break;
                             }
                             for s in symbols.iter() {
