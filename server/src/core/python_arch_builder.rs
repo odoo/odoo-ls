@@ -359,14 +359,19 @@ impl PythonArchBuilder {
         let mut sym_bw = sym.borrow_mut();
         let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
-            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
-                func_sym.is_static = true;
-            }
-            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
-                func_sym.is_property = true;
-            }
-            if decorator.expression.is_name_expr() && decorator.expression.as_name_expr().unwrap().id.to_string() == "overload" {
-                func_sym.is_overloaded = true;
+            if decorator.expression.is_name_expr() {
+                if decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
+                    func_sym.is_static = true;
+                }
+                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
+                    func_sym.is_property = true;
+                }
+                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "overload" {
+                    func_sym.is_overloaded = true;
+                }
+                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classmethod" {
+                    func_sym.is_class_method = true;
+                }
             }
         }
         if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {

@@ -44,6 +44,7 @@ pub struct FunctionSymbol {
     pub body_range: TextRange,
     pub args: Vec<Argument>,
     pub is_overloaded: bool, //used for @overload decorator. Only indicates if the decorator is present. Use is_overloaded() to know if this function is overloaded
+    pub is_class_method: bool, //used for @classmethod decorator
 
     //Trait SymbolMgr
     //--- Body content
@@ -79,6 +80,7 @@ impl FunctionSymbol {
             ext_symbols: HashMap::new(),
             args: vec![],
             is_overloaded: false,
+            is_class_method: false,
         };
         res._init_symbol_mgr();
         res
