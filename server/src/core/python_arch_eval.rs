@@ -436,15 +436,17 @@ impl PythonArchEval {
             let symbol = eval_base.upgrade().unwrap();
             if symbol.borrow().typ() != SymType::COMPILED {
                 if symbol.borrow().typ() != SymType::CLASS {
-                    self.diagnostics.push(Diagnostic::new(
-                        Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
-                        Some(DiagnosticSeverity::WARNING),
-                        Some(NumberOrString::String(S!("OLS20003"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Base class {} is not a class", AstUtils::flatten_expr(base)),
-                        None,
-                        None,
-                    ));
+                    if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
+                        self.diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::WARNING),
+                            Some(NumberOrString::String(S!("OLS20003"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("Base class {} is not a class", AstUtils::flatten_expr(base)),
+                            None,
+                            None,
+                        ));
+                    }
                 } else {
                     let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
                     if !Rc::ptr_eq(&self.file, &file_symbol) {
