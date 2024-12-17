@@ -52,10 +52,6 @@ impl PythonArchBuilder {
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to extract
         }
-        
-        if self.sym_stack[0].borrow().name() == "account_payment" {
-            println!("here");
-        }
         {
             let file = symbol.borrow();
             let file = file.get_file().unwrap();
