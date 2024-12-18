@@ -435,36 +435,57 @@ impl PythonArchEvalHooks {
                                 let mut f = file_symbol.borrow_mut();
                                 f.add_model_dependencies(model);
                             }
-                            let symbols = model.clone().borrow().get_main_symbols(session, from_module.clone(), &mut None);
+                            let model = model.clone();
+                            let model = model.borrow();
+                            let symbols = model.get_main_symbols(session, from_module.clone(), &mut None);
                             if !symbols.is_empty() {
                                 for s in symbols.iter() {
                                     if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name, &mut None) {
                                         return EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false);
                                     }
                                 }
-                                //still here? If from module is set, dependencies are not met
+                            } else {
                                 if from_module.is_some() {
+                                    //retry without from_module to see if model exists elsewhere
+                                    let symbols = model.get_main_symbols(session, None, &mut None);
+                                    if symbols.is_empty() {
+                                        let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
+                                        diagnostics.push(Diagnostic::new(range,
+                                            Some(DiagnosticSeverity::ERROR),
+                                            Some(NumberOrString::String(S!("OLS30105"))),
+                                            Some(EXTENSION_NAME.to_string()),
+                                            S!("This model is inherited, but never declared."),
+                                            None,
+                                            None
+                                            )
+                                        );
+                                    } else {
+                                        let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
+                                        let valid_modules: Vec<String> = symbols.iter().map(|s| match s.borrow().find_module() {
+                                            Some(sym) => sym.borrow().name().clone(),
+                                            None => S!("Unknown").clone()
+                                        }).collect();
+                                        diagnostics.push(Diagnostic::new(range,
+                                            Some(DiagnosticSeverity::ERROR),
+                                            Some(NumberOrString::String(S!("OLS30101"))),
+                                            Some(EXTENSION_NAME.to_string()),
+                                            format!("This model is not declared in the dependencies of your module. You should consider adding one of the following dependency: {:?}", valid_modules),
+                                            None,
+                                            None
+                                            )
+                                        );
+                                    }
+                                } else {
                                     let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                                     diagnostics.push(Diagnostic::new(range,
                                         Some(DiagnosticSeverity::ERROR),
-                                        Some(NumberOrString::String(S!("OLS30101"))),
+                                        Some(NumberOrString::String(S!("OLS30102"))),
                                         Some(EXTENSION_NAME.to_string()),
-                                        S!("This model is not in the dependencies of your module."),
+                                        S!("Unknown model. Check your addons path"),
                                         None,
                                         None
-                                        )
-                                    );
+                                    ));
                                 }
-                            } else {
-                                let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                diagnostics.push(Diagnostic::new(range,
-                                    Some(DiagnosticSeverity::ERROR),
-                                    Some(NumberOrString::String(S!("OLS30102"))),
-                                    Some(EXTENSION_NAME.to_string()),
-                                    S!("Unknown model. Check your addons path"),
-                                    None,
-                                    None
-                                ));
                             }
                         } else {
                             let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());

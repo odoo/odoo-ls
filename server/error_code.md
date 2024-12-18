@@ -88,6 +88,12 @@ You should check the dependencies in the \_\_manifest\_\_.py file of your module
 The declared model is specifying an inheritance to a model that is not declared in the visible modules by the current one.
 Consider updating the manifest of your module to include the relevant module.
 
+### OLS30105
+
+"This model is inherited, but never declared."
+
+The extension found some classes inheriting this model, but didn't find any class that declare it first, with only a _name.
+
 ### OLS30201
 
 "A manifest shoul only contains one dictionnary".
