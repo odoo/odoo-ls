@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.2.8 - 2024/18/12
+
+### VsCode
+
+- addon paths in configurations can now contains variables: ${workspaceFolder} and ${userHome} are available.
+- search for valid addon path in parent folders too.
+- New popup windows that will suggest you to disable your actual python language server for your workspace if any is active (only for Python extension).
+- Fix hanging if popup window stay opened.
+- Fix infinite reload issue
+
+### Server
+
+- Improve autocompletion to take base classes and comodels.
+- Add inheritance information in hover for models.
+- Adapt the architecture to store function arguments.
+- Parse and evaluate function calls according to the function signature. Actually limited to domains and args counts.
+- New domain validation: validate structure, operators and fields. Composed fields are not validated for now.
+- Autocompletion that contains "." or that complete a string with a "." will not duplicate elements anymore.
+- Improve function return type syntax in Hover feature.
+- Implement super() evaluation.
+- Handle @overload and @classmethod decorator
+
+### Server Fixs
+
+- Autocompletion will not raise an exception if the request is done outside of odoo.
+- Gotodefinition will skip evaluation that lead to the same place
+- Fix range on GotoDefinition for symbol that has multiple evaluation.
+- Prevent parsing docstrings as markdown codeblocks
+- Make read thread able to create delayed tasks.
+- correctly skip arch step for syntaxically incorrect files.
+- Avoid range evaluations on files.
+- Allow not imported files to be reloaded
+- Remove duplicates in autocompletion results due to diamond inheritance
+- Change classes structure to keep inheritance order (HashSet to Vector)
+- Incorrect "Base class not found" diagnostic
+
+#### New diagnostics / odoo helpers
+
+- New signature for "browse" on BaseModel.
+- New hook for Odoo registry.
+- Add "magic" fields to models (id, create_date, etc...)
+
 ## 0.2.7 - 2024/31/10
 
 ### Server
