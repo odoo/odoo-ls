@@ -76,10 +76,10 @@ impl <'a> SessionInfo<'a> {
 
     pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf) {
         if session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10 {
-            let tree = session.sync_odoo.tree_from_path(&path);
-            if !tree.is_err() { //is part of odoo (and in addons path)
+            let tree = session.sync_odoo.tree_from_path(path);
+            if tree.is_ok() { //is part of odoo (and in addons path)
                 let tree = tree.unwrap().clone();
-                let _ = SyncOdoo::_unload_path(session, &path, false);
+                let _ = SyncOdoo::_unload_path(session, path, false);
                 SyncOdoo::search_symbols_to_rebuild(session, &tree);
             }
             SyncOdoo::process_rebuilds(session);
@@ -218,7 +218,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     } else {
                         if let Some(path) = update_file_index {
                             let tree = session.sync_odoo.tree_from_path(&path);
-                            if !tree.is_err() { //is part of odoo (and in addons path)
+                            if tree.is_ok() { //is part of odoo (and in addons path)
                                 let tree = tree.unwrap().clone();
                                 let _ = SyncOdoo::_unload_path(&mut session, &path, false);
                                 SyncOdoo::search_symbols_to_rebuild(&mut session, &tree);
@@ -238,7 +238,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
 pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     loop {
         let msg = generic_receiver.recv();
-        if let Err(_) = msg {
+        if msg.is_err() {
             error!("Got an RecvError, exiting thread");
             break;
         }
@@ -294,7 +294,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
 pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     loop {
         let msg = generic_receiver.recv();
-        if let Err(_) = msg {
+        if msg.is_err() {
             error!("Got an RecvError, exiting thread");
             break;
         }

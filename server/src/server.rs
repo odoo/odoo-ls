@@ -248,8 +248,7 @@ impl Server {
                     })
                 }),
                 ..ServerCapabilities::default()
-            },
-            ..Default::default()
+            }
         };
 
         self.connection.as_ref().unwrap().initialize_finish(id, serde_json::to_value(initialize_data).unwrap())?;
@@ -376,10 +375,10 @@ impl Server {
             Message::Response(r) => {
                 let thread_id = self.id_list.get(&r.id);
                 if let Some(thread_id) = thread_id {
-                    if *thread_id == 0 as u16 {
+                    if *thread_id == 0_u16 {
                         panic!("thread_id can't be equal to 0. Client can't respond to itself");
                     } else {
-                        let mut t_id = thread_id.clone() - 1;
+                        let mut t_id = thread_id - 1;
                         if t_id < THREAD_MAIN_COUNT {
                             self.senders_s_to_main.get(t_id as usize).unwrap().send(Message::Response(r)).unwrap();
                             return;

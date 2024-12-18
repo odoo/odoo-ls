@@ -602,7 +602,7 @@ impl SyncOdoo {
                         path.components().for_each(|c| {
                             tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
                         });
-                        if vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
+                        if ["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
                             tree.0.pop();
                         }
                         return Ok(tree);
@@ -617,7 +617,7 @@ impl SyncOdoo {
                 path.components().for_each(|c| {
                     tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").to_string());
                 });
-                if tree.0.len() > 0 && vec!["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
+                if tree.0.len() > 0 && ["__init__", "__manifest__"].contains(&tree.0.last().unwrap().as_str()) {
                     tree.0.pop();
                 }
                 return Ok(tree);
@@ -670,10 +670,10 @@ impl SyncOdoo {
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
         from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, tree: &Tree) -> bool {
-        let flat_tree = vec![tree.0.clone(), tree.1.clone()].concat();
+        let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
         let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let mut need_rebuild = false;
-        let mut to_add = vec![vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
+        let mut to_add = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
         for s in session.sync_odoo.not_found_symbols.iter() {
             let mut index: i32 = 0; //i32 sa we could go in negative values
             while (index as usize) < s.borrow().not_found_paths().len() {

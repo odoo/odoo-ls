@@ -131,7 +131,7 @@ impl PythonArchBuilder {
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
                     session.sync_odoo.not_found_symbols.insert(self.file.clone());
-                    let file_tree_flattened = vec![import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
+                    let file_tree_flattened = [import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree_flattened));
                     continue;
                 }

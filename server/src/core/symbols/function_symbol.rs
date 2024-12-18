@@ -91,8 +91,8 @@ impl FunctionSymbol {
     }
 
     pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
-        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::new());
+        let section_vec = sections.entry(section).or_insert(vec![]);
         section_vec.push(content.clone());
     }
 
@@ -123,7 +123,7 @@ impl FunctionSymbol {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     /* Return true if a previous implementation has the @overload decorator or has it itself */
@@ -139,7 +139,7 @@ impl FunctionSymbol {
                 }
             }
         }
-        return false;
+        false
     }
 
     /**

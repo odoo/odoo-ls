@@ -29,10 +29,7 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None);
         }
         let expr = expr.unwrap();
-        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, match expr {
-            ExprOrIdent::Parameter(_) => true,
-            _ => false
-        });
+        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
         let from_module;
         if let Some(module) = file_symbol.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -60,7 +57,7 @@ impl AstUtils {
         }
     }
 
-    pub fn find_stmt_from_ast<'a>(ast: &'a Vec<Stmt>, indexes: &Vec<u16>) -> &'a Stmt {
+    pub fn find_stmt_from_ast<'a>(ast: &'a [Stmt], indexes: &[u16]) -> &'a Stmt {
         let mut stmt = ast.get(indexes[0] as usize).expect("index not found in ast");
         let mut i_index = 1;
         while i_index < indexes.len() {
@@ -162,7 +159,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                 self.expr = Some(ExprOrIdent::Ident(&alias.name));
             } else if let Some(ref asname) = alias.asname {
                 if asname.range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&asname))
+                    self.expr = Some(ExprOrIdent::Ident(asname))
                 }
             }
         }
@@ -174,7 +171,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
             let ExceptHandler::ExceptHandler(ref handler) = *except_handler;
             if let Some(ref ident) = handler.name {
                 if ident.clone().range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&ident));
+                    self.expr = Some(ExprOrIdent::Ident(ident));
                 }
             }
         } else {
@@ -185,7 +182,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     fn visit_parameter(&mut self, parameter: &'a Parameter) {
         walk_parameter(self, parameter);
         if self.expr.is_none() && parameter.name.range().contains(self.offset) {
-            self.expr = Some(ExprOrIdent::Parameter(&parameter));
+            self.expr = Some(ExprOrIdent::Parameter(parameter));
         }
     }
 
@@ -195,7 +192,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         if self.expr.is_none() {
             if let Some(ref ident) = keyword.arg {
                 if ident.range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&ident));
+                    self.expr = Some(ExprOrIdent::Ident(ident));
                 }
             }
         } else {
@@ -267,7 +264,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
 
             for ident in idents {
                 if ident.range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(&ident));
+                    self.expr = Some(ExprOrIdent::Ident(ident));
                     break;
                 }
             }

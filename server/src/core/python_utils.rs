@@ -81,7 +81,7 @@ fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
     res
 }
 
-pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value: Option<&Box<Expr>>) -> Vec<Assign> {
+pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Option<&Expr>) -> Vec<Assign> {
     //Given the target, the annotation and the values, return a list of tuples (variable: ExprName, annotation, value)
     //for each variable, associating annotation and value for the right variable
     // Ex: for "a = b = 1", return [("a", None, 1), ("b", , None, 1)]
@@ -102,21 +102,15 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
                     Some(value) => {
                         res.push(Assign {
                             target: expr.clone(),
-                            annotation: match annotation {
-                                Some(annotation) => Some(*annotation.clone()),
-                                None => None,
-                            },
-                            value: Some(*value.clone()),
+                            annotation: annotation.cloned(),
+                            value: Some(value.clone()),
                             index: None,
                         });
                     },
                     None => {
                         res.push(Assign {
                             target: expr.clone(),
-                            annotation: match annotation {
-                                Some(annotation) => Some(*annotation.clone()),
-                                None => None,
-                            },
+                            annotation: annotation.cloned(),
                             value: None,
                             index: None,
                         });
@@ -142,7 +136,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
                                 res.push(Assign {
                                     target: tar.clone(),
                                     annotation: None,
-                                    value: Some(*value.clone()),
+                                    value: Some(value.clone()),
                                     index: Some(index),
                                 });
                             }
@@ -169,7 +163,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Box<Expr>>, value:
                                 res.push(Assign {
                                     target: tar.clone(),
                                     annotation: None,
-                                    value: Some(*value.clone()),
+                                    value: Some(value.clone()),
                                     index: Some(index),
                                 });
                             }

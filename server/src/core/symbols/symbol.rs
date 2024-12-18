@@ -16,7 +16,7 @@ use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use std::{u32, vec};
+use std::vec;
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 
 use crate::core::symbols::function_symbol::FunctionSymbol;
@@ -1265,7 +1265,7 @@ impl Symbol {
     pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
-        while vec_to_unload.len() > 0 {
+        while !vec_to_unload.is_empty() {
             let ref_to_unload = vec_to_unload.front().unwrap().clone();
             let mut_symbol = ref_to_unload.borrow_mut();
             // Unload children first
@@ -1346,7 +1346,7 @@ impl Symbol {
             return false;
         }
         let parent = symbol.borrow().parent().as_ref().unwrap().upgrade().unwrap();
-        return Symbol::is_symbol_in_parents(&parent, to_test);
+        Symbol::is_symbol_in_parents(&parent, to_test)
     }
 
     fn set_weak_self(&mut self, weak_self: Weak<RefCell<Symbol>>) {
@@ -1386,7 +1386,7 @@ impl Symbol {
         if self.parent().is_some() {
             return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().has_rc_in_parents(rc, stop_same_file);
         }
-        return false;
+        false
     }
 
     /// get a Symbol that has the same given range and name
@@ -1450,7 +1450,7 @@ impl Symbol {
         if self.parent().is_some() {
             return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().get_file();
         }
-        return None;
+        None
     }
 
     pub fn parent_file_or_function(&self) -> Option<Weak<RefCell<Symbol>>> {
@@ -1460,18 +1460,15 @@ impl Symbol {
         if self.parent().is_some() {
             return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().parent_file_or_function();
         }
-        return None;
+        None
     }
 
     pub fn find_module(&self) -> Option<Rc<RefCell<Symbol>>> {
-        match self {
-            Symbol::Package(PackageSymbol::Module(m)) => {return self.get_rc();}
-            _ => {}
-        }
+        if let Symbol::Package(PackageSymbol::Module(m)) = self {return self.get_rc();}
         if let Some(parent) = self.parent().as_ref() {
             return parent.upgrade().unwrap().borrow().find_module();
         }
-        return None;
+        None
     }
 
     /*given a Symbol, give all the Symbol that are evaluated as valid evaluation for it.
@@ -1497,11 +1494,11 @@ impl Symbol {
                         res.push_back(sym);
                     }
                 }
-                return res
+                res
             },
             _ => {
                 let vec = VecDeque::new();
-                return vec
+                vec
             }
         }
     }
@@ -1547,20 +1544,17 @@ impl Symbol {
                     if v.evaluations.is_empty() && can_eval_external {
                         //no evaluation? let's check that the file has been evaluated
                         let file_symbol = sym.get_file();
-                        match file_symbol {
-                            Some(file_symbol) => {
-                                if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
-                                session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                                    let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
-                                    builder.eval_arch(session);
-                                }
-                            },
-                            None => {}
+                        if let Some(file_symbol) = file_symbol {
+                            if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
+                            session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                                let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
+                                builder.eval_arch(session);
+                            }
                         }
                     }
                     let next_sym_refs = Symbol::next_refs(session, &sym, &mut vec![]);
                     index += 1;
-                    if next_sym_refs.len() >= 1 {
+                    if !next_sym_refs.is_empty() {
                         results.pop_front();
                         index -= 1;
                         for next_results in next_sym_refs {
@@ -1573,7 +1567,7 @@ impl Symbol {
                 }
             }
         }
-        return Vec::from(results) // :'( a whole copy?
+        Vec::from(results) // :'( a whole copy?
     }
 
     pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
@@ -1592,33 +1586,33 @@ impl Symbol {
                 }
             },
             Symbol::Function(_) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
-                for symbol in m.module_symbols.values().map(|x| x.clone()) {
+                for symbol in m.module_symbols.values().cloned() {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
-                for symbol in p.module_symbols.values().map(|x| x.clone()) {
+                for symbol in p.module_symbols.values().cloned() {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Namespace(n) => {
-                for symbol in n.directories.iter().flat_map(|x| x.module_symbols.values().map(|x| x.clone())) {
+                for symbol in n.directories.iter().flat_map(|x| x.module_symbols.values().cloned()) {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Root(root) => {
-                for symbol in root.module_symbols.values().map(|x| x.clone()) {
+                for symbol in root.module_symbols.values().cloned() {
                     iter.push(symbol.clone());
                 }
             }
@@ -1637,7 +1631,7 @@ impl Symbol {
             return;
         }
         acc.as_mut().unwrap().insert(tree);
-        let typ = symbol.borrow().typ().clone();
+        let typ = symbol.borrow().typ();
         match typ {
             SymType::CLASS => {
                 // Skip current class symbols for super
@@ -1697,7 +1691,7 @@ impl Symbol {
             match sym_map.get(&section_id.index) {
                 Some(symbols) => {
                     for symbol in symbols.iter() {
-                        let typ = symbol.borrow().typ().clone();
+                        let typ = symbol.borrow().typ();
                         match typ {
                             SymType::CLASS => {
                                 let range = match is_param {
@@ -1724,7 +1718,7 @@ impl Symbol {
                 None => {}
             }
         }
-        return result
+        result
     }
 
     /*
@@ -1760,7 +1754,7 @@ impl Symbol {
         //TODO implement 'super' behaviour in hooks
         let on_symbol = on_symbol.borrow();
         results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
-        if results.len() == 0 && !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
+        if results.is_empty() && !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
             let mut parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
             while parent.borrow().typ() == SymType::CLASS {
                 let _parent = parent.borrow().parent().unwrap().upgrade().unwrap();
@@ -1768,7 +1762,7 @@ impl Symbol {
             }
             return Symbol::infer_name(odoo, &parent, name, position);
         }
-        if results.len() == 0 && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
+        if results.is_empty() && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
             let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
             return Symbol::infer_name(odoo, &builtins, name, None);
         }
@@ -1874,9 +1868,9 @@ impl Symbol {
         if !is_super{
             let mut content_syms = self.get_sub_symbol(name, u32::MAX);
             if only_fields {
-                content_syms = content_syms.iter().filter(|x| x.borrow().is_field(session)).map(|x| x.clone()).collect();
+                content_syms = content_syms.iter().filter(|x| x.borrow().is_field(session)).cloned().collect();
             }
-            if content_syms.len() >= 1 {
+            if !content_syms.is_empty() {
                 if all {
                     extend_result(content_syms);
                 } else {
@@ -1902,7 +1896,7 @@ impl Symbol {
                         if all {
                             extend_result(attributs);
                         } else {
-                            if attributs.len() != 0 {
+                            if !attributs.is_empty() {
                                 return (attributs, diagnostics);
                             }
                         }
@@ -1918,7 +1912,7 @@ impl Symbol {
                 };
                 let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, only_fields, all, false);
                     diagnostics.extend(s_diagnostic);
-                    if s.len() != 0 {
+                if !s.is_empty() {
                     if all {
                         extend_result(s);
                     } else {
@@ -1931,7 +1925,7 @@ impl Symbol {
     }
 
     pub fn is_equal(&self, other: &Rc<RefCell<Symbol>>) -> bool {
-        return Weak::ptr_eq(&self.weak_self().unwrap_or(Weak::new()), &Rc::downgrade(other));
+        Weak::ptr_eq(&self.weak_self().unwrap_or_default(), &Rc::downgrade(other))
     }
 
     /**
@@ -1947,9 +1941,8 @@ impl Symbol {
                     for (_name, section) in c.symbols.iter() {
                         for (_position, symbol_list) in section.iter() {
                             for symbol in symbol_list.iter() {
-                                match *symbol.borrow() {
-                                    Symbol::Function(_) => res.push(symbol.clone()),
-                                    _ => {},
+                                if let Symbol::Function(_) = *symbol.borrow() {
+                                    res.push(symbol.clone())
                                 }
                             }
                         }

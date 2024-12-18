@@ -63,7 +63,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         let values: Vec<ruff_python_ast::Expr> = Vec::new();
         let mut id = symbol.borrow_mut();
         let range = id.range().clone();
-        id.set_evaluations(vec![Evaluation::new_list(odoo, values, range.clone())]);
+        id.set_evaluations(vec![Evaluation::new_list(odoo, values, range)]);
     }},
     /*PythonArchEvalFileHook { file_tree: vec![S!("odoo"), S!("models")],
                         content_tree: vec![S!("BaseModel"), S!("search_count")],
@@ -436,7 +436,7 @@ impl PythonArchEvalHooks {
                                 f.add_model_dependencies(model);
                             }
                             let symbols = model.clone().borrow().get_main_symbols(session, from_module.clone(), &mut None);
-                            if symbols.len() > 0 {
+                            if !symbols.is_empty() {
                                 for s in symbols.iter() {
                                     if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name, &mut None) {
                                         return EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false);

@@ -14,7 +14,7 @@ pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
 }
 
 pub fn flatten_tree(tree: &Tree) -> Vec<String> {
-    vec![tree.0.clone(), tree.1.clone()].concat()
+    [tree.0.clone(), tree.1.clone()].concat()
 }
 
 

@@ -280,7 +280,7 @@ impl ModuleSymbol {
     }
 
     fn _create_diagnostic_for_manifest_key(&self, text: &str, code: String, range: &TextRange) -> Diagnostic {
-        return Diagnostic::new(
+        Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::ERROR),
             Some(NumberOrString::String(code)),

@@ -9,7 +9,6 @@ use crate::utils::PathSanitizer as _;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use std::u32;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
@@ -31,13 +30,13 @@ impl HoverFeature {
             start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
             end: file_info.borrow().offset_to_position(range.unwrap().end().to_usize())
         });
-        return Some(Hover { contents:
+        Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
                 value: HoverFeature::build_markdown_description(session, Some(file_symbol.clone()), &evals)
             }),
             range: range
-        });
+        })
     }
 
     /*
@@ -72,7 +71,7 @@ impl HoverFeature {
             //display 'def' only if there is only a single evaluation to a function
             single_func_eval = true;
             value += "def ";
-            value += &symbol.name();
+            value += symbol.name();
             //display args
             let function = infered_types[0].weak.upgrade().unwrap();
             let function = function.borrow();
@@ -88,7 +87,7 @@ impl HoverFeature {
             }
             value += ") -> "
         } else {
-            value += &symbol.name();
+            value += symbol.name();
             if symbol.typ() != SymType::CLASS {
                 value += ": ";
             }
@@ -139,7 +138,7 @@ impl HoverFeature {
                                     func_return_type += " | ";
                                 }
                             }
-                            if type_names.len() == 0 {
+                            if type_names.is_empty() {
                                 func_return_type += "None";
                             }
                         }
@@ -156,7 +155,7 @@ impl HoverFeature {
                     } else if infered_type.typ() == SymType::NAMESPACE {
                         value += "Namespace";
                     } else if symbol.typ() != SymType::CLASS {
-                        value += &infered_type.name();
+                        value += infered_type.name();
                     }
                 }
             }
@@ -187,50 +186,46 @@ impl HoverFeature {
             let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
             //search for a constant evaluation like a model name
             if let Some(eval_value) = eval.value.as_ref() {
-                match eval_value {
-                    crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) => {
-                        let str = expr.value.to_string();
-                        let model = session.sync_odoo.models.get(&str).cloned();
-                        if let Some(model) = model {
-                            if let Some(file_symbol) = file_symbol.as_ref() {
-                                let from_module = file_symbol.borrow().find_module();
-                                let main_class = model.borrow().get_main_symbols(session, from_module.clone(), &mut None);
-                                for main_class in main_class.iter() {
-                                    let main_class = main_class.borrow();
-                                    let main_class_module = main_class.find_module();
-                                    if let Some(main_class_module) = main_class_module {
-                                        value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
-                                        if main_class.doc_string().is_some() {
-                                            value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
+                    let str = expr.value.to_string();
+                    let model = session.sync_odoo.models.get(&str).cloned();
+                    if let Some(model) = model {
+                        if let Some(file_symbol) = file_symbol.as_ref() {
+                            let from_module = file_symbol.borrow().find_module();
+                            let main_class = model.borrow().get_main_symbols(session, from_module.clone(), &mut None);
+                            for main_class in main_class.iter() {
+                                let main_class = main_class.borrow();
+                                let main_class_module = main_class.find_module();
+                                if let Some(main_class_module) = main_class_module {
+                                    value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
+                                    if main_class.doc_string().is_some() {
+                                        value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                                    }
+                                    let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
+                                    other_imps.sort_by(|x, y| {
+                                        if x.1.is_none() && y.1.is_some() {
+                                            std::cmp::Ordering::Less
+                                        } else if x.1.is_some() && y.1.is_none() {
+                                            std::cmp::Ordering::Greater
+                                        } else {
+                                            x.0.borrow().find_module().unwrap().borrow().name().cmp(y.0.borrow().find_module().unwrap().borrow().name())
                                         }
-                                        let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
-                                        other_imps.sort_by(|x, y| {
-                                            if x.1.is_none() && y.1.is_some() {
-                                                return std::cmp::Ordering::Less;
-                                            } else if x.1.is_some() && y.1.is_none() {
-                                                return std::cmp::Ordering::Greater;
-                                            } else {
-                                                return x.0.borrow().find_module().unwrap().borrow().name().cmp(&y.0.borrow().find_module().unwrap().borrow().name());
-                                            }
-                                        });
-                                        value += format!("  \n***  \n").as_str();
-                                        for other_imp in other_imps.iter() {
-                                            let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
-                                            if other_imp.1.is_none() {
-                                                value += format!("inherited in {}  \n", mod_name).as_str();
-                                            } else {
-                                                value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
-                                            }
+                                    });
+                                    value += "  \n***  \n";
+                                    for other_imp in other_imps.iter() {
+                                        let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
+                                        if other_imp.1.is_none() {
+                                            value += format!("inherited in {}  \n", mod_name).as_str();
+                                        } else {
+                                            value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
                                         }
                                     }
                                 }
-                                continue;
                             }
+                            continue;
                         }
-                        continue;
-                    },
-                    _ => {
                     }
+                    continue;
                 }
             }
             // BLOCK 1: (type) **name** -> infered_type

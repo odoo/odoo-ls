@@ -82,9 +82,9 @@ impl NamespaceSymbol {
         let mut best_length: i32 = -1;
         let mut index = 0;
         while index < self.directories.len() {
-            if file.borrow().paths()[0].starts_with(&self.directories[index as usize].path) && self.directories[index as usize].path.len() as i32 > best_length {
+            if file.borrow().paths()[0].starts_with(&self.directories[index].path) && self.directories[index].path.len() as i32 > best_length {
                 best_index = index as i32;
-                best_length = self.directories[index as usize].path.len() as i32;
+                best_length = self.directories[index].path.len() as i32;
             }
             index += 1;
         }

@@ -248,7 +248,7 @@ impl PythonArchEval {
                         }
                     }
                 } else {
-                    let mut file_tree = vec![_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
+                    let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
                     file_tree.extend(_import_result.name.split(".").map(str::to_string));
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
                     session.sync_odoo.not_found_symbols.insert(self.file.clone());
@@ -266,7 +266,7 @@ impl PythonArchEval {
                 }
 
             } else {
-                let mut file_tree = vec![_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
+                let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
                 file_tree.extend(_import_result.name.split(".").map(str::to_string));
                 if BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
                     continue;

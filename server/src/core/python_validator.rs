@@ -246,7 +246,7 @@ impl PythonValidator {
             if import_result.found && self.current_module.is_some() {
                 let module = import_result.symbol.borrow().find_module();
                 if let Some(module) = module {
-                    if !ModuleSymbol::is_in_deps(session, &self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
+                    if !ModuleSymbol::is_in_deps(session, self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) && !self.safe_imports.last().unwrap() {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
@@ -327,13 +327,13 @@ impl PythonValidator {
                     if let Some(main_sym_module) = main_sym_module {
                         let module_name = main_sym_module.borrow().as_module_package().dir_name.clone();
                         main_modules.push(module_name.clone());
-                        if ModuleSymbol::is_in_deps(session, &from, &module_name, &mut None) {
+                        if ModuleSymbol::is_in_deps(session, from, &module_name, &mut None) {
                             found_one = true;
                         }
                     }
                 }
                 if !found_one {
-                    if main_modules.len() > 0 {
+                    if !main_modules.is_empty() {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
@@ -372,7 +372,7 @@ impl PythonValidator {
     }
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
-        let (eval, diags) = Evaluation::eval_from_ast(session, &expr, self.sym_stack.last().unwrap().clone(), &max_infer);
+        let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer);
         self.diagnostics.extend(diags);
     }
 }

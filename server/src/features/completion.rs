@@ -37,7 +37,7 @@ impl CompletionFeature {
         let offset = file_info.borrow().position_to_offset(line, character);
         let file_info =  file_info.borrow();
         let ast = file_info.ast.as_ref().unwrap();
-        return complete_vec_stmt(ast, session, file_symbol, offset)
+        complete_vec_stmt(ast, session, file_symbol, offset)
     }
 }
 
@@ -98,7 +98,7 @@ fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: 
 }
 
 fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_function_def: &ruff_python_ast::StmtFunctionDef, offset: usize) -> Option<CompletionResponse> {
-    if stmt_function_def.body.len() > 0 {
+    if !stmt_function_def.body.is_empty() {
         if offset > stmt_function_def.body.first().unwrap().range().start().to_usize() && stmt_function_def.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_function_def.body, session, file, offset);
         }
@@ -112,7 +112,7 @@ fn complete_class_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symb
             return complete_expr( base, session, file, offset, false, &vec![]); //TODO only classes?
         }
     }
-    if stmt_class_def.body.len() > 0 {
+    if !stmt_class_def.body.is_empty() {
         if offset > stmt_class_def.body.first().unwrap().range().start().to_usize() && stmt_class_def.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_class_def.body, session, file, offset);
         }
@@ -167,7 +167,7 @@ fn complete_for_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, 
     if offset > stmt_for.iter.range().start().to_usize() && offset <= stmt_for.iter.range().end().to_usize() {
         return complete_expr( &stmt_for.iter, session, file, offset, false, &vec![]);
     }
-    if stmt_for.body.len() > 0 {
+    if !stmt_for.body.is_empty() {
         if offset > stmt_for.body.first().unwrap().range().start().to_usize() && stmt_for.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_for.body, session, file, offset);
         }
@@ -179,7 +179,7 @@ fn complete_while_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>
     if offset > stmt_while.test.range().start().to_usize() && offset <= stmt_while.test.range().end().to_usize() {
         return complete_expr( &stmt_while.test, session, file, offset, false, &vec![]);
     }
-    if stmt_while.body.len() > 0 {
+    if !stmt_while.body.is_empty() {
         if offset > stmt_while.body.first().unwrap().range().start().to_usize() && stmt_while.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_while.body, session, file, offset);
         }
@@ -191,7 +191,7 @@ fn complete_if_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, s
     if offset > stmt_if.test.range().start().to_usize() && offset <= stmt_if.test.range().end().to_usize() {
         return complete_expr( &stmt_if.test, session, file, offset, false, &vec![]);
     }
-    if stmt_if.body.len() > 0 {
+    if !stmt_if.body.is_empty() {
         if offset > stmt_if.body.first().unwrap().range().start().to_usize() && stmt_if.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_if.body, session, file, offset);
         }
@@ -208,7 +208,7 @@ fn complete_with_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>,
     //         }
     //     }
     // }
-    if stmt_with.body.len() > 0 {
+    if !stmt_with.body.is_empty() {
         if offset > stmt_with.body.first().unwrap().range().start().to_usize() && stmt_with.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_with.body, session, file, offset);
         }
@@ -237,7 +237,7 @@ fn complete_raise_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>
 }
 
 fn complete_try_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_try: &ruff_python_ast::StmtTry, offset: usize) -> Option<CompletionResponse> {
-    if stmt_try.body.len() > 0 {
+    if !stmt_try.body.is_empty() {
         if offset > stmt_try.body.first().unwrap().range().start().to_usize() && stmt_try.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_try.body, session, file, offset);
         }
@@ -251,12 +251,12 @@ fn complete_try_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, 
             },
         }
     }
-    if stmt_try.orelse.len() > 0 {
+    if !stmt_try.orelse.is_empty() {
         if offset > stmt_try.orelse.first().unwrap().range().start().to_usize() && stmt_try.orelse.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_try.orelse, session, file, offset);
         }
     }
-    if stmt_try.finalbody.len() > 0 {
+    if !stmt_try.finalbody.is_empty() {
         if offset > stmt_try.finalbody.first().unwrap().range().start().to_usize() && stmt_try.finalbody.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_try.finalbody, session, file, offset);
         }
@@ -467,7 +467,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
     }
     for arg in expr_call.arguments.args.iter() {
         if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
-            return complete_expr( &arg, session, file, offset, is_param, expected_type);
+            return complete_expr(arg, session, file, offset, is_param, expected_type);
         }
     }
     None
@@ -529,10 +529,10 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
             ExpectedType::CLASS(_) => {},
         }
     }
-    return Some(CompletionResponse::List(CompletionList {
+    Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
         items: items
-    }));
+    }))
 }
 
 fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr: &ExprAttribute, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
@@ -749,7 +749,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                         })
                     }
                 } else {
-                    if func.evaluations().as_ref().unwrap().len() == 0 {
+                    if func.evaluations().as_ref().unwrap().is_empty() {
                         Some(CompletionItemLabelDetails {
                             detail: None,
                             description: Some(S!("None")),
