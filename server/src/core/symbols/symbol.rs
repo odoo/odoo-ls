@@ -1892,7 +1892,7 @@ impl Symbol {
                     from_module = self.find_module();
                 }
                 if let Some(from_module) = from_module {
-                    let model_symbols = model.clone().borrow().get_full_model_symbols(session, from_module);
+                    let model_symbols = model.clone().borrow().get_full_model_symbols(session, from_module.clone());
                     for model_symbol in model_symbols {
                         if self.is_equal(&model_symbol) {
                             continue;
@@ -1904,6 +1904,24 @@ impl Symbol {
                         } else {
                             if !attributs.is_empty() {
                                 return (attributs, diagnostics);
+                            }
+                        }
+                    }
+                    for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, Some(from_module.clone())) {
+                        //only fields are visibles on inherits, not methods
+                        let model_symbols = model_inherits_symbol.borrow().get_full_model_symbols(session, from_module.clone());
+                        for model_symbol in model_symbols {
+                            if self.is_equal(&model_symbol) {
+                                continue;
+                            }
+                            let (attributs, att_diagnostic) = model_symbol.borrow().get_member_symbol(session, name, None, true, true, all, false);
+                            diagnostics.extend(att_diagnostic);
+                            if all {
+                                extend_result(attributs);
+                            } else {
+                                if !attributs.is_empty() {
+                                    return (attributs, diagnostics);
+                                }
                             }
                         }
                     }

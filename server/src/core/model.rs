@@ -146,14 +146,40 @@ impl Model {
 
     pub fn get_inherited_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
         let mut res = vec![];
-        let main_sym = self.get_main_symbols(session, from_module, &mut None);
-        if main_sym.len() != 1 {
-            return res;
+        let mut already_in = HashSet::new();
+        if let Some(from_module) = from_module {
+            let symbols = self.get_symbols(session, from_module);
+            for symbol in symbols {
+                if let Some(model_data) = &symbol.borrow().as_class_sym()._model {
+                    for inherit in model_data.inherit.iter() {
+                        if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
+                            if !already_in.contains(&model.borrow().name) {
+                                res.push(model.clone());
+                                already_in.insert(model.borrow().name.clone());
+                            }
+                        }
+                    }
+                }
+            }
         }
-        if let Some(model_data) = &main_sym[0].borrow().as_class_sym()._model {
-            for inherit in model_data.inherit.iter() {
-                if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
-                    res.push(model);
+        res
+    }
+
+    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
+        let mut res = vec![];
+        let mut already_in = HashSet::new();
+        if let Some(from_module) = from_module {
+            let symbols = self.get_symbols(session, from_module);
+            for symbol in symbols {
+                if let Some(model_data) = &symbol.borrow().as_class_sym()._model {
+                    for (model_name, _field) in model_data.inherits.iter() {
+                        if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
+                            if !already_in.contains(&model.borrow().name) {
+                                res.push(model.clone());
+                                already_in.insert(model.borrow().name.clone());
+                            }
+                        }
+                    }
                 }
             }
         }
