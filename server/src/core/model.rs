@@ -103,6 +103,25 @@ impl Model {
         symbol.into_iter()
     }
 
+    pub fn get_full_model_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
+        let mut symbol: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+        for s in self.symbols.iter() {
+            let module = s.borrow().find_module().expect("Model should be declared in a module");
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+                symbol.insert(s);
+            }
+        }
+        for inherit_model in self.get_inherited_models(session, Some(from_module.clone())).iter() {
+            for s in inherit_model.borrow().symbols.iter() {
+                let module = s.borrow().find_module().expect("Model should be declared in a module");
+                if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+                    symbol.insert(s);
+                }
+            }
+        }
+        symbol.into_iter()
+    }
+
     pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<Symbol>>> {
         if acc.is_none() {
             *acc = Some(HashSet::new());
@@ -125,7 +144,23 @@ impl Model {
         res
     }
 
-    /* Return all symbols that build this model. 
+    pub fn get_inherited_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
+        let mut res = vec![];
+        let main_sym = self.get_main_symbols(session, from_module, &mut None);
+        if main_sym.len() != 1 {
+            return res;
+        }
+        if let Some(model_data) = &main_sym[0].borrow().as_class_sym()._model {
+            for inherit in model_data.inherit.iter() {
+                if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
+                    res.push(model);
+                }
+            }
+        }
+        res
+    }
+
+    /* Return all symbols that build this model.
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
     */
     pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<String>)> {
