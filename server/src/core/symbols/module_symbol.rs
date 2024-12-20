@@ -34,6 +34,7 @@ pub struct ModuleSymbol {
     module_name: String,
     pub dir_name: String,
     depends: Vec<String>,
+    all_depends: HashSet<String>, //computed all depends to avoid too many recomputations
     data: Vec<String>, // TODO
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
@@ -70,6 +71,7 @@ impl ModuleSymbol {
             module_name: String::new(),
             dir_name: String::new(),
             depends: vec!("base".to_string()),
+            all_depends: HashSet::new(),
             data: Vec::new(),
             weak_self: None,
             parent: None,
@@ -294,10 +296,12 @@ impl ModuleSymbol {
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
     fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<String>) {
-        let module = symbol.as_module_package();
+        symbol.as_module_package_mut().all_depends.clear();
+        let all_depends = symbol.as_module_package().depends.clone();
+        symbol.as_module_package_mut().all_depends.extend(all_depends);
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<String> = vec![];
-        for depend in module.depends.clone().iter() {
+        for depend in symbol.as_module_package().depends.clone().iter() {
             //TODO: raise an error on dependency cycle
             if !session.sync_odoo.modules.contains_key(depend) {
                 let module = find_module(session, odoo_addons.clone(), depend);
@@ -317,11 +321,13 @@ impl ModuleSymbol {
                     loaded.push(depend.clone());
                     let module = module.unwrap();
                     let mut module = (*module).borrow_mut();
+                    symbol.as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
                     symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH);
                 }
             } else {
                 let module = session.sync_odoo.modules.get(depend).unwrap().upgrade().unwrap();
                 let mut module = (*module).borrow_mut();
+                symbol.as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
                 symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
             }
         }
@@ -345,30 +351,8 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
-        if symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().depends.contains(dir_name) {
-            return true;
-        }
-        if acc.is_none() {
-            *acc = Some(HashSet::new());
-        }
-        for dep in symbol.borrow().as_module_package().depends.iter() {
-            if acc.as_ref().unwrap().contains(dep) {
-                continue;
-            }
-            let dep_module = session.sync_odoo.modules.get(dep);
-            if let Some(dep_module) = dep_module {
-                let dep_module = dep_module.upgrade();
-                if dep_module.is_none() {
-                    continue;
-                }
-                if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), dir_name, acc) {
-                    return true;
-                }
-                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow().as_module_package().dir_name.clone());
-            }
-        }
-        false
+    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String) -> bool {
+        symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().all_depends.contains(dir_name)
     }
 
 }
