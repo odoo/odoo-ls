@@ -437,17 +437,17 @@ impl PythonArchEvalHooks {
                             }
                             let model = model.clone();
                             let model = model.borrow();
-                            let symbols = model.get_main_symbols(session, from_module.clone(), &mut None);
+                            let symbols = model.get_main_symbols(session, from_module.clone());
                             if !symbols.is_empty() {
                                 for s in symbols.iter() {
-                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name, &mut None) {
+                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name) {
                                         return EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false);
                                     }
                                 }
                             } else {
                                 if from_module.is_some() {
                                     //retry without from_module to see if model exists elsewhere
-                                    let symbols = model.get_main_symbols(session, None, &mut None);
+                                    let symbols = model.get_main_symbols(session, None);
                                     if symbols.is_empty() {
                                         let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                                         diagnostics.push(Diagnostic::new(range,

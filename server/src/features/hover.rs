@@ -192,7 +192,7 @@ impl HoverFeature {
                     if let Some(model) = model {
                         if let Some(file_symbol) = file_symbol.as_ref() {
                             let from_module = file_symbol.borrow().find_module();
-                            let main_class = model.borrow().get_main_symbols(session, from_module.clone(), &mut None);
+                            let main_class = model.borrow().get_main_symbols(session, from_module.clone());
                             for main_class in main_class.iter() {
                                 let main_class = main_class.borrow();
                                 let main_class_module = main_class.find_module();

@@ -494,11 +494,11 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
 
 
                         if let Some(ref current_module) = current_module {
-                            let model_class_syms = model.borrow().get_main_symbols(session, None,&mut None);
-                            let modules = model_class_syms.iter().flat_map(|model_rc| 
+                            let model_class_syms = model.borrow().get_main_symbols(session, None);
+                            let modules = model_class_syms.iter().flat_map(|model_rc|
                                 model_rc.borrow().find_module());
-                            let required_modules = modules.filter(|module| 
-                                !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name, &mut None));
+                            let required_modules = modules.filter(|module|
+                                !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name));
                             let dep_names: Vec<String> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
                             if !dep_names.is_empty() {
                                 if !session.sync_odoo.config.ac_filter_model_names{

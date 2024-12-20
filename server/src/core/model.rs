@@ -92,7 +92,7 @@ impl Model {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().find_module().expect("Model should be declared in a module");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
                 symbol.push(s);
             }
         }
@@ -103,14 +103,14 @@ impl Model {
         let mut symbol: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         for s in self.symbols.iter() {
             let module = s.borrow().find_module().expect("Model should be declared in a module");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
                 symbol.insert(s);
             }
         }
         for inherit_model in self.get_inherited_models(session, Some(from_module.clone())).iter() {
             for s in inherit_model.borrow().symbols.iter() {
                 let module = s.borrow().find_module().expect("Model should be declared in a module");
-                if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+                if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
                     symbol.insert(s);
                 }
             }
@@ -118,10 +118,7 @@ impl Model {
         symbol.into_iter()
     }
 
-    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<String>>) -> Vec<Rc<RefCell<Symbol>>> {
-        if acc.is_none() {
-            *acc = Some(HashSet::new());
-        }
+    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
         let mut res: Vec<Rc<RefCell<Symbol>>> = vec![];
         for sym in self.symbols.iter() {
             if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
@@ -129,10 +126,8 @@ impl Model {
                     res.push(sym);
                 } else {
                     let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
-                    if (acc.is_some() && acc.as_ref().unwrap().contains(&dir_name)) ||
-                    ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name, acc) {
+                    if ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name) {
                         res.push(sym);
-                        acc.as_mut().unwrap().insert(dir_name);
                     }
                 }
             }
@@ -191,7 +186,7 @@ impl Model {
             if let Some(from_module) = from_module.as_ref() {
                 let module = s.borrow().find_module();
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
                         symbol.push((s, None));
                     } else {
                         symbol.push((s, Some(module.borrow().as_module_package().dir_name.clone())));
