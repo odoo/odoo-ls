@@ -16,7 +16,7 @@
             </a>
             <h1 class="welcome-header">Welcome to Odoo</h1>
             <div class="welcome-header" id="welcome-title">
-                Odoo Language Server will help you to write Odoo modules by providing you with autocompletion, code analysis and more.
+                Odoo Language Server will help you to write Odoo modules by providing you with autocompletion, hover, goto definition, code analysis and more.
             </div>
             <%- alertHTML %>
             <div class="display-welcome-checkbox welcome-header">
@@ -24,33 +24,35 @@
             </div>
             <h2>How to install ?</h2>
             <section>
-                If you see this message, it means that your extension is already installed. But to make it shine, it is better to ensure that no other linter is actually running concurrently with this extension.
+                If you see this message, it means that your extension is already installed. But to make it shine, it is better to ensure that no other language server is actually running concurrently with this extension.
                 <br/>
-                The extension is made to work alone or with the Python Extension of VsCode (ms-python.python). If you have another Python linter however, you should probably deactivate it
-                to avoid double autocompletion and to remove wrong error diagnotics. To do that, you can go in the "Extensions" tab, search for your linter and click on "Disable" or "Disable (workspace)".
+                The extension is made to work alone or with the Python Extension of VsCode (ms-python.python). If you have another Python language server however, you should probably deactivate it
+                to avoid double autocompletion and to remove wrong error diagnotics. To do that, you can go in the "Extensions" tab, search for your language server and click on "Disable" or "Disable (workspace)".
+                <br/>
+                On start-up the extension will prompt you to disable the Language Server from the Python extension, that behavior can be altered in the settings.
             </section>
             <h2> How to use the extension ? </h2>
             <section>
                 <p>
-                    The extension work by setting up a configuration, then analysing your code with the loaded configuration.</br>
-                    You have to first create the configurations you'll use later.
+                    The extension works by setting up a configuration, then analyzing your code with the loaded configuration.</br>
+                    You first have to create the configurations you'll use later.
                 </p>
                 <p>
                     Your available configurations are displayed here:<br/>
                     <img class="img-margins" src="<%= image_1 %>" /><br/>
-                    click on it to open the configuration selector panel:<br/>
+                    Click on it to open the configuration selector panel:<br/>
                     <img class="img-margins" src="<%= image_2 %>" /><br/>
-                    To create a new configuration, click on "Add a configuration". To edit one, click on the wheel next to the configuration you want to edit.<br/>
+                    To create a new configuration, click on "Add a configuration". To edit one, click on the wheel next to the configuration you would like to edit.<br/>
                     <img class="img-margins" src="<%= image_3 %>" /><br/>
                 </p>
                 <p>
-                    Create your configuration with the information related to the odoo you want to use:<br/>
+                    Create your configuration with the information related to the odoo environment you want to use:<br/>
                     <img class="img-margins" src="<%= image_4 %>" /><br/>
                 </p>
                 <p>
-                    When your configuration is ready, select it for your panel. This selection will run for the current workspace.<br/>
+                    When your configuration is ready, select it from the panel. This selection will run for the current workspace.<br/>
                     While the wheel next to the Odoo button is spinning, the extension is loading the configuration. When it's done, the wheel will stop spinning and the extension will start to help you in your work.<br/>
-                    You can use your vscode while the extension is loading, but no feature will be available until the configuration is ready.
+                    You can use your vscode while the extension is loading, but not all features will be available until the configuration is ready.
                 </p>
             </section>
             <h2> Advanced configuration </h2>
@@ -58,6 +60,7 @@
                 <p>
                     If you want to edit manually your configurations or script the setup, you can edit them by modifying the settings.json of your
                     workspace. Be cautious however, as you can break the extension by doing that. Follow carefully the helpers and type annotations.
+                    <!-- TODO: Edit Wiki -->
                     You can find more information about settings on our github: https://github.com/odoo/odoo-ls/wiki/Edit-settings.json
                 </p>
             </section>
