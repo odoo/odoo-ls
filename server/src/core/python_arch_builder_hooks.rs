@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
+use crate::constants::{PackageType, SymType};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -80,6 +81,11 @@ impl PythonArchBuilderHooks {
                     session.sync_odoo.need_rebuild = true;
                 }
             }
+        }
+        let sym_type = symbol.borrow().typ();
+        if let SymType::PACKAGE(PackageType::MODULE) = sym_type{
+            let mut sym_mut = symbol.borrow_mut();
+            sym_mut.as_module_package_mut().compute_full_depends(session);
         }
     }
 }

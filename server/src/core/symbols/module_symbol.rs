@@ -33,6 +33,7 @@ pub struct ModuleSymbol {
     loaded: bool,
     module_name: String,
     depends: HashSet<String>,
+    full_depends: Option<HashSet<String>>,
     data: Vec<String>, // TODO
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
@@ -68,6 +69,7 @@ impl ModuleSymbol {
             loaded: false,
             module_name: String::new(),
             depends: HashSet::from(["base".to_string()]),
+            full_depends: None,
             data: Vec::new(),
             weak_self: None,
             parent: None,
@@ -342,30 +344,27 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, module_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
-        if symbol.borrow().as_module_package().name == *module_name || symbol.borrow().as_module_package().depends.contains(module_name) {
-            return true;
-        }
-        if acc.is_none() {
-            *acc = Some(HashSet::new());
-        }
-        for dep in symbol.borrow().as_module_package().depends.iter() {
-            if acc.as_ref().unwrap().contains(dep) {
-                continue;
+    pub fn compute_full_depends(&mut self, session: &mut SessionInfo) -> HashSet<String> {
+        if self.full_depends.is_some(){ return self.full_depends.clone().unwrap()}
+        let full_depends_set = self.depends.iter().fold(self.depends.clone(), |acc, dep| {
+            if *dep == self.name{
+                return acc
             }
             let dep_module = session.sync_odoo.modules.get(dep);
-            if let Some(dep_module) = dep_module {
-                let dep_module = dep_module.upgrade();
-                if dep_module.is_none() {
-                    continue;
-                }
-                if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), module_name, acc) {
-                    return true;
-                }
-                acc.as_mut().unwrap().insert(dep.clone());
+            match dep_module {
+                None => acc,
+                Some(dep_module  ) =>
+                    acc.union(&dep_module.upgrade().unwrap().borrow_mut().as_module_package_mut().compute_full_depends(session)).cloned().collect()
             }
-        }
-        false
+        });
+        self.full_depends = Some(full_depends_set.clone());
+        full_depends_set
+    }
+
+    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, module_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
+        symbol.borrow().as_module_package().name == *module_name ||
+         (acc.is_some() && acc.clone().unwrap().contains(module_name)) ||
+         symbol.borrow_mut().as_module_package_mut().full_depends.as_ref().unwrap().contains(module_name)
     }
 
 }

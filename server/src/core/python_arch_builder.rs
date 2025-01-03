@@ -48,7 +48,7 @@ impl PythonArchBuilder {
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
-        let symbol = &self.sym_stack[0];
+        let symbol = &self.sym_stack[0].clone();
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to extract
         }
@@ -98,22 +98,21 @@ impl PythonArchBuilder {
             let ast = match self.file_mode {
                 true => {file_info.ast.as_ref().unwrap()},
                 false => {
-                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), symbol.borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
             self.visit_node(session, &ast);
             self._resolve_all_symbols(session);
             if self.file_mode {
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+                session.sync_odoo.add_to_rebuild_arch_eval(symbol.clone());
             }
         } else if self.file_mode {
             drop(file_info);
             let mut file_info = file_info_rc.borrow_mut();
             file_info.publish_diagnostics(session);
         }
-        PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
-        let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        PythonArchBuilderHooks::on_done(session, &symbol.clone());
+        symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
