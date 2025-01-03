@@ -32,7 +32,7 @@ pub struct ModuleSymbol {
     root_path: String,
     loaded: bool,
     module_name: String,
-    depends: Vec<String>,
+    depends: HashSet<String>,
     data: Vec<String>, // TODO
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
@@ -67,7 +67,7 @@ impl ModuleSymbol {
             root_path: dir_path.sanitize(),
             loaded: false,
             module_name: String::new(),
-            depends: vec!("base".to_string()),
+            depends: HashSet::from(["base".to_string()]),
             data: Vec::new(),
             weak_self: None,
             parent: None,
@@ -223,7 +223,7 @@ impl ModuleSymbol {
                                             if depend_value == self.name {
                                                 res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range()));
                                             } else {
-                                                self.depends.push(depend_value);
+                                                self.depends.insert(depend_value);
                                             }
                                         }
                                     }
