@@ -32,7 +32,6 @@ pub struct ModuleSymbol {
     root_path: String,
     loaded: bool,
     module_name: String,
-    pub dir_name: String,
     depends: Vec<String>,
     data: Vec<String>, // TODO
     pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
@@ -68,7 +67,6 @@ impl ModuleSymbol {
             root_path: dir_path.sanitize(),
             loaded: false,
             module_name: String::new(),
-            dir_name: String::new(),
             depends: vec!("base".to_string()),
             data: Vec::new(),
             weak_self: None,
@@ -117,10 +115,9 @@ impl ModuleSymbol {
         };
         module._init_symbol_mgr();
         info!("building new module: {:?}", dir_path.sanitize());
-        if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
+        if module.name == "base" {
             module.depends.clear();
         }
-        module.dir_name = dir_path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
         let manifest_path = dir_path.join("__manifest__.py");
         if !manifest_path.exists() {
             return None
@@ -131,7 +128,7 @@ impl ModuleSymbol {
             return None;
         }
         let diags = module._load_manifest(&manifest_file_info);
-        if session.sync_odoo.modules.contains_key(&module.dir_name) {
+        if session.sync_odoo.modules.contains_key(&module.name) {
             //TODO: handle multiple modules with the same name
         }
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::SYNTAX, diags);
@@ -161,7 +158,7 @@ impl ModuleSymbol {
             let mut _symbol = symbol.borrow_mut();
             let module = _symbol.as_module_package_mut();
             module.loaded = true;
-            loaded.push(module.dir_name.clone());
+            loaded.push(module.name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
             let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
             let mut manifest_file_info = (*manifest_file_info).borrow_mut();
@@ -223,7 +220,7 @@ impl ModuleSymbol {
                                             res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", S!("OLS30205"), &depend.range()));
                                         } else {
                                             let depend_value = depend.as_string_literal_expr().unwrap().value.to_string();
-                                            if depend_value == self.dir_name {
+                                            if depend_value == self.name {
                                                 res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range()));
                                             } else {
                                                 self.depends.push(depend_value);
@@ -345,8 +342,8 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
-        if symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().depends.contains(dir_name) {
+    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, module_name: &String, acc: &mut Option<HashSet<String>>) -> bool {
+        if symbol.borrow().as_module_package().name == *module_name || symbol.borrow().as_module_package().depends.contains(module_name) {
             return true;
         }
         if acc.is_none() {
@@ -362,10 +359,10 @@ impl ModuleSymbol {
                 if dep_module.is_none() {
                     continue;
                 }
-                if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), dir_name, acc) {
+                if ModuleSymbol::is_in_deps(session, dep_module.as_ref().unwrap(), module_name, acc) {
                     return true;
                 }
-                acc.as_mut().unwrap().insert(dep_module.as_ref().unwrap().borrow().as_module_package().dir_name.clone());
+                acc.as_mut().unwrap().insert(dep.clone());
             }
         }
         false

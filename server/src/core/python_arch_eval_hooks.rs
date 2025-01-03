@@ -440,7 +440,7 @@ impl PythonArchEvalHooks {
                             let symbols = model.get_main_symbols(session, from_module.clone(), &mut None);
                             if !symbols.is_empty() {
                                 for s in symbols.iter() {
-                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name, &mut None) {
+                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().name, &mut None) {
                                         return EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false);
                                     }
                                 }

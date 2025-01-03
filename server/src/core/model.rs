@@ -92,7 +92,7 @@ impl Model {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().find_module().expect("Model should be declared in a module");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().name, &mut None) {
                 symbol.push(s);
             }
         }
@@ -109,7 +109,7 @@ impl Model {
                 if from_module.is_none() || sym.as_ref().borrow().find_module().is_none() {
                     res.push(sym);
                 } else {
-                    let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
+                    let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().name.clone();
                     if (acc.is_some() && acc.as_ref().unwrap().contains(&dir_name)) ||
                     ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name, acc) {
                         res.push(sym);
@@ -130,10 +130,10 @@ impl Model {
             if let Some(from_module) = from_module.as_ref() {
                 let module = s.borrow().find_module();
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().name, &mut None) {
                         symbol.push((s, None));
                     } else {
-                        symbol.push((s, Some(module.borrow().as_module_package().dir_name.clone())));
+                        symbol.push((s, Some(module.borrow().as_module_package().name.clone())));
                     }
                 } else {
                     session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());

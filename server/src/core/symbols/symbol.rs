@@ -883,7 +883,7 @@ impl Symbol {
             let module = parent.borrow_mut().add_new_module_package(session, &name, path);
             if let Some(module) = module {
                 ModuleSymbol::load_module_info(module.clone(), session, parent.clone());
-                session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
+                session.sync_odoo.modules.insert(module.borrow().as_module_package().name.clone(), Rc::downgrade(&module));
                 return Some(module);
             } else if require_module {
                 return None;
@@ -1304,7 +1304,7 @@ impl Symbol {
             }
             match *ref_to_unload.borrow_mut() {
                 Symbol::Package(PackageSymbol::Module(ref mut m)) => {
-                    session.sync_odoo.modules.remove(m.dir_name.as_str());
+                    session.sync_odoo.modules.remove(m.name.as_str());
                 },
                 Symbol::Class(ref mut c) => {
                     if let Some(model_data) = c._model.as_ref() {
