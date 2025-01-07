@@ -303,9 +303,7 @@ impl SyncOdoo {
                 );
             }
         } else {
-            let odoo_addon_path = PathBuf::from(odoo_path.clone()).join("addons");
-            session.log_message(MessageType::ERROR, format!("Unable to find odoo addons path at {}", odoo_addon_path.sanitize()));
-            return false;
+            session.log_message(MessageType::WARNING, format!("Unable to find odoo addons path at {}. You can ignore this message if you use a nightly build or if your community addons are in another addon paths.", odoo_addon_path.sanitize()));
         }
         for addon in session.sync_odoo.config.addons.iter() {
             let addon_path = PathBuf::from(addon);
