@@ -23,17 +23,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "odoo.addConfiguration",
-        "title": "Add Configuration",
-        "category": "Odoo",
-        "icon": "$(add)"
-      },
-      {
-        "command": "odoo.openConfiguration",
-        "title": "Open configuration",
-        "category": "Odoo"
-      },
-      {
         "command": "odoo.clickStatusBar",
         "title": "Change Configuration",
         "category": "Odoo"
@@ -77,20 +66,6 @@
           "title": "Open the crash notification",
           "category": "Odoo",
           "when": "odoo.showCrashNotificationCommand"
-        }
-      ],
-      "view/title": [
-        {
-          "command": "odoo.addConfiguration",
-          "when": "view == odoo-configurations",
-          "group": "navigation"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "odoo.addConfiguration",
-          "when": "view == nodeDependencies && viewItem == dependency",
-          "group": "inline"
         }
       ]
     },
