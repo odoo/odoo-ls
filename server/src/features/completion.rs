@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
+use ruff_python_ast::identifier::Identifier;
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::Ranged;
 use weak_table::traits::WeakElement;
 
 use crate::constants::SymType;
-use crate::core::evaluation::{Evaluation, EvaluationSymbolWeak};
+use crate::core::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -21,6 +22,7 @@ use super::hover::HoverFeature;
 #[allow(non_camel_case_types)]
 pub enum ExpectedType {
     MODEL_NAME,
+    DOMAIN,
     CLASS(Rc<RefCell<Symbol>>),
 }
 
@@ -465,9 +467,46 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
     if offset > expr_call.func.range().start().to_usize() && offset <= expr_call.func.range().end().to_usize() {
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
-    for arg in expr_call.arguments.args.iter() {
+    for (arg_index, arg) in expr_call.arguments.args.iter().enumerate() {
         if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
-            return complete_expr(arg, session, file, offset, is_param, expected_type);
+            let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+            let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start()).0;
+            for callable_eval in callable_evals.iter() {
+                let callable = callable_eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                if let Some(callable) = callable.weak.upgrade() {
+                    if callable.borrow().typ() == SymType::FUNCTION {
+                        let func = callable.borrow();
+                        let func = func.as_func();
+                        let func_arg = func.get_indexed_arg_in_call(
+                            expr_call,
+                            arg_index as u32,
+                            callable_eval.symbol.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
+                        if let Some(func_arg) = func_arg {
+                            if let Some(func_arg_sym) = func_arg.symbol.upgrade() {
+                                let mut expected_type = vec![];
+                                for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
+                                    match evaluation.symbol.get_symbol_ptr() {
+                                        EvaluationSymbolPtr::WEAK(_weak) => {
+                                            //if weak, use get_symbol
+                                            let symbol=  evaluation.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                                            if let Some(evaluation) = symbol.weak.upgrade() {
+                                                if evaluation.borrow().typ() == SymType::CLASS {
+                                                    expected_type.push(ExpectedType::CLASS(evaluation.clone()));
+                                                }
+                                            }
+                                        },
+                                        EvaluationSymbolPtr::DOMAIN => {
+                                            expected_type.push(ExpectedType::DOMAIN);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                return complete_expr(arg, session, file, offset, is_param, &expected_type);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     None
@@ -525,6 +564,8 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     });
                     }
                 }
+            },
+            ExpectedType::DOMAIN => {
             },
             ExpectedType::CLASS(_) => {},
         }

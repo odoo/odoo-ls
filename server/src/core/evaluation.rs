@@ -161,7 +161,7 @@ impl EvaluationSymbolWeak {
 }
 
 #[derive(Debug, Default, Clone)]
-enum EvaluationSymbolPtr {
+pub enum EvaluationSymbolPtr {
     WEAK(EvaluationSymbolWeak),
     SELF,
     ARG(u32),
@@ -1238,5 +1238,10 @@ impl EvaluationSymbol {
                 }
             }
         }
+    }
+
+    //Return the symbol ptr, if you need to know its type (domain, None, ...). If you need the symbol behind the pointer, use get_symbol however
+    pub fn get_symbol_ptr(&self) -> &EvaluationSymbolPtr {
+        &self.sym
     }
 }
