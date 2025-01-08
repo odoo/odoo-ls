@@ -1,6 +1,7 @@
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::RefCell, cmp::min, collections::HashMap, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
+use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
@@ -159,5 +160,30 @@ impl FunctionSymbol {
             res.push(new_eval);
         }*/
         res
+    }
+
+    /* Given a call of this function and an index, return the corresponding parameter definition */
+    pub fn get_indexed_arg_in_call(&self, call: &ExprCall, index: u32, is_on_instance: bool) -> Option<&Argument> {
+        if self.is_overloaded() {
+            return None;
+        }
+        let mut call_arg_keyword = None;
+        if index > (call.arguments.args.len()-1) as u32 {
+            call_arg_keyword = call.arguments.keywords.get((index - call.arguments.args.len() as u32) as usize);
+        }
+        let mut arg_index = 0;
+        if is_on_instance {
+            arg_index += 1;
+        }
+        if let Some(keyword) = call_arg_keyword {
+            for arg in self.args.iter() {
+                if arg.symbol.upgrade().unwrap().borrow().name() == keyword.arg.as_ref().unwrap().id {
+                    return Some(arg);
+                }
+            }
+        } else {
+            return self.args.get(arg_index as usize);
+        }
+        None
     }
 }
