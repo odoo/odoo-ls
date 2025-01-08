@@ -62,6 +62,11 @@
         "command": "odoo.disablePythonLanguageServerCommand",
         "title": "Set Python extension LanugageServer to None (Does nothing if python extension is not active)",
         "category": "Odoo"
+      },
+      {
+        "command": "odoo.restartServer",
+        "title": "Restart Language Server",
+        "category": "Odoo"
       }
     ],
     "views": {},

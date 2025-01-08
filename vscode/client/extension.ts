@@ -711,7 +711,13 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
         }),
         commands.registerCommand(
             "odoo.disablePythonLanguageServerCommand", setPythonLSNone
-        )
+            ),
+        commands.registerCommand(
+            "odoo.restartServer", async () => {
+                if (global.LSCLIENT) {
+                    global.LSCLIENT.restart();
+                }
+        })
     );
 
     if (context.extensionMode === ExtensionMode.Development) {
