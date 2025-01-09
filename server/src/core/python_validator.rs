@@ -146,7 +146,7 @@ impl PythonValidator {
                         }
                         self.diagnostics.extend(sym.borrow_mut().as_func_mut().diagnostics.values().flat_map(|v| v.clone()));
                     } else {
-                        panic!("function not found");
+                        panic!("function '{}' not found", f.name.id);
                     }
                 },
                 Stmt::ClassDef(c) => {

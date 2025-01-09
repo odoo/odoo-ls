@@ -4,6 +4,7 @@ use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, 
 use ruff_python_ast::identifier::Identifier;
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::Ranged;
+use tracing::info;
 use weak_table::traits::WeakElement;
 
 use crate::constants::SymType;
@@ -20,9 +21,14 @@ use super::hover::HoverFeature;
 
 
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub enum ExpectedType {
     MODEL_NAME,
-    DOMAIN,
+    DOMAIN(Rc<RefCell<Symbol>>),
+    DOMAIN_LIST(Rc<RefCell<Symbol>>),
+    DOMAIN_OPERATOR,
+    DOMAIN_FIELD(Rc<RefCell<Symbol>>),
+    DOMAIN_COMPARATOR,
     CLASS(Rc<RefCell<Symbol>>),
 }
 
@@ -373,7 +379,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Starred(_) => None,
         Expr::Name(expr_name) => complete_name(session, file, expr_name, offset, is_param, expected_type),
         Expr::List(expr_list) => complete_list(session, file, expr_list, offset, is_param, expected_type),
-        Expr::Tuple(_) => None,
+        Expr::Tuple(expr_tuple) => complete_tuple(session, file, expr_tuple, offset, is_param, expected_type),
         Expr::Slice(_) => None,
         Expr::IpyEscapeCommand(_) => None,
     }
@@ -496,7 +502,11 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                             }
                                         },
                                         EvaluationSymbolPtr::DOMAIN => {
-                                            expected_type.push(ExpectedType::DOMAIN);
+                                            if let Some(parent_value) = callable_eval.symbol.context.get(&S!("parent")) {
+                                                if let Some(parent) = parent_value.as_symbol().upgrade() {
+                                                    expected_type.push(ExpectedType::DOMAIN(parent));
+                                                }
+                                            }
                                         }
                                         _ => {}
                                     }
@@ -565,7 +575,48 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     }
                 }
             },
-            ExpectedType::DOMAIN => {
+            ExpectedType::DOMAIN(parent) => {},
+            ExpectedType::DOMAIN_OPERATOR => {
+                for operator in vec!["!", "&", "|"].iter() {
+                    items.push(CompletionItem {
+                        label: operator.to_string(),
+                        insert_text: None,
+                        kind: Some(lsp_types::CompletionItemKind::CLASS),
+                        label_details: None,
+                        sort_text: None,
+                        ..Default::default()
+                    });
+                }
+            },
+            ExpectedType::DOMAIN_LIST(parent) => {},
+            ExpectedType::DOMAIN_COMPARATOR => {
+                for (operator, sort_text) in vec![("=", "a"), ("!=", "b"), (">", "c"), (">=", "d"), ("<", "e"), ("<=", "f"), ("=?", "g"),  ("like", "h"), ("=like", "i"), ("not like", "j"), ("ilike", "k"),
+                    ("=ilike", "l"),  ("not ilike", "m"),  ("in", "n"),  ("not in", "o"), ("child_of", "p"), ("parent_of", "q"), ("any", "r"), ("not any", "s")].iter() {
+                    items.push(CompletionItem {
+                        label: operator.to_string(),
+                        insert_text: None,
+                        kind: Some(lsp_types::CompletionItemKind::CLASS),
+                        label_details: None,
+                        sort_text: Some(sort_text.to_string()),
+                        ..Default::default()
+                    });
+                }
+            },
+            ExpectedType::DOMAIN_FIELD(parent) => {
+                let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+                let from_module = file.borrow().find_module().clone();
+                Symbol::all_members(&parent, session, &mut all_symbols, true, from_module, &mut None, false);
+                for (_symbol_name, symbols) in all_symbols {
+                    //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
+                    if _symbol_name.starts_with(expr_string_literal.value.to_str()) {
+                        for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
+                            if final_sym.borrow().is_field(session) {
+                                items.push(build_completion_item_from_symbol(session, final_sym, dep.clone()));
+                                continue;
+                            }
+                        }
+                    }
+                }
             },
             ExpectedType::CLASS(_) => {},
         }
@@ -591,7 +642,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                 for parent_sym_type in parent_sym_types.iter() {
                     if let Some(parent_sym) = parent_sym_type.weak.upgrade() {
                         let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
-                        let from_module = parent_sym.borrow().find_module().clone();
+                        let from_module = file.borrow().find_module().clone();
                         Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval_weak.is_super);
                         for (_symbol_name, symbols) in all_symbols {
                             //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
@@ -660,10 +711,74 @@ fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_nam
 }
 
 fn complete_list(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_list: &ruff_python_ast::ExprList, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    //TODO complete domains
-    for expr in expr_list.elts.iter() {
-        if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
-            return complete_expr( expr, session, file, offset, is_param, expected_type);
+    _complete_list_or_tuple(session, file, &expr_list.elts, offset, is_param, expected_type)
+}
+
+pub fn complete_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_tuple: &ruff_python_ast::ExprTuple, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    _complete_list_or_tuple(session, file, &expr_tuple.elts, offset, is_param, expected_type)
+}
+
+pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, list_or_tuple_elts: &Vec<Expr>, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    for expected_type in expected_type.iter() {
+        match expected_type {
+            ExpectedType::DOMAIN(parent) => {
+                for expr in list_or_tuple_elts.iter() {
+                    if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
+                        match expr {
+                            Expr::StringLiteral(expr_string_literal) => {
+                                return complete_string_literal(session, file, expr_string_literal, offset, is_param, &vec![ExpectedType::DOMAIN_OPERATOR]);
+                            },
+                            Expr::Tuple(t) => {
+                                return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::DOMAIN_LIST(parent.clone())]);
+                            },
+                            Expr::List(l) => {
+                                return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::DOMAIN_LIST(parent.clone())]);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            },
+            ExpectedType::DOMAIN_LIST(parent) => {
+                if list_or_tuple_elts.len() == 0 {
+                    if let Some(capability_text_doc) = &session.sync_odoo.capabilities.text_document {
+                        if let Some(completion) = &capability_text_doc.completion {
+                            if let Some(completion) = &completion.completion_item {
+                                if completion.snippet_support.unwrap_or(false) {
+                                    return Some(CompletionResponse::List(CompletionList {
+                                        is_incomplete: false,
+                                        items: vec![CompletionItem {
+                                            label: "(field, comparator, value)".to_string(),
+                                            kind: Some(lsp_types::CompletionItemKind::CLASS),
+                                            insert_text: Some("$1, ${2|\"=\",\"!=\",\">\",\">=\",\"<\",\"<=\",\"=?\",\"like\",\"=like\",\"not like\",\"ilike\",\"=ilike\",\"not ilike\",\"in\",\"not in\",\"child_of\",\"parent_of\",\"any\",\"not any\"|}, $3".to_string()),
+                                            insert_text_format: Some(lsp_types::InsertTextFormat::SNIPPET),
+                                            ..Default::default()
+                                        }]
+                                    }))
+                                }
+                            }
+                        }
+                    }
+                }
+                for (index, expr) in list_or_tuple_elts.iter().enumerate() {
+                    if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+                        let expected_type = match index {
+                            0 => vec![ExpectedType::DOMAIN_FIELD(parent.clone())],
+                            1 => vec![ExpectedType::DOMAIN_COMPARATOR],
+                            _ => vec![],
+                        };
+                        return complete_expr(expr, session, file, offset, is_param, &expected_type);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if expected_type.is_empty() {
+        for expr in list_or_tuple_elts.iter() {
+            if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
+                return complete_expr( expr, session, file, offset, is_param, expected_type);
+            }
         }
     }
     None

@@ -67,7 +67,8 @@ pub struct SyncOdoo {
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub must_reload_paths: Vec<(Weak<RefCell<Symbol>>, String)>,
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
-    pub need_rebuild: bool //if true, the next process_rebuilds will drop everything and rebuild everything
+    pub need_rebuild: bool, //if true, the next process_rebuilds will drop everything and rebuild everything
+    pub capabilities: lsp_types::ClientCapabilities,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -100,6 +101,7 @@ impl SyncOdoo {
             must_reload_paths: vec![],
             load_odoo_addons: true,
             need_rebuild: false,
+            capabilities: lsp_types::ClientCapabilities::default(),
         };
         sync_odoo
     }
@@ -749,6 +751,11 @@ impl SyncOdoo {
 
     pub fn get_rebuild_queue_size(&self) -> usize {
         return self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_odoo.len() + self.rebuild_validation.len()
+    }
+
+    pub fn load_capabilities(&mut self, capabilities: &lsp_types::ClientCapabilities) {
+        info!("Client capabilities: {:?}", capabilities);
+        self.capabilities = capabilities.clone();
     }
 
 }
