@@ -162,6 +162,10 @@ impl Server {
         info!("Starting connection initialization");
 
         let initialize_params: InitializeParams = serde_json::from_value(params)?;
+        {
+            let mut sync_odoo = self.sync_odoo.lock().unwrap();
+            sync_odoo.load_capabilities(&initialize_params.capabilities);
+        }
         if let Some(initialize_params) = initialize_params.process_id {
             self.client_process_id = initialize_params;
         }
@@ -201,7 +205,7 @@ impl Server {
                 })),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
-                    trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\"")]),
+                    trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\""), S!("(")]),
                     ..CompletionOptions::default()
                 }),
                 workspace: Some(WorkspaceServerCapabilities {
