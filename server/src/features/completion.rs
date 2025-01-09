@@ -145,8 +145,16 @@ fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>
 }
 
 fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
+    let mut expected_type = vec![];
+    if stmt_assign.targets.len() == 1 {
+        if let Some(target_name) = stmt_assign.targets.first().unwrap().as_name_expr() {
+            if target_name.id == "_inherit" {
+                expected_type.push(ExpectedType::MODEL_NAME);
+            }
+        }
+    }
     if offset > stmt_assign.value.range().start().to_usize() && offset <= stmt_assign.value.range().end().to_usize() {
-        return complete_expr( &stmt_assign.value, session, file, offset, false, &vec![]);
+        return complete_expr( &stmt_assign.value, session, file, offset, false, &expected_type);
     }
     None
 }
@@ -723,7 +731,7 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
         match expected_type {
             ExpectedType::DOMAIN(parent) => {
                 for expr in list_or_tuple_elts.iter() {
-                    if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
+                    if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
                         match expr {
                             Expr::StringLiteral(expr_string_literal) => {
                                 return complete_string_literal(session, file, expr_string_literal, offset, is_param, &vec![ExpectedType::DOMAIN_OPERATOR]);
@@ -768,6 +776,13 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
                             _ => vec![],
                         };
                         return complete_expr(expr, session, file, offset, is_param, &expected_type);
+                    }
+                }
+            }
+            ExpectedType::MODEL_NAME => { //In case of Model_name, transfer this expected type to items. It is used in _inherit = [""] for example, but can maybe be wrong elsewhere?
+                for expr in list_or_tuple_elts.iter() {
+                    if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+                        return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
                     }
                 }
             }
