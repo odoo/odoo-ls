@@ -264,6 +264,19 @@ impl Server {
         Ok(())
     }
 
+    fn shutdown_threads(&mut self, message: &str){
+        let shutdown_notification = Message::Notification(lsp_server::Notification{
+            method: Shutdown::METHOD.to_string(),
+            params: serde_json::Value::Null,
+        });
+        for _ in 0..self.senders_s_to_main.len() {
+            self.sender_s_to_main.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
+        }
+        for _ in 0..self.senders_s_to_read.len() {
+            self.sender_s_to_read.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
+        }
+        info!(message);
+    }
     pub fn run(mut self, client_pid: Option<u32>) {
         let mut select = Select::new();
         let receiver_clone = self.connection.as_ref().unwrap().receiver.clone();
@@ -301,20 +314,8 @@ impl Server {
 
             if index == 0 { //comes from client
                 if let Message::Request(r) = &msg {
-                    if self.connection.as_ref().unwrap().handle_shutdown(r).unwrap_or(false) {
-                        for _ in 0..self.senders_s_to_main.len() {
-                            self.sender_s_to_main.send(Message::Notification(lsp_server::Notification{
-                                method: Shutdown::METHOD.to_string(),
-                                params: serde_json::Value::Null,
-                            })).unwrap(); //sent as notification as we already handled the request for the client
-                        }
-                        for _ in 0..self.senders_s_to_read.len() {
-                            self.sender_s_to_read.send(Message::Notification(lsp_server::Notification{
-                                method: Shutdown::METHOD.to_string(),
-                                params: serde_json::Value::Null,
-                            })).unwrap(); //sent as notification as we already handled the request for the client
-                        }
-                        info!("Got shutdown request. Exiting.");
+                    if self.connection.as_ref().unwrap().handle_shutdown(r).unwrap_or(false){
+                        self.shutdown_threads("Got a client shutdown request. Exiting.");
                         break;
                     }
                 }
@@ -328,6 +329,10 @@ impl Server {
                         self.connection.as_ref().unwrap().sender.send(Message::Request(r)).unwrap();
                     },
                     Message::Notification(n) => {
+                        if n.method == Shutdown::METHOD{
+                            self.shutdown_threads("Server-initiated shutdown request. Exiting");
+                            break;
+                        }
                         self.connection.as_ref().unwrap().sender.send(Message::Notification(n)).unwrap();
                     },
                     Message::Response(r) => {
@@ -349,7 +354,6 @@ impl Server {
         for thread in self.threads {
             thread.join().unwrap();
         }
-        self.io_threads.join().unwrap();
         self.delayed_process_thread.join().unwrap();
     }
 

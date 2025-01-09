@@ -73,7 +73,7 @@ def build_package(session: nox.Session) -> None:
         session.run("cp", "../server/target/release/odoo_ls_server", "linux_odoo_ls_server", external=True)
     if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.exe").is_file():
         session.run("cp", "../server/target/release/odoo_ls_server.exe", "win_odoo_ls_server.exe", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
+    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/mac_odoo_ls_server").is_file():
         session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", external=True)
@@ -98,7 +98,7 @@ def build_package_prerelease(session: nox.Session) -> None:
         session.run("cp", "../server/target/release/odoo_ls_server", "linux_odoo_ls_server", external=True)
     if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.exe").is_file():
         session.run("cp", "../server/target/release/odoo_ls_server.exe", "win_odoo_ls_server.exe", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
+    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/macos_odoo_ls_server").is_file():
         session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
     session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
     session.run("vsce", "package", "--pre-release", external=True)

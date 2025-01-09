@@ -809,7 +809,7 @@ impl Odoo {
                     },
                     "autoRefreshDelay" => {
                         if let Some(refresh_delay) = value.as_u64() {
-                            _auto_save_delay = refresh_delay;
+                            _auto_save_delay = std::cmp::max(refresh_delay, 1000);
                         } else {
                             session.log_message(MessageType::ERROR, String::from("Unable to parse auto_save_delay. Setting it to 2000"));
                             _auto_save_delay = 2000
@@ -1102,7 +1102,7 @@ impl Odoo {
             let path = uri.to_file_path().unwrap();
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
             if Odoo::update_file_cache(session, path.clone(), None, -100) {
-                Odoo::update_file_index(session, path, true, false);
+                Odoo::update_file_index(session, path, true, false, true);
             }
         }
     }
@@ -1119,7 +1119,7 @@ impl Odoo {
             if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
                 return
             }
-            Odoo::update_file_index(session, path,true, true);
+            Odoo::update_file_index(session, path,true, true, false);
         }
     }
 
@@ -1190,7 +1190,7 @@ impl Odoo {
             if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
                 return
             }
-            Odoo::update_file_index(session, path, false, false);
+            Odoo::update_file_index(session, path, false, false, false);
         }
     }
 
@@ -1214,7 +1214,7 @@ impl Odoo {
         let source = content.to_string(); //cast to string to get a version with all changes
         let ast = ruff_python_parser::parse_unchecked(source.as_str(), Mode::Module);
         if ast.errors().is_empty() {
-            Odoo::update_file_index(session, path,true, false);
+            Odoo::update_file_index(session, path,true, false, false);
         }
     }
 
@@ -1233,9 +1233,9 @@ impl Odoo {
         false
     }
 
-    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool) {
+    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
-            if is_open || (is_save && session.sync_odoo.config.refresh_mode == RefreshMode::OnSave) {
+            if !force_delay && (is_open || (is_save && session.sync_odoo.config.refresh_mode == RefreshMode::OnSave)) {
                 let tree = session.sync_odoo.tree_from_path(&path);
                 if !tree.is_err() { //is part of odoo (and in addons path)
                     let tree = tree.unwrap().clone();
@@ -1244,8 +1244,8 @@ impl Odoo {
                 }
                 SyncOdoo::process_rebuilds(session);
             } else {
-                if session.sync_odoo.config.refresh_mode == RefreshMode::AfterDelay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
-                    SessionInfo::request_update_file_index(session, &path);
+                if force_delay || session.sync_odoo.config.refresh_mode == RefreshMode::AfterDelay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
+                    SessionInfo::request_update_file_index(session, &path, force_delay);
                 }
             }
         }

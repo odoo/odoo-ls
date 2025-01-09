@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
+use std::{path::PathBuf, sync::{Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
@@ -8,7 +8,7 @@ use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, Di
     CompletionResponse, Hover, LogMessageParams, MessageType};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::{core::{config::RefreshMode, odoo::{Odoo, SyncOdoo}}, server::ServerError, S};
 
@@ -74,8 +74,8 @@ impl <'a> SessionInfo<'a> {
         }
     }
 
-    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf) {
-        if session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10 {
+    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, force_delay: bool) {
+        if !force_delay && (session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10) {
             let tree = session.sync_odoo.tree_from_path(path);
             if tree.is_ok() { //is part of odoo (and in addons path)
                 let tree = tree.unwrap().clone();
@@ -154,6 +154,25 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
         let mut update_file_index = None;
         let mut delay = normal_delay;
         let msg = receiver.recv();
+        let check_exit = || {
+            let length = receiver.len();
+            if length > 10 {
+                let index_lock_path = PathBuf::from(sync_odoo.lock().unwrap().config.odoo_path.clone()).join(".git").join("index.lock");
+                while index_lock_path.exists(){
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+                info!("Too many request, possible change of branch, initiating server shutdown/restart");
+                let _ = sender_session.send(Message::Notification(lsp_server::Notification{
+                    method: Shutdown::METHOD.to_string(),
+                    params: serde_json::Value::Null,
+                }));
+                return true;
+            }
+            false
+        };
+        if check_exit() {
+            return;
+        }
         match msg {
             Ok(DelayedProcessingMessage::EXIT) => {
                 return;
@@ -162,8 +181,10 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                 normal_delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
             }
             Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time) | DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time})) => {
-                if matches!(msg, Ok(DelayedProcessingMessage::REBUILD(_))) {
-                    rebuild = true;
+                match msg {
+                    Ok(DelayedProcessingMessage::REBUILD(_)) => {rebuild = true;},
+                    Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: _ })) => {update_file_index = Some(path);},
+                    _ => ()
                 }
                 let mut last_time = time;
                 let mut to_wait = (time + delay) - std::time::Instant::now();
@@ -171,6 +192,9 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     std::thread::sleep(to_wait);
                     to_wait = std::time::Duration::ZERO;
                     loop {
+                        if check_exit() {
+                            return;
+                        }
                         let new_msg = receiver.try_recv();
                         match new_msg {
                             Ok(DelayedProcessingMessage::EXIT) => {return;},
