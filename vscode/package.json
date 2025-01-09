@@ -105,18 +105,18 @@
           ],
           "enumDescriptions": [
             "Refreshes the server data when the user saves a file",
-            "Refreshes the server data after a delay (",
+            "Refreshes the server data after a delay (Odoo.autoRefreshDelay)",
             "Refreshed the server immediatly if it will be fast, otherwises during inactivity (based on autoRefreshDelay)",
             "Disables the auto-refresh feature"
           ],
-          "description": "Define when the server has to refresh its data according to the new updates"
+          "description": "Define when the server has to refresh its data according to the new updates.\n\nFile Update messages are always handled with after the (Odoo.autoRefreshDelay) period."
         },
         "Odoo.autoRefreshDelay": {
           "scope": "window",
           "type": "number",
           "default": 1000,
           "maximum": 15000,
-          "markdownDescription": "Define the delay the server has to wait before refreshing data after an update."
+          "markdownDescription": "Define the delay the server has to wait before refreshing data after an update. Minimum 1000 ms, any setting less than that will be set to 1000"
         },
         "Odoo.autocompletion.filterModelNames": {
           "scope": "window",
