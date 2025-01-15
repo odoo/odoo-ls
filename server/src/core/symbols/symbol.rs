@@ -1844,6 +1844,31 @@ impl Symbol {
         }
     }
 
+    pub fn is_specific_field(&self, session: &mut SessionInfo, field_name: &str) -> bool {
+        match self.typ() {
+            SymType::VARIABLE => {
+                if let Some(evals) = self.evaluations().as_ref() {
+                    for eval in evals.iter() {
+                        let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                        for eval_weak in eval_weaks.iter() {
+                            if let Some(symbol) = eval_weak.weak.upgrade() {
+                                let tree = flatten_tree(&symbol.borrow().get_tree());
+                                if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+                                    if tree[2].as_str() == field_name {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                false
+            },
+            _ => {false}
+        }
+    }
+
     /* similar to get_symbol: will return the symbol that is under this one with the specified name.
     However, if the symbol is a class or a model, it will search in the base class or in comodel classes
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one

@@ -213,7 +213,7 @@ impl Model {
         for dep in self.dependents.iter() {
             dep.borrow_mut().invalidate_sub_functions(session);
             let module = dep.borrow().find_module();
-            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(session, &module.as_ref().unwrap(), &module_change.as_ref().unwrap().borrow().as_module_package().dir_name, &mut None) {
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(session, &module.as_ref().unwrap(), &module_change.as_ref().unwrap().borrow().as_module_package().dir_name) {
                 let typ = dep.borrow().typ().clone();
                 match typ {
                     SymType::FUNCTION => {

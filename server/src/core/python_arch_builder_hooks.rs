@@ -56,9 +56,6 @@ impl PythonArchBuilderHooks {
             "Binary" | "Image" | "Selection" | "Reference" | "Many2one" | "Many2oneReference" | "Json" |
             "Properties" | "PropertiesDefinition" | "One2many" | "Many2many" | "Id" => {
                 if sym.get_tree().0 == vec![S!("odoo"), S!("fields")] {
-                    if [S!("Many2one"), S!("Many2many"), S!("One2many")].contains(&sym.name()) {
-                        //TODO how to do this?
-                    }
                     // ----------- __get__ ------------
                     let get_sym = sym.get_symbol(&(vec![], vec![S!("__get__")]), u32::MAX);
                     if get_sym.is_empty() {

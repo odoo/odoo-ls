@@ -1,4 +1,4 @@
-use ruff_python_ast::{Expr, ExprCall, Identifier, Operator, Parameter};
+use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
@@ -31,7 +31,7 @@ pub enum EvaluationValue {
 #[derive(Debug, Clone)]
 pub struct Evaluation {
     //symbol lead to type evaluation, and value/range hold the evaluated value in case of a 'constant' value, like in "variable = 5".
-    pub symbol: EvaluationSymbol, // int
+    pub symbol: EvaluationSymbol,
     pub value: Option<EvaluationValue>, //
     pub range: Option<TextRange>, //evaluated part
 }
@@ -81,6 +81,7 @@ pub enum ContextValue {
     STRING(String),
     MODULE(Weak<RefCell<Symbol>>),
     SYMBOL(Weak<RefCell<Symbol>>),
+    ARGUMENTS(Arguments),
     RANGE(TextRange)
 }
 
@@ -119,6 +120,13 @@ impl ContextValue {
             _ => panic!("Not a TextRange")
         }
     }
+
+    pub fn as_arguments(&self) -> Arguments {
+        match self {
+            ContextValue::ARGUMENTS(a) => a.clone(),
+            _ => panic!("Not an arguments")
+        }
+    }
 }
 
 /** A context can contains: (non-exhaustive)
@@ -136,7 +144,7 @@ pub type Context = HashMap<String, ContextValue>;
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak;
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>;
 
 
 #[derive(Debug, Clone)]
@@ -621,6 +629,7 @@ impl Evaluation {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
                         } else {
+                            let mut result_context = HashMap::new();
                             if base_sym.borrow().get_tree() == (vec![S!("builtins")], vec![S!("super")]){
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty(){
@@ -704,7 +713,42 @@ impl Evaluation {
                                     });
                                 }
                             } else {
-                                //TODO diagnostic __new__ call parameters
+
+                                //1: find __init__ method
+                                let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module, true, false, false, false);
+                                if let Some(init) = init.0.first() {
+                                    if let Some(init_eval) = init.borrow().evaluations() {
+                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
+                                        //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
+                                        if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
+                                            context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
+                                            init_eval[0].symbol.get_symbol(session, &mut context, &mut diagnostics, None);
+                                            if context.as_ref().unwrap().contains_key("comodel") { //TODO consider doing something more generic for other values in the future
+                                                result_context.insert(S!("comodel"), context.as_mut().unwrap().remove("comodel").unwrap());
+                                            }
+                                        }
+                                        //It allows us to check parameters validity too if we are in validation step
+                                        /*let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                                        let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                                            SymType::FILE | SymType::PACKAGE(_) => {
+                                                parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                                            },
+                                            SymType::FUNCTION => {
+                                                true //functions are always evaluated at validation step
+                                            }
+                                            _ => {false}
+                                        };
+                                        if is_in_validation {
+                                            let from_module = parent.borrow().find_module();
+                                            diagnostics.extend(Evaluation::validate_call_arguments(session,
+                                                &init.borrow().as_func(),
+                                                expr,
+                                                context.as_ref().unwrap().get_key_value(&S!("parent")).unwrap_or((&S!(""), &ContextValue::SYMBOL(Weak::new()))).1.as_symbol(),
+                                                from_module,
+                                                false));
+                                        }*/
+                                    }
+                                }
                                 evals.push(Evaluation{
                                     symbol: EvaluationSymbol {
                                         sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
@@ -712,7 +756,7 @@ impl Evaluation {
                                             instance: Some(true),
                                             is_super: false,
                                         }),
-                                        context: HashMap::new(),
+                                        context: result_context,
                                         factory: None,
                                         get_symbol_hook: None,
                                     },
@@ -854,8 +898,8 @@ impl Evaluation {
                                 let old_range = context.as_mut().unwrap().remove(&S!("range"));
                                 context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
                                 let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
-                                if !hook_result.weak.is_expired() {
-                                    evals.push(Evaluation::eval_from_symbol(&hook_result.weak, hook_result.instance));
+                                if hook_result.is_some() && !hook_result.as_ref().unwrap().weak.is_expired() {
+                                    evals.push(Evaluation::eval_from_symbol(&hook_result.as_ref().unwrap().weak, hook_result.as_ref().unwrap().instance));
                                 }
                                 context.as_mut().unwrap().remove(&S!("args"));
                                 context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
@@ -1097,7 +1141,22 @@ impl Evaluation {
                     let value = s.value.to_string();
                     let split_expr = value.split(".");
                     let mut obj = Some(on_object);
+                    let mut date_mode = false;
                     for name in split_expr {
+                        if date_mode {
+                            if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
+                                diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30321"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Invalid search domain field: Unknown granularity for date field. Use either \"year_number\", \"quarter_number\", \"month_number\", \"iso_week_number\", \"day_of_week\", \"day_of_month\", \"day_of_year\", \"hour_number\", \"minute_number\" or \"second_number\""),
+                                    None,
+                                    None,
+                                ));
+                            }
+                            date_mode = false;
+                        }
                         if let Some(object) = &obj {
                             let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
                                 &name.to_string(),
@@ -1119,8 +1178,12 @@ impl Evaluation {
                                 break;
                             }
                             for s in symbols.iter() {
-                                //todo follow relational fields
-                                //obj = symbols.first().unwrap().weak.upgrade().unwrap();
+                                if s.borrow().is_specific_field(session, "Many2one") {
+
+                                }
+                                if s.borrow().is_specific_field(session, "Date") {
+                                    date_mode = true;
+                                }
                             }
                             obj = None;
                         }
@@ -1209,14 +1272,16 @@ impl EvaluationSymbol {
     }
 
     pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak {
-        let mut full_context = self.context.clone();
+        let mut full_context = Some(self.context.clone());
         //extend with local elements
         if let Some(context) = context {
-            full_context.extend(context.clone());
+            full_context.as_mut().unwrap().extend(context.clone());
         }
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
-            return hook(session, self, &mut Some(full_context), diagnostics, scope);
+            if let Some(hook_result) = hook(session, self, &mut full_context, diagnostics, scope) {
+                return hook_result;
+            }
         }
         match &self.sym {
             EvaluationSymbolPtr::WEAK(w) => {
@@ -1227,7 +1292,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{weak: Weak::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::SELF => {
-                match full_context.get(&S!("parent")) {
+                match full_context.as_ref().unwrap().get(&S!("parent")) {
                     Some(p) => {
                         match p {
                             ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: s.clone(), instance: Some(true), is_super: false},

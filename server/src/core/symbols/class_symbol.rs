@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
 use crate::core::model::ModelData;
+use crate::threads::SessionInfo;
 
 use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
