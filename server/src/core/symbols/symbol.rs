@@ -3,7 +3,7 @@ use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::constants::*;
-use crate::core::evaluation::{Context, Evaluation, EvaluationSymbolWeak};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -1489,14 +1489,51 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolWeak> {
+    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolPtr> {
+        //if current symbol is a descriptor, we have to resolve __get__ method before going further
+        if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+            let base_attr = base_attr.as_symbol().upgrade();
+            if let Some(base_attr) = base_attr {
+                let attribute_type_sym = symbol;
+                //TODO shouldn't we set the from_module in the call to get_member_symbol?
+                let get_method = attribute_type_sym.get_member_symbol(session, &S!("__get__"), None, true, false, true, false).0.first().cloned();
+                match get_method {
+                    Some(get_method) if (base_attr.borrow().typ() == SymType::CLASS) => {
+                        let get_method = get_method.borrow();
+                        if get_method.evaluations().is_some() {
+                            let mut res = VecDeque::new();
+                            if context.is_none() {
+                                *context = Some(HashMap::new());
+                            }
+                            for get_method_eval in get_method.evaluations().unwrap().iter() {
+                                context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
+                                let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, diagnostics, None);
+                                if !get_result.weak.is_expired() {
+                                    let mut eval = Evaluation::eval_from_symbol(&get_result.weak, get_result.instance);
+                                    match eval.symbol.get_mut_symbol_ptr() {
+                                        EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_attr)));
+                                            res.push_back(eval.symbol.get_symbol_ptr().clone());
+                                        },
+                                        _ => {}
+                                    }
+                                }
+                                context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
+                            }
+                            return res;
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
         match symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
                     //TODO context is modified in each for loop, which is wrong if a key in context is specific to one result!
                     let sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
-                    if !sym.weak.is_expired() {
+                    if !sym.is_expired_if_weak() {
                         res.push_back(sym);
                     }
                 }
@@ -1509,71 +1546,97 @@ impl Symbol {
         }
     }
 
-    pub fn follow_ref(evaluation: &EvaluationSymbolWeak, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolWeak> {
-        let Some(symbol) = evaluation.weak.upgrade() else {
-            return vec![evaluation.clone()];
-        };
-        //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut results = Symbol::next_refs(session, &symbol.borrow(), &mut vec![]);
-        if results.is_empty() {
-            return vec![evaluation.clone()];
-        }
-        //there is a 'next_ref'. Remove "parent" from context if any
-        if context.is_some() {
-            context.as_mut().unwrap().remove(&S!("parent"));
-        }
-        let can_eval_external = !symbol.borrow().is_external();
-        let mut index = 0;
-        while index < results.len() {
-            let next_ref = &results[index];
-            let sym = next_ref.weak.upgrade();
-            if sym.is_none() {
-                index += 1;
-                continue;
-            }
-            let sym = sym.unwrap();
-            let sym = sym.borrow();
-            match *sym {
-                Symbol::Variable(ref v) => {
-                    if stop_on_type && !next_ref.is_instance().unwrap_or(false) && !v.is_import_variable {
-                        index += 1;
-                        continue;
-                    }
-                    if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
-                        index += 1;
-                        continue;
-                    }
-                    if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
-                        index += 1;
-                        continue;
-                    }
-                    if v.evaluations.is_empty() && can_eval_external {
-                        //no evaluation? let's check that the file has been evaluated
-                        let file_symbol = sym.get_file();
-                        if let Some(file_symbol) = file_symbol {
-                            if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
-                            session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                                let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
-                                builder.eval_arch(session);
-                            }
-                        }
-                    }
-                    let next_sym_refs = Symbol::next_refs(session, &sym, &mut vec![]);
-                    index += 1;
-                    if !next_sym_refs.is_empty() {
-                        results.pop_front();
-                        index -= 1;
-                        for next_results in next_sym_refs {
-                            results.push_back(next_results);
-                        }
-                    }
-                },
-                _ => {
-                    index += 1;
+    /*
+    Follow evaluation of current symbol until type, value or end of the chain, depending or the parameters.
+    If a symbol in the chain is a descriptor, return the __get__ return evaluation.
+     */
+    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolPtr> {
+        match evaluation {
+            EvaluationSymbolPtr::WEAK(w) => {
+                let Some(symbol) = w.weak.upgrade() else {
+                    return vec![evaluation.clone()];
+                };
+                //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
+                //TODO there is no loop detection
+                let mut results = Symbol::next_refs(session, &symbol.borrow(), context, &w.context, stop_on_type, &mut vec![]);
+                if results.is_empty() {
+                    return vec![evaluation.clone()];
                 }
+                let can_eval_external = !symbol.borrow().is_external();
+                let mut index = 0;
+                while index < results.len() {
+                    let next_ref = &results[index];
+                    match next_ref {
+                        EvaluationSymbolPtr::WEAK(next_ref_weak) => {
+                            let sym = next_ref_weak.weak.upgrade();
+                            if sym.is_none() {
+                                index += 1;
+                                continue;
+                            }
+                            let sym = sym.unwrap();
+                            let sym = sym.borrow();
+                            match *sym {
+                                Symbol::Variable(ref v) => {
+                                    if stop_on_type && !next_ref_weak.is_instance().unwrap_or(false) && !v.is_import_variable {
+                                        index += 1;
+                                        continue;
+                                    }
+                                    if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
+                                        index += 1;
+                                        continue;
+                                    }
+                                    if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
+                                        index += 1;
+                                        continue;
+                                    }
+                                    if v.evaluations.is_empty() && can_eval_external {
+                                        //no evaluation? let's check that the file has been evaluated
+                                        let file_symbol = sym.get_file();
+                                        if let Some(file_symbol) = file_symbol {
+                                            if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
+                                            session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
+                                                let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
+                                                builder.eval_arch(session);
+                                            }
+                                        }
+                                    }
+                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &w.context, stop_on_type, &mut vec![]);
+                                    index += 1;
+                                    if !next_sym_refs.is_empty() {
+                                        results.pop_front();
+                                        index -= 1;
+                                        for next_results in next_sym_refs {
+                                            results.push_back(next_results);
+                                        }
+                                    }
+                                },
+                                Symbol::Class(ref c) => {
+                                    //On class, follow descriptor declarations
+                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &w.context, stop_on_type, &mut vec![]);
+                                    index += 1;
+                                    if !next_sym_refs.is_empty() {
+                                        results.pop_front();
+                                        index -= 1;
+                                        for next_results in next_sym_refs {
+                                            results.push_back(next_results);
+                                        }
+                                    }
+                                },
+                                _ => {
+                                    index += 1;
+                                }
+                            }
+                        },
+                        _ => {index += 1}
+                    }
+                    
+                }
+                Vec::from(results) // :'( a whole copy?
+            },
+            _ => {
+                return vec![evaluation.clone()];
             }
         }
-        Vec::from(results) // :'( a whole copy?
     }
 
     pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
@@ -1823,10 +1886,10 @@ impl Symbol {
             SymType::VARIABLE => {
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
-                        let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                        let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
                         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                         for eval_weak in eval_weaks.iter() {
-                            if let Some(symbol) = eval_weak.weak.upgrade() {
+                            if let Some(symbol) = eval_weak.upgrade_weak() {
                                 let tree = flatten_tree(&symbol.borrow().get_tree());
                                 if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
                                     if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
@@ -1852,7 +1915,7 @@ impl Symbol {
                         let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
                         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                         for eval_weak in eval_weaks.iter() {
-                            if let Some(symbol) = eval_weak.weak.upgrade() {
+                            if let Some(symbol) = eval_weak.upgrade_weak() {
                                 let tree = flatten_tree(&symbol.borrow().get_tree());
                                 if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
                                     if tree[2].as_str() == field_name {

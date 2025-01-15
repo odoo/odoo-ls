@@ -24,7 +24,7 @@ impl DefinitionFeature {
         character: u32
     ) -> Option<GotoDefinitionResponse> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, _range): (AnalyzeAstResult, Option<TextRange>) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, _range) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }
@@ -37,7 +37,7 @@ impl DefinitionFeature {
                 index += 1;
                 continue;
             }
-            let sym_ref = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let sym_ref = eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
             let loc_sym = sym_ref.weak.upgrade();
             if loc_sym.is_none() {
                 index += 1;

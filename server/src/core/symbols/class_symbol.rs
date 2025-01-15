@@ -4,8 +4,10 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
+use crate::constants::SymType;
 use crate::core::model::ModelData;
 use crate::threads::SessionInfo;
+use crate::S;
 
 use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -81,6 +83,15 @@ impl ClassSymbol {
         let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::new());
         let section_vec = sections.entry(section).or_insert(vec![]);
         section_vec.push(content.clone());
+    }
+
+    pub fn is_descriptor(&self) -> bool {
+        for get_sym in self.get_symbol(S!("__get__"), u32::MAX).iter() {
+            if get_sym.borrow().typ() == SymType::FUNCTION {
+                return true;
+            }
+        }
+        false
     }
 
 }

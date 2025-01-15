@@ -8,7 +8,7 @@ use tracing::info;
 use weak_table::traits::WeakElement;
 
 use crate::constants::SymType;
-use crate::core::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -486,15 +486,15 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
             let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
             let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start()).0;
             for callable_eval in callable_evals.iter() {
-                let callable = callable_eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                if let Some(callable) = callable.weak.upgrade() {
-                    if callable.borrow().typ() == SymType::FUNCTION {
-                        let func = callable.borrow();
+                let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+                if let Some(callable_sym) = callable.weak.upgrade() {
+                    if callable_sym.borrow().typ() == SymType::FUNCTION {
+                        let func = callable_sym.borrow();
                         let func = func.as_func();
                         let func_arg = func.get_indexed_arg_in_call(
                             expr_call,
                             arg_index as u32,
-                            callable_eval.symbol.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
+                            callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
                         if let Some(func_arg) = func_arg {
                             if let Some(func_arg_sym) = func_arg.symbol.upgrade() {
                                 let mut expected_type = vec![];
@@ -502,7 +502,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                     match evaluation.symbol.get_symbol_ptr() {
                                         EvaluationSymbolPtr::WEAK(_weak) => {
                                             //if weak, use get_symbol
-                                            let symbol=  evaluation.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                                            let symbol=  evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
                                             if let Some(evaluation) = symbol.weak.upgrade() {
                                                 if evaluation.borrow().typ() == SymType::CLASS {
                                                     expected_type.push(ExpectedType::CLASS(evaluation.clone()));
@@ -510,7 +510,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                             }
                                         },
                                         EvaluationSymbolPtr::DOMAIN => {
-                                            if let Some(parent_value) = callable_eval.symbol.context.get(&S!("parent")) {
+                                            if let Some(parent_value) = callable.context.get(&S!("base_call")) {
                                                 if let Some(parent) = parent_value.as_symbol().upgrade() {
                                                     expected_type.push(ExpectedType::DOMAIN(parent));
                                                 }
@@ -620,7 +620,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
                             if final_sym.borrow().is_field(session) && dep.is_none() {
-                                items.push(build_completion_item_from_symbol(session, final_sym, dep.clone()));
+                                items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
                                 found_one = true;
                                 continue;
                             }
@@ -649,19 +649,21 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
         let parent = Evaluation::eval_from_ast(session, &attr.value, scope.clone(), &attr.range().start()).0;
 
         for parent_eval in parent.iter() {
-            let parent_sym_eval_weak = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
-            if !parent_sym_eval_weak.weak.is_expired() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval_weak, session, &mut None, true, false, None, &mut vec![]);
+            //TODO shouldn't we set and clean context here?
+            let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
+            if !parent_sym_eval.is_expired_if_weak() {
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
-                    if let Some(parent_sym) = parent_sym_type.weak.upgrade() {
+                    if let Some(parent_sym) = parent_sym_type.upgrade_weak() {
                         let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
                         let from_module = file.borrow().find_module().clone();
-                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval_weak.is_super);
+                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval.as_weak().is_super);
                         for (_symbol_name, symbols) in all_symbols {
                             //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                             if _symbol_name.starts_with(attr.attr.id.as_str()) {
                                 if let Some((final_sym, dep)) = symbols.first() {
-                                    items.push(build_completion_item_from_symbol(session, final_sym, dep.clone()));
+                                    let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
+                                    items.push(build_completion_item_from_symbol(session, final_sym, context_of_symbol, dep.clone()));
                                 }
                             }
                         }
@@ -681,10 +683,10 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope.clone(), &expr_subscript.value.range().start()).0;
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
-        if !eval_symbol.weak.is_expired() {
+        if !eval_symbol.is_expired_if_weak() {
             let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, true, false, None, &mut vec![]);
             for symbol_type in symbol_types.iter() {
-                if let Some(symbol_type) = symbol_type.weak.upgrade() {
+                if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
                     let get_item = borrowed.get_symbol(&(vec![], vec![S!("__getitem__")]), u32::MAX);
                     if let Some(get_item) = get_item.last() {
@@ -804,13 +806,13 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
     None
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dependency: Option<String>) -> CompletionItem {
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<String>) -> CompletionItem {
     //TODO use dependency to show it? or to filter depending of configuration
-    let typ = Symbol::follow_ref(&EvaluationSymbolWeak::new(
+    let typ = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
         Rc::downgrade(symbol),
         None,
         false,
-    ), session, &mut None, true, true, None, &mut vec![]);
+    )), session, &mut None, true, true, None, &mut vec![]);
     let mut label_details = Some(CompletionItemLabelDetails {
         detail: None,
         description: None,
@@ -820,14 +822,14 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
             detail: None,
             description: Some(S!("Any")),
         })
-    } else if typ.len() == 1 {
-        label_details= match typ[0].weak.upgrade().unwrap().borrow().typ() {
+    } else if typ.len() == 1 && typ[0].is_weak() {
+        label_details= match typ[0].upgrade_weak().unwrap().borrow().typ() {
             SymType::CLASS => Some(CompletionItemLabelDetails {
                 detail: None,
-                description: Some(typ[0].weak.upgrade().unwrap().borrow().name().clone()),
+                description: Some(typ[0].upgrade_weak().unwrap().borrow().name().clone()),
             }),
             SymType::VARIABLE => {
-                let var_upgraded = typ[0].weak.upgrade().unwrap();
+                let var_upgraded = typ[0].upgrade_weak().unwrap();
                 let var = var_upgraded.borrow();
                 if var.evaluations().as_ref().unwrap().len() == 1 {
                     if var.evaluations().as_ref().unwrap()[0].value.is_some() {
@@ -876,7 +878,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                 }
             },
             SymType::FUNCTION => {
-                let func_upgraded = typ[0].weak.upgrade().unwrap();
+                let func_upgraded = typ[0].upgrade_weak().unwrap();
                 let func = func_upgraded.borrow();
                 if func.evaluations().as_ref().unwrap().len() == 1 { //TODO handle multiple evaluations
                     if func.evaluations().as_ref().unwrap()[0].value.is_some() {
@@ -953,7 +955,14 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, None, &vec![Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None)])
+                value: HoverFeature::build_markdown_description(session, None, &vec![
+                    Evaluation {
+                        symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
+                            context_of_symbol,
+                            None),
+                        value: None,
+                        range: None
+                    }])
             })),
         ..Default::default()
     }
