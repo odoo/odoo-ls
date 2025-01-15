@@ -17,6 +17,7 @@ use super::evaluation::Evaluation;
 use super::evaluation::ContextValue;
 use super::evaluation::EvaluationSymbol;
 use super::evaluation::EvaluationSymbolWeak;
+use super::evaluation::EvaluationValue;
 use super::file_mgr::FileMgr;
 use super::symbols::module_symbol::ModuleSymbol;
 
@@ -238,6 +239,24 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval_relational(symbol.clone());
+    }},
+    PythonArchEvalFileHook {file_tree: vec![S!("odoo"), S!("fields")],
+                            content_tree: vec![S!("Many2one")],
+                            if_exist_only: true,
+                            func: |odoo: &mut SyncOdoo, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        PythonArchEvalHooks::_update_init_comodel_relational(symbol.clone());
+    }},
+    PythonArchEvalFileHook {file_tree: vec![S!("odoo"), S!("fields")],
+                            content_tree: vec![S!("One2many")],
+                            if_exist_only: true,
+                            func: |odoo: &mut SyncOdoo, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        PythonArchEvalHooks::_update_init_comodel_relational(symbol.clone());
+    }},
+    PythonArchEvalFileHook {file_tree: vec![S!("odoo"), S!("fields")],
+                            content_tree: vec![S!("Many2many")],
+                            if_exist_only: true,
+                            func: |odoo: &mut SyncOdoo, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        PythonArchEvalHooks::_update_init_comodel_relational(symbol.clone());
     }},
 ]});
 
@@ -501,7 +520,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>
     {
         if let Some(context) = context {
             let arg = context.get(&S!("args"));
@@ -531,7 +550,7 @@ impl PythonArchEvalHooks {
                             if !symbols.is_empty() {
                                 for s in symbols.iter() {
                                     if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name) {
-                                        return EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false);
+                                        return Some(EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false));
                                     }
                                 }
                             } else {
@@ -595,30 +614,30 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        EvaluationSymbolWeak::new(Weak::new(), Some(true), false)
+        Some(EvaluationSymbolWeak::new(Weak::new(), Some(true), false))
     }
 
-    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>
     {
         let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, scope);
-        result.instance = Some(false);
+        result.as_mut().unwrap().instance = Some(false);
         result
     }
 
-    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
             if test_cursor_sym.len() > 0 {
-                    return EvaluationSymbolWeak::new(Rc::downgrade(test_cursor_sym.last().unwrap()), Some(true), false);
+                    return Some(EvaluationSymbolWeak::new(Rc::downgrade(test_cursor_sym.last().unwrap()), Some(true), false));
             } else {
-                    return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
+                    return None;
             }
         }
-        evaluation_sym.get_weak().clone()
+        Some(evaluation_sym.get_weak().clone())
     }
 
-    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>
     {
         if context.is_some() {
             let parent_instance = context.as_ref().unwrap().get(&S!("parent_instance"));
@@ -633,7 +652,7 @@ impl PythonArchEvalHooks {
                 }
             }
         }
-        evaluation_sym.get_weak().clone()
+        Some(evaluation_sym.get_weak().clone())
     }
 
     fn _update_get_eval(odoo: &mut SyncOdoo, symbol: Rc<RefCell<Symbol>>, tree: Tree) {
@@ -661,18 +680,31 @@ impl PythonArchEvalHooks {
         }]);
     }
 
-    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>
     {
         if context.is_none() {
-            return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
+            return None;
         }
         let comodel = context.as_ref().unwrap().get(&S!("comodel"));
         if comodel.is_none() {
-            return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);
+            return None;
         }
         let comodel = comodel.unwrap().as_string();
-        //TODO let comodel_sym = odoo.models.get(comodel);
-        EvaluationSymbolWeak{weak: Weak::new(), instance: Some(false), is_super: false}
+        let comodel_sym = session.sync_odoo.models.get(&comodel).cloned();
+        if let Some(comodel_sym) = comodel_sym {
+            let module = context.as_ref().unwrap().get(&S!("module"));
+            let mut from_module = None;
+            if let Some(ContextValue::MODULE(m)) = module {
+                if let Some(m) = m.upgrade() {
+                    from_module = Some(m.clone());
+                }
+            }
+            let main_symbol = comodel_sym.borrow().get_main_symbols(session, from_module);
+            if main_symbol.len() == 1 {
+                return Some(EvaluationSymbolWeak{weak: Rc::downgrade(&main_symbol[0]), instance: Some(true), is_super: false})
+            }
+        }
+        Some(EvaluationSymbolWeak{weak: Weak::new(), instance: Some(true), is_super: false})
     }
 
     fn _update_get_eval_relational(symbol: Rc<RefCell<Symbol>>) {
@@ -687,6 +719,74 @@ impl PythonArchEvalHooks {
                 HashMap::new(),
                 None,
                 Some(PythonArchEvalHooks::eval_relational)
+            ),
+            value: None,
+            range: None,
+        }]);
+    }
+
+    fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolWeak>
+    {
+        if context.is_none() {
+            return None;
+        }
+        let parameters = context.as_ref().unwrap().get(&S!("parameters"));
+        if parameters.is_none() {
+            return None;
+        }
+        let parameters = parameters.unwrap().as_arguments();
+        let comodel = if let Some(first_param) = parameters.args.get(0) {
+            first_param
+        } else {
+            let mut comodel_name = None;
+            for keyword in parameters.keywords {
+                if keyword.arg.is_some() && keyword.arg.unwrap().id == "comodel_name" {
+                    comodel_name = Some(keyword.value);
+                }
+            }
+            if let Some(comodel_name) = comodel_name {
+                &comodel_name.clone()
+            } else {
+                return None;
+            }
+        };
+        let parent = context.as_ref().unwrap().get(&S!("parent"));
+        if let Some(parent) = parent {
+            let comodel_string_evals = Evaluation::eval_from_ast(session, comodel, parent.as_symbol().upgrade().unwrap(), &parameters.range.start());
+            let mut comodel_string_value = None;
+            for comodel_string in comodel_string_evals.0.iter() {
+                let value = comodel_string.follow_ref_and_get_value(session, &mut None, diagnostics);
+                if let Some(value) = value {
+                    match value {
+                        EvaluationValue::CONSTANT(c) => {
+                            if c.is_string_literal_expr() {
+                                comodel_string_value = Some(c.as_string_literal_expr().unwrap().value.clone());
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if let Some(comodel_string_value) = comodel_string_value {
+                context.as_mut().unwrap().insert(S!("comodel"), ContextValue::STRING(comodel_string_value.to_string()));
+            }
+        }
+        None
+    }
+
+    fn _update_init_comodel_relational(symbol: Rc<RefCell<Symbol>>) {
+        let init_sym = symbol.borrow().get_symbol(&(vec![], vec![S!("__init__")]), u32::MAX);
+        if init_sym.is_empty() {
+            return;
+        }
+        init_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(
+                Weak::new(),
+                true,
+                HashMap::new(),
+                None,
+                Some(PythonArchEvalHooks::eval_init_relational)
             ),
             value: None,
             range: None,

@@ -617,11 +617,16 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 for (_symbol_name, symbols) in all_symbols {
                     //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                     if _symbol_name.starts_with(expr_string_literal.value.to_str()) {
+                        let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
-                            if final_sym.borrow().is_field(session) {
+                            if final_sym.borrow().is_field(session) && dep.is_none() {
                                 items.push(build_completion_item_from_symbol(session, final_sym, dep.clone()));
+                                found_one = true;
                                 continue;
                             }
+                        }
+                        if found_one {
+                            continue;
                         }
                     }
                 }

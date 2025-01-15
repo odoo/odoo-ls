@@ -190,3 +190,9 @@ If you use a search domain operator (&, ! or |), they should be followed by tupl
 
 "Invalid search domain field: XXX is not a member of YYY".
 In a search domain, the first element of a tuple must be a member of the model, or of any model in a relation if expression contains "." (see documentation)
+
+### OLS30321
+
+"Invalid search domain field: Unknown date granularity".
+In a search domain, when using a dot separator on a Date field, you can use the following granularities to access part of the date:
+"year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"
