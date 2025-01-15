@@ -60,7 +60,7 @@ impl PythonArchBuilderHooks {
                     let get_sym = sym.get_symbol(&(vec![], vec![S!("__get__")]), u32::MAX);
                     if get_sym.is_empty() {
                         let range = sym.range().clone();
-                        sym.add_new_variable(session, &S!("__get__"), &range);
+                        sym.add_new_function(session, &S!("__get__"), &range, &range.end());
                     }
                 }
             }

@@ -1,12 +1,13 @@
 use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
+use serde::de::value;
 use weak_table::traits::WeakElement;
-use crate::core::evaluation::{AnalyzeAstResult, Context, Evaluation, EvaluationSymbolWeak, EvaluationValue};
+use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use crate::core::symbols::symbol::Symbol;
@@ -21,7 +22,7 @@ impl HoverFeature {
 
     pub fn get_hover(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, range): (AnalyzeAstResult, Option<TextRange>) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, range) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
         let evals = analyse_ast_result.evaluations;
         if evals.is_empty() {
             return None;
@@ -44,7 +45,7 @@ impl HoverFeature {
     parameters:   (type_sym)  symbol: infered_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<EvaluationSymbolWeak>, context: &mut Option<Context>) -> String {
+    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<EvaluationSymbolPtr>, context: &mut Option<Context>) -> String {
         let symbol = rc_symbol.borrow();
         //python code balise
         let mut value = S!("```python  \n");
@@ -67,13 +68,14 @@ impl HoverFeature {
         value += &format!("({}) ", type_sym);
         //variable name
         let mut single_func_eval = false;
-        if infered_types.len() == 1 && infered_types[0].weak.upgrade().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].weak.upgrade().unwrap().borrow().as_func().is_property {
+        let mut infered_types = infered_types.clone();
+        if infered_types.len() == 1 && infered_types[0].is_weak() && infered_types[0].upgrade_weak().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].upgrade_weak().unwrap().borrow().as_func().is_property {
             //display 'def' only if there is only a single evaluation to a function
             single_func_eval = true;
             value += "def ";
             value += symbol.name();
             //display args
-            let function = infered_types[0].weak.upgrade().unwrap();
+            let function = infered_types[0].upgrade_weak().unwrap();
             let function = function.borrow();
             let function = function.as_func();
             value += "(";
@@ -85,90 +87,141 @@ impl HoverFeature {
                     value += ", ";
                 }
             }
-            value += ") -> "
+            value += ") -> ";
+            infered_types = function.evaluations.iter().map(|x| x.symbol.get_symbol_ptr().clone()).collect();
         } else {
             value += symbol.name();
             if symbol.typ() != SymType::CLASS {
                 value += ": ";
             }
         }
-        let max_index = infered_types.len() as i32 -1;
-        if max_index != 0 {
-            value += "(";
-        }
-        for (index, infered_type) in infered_types.iter().enumerate() {
-            let infered_type = infered_type.weak.upgrade();
-            if let Some(infered_type) = infered_type {
-                if Rc::ptr_eq(rc_symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
-                    if infered_type.borrow().typ() != SymType::CLASS {
-                        value += "Any";
-                    }
-                } else {
-                    let infered_type = infered_type.borrow();
-                    if infered_type.typ() == SymType::FUNCTION && !infered_type.as_func().is_property {
-                        let func_eval = infered_type.evaluations();
-                        let mut func_return_type = S!("");
-                        if let Some(func_eval) = func_eval {
-                            let mut type_names = HashSet::new();
-                            for eval in func_eval.iter() {
-                                let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
-                                if !eval_symbol.weak.is_expired(){
-                                    let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
-                                    for weak_eval_symbol in weak_eval_symbols.iter() {
-                                        if let Some(s_type) = weak_eval_symbol.weak.upgrade() {
-                                            let typ = s_type.borrow();
-                                            if typ.typ() == SymType::VARIABLE {
-                                                //if fct is a variable, it means that evaluation is None.
-                                                type_names.insert("Any".to_string());
-                                            } else {
-                                                type_names.insert(typ.name().clone());
-                                            }
-                                        } else {
-                                            type_names.insert("Any".to_string());
-                                        }
-                                    }
-                                } else {
-                                    type_names.insert("None".to_string());
-                                }
-                            }
-                            let max_eval: i32 = type_names.len() as i32 -1;
-                            for (index, type_name) in type_names.iter().enumerate() {
-                                func_return_type += type_name.as_str();
-                                if index != max_eval as usize {
-                                    func_return_type += " | ";
-                                }
-                            }
-                            if type_names.is_empty() {
-                                func_return_type += "None";
-                            }
-                        }
-                        if single_func_eval {
-                            value += func_return_type.as_str();
-                        } else {
-                            //TODO add args
-                            value += format!("() -> {}", func_return_type).as_str();
-                        }
-                    } else if infered_type.typ() == SymType::FILE {
-                        value += "File";
-                    } else if matches!(infered_type.typ(), SymType::PACKAGE(_)) {
-                        value += "Module";
-                    } else if infered_type.typ() == SymType::NAMESPACE {
-                        value += "Namespace";
-                    } else if symbol.typ() != SymType::CLASS {
-                        value += infered_type.name();
-                    }
+        let mut values = vec![];
+        for infered_type in infered_types.iter() {
+            for v in HoverFeature::get_infered_types(session, rc_symbol, infered_type, context, single_func_eval).iter() {
+                if !values.contains(v) {
+                    values.push(v.clone());
                 }
             }
-            if index != max_index as usize {
-                value += ", ";
-            }
         }
-        if max_index != 0 {
-            value += ")";
-        }
+        value += HoverFeature::print_return_types(&values).as_str();
         //end block
         value += "  \n```";
         value
+    }
+
+    pub fn print_return_types(values: &Vec<String>) -> String {
+        let mut result = S!("");
+        if values.len() > 1 {
+            result += "(";
+        }
+        let mut found_any = false;
+        for (index, value) in values.iter().enumerate() {
+            if value == "Any" {
+                found_any = true;
+                continue;
+            }
+            result += value;
+            if index != values.len() -1 {
+                result += ", ";
+            }
+        }
+        if found_any {
+            if values.len() > 1 {
+                result += ", ";
+            }
+            result += "Any";
+        }
+        if values.len() > 1 {
+            result += ")";
+        }
+        result
+    }
+
+    pub fn get_infered_types(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, single_func_eval: bool) -> Vec<String> {
+        let mut values = vec![];
+        match eval {
+            EvaluationSymbolPtr::WEAK(eval_weak) => {
+                if let Some(infered_type) = eval.upgrade_weak() {
+                    if Rc::ptr_eq(symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
+                        if infered_type.borrow().typ() != SymType::CLASS {
+                            values.push(S!("Any"));
+                        }
+                    } else {
+                        let infered_type = infered_type.borrow();
+                        if infered_type.typ() == SymType::FUNCTION && !infered_type.as_func().is_property {
+                            let func_eval = infered_type.evaluations();
+                            let mut func_return_type = S!("");
+                            if let Some(func_eval) = func_eval {
+                                let mut type_names = HashSet::new();
+                                for eval in func_eval.iter() {
+                                    let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
+                                    if !eval_symbol.is_expired_if_weak(){ //TODO improve
+                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
+                                        for weak_eval_symbol in weak_eval_symbols.iter() {
+                                            if let Some(s_type) = weak_eval_symbol.upgrade_weak() {
+                                                let typ = s_type.borrow();
+                                                if typ.typ() == SymType::VARIABLE {
+                                                    //if fct is a variable, it means that evaluation is None.
+                                                    type_names.insert("Any".to_string());
+                                                } else {
+                                                    type_names.insert(typ.name().clone());
+                                                }
+                                            } else {
+                                                type_names.insert("Any".to_string());
+                                            }
+                                        }
+                                    } else {
+                                        type_names.insert("None".to_string());
+                                    }
+                                }
+                                let max_eval: i32 = type_names.len() as i32 -1;
+                                for (index, type_name) in type_names.iter().enumerate() {
+                                    func_return_type += type_name.as_str();
+                                    if index != max_eval as usize {
+                                        func_return_type += " | ";
+                                    }
+                                }
+                                if type_names.is_empty() {
+                                    func_return_type += "None";
+                                }
+                            }
+                            if single_func_eval {
+                                values.push(func_return_type);
+                            } else {
+                                //TODO add args
+                                values.push(format!("() -> {}", func_return_type));
+                            }
+                        } else if infered_type.typ() == SymType::FILE {
+                            values.push(S!("File"));
+                        } else if matches!(infered_type.typ(), SymType::PACKAGE(_)) {
+                            values.push(S!("Module"));
+                        } else if infered_type.typ() == SymType::NAMESPACE {
+                            values.push(S!("Namespace"));
+                        } else if infered_type.typ() == SymType::CLASS {
+                            if infered_type.as_class_sym().is_descriptor() {
+                                //TODO actually the same than if not a descriptor. But we could choose to do something else if there is no base_attr
+                                values.push(S!(infered_type.name()));
+                            } else {
+                                values.push(S!(infered_type.name()));
+                            }
+                        }
+                    }
+                } else {
+                    values.push(S!("Any"));
+                }
+            }
+            EvaluationSymbolPtr::ANY => {
+                values.push(S!("Any"));
+            }
+            EvaluationSymbolPtr::NONE => {
+                values.push(S!("None"));
+            }
+            _ => {
+                values.push(S!("Any"));
+            }
+        }
+        
+        values
     }
 
     pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>) -> String {
@@ -179,10 +232,10 @@ impl HoverFeature {
                 value += "  \n***  \n";
             }
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let Some(symbol) = eval_symbol.weak.upgrade() else {
+            let Some(symbol) = eval_symbol.upgrade_weak() else {
                 continue;
             };
-            let mut context = Some(eval.symbol.context.clone());
+            let mut context = Some(eval_symbol.as_weak().context.clone());
             let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
             //search for a constant evaluation like a model name
             if let Some(eval_value) = eval.value.as_ref() {
@@ -229,11 +282,11 @@ impl HoverFeature {
                 }
             }
             // BLOCK 1: (type) **name** -> infered_type
+            let mut context = Some(eval_symbol.as_weak().context.clone());
             value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
-                let typ = typ.weak.upgrade();
-                if let Some(typ) = typ {
+                if let Some(typ) = typ.upgrade_weak() {
                     let paths = &typ.borrow().paths();
                     if paths.len() == 1 { //we won't put a link to a namespace
                         let mut base_path = paths.first().unwrap().clone();
@@ -252,8 +305,7 @@ impl HoverFeature {
             }
             // BLOCK 3: documentation
             for typ in type_refs.iter() {
-                let typ = typ.weak.upgrade();
-                if let Some(typ) = typ {
+                if let Some(typ) = typ.upgrade_weak() {
                     if typ.borrow().doc_string().is_some() {
                         // Replace leading spaces with nbsps to avoid it being parsed as a Markdown Codeblock
                         let ds = typ.borrow().doc_string().as_ref().unwrap()

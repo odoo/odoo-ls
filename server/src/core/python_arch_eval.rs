@@ -22,7 +22,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
-use super::evaluation::{ContextValue, EvaluationSymbolWeak};
+use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
@@ -191,28 +191,29 @@ impl PythonArchEval {
     ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
     fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<Symbol>>, from_sym: &Rc<RefCell<Symbol>>) -> bool {
         let sym_ref_cl = sym_ref.clone();
-        let syms_followed = Symbol::follow_ref(&EvaluationSymbolWeak::new(
+        let syms_followed = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
             Rc::downgrade(&sym_ref_cl), None, false
-        ), session, &mut None, false, false, None, &mut self.diagnostics);
+        )), session, &mut None, false, false, None, &mut self.diagnostics);
         for sym in syms_followed.iter() {
-            let weak_sym = sym.weak.clone();
-            let sym = weak_sym.upgrade().unwrap();
-            if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
-                let file_sym = sym_ref.borrow().get_file();
-                if file_sym.is_some() {
-                    let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                    if rc_file_sym.borrow_mut().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
-                        session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
-                        let mut builder = PythonArchEval::new(rc_file_sym);
-                        builder.eval_arch(session);
-                        if self.check_for_loop_evaluation(session, sym_ref.clone(), from_sym) {
-                            return true;
+            let sym = sym.upgrade_weak();
+            if let Some(sym) = sym {
+                if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
+                    let file_sym = sym_ref.borrow().get_file();
+                    if file_sym.is_some() {
+                        let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
+                        if rc_file_sym.borrow_mut().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
+                            session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
+                            let mut builder = PythonArchEval::new(rc_file_sym);
+                            builder.eval_arch(session);
+                            if self.check_for_loop_evaluation(session, sym_ref.clone(), from_sym) {
+                                return true;
+                            }
                         }
                     }
                 }
-            }
-            if Rc::ptr_eq(&sym, &from_sym) {
-                return true;
+                if Rc::ptr_eq(&sym, &from_sym) {
+                    return true;
+                }
             }
         }
         false
@@ -313,7 +314,7 @@ impl PythonArchEval {
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
+                    if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -344,6 +345,9 @@ impl PythonArchEval {
         for assign in assigns.iter() {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
+                if variable_rc.borrow().name() == "search" {
+                    println!("here")
+                }
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                 variable_rc.borrow_mut().set_evaluations(eval);
@@ -351,7 +355,7 @@ impl PythonArchEval {
                 let mut dep_to_add = vec![];
                 let v_mut = variable_rc.borrow_mut();
                 for evaluation in v_mut.evaluations().unwrap().iter() {
-                    if let Some(sym) = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
+                    if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -432,27 +436,28 @@ impl PythonArchEval {
                 ));
                 continue;
             }
-            let eval_base = &ref_sym[0].weak;
-            let symbol = eval_base.upgrade().unwrap();
-            if symbol.borrow().typ() != SymType::COMPILED {
-                if symbol.borrow().typ() != SymType::CLASS {
-                    if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
-                        self.diagnostics.push(Diagnostic::new(
-                            Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
-                            Some(DiagnosticSeverity::WARNING),
-                            Some(NumberOrString::String(S!("OLS20003"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Base class {} is not a class", AstUtils::flatten_expr(base)),
-                            None,
-                            None,
-                        ));
+            let symbol = &ref_sym[0].upgrade_weak();
+            if let Some(symbol) = symbol {
+                if symbol.borrow().typ() != SymType::COMPILED {
+                    if symbol.borrow().typ() != SymType::CLASS {
+                        if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::WARNING),
+                                Some(NumberOrString::String(S!("OLS20003"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Base class {} is not a class", AstUtils::flatten_expr(base)),
+                                None,
+                                None,
+                            ));
+                        }
+                    } else {
+                        let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
+                        if !Rc::ptr_eq(&self.file, &file_symbol) {
+                            self.file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                        }
+                        loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
                     }
-                } else {
-                    let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
-                    if !Rc::ptr_eq(&self.file, &file_symbol) {
-                        self.file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), self.current_step, BuildSteps::ARCH);
-                    }
-                    loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
                 }
             }
         }
@@ -571,10 +576,10 @@ impl PythonArchEval {
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            if !eval_symbol.weak.is_expired() {
+            if !eval_symbol.is_expired_if_weak() {
                 let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
-                if symbol_eval.len() == 1 && symbol_eval[0].weak.upgrade().is_some() {
-                    let symbol_type_rc = symbol_eval[0].weak.upgrade().unwrap();
+                if symbol_eval.len() == 1 && symbol_eval[0].upgrade_weak().is_some() {
+                    let symbol_type_rc = symbol_eval[0].upgrade_weak().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
                     if symbol_type.typ() == SymType::CLASS {
                         let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false);
@@ -585,7 +590,7 @@ impl PythonArchEval {
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id.to_string(), &for_stmt.target.range());
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
-                                    let symbol = &eval_iter.symbol.get_symbol(session, &mut Some(HashMap::from([(S!("parent"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None);
+                                    let symbol = &eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None);
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
                                         Evaluation::eval_from_symbol(
                                             &symbol.weak,
@@ -690,7 +695,7 @@ impl PythonArchEval {
                             let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start());
                             let mut evals = vec![];
                             for eval in eval.iter() {
-                                let symbol = eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(variable_rc.borrow().parent_file_or_function().unwrap().upgrade().unwrap().clone()));
+                                let symbol = eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(variable_rc.borrow().parent_file_or_function().unwrap().upgrade().unwrap().clone()));
                                 if let Some(symbol) = symbol.weak.upgrade() {
                                     let _enter_ = symbol.borrow().get_symbol(&(vec![], vec![S!("__enter__")]), u32::MAX);
                                     if let Some(_enter_) = _enter_.last() {
