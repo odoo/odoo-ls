@@ -772,8 +772,10 @@ impl Evaluation {
                         // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
                         // We don't want to launch validation step while Arch evaluating the code.
                         if base_sym.borrow().evaluations().is_some() && base_sym.borrow().evaluations().unwrap().len() == 0 {
-                            if base_sym.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
-                            base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING { //TODO update with new step validation to lower it to localized level
+                            if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
+                            base_sym.borrow().build_status(BuildSteps::ARCH) == BuildStatus::DONE
+                            && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+                            && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
                                 let mut v = PythonValidator::new(base_sym.clone());
                                 v.validate(session);
                             }
@@ -836,7 +838,7 @@ impl Evaluation {
                 for ibase in bases.iter() {
                     let base_loc = ibase.upgrade_weak();
                     if let Some(base_loc) = base_loc {
-                        let is_super = base_ref.is_weak() && base_ref.as_weak().is_super;
+                        let is_super = ibase.is_weak() && ibase.as_weak().is_super;
                         let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
                         for diagnostic in attributes_diagnostics.iter_mut(){
                             diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())

@@ -345,9 +345,6 @@ impl PythonArchEval {
         for assign in assigns.iter() {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
-                if variable_rc.borrow().name() == "search" {
-                    println!("here")
-                }
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
                 variable_rc.borrow_mut().set_evaluations(eval);
