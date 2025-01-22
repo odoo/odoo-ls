@@ -90,7 +90,11 @@ impl HoverFeature {
             value += ") -> ";
             infered_types = function.evaluations.iter().map(|x| x.symbol.get_symbol_ptr().clone()).collect();
         } else {
-            value += symbol.name();
+            if symbol.typ() == SymType::CLASS && infered_types.len() == 1 && infered_types[0].is_weak() && infered_types[0].as_weak().is_super{
+                value += &format!("(super[{}]) ", symbol.name());
+            } else {
+                value += symbol.name();
+            }
             if symbol.typ() != SymType::CLASS {
                 value += ": ";
             }
@@ -198,12 +202,16 @@ impl HoverFeature {
                         } else if infered_type.typ() == SymType::NAMESPACE {
                             values.push(S!("Namespace"));
                         } else if infered_type.typ() == SymType::CLASS {
-                            if infered_type.as_class_sym().is_descriptor() {
+                            let mut class_type= if infered_type.as_class_sym().is_descriptor() {
                                 //TODO actually the same than if not a descriptor. But we could choose to do something else if there is no base_attr
-                                values.push(S!(infered_type.name()));
+                                S!(infered_type.name())
                             } else {
-                                values.push(S!(infered_type.name()));
+                                S!(infered_type.name())
+                            };
+                            if eval_weak.is_super{
+                                class_type = format!("super[{}]", class_type);
                             }
+                            values.push(class_type);
                         } else {
                             values.push(S!("Any"));
                         }
