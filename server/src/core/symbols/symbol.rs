@@ -1448,7 +1448,7 @@ impl Symbol {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
-            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().get_file();
+            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow().get_file();
         }
         None
     }
