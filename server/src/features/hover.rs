@@ -204,6 +204,8 @@ impl HoverFeature {
                             } else {
                                 values.push(S!(infered_type.name()));
                             }
+                        } else {
+                            values.push(S!("Any"));
                         }
                     }
                 } else {
