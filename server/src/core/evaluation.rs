@@ -773,8 +773,8 @@ impl Evaluation {
                         // We don't want to launch validation step while Arch evaluating the code.
                         if base_sym.borrow().evaluations().is_some() && base_sym.borrow().evaluations().unwrap().len() == 0 {
                             if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
-                            base_sym.borrow().build_status(BuildSteps::ARCH) == BuildStatus::DONE
-                            && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+                            base_sym.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
+                            && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
                             && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
                                 let mut v = PythonValidator::new(base_sym.clone());
                                 v.validate(session);
