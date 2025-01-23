@@ -611,22 +611,79 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 }
             },
             ExpectedType::DOMAIN_FIELD(parent) => {
-                let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
-                let from_module = file.borrow().find_module().clone();
-                Symbol::all_members(&parent, session, &mut all_symbols, true, from_module, &mut None, false);
-                for (_symbol_name, symbols) in all_symbols {
-                    //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
-                    if _symbol_name.starts_with(expr_string_literal.value.to_str()) {
-                        let mut found_one = false;
-                        for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
-                            if final_sym.borrow().is_field(session) && dep.is_none() {
-                                items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
-                                found_one = true;
-                                continue;
+                let split_expr: Vec<String> = expr_string_literal.value.to_str().split(".").map(|x| x.to_string()).collect();
+                let mut obj = Some(parent.clone());
+                let mut date_mode = false;
+                for (index, name) in split_expr.iter().enumerate() {
+                    if date_mode {
+                        if index != split_expr.len() - 1 {
+                            break;
+                        }
+                        for value in ["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"] {
+                            if value.starts_with(name) {
+                                items.push(CompletionItem {
+                                    label: value.to_string(),
+                                    insert_text: None,
+                                    kind: Some(lsp_types::CompletionItemKind::VARIABLE),
+                                    label_details: None,
+                                    sort_text: None,
+                                    ..Default::default()
+                                });
                             }
                         }
-                        if found_one {
-                            continue;
+                        date_mode = false;
+                        continue;
+                    }
+                    if obj.is_none() {
+                        break;
+                    }
+                    if let Some(object) = &obj {
+                        if index == split_expr.len() - 1 {
+                            let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+                            let from_module = file.borrow().find_module().clone();
+                            Symbol::all_members(&object, session, &mut all_symbols, true, from_module, &mut None, false);
+                            for (_symbol_name, symbols) in all_symbols {
+                                //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
+                                if _symbol_name.starts_with(name) {
+                                    let mut found_one = false;
+                                    for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
+                                        if final_sym.borrow().is_field(session) && dep.is_none() {
+                                            items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
+                                            found_one = true;
+                                            continue;
+                                        }
+                                    }
+                                    if found_one {
+                                        continue;
+                                    }
+                                }
+                            }
+                        } else {
+                            let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
+                                &name.to_string(),
+                                current_module.clone(),
+                                false,
+                                true,
+                                false,
+                                false);
+                            if symbols.is_empty() {
+                                break;
+                            }
+                            obj = None;
+                            for s in symbols.iter() {
+                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+                                    if s.borrow().typ() == SymType::VARIABLE {
+                                        let models = s.borrow().as_variable().get_relational_model(session, current_module.clone());
+                                        //only handle it if there is only one main symbol for this model
+                                        if models.len() == 1 {
+                                            obj = Some(models[0].clone());
+                                        }
+                                    }
+                                }
+                                if s.borrow().is_specific_field(session, &["Date"]) {
+                                    date_mode = true;
+                                }
+                            }
                         }
                     }
                 }
