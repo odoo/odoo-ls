@@ -1189,6 +1189,21 @@ impl Evaluation {
                                 ));
                             }
                             date_mode = false;
+                            continue;
+                        }
+                        if obj.is_none() {
+                            diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30322"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Invalid search domain field: Invalid dot notation.
+In a search domain, when using a dot separator, it should be used either on a Date or Relational field.
+If you used a relational field and get this error, check that the comodel of this field is valid."),
+                                None,
+                                None,
+                            ));
+                            break;
                         }
                         if let Some(object) = &obj {
                             let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
@@ -1210,15 +1225,21 @@ impl Evaluation {
                                 ));
                                 break;
                             }
+                            obj = None;
                             for s in symbols.iter() {
-                                if s.borrow().is_specific_field(session, "Many2one") {
-
+                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+                                    if s.borrow().typ() == SymType::VARIABLE {
+                                        let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                                        //only handle it if there is only one main symbol for this model
+                                        if models.len() == 1 {
+                                            obj = Some(models[0].clone());
+                                        }
+                                    }
                                 }
-                                if s.borrow().is_specific_field(session, "Date") {
+                                if s.borrow().is_specific_field(session, &["Date"]) {
                                     date_mode = true;
                                 }
                             }
-                            obj = None;
                         }
                     }
                 },

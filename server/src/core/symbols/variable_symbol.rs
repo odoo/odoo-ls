@@ -1,7 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::core::evaluation::Evaluation;
-use std::{cell::RefCell, rc::Weak};
+use crate::{constants::flatten_tree, core::evaluation::Evaluation, threads::SessionInfo};
+use std::{cell::RefCell, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
 
@@ -39,6 +39,28 @@ impl VariableSymbol {
     pub fn is_type_alias(&self) -> bool {
         //TODO it does not use get_symbol call, and only evaluate "sym" from EvaluationSymbol
         return self.evaluations.len() >= 1 && self.evaluations.iter().all(|x| !x.symbol.is_instance().unwrap_or(true)) && !self.is_import_variable;
+    }
+    
+    /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
+    pub fn get_relational_model(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
+        for eval in self.evaluations.iter() {
+            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+            for eval_weak in eval_weaks.iter() {
+                if let Some(symbol) = eval_weak.upgrade_weak() {
+                    if ["Many2one", "One2many", "Many2many"].contains(&symbol.borrow().name().as_str()) {
+                        let Some(comodel) = eval_weak.as_weak().context.get("comodel") else {
+                            continue;
+                        };
+                        let Some(model) = session.sync_odoo.models.get(&comodel.as_string()).cloned() else {
+                            continue;
+                        };
+                        return model.borrow().get_main_symbols(session, from_module);
+                    }
+                }
+            }
+        }
+        vec![]
     }
 
 }

@@ -196,3 +196,9 @@ In a search domain, the first element of a tuple must be a member of the model, 
 "Invalid search domain field: Unknown date granularity".
 In a search domain, when using a dot separator on a Date field, you can use the following granularities to access part of the date:
 "year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"
+
+### OLS30322
+
+"Invalid search domain field: Invalid dot notation".
+In a search domain, when using a dot separator, it should be used either on a Date or Relational field.
+If you used a relational field and get this error, check that the comodel of this field is valid.
