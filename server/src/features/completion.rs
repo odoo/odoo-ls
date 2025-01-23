@@ -510,7 +510,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                             }
                                         },
                                         EvaluationSymbolPtr::DOMAIN => {
-                                            if let Some(parent_value) = callable.context.get(&S!("base_call")) {
+                                            if let Some(parent_value) = callable.context.get(&S!("base_attr")) {
                                                 if let Some(parent) = parent_value.as_symbol().upgrade() {
                                                     expected_type.push(ExpectedType::DOMAIN(parent));
                                                 }

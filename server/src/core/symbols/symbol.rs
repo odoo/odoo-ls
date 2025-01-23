@@ -1907,7 +1907,7 @@ impl Symbol {
         }
     }
 
-    pub fn is_specific_field(&self, session: &mut SessionInfo, field_name: &str) -> bool {
+    pub fn is_specific_field(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
         match self.typ() {
             SymType::VARIABLE => {
                 if let Some(evals) = self.evaluations().as_ref() {
@@ -1918,7 +1918,7 @@ impl Symbol {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
                                 let tree = flatten_tree(&symbol.borrow().get_tree());
                                 if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-                                    if tree[2].as_str() == field_name {
+                                    if field_names.contains(&tree[2].as_str()) {
                                         return true;
                                     }
                                 }
