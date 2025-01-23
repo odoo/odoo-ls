@@ -485,15 +485,15 @@ impl SyncOdoo {
                     continue;
                 }
                 already_validation_rebuilt.insert(tree);
-                //TODO should delete previous first
-                let mut validator = PythonValidator::new(sym_rc);
-                validator.validate(session);
                 if session.sync_odoo.state_init == InitState::ODOO_READY && session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
                     session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
                     session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
                     session.request_delayed_rebuild();
+                    session.sync_odoo.add_to_validations(sym_rc.clone());
                     return;
                 }
+                let mut validator = PythonValidator::new(sym_rc);
+                validator.validate(session);
                 continue;
             }
         }
