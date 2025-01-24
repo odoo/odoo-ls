@@ -21,6 +21,7 @@ pub struct FileSymbol {
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
+    pub processed_text_hash: u64,
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
@@ -80,6 +81,7 @@ impl FileSymbol {
                     PtrWeakHashSet::new(), //ODOO
                     PtrWeakHashSet::new()  //VALIDATION
                 ]],
+            processed_text_hash: 0,
         };
         res._init_symbol_mgr();
         res

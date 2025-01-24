@@ -24,9 +24,9 @@ pub struct FileInfo {
     pub uri: String,
     pub valid: bool, // indicates if the file contains syntax error or not
     pub opened: bool,
+    pub text_hash: u64,
     need_push: bool,
     text_rope: Option<ropey::Rope>,
-    text_hash: u64,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
 }
 
