@@ -88,11 +88,11 @@ impl Model {
         self.add_dependents_to_validation(session);
     }
 
-    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
+    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().find_module().expect("Model should be declared in a module");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name, &mut None) {
+            if from_module.is_none() || ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name, &mut None) {
                 symbol.push(s);
             }
         }

@@ -1886,7 +1886,7 @@ impl Symbol {
                     from_module = self.find_module();
                 }
                 if let Some(from_module) = from_module {
-                    let model_symbols = model.clone().borrow().get_symbols(session, from_module);
+                    let model_symbols = model.clone().borrow().get_symbols(session, Some(from_module));
                     for model_symbol in model_symbols {
                         if self.is_equal(&model_symbol) {
                             continue;
