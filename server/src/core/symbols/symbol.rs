@@ -597,6 +597,19 @@ impl Symbol {
         }
     }
 
+    pub fn get_symbol_first_path(&self) -> String{
+        match self{
+            Symbol::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext().as_str(),
+            Symbol::File(f) => f.path.clone(),
+            Symbol::Root(_) => panic!("invalid symbol type to extract path"),
+            Symbol::Namespace(_) => panic!("invalid symbol type to extract path"),
+            Symbol::Compiled(_) => panic!("invalid symbol type to extract path"),
+            Symbol::Class(_) => panic!("invalid symbol type to extract path"),
+            Symbol::Function(_) => panic!("invalid symbol type to extract path"),
+            Symbol::Variable(_) => panic!("invalid symbol type to extract path"),
+        }
+    }
+
     pub fn dependencies(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4] {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
@@ -1366,6 +1379,34 @@ impl Symbol {
             Symbol::Class(c) => c.weak_self = Some(weak_self),
             Symbol::Function(f) => f.weak_self = Some(weak_self),
             Symbol::Variable(v) => v.weak_self = Some(weak_self),
+        }
+    }
+
+    pub fn set_processed_text_hash(&mut self, hash: u64){
+        match self {
+            Symbol::File(f) => f.processed_text_hash = hash,
+            Symbol::Function(f) => f.processed_text_hash = hash,
+            Symbol::Package(PackageSymbol::Module(m)) => m.processed_text_hash = hash,
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.processed_text_hash = hash,
+            Symbol::Root(_) => panic!("set_processed_text_hash called on Root"),
+            Symbol::Namespace(_) => panic!("set_processed_text_hash called on Namespace"),
+            Symbol::Compiled(_) => panic!("set_processed_text_hash called on Compiled"),
+            Symbol::Class(_) => panic!("set_processed_text_hash called on Class"),
+            Symbol::Variable(_) => panic!("set_processed_text_hash called on Variable"),
+        }
+    }
+
+    pub fn get_processed_text_hash(&self) -> u64{
+        match self {
+            Symbol::File(f) => f.processed_text_hash,
+            Symbol::Function(f) => f.processed_text_hash,
+            Symbol::Package(PackageSymbol::Module(m)) => m.processed_text_hash,
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.processed_text_hash,
+            Symbol::Root(_) => panic!("get_processed_text_hash called on Root"),
+            Symbol::Namespace(_) => panic!("get_processed_text_hash called on Namespace"),
+            Symbol::Compiled(_) => panic!("get_processed_text_hash called on Compiled"),
+            Symbol::Class(_) => panic!("get_processed_text_hash called on Class"),
+            Symbol::Variable(_) => panic!("get_processed_text_hash called on Variable"),
         }
     }
 

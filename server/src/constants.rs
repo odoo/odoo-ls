@@ -55,6 +55,7 @@ pub enum BuildSteps {
 pub enum BuildStatus {
     PENDING,
     IN_PROGRESS,
+    INVALID,
     DONE
 }
 

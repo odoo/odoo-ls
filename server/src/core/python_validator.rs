@@ -63,13 +63,17 @@ impl PythonValidator {
         }
         let sym_type = symbol.typ().clone();
         drop(symbol);
+        let file_info_rc = self.get_file_info(session.sync_odoo).clone();
         match sym_type {
             SymType::FILE | SymType::PACKAGE(_) => {
                 trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
                 let file_info = file_info_rc.borrow();
+                if file_info_rc.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
+                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
+                    return;
+                }
                 if file_info.ast.is_some() && file_info.valid {
                     self.validate_body(session, file_info.ast.as_ref().unwrap());
                 }
@@ -81,7 +85,10 @@ impl PythonValidator {
                 trace!("Validating function {}", self.sym_stack[0].borrow().name());
                 self.file_mode = false;
                 let func = &self.sym_stack[0];
-                if func.borrow().as_func().arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                if func.borrow().as_func().arch_status == BuildStatus::PENDING || file_info_rc.borrow().text_hash != func.borrow().get_processed_text_hash(){ //TODO other checks to do? maybe odoo step, or?????????
+                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
+                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
                     let mut builder = PythonArchBuilder::new(func.clone());
                     builder.load_arch(session);
                 }
@@ -91,7 +98,6 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                let file_info_rc = self.get_file_info(session.sync_odoo).clone();
                 let file_info = file_info_rc.borrow();
                 if file_info.ast.is_some() {
                     let stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());

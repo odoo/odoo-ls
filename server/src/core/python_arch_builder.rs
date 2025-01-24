@@ -62,15 +62,7 @@ impl PythonArchBuilder {
         }
         trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let path = match self.file.borrow().typ() {
-            SymType::FILE => {
-                self.file.borrow().paths()[0].clone()
-            },
-            SymType::PACKAGE(_) => {
-                PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
-            },
-            _ => panic!("invalid symbol type to extract path")
-        };
+        let path = self.file.borrow().get_symbol_first_path();
         if self.file_mode {
             let in_workspace = (self.file.borrow().parent().is_some() &&
                 self.file.borrow().parent().as_ref().unwrap().upgrade().is_some() &&
@@ -101,6 +93,7 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
+            symbol.borrow_mut().set_processed_text_hash(file_info.text_hash);
             self.visit_node(session, &ast);
             self._resolve_all_symbols(session);
             if self.file_mode {
@@ -433,6 +426,8 @@ impl PythonArchBuilder {
             self.sym_stack.push(sym.clone());
             self.visit_node(session, &func_def.body)?;
             self.sym_stack.pop();
+            let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&self.file.borrow().get_symbol_first_path()).unwrap();
+            sym.borrow_mut().set_processed_text_hash(file_info_rc.borrow().text_hash);
             sym.borrow_mut().as_func_mut().arch_status = BuildStatus::DONE;
         }
         Ok(())

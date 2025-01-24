@@ -75,15 +75,7 @@ impl PythonArchEval {
         if self.file.borrow().paths().len() != 1 {
             panic!("Trying to eval_arch a symbol without any path")
         }
-        let path = match self.file.borrow().typ() {
-            SymType::FILE => {
-                self.file.borrow().paths()[0].clone()
-            },
-            SymType::PACKAGE(_) => {
-                PathBuf::from(self.file.borrow().paths()[0].clone()).join("__init__.py").sanitize() + self.file.borrow().as_package().i_ext().as_str()
-            },
-            _ => panic!("invalid symbol type to extract path")
-        };
+        let path = self.file.borrow().get_symbol_first_path();
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
