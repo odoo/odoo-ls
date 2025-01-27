@@ -510,10 +510,9 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                             }
                                         },
                                         EvaluationSymbolPtr::DOMAIN => {
-                                            if let Some(parent_value) = callable.context.get(&S!("base_attr")) {
-                                                if let Some(parent) = parent_value.as_symbol().upgrade() {
-                                                    expected_type.push(ExpectedType::DOMAIN(parent));
-                                                }
+                                            if let Some(parent) = callable.context.get(&S!("base_attr"))
+                                                .and_then(|parent_value| parent_value.as_symbol().upgrade()) {
+                                                expected_type.push(ExpectedType::DOMAIN(parent));
                                             }
                                         }
                                         _ => {}
@@ -640,8 +639,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     if let Some(object) = &obj {
                         if index == split_expr.len() - 1 {
                             let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
-                            let from_module = file.borrow().find_module().clone();
-                            Symbol::all_members(&object, session, &mut all_symbols, true, from_module, &mut None, false);
+                            Symbol::all_members(&object, session, &mut all_symbols, true, current_module.clone(), &mut None, false);
                             for (_symbol_name, symbols) in all_symbols {
                                 //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                                 if _symbol_name.starts_with(name) {
@@ -671,13 +669,11 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                             }
                             obj = None;
                             for s in symbols.iter() {
-                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
-                                    if s.borrow().typ() == SymType::VARIABLE {
-                                        let models = s.borrow().as_variable().get_relational_model(session, current_module.clone());
-                                        //only handle it if there is only one main symbol for this model
-                                        if models.len() == 1 {
-                                            obj = Some(models[0].clone());
-                                        }
+                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
+                                    let models = s.borrow().as_variable().get_relational_model(session, current_module.clone());
+                                    //only handle it if there is only one main symbol for this model
+                                    if models.len() == 1 {
+                                        obj = Some(models[0].clone());
                                     }
                                 }
                                 if s.borrow().is_specific_field(session, &["Date"]) {
@@ -813,22 +809,20 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
             },
             ExpectedType::DOMAIN_LIST(parent) => {
                 if list_or_tuple_elts.len() == 0 {
-                    if let Some(capability_text_doc) = &session.sync_odoo.capabilities.text_document {
-                        if let Some(completion) = &capability_text_doc.completion {
-                            if let Some(completion) = &completion.completion_item {
-                                if completion.snippet_support.unwrap_or(false) {
-                                    return Some(CompletionResponse::List(CompletionList {
-                                        is_incomplete: false,
-                                        items: vec![CompletionItem {
-                                            label: "(field, comparator, value)".to_string(),
-                                            kind: Some(lsp_types::CompletionItemKind::CLASS),
-                                            insert_text: Some("$1, ${2|\"=\",\"!=\",\">\",\">=\",\"<\",\"<=\",\"=?\",\"like\",\"=like\",\"not like\",\"ilike\",\"=ilike\",\"not ilike\",\"in\",\"not in\",\"child_of\",\"parent_of\",\"any\",\"not any\"|}, $3".to_string()),
-                                            insert_text_format: Some(lsp_types::InsertTextFormat::SNIPPET),
-                                            ..Default::default()
-                                        }]
-                                    }))
-                                }
-                            }
+                    if let Some(completion) = session.sync_odoo.capabilities.text_document.as_ref()
+                            .and_then(|capability_text_doc| capability_text_doc.completion.as_ref())
+                            .and_then(|completion| completion.completion_item.as_ref()){
+                        if completion.snippet_support.unwrap_or(false) {
+                            return Some(CompletionResponse::List(CompletionList {
+                                is_incomplete: false,
+                                items: vec![CompletionItem {
+                                    label: "(field, comparator, value)".to_string(),
+                                    kind: Some(lsp_types::CompletionItemKind::CLASS),
+                                    insert_text: Some("$1, ${2|\"=\",\"!=\",\">\",\">=\",\"<\",\"<=\",\"=?\",\"like\",\"=like\",\"not like\",\"ilike\",\"=ilike\",\"not ilike\",\"in\",\"not in\",\"child_of\",\"parent_of\",\"any\",\"not any\"|}, $3".to_string()),
+                                    insert_text_format: Some(lsp_types::InsertTextFormat::SNIPPET),
+                                    ..Default::default()
+                                }]
+                            }))
                         }
                     }
                 }

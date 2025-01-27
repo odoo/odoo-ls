@@ -7,7 +7,7 @@ use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
-use ruff_python_ast::{Expr, Stmt, Alias, ExceptHandler, Parameter, Keyword, PatternKeyword, TypeParam, Pattern};
+use ruff_python_ast::{Alias, ExceptHandler, Expr, ExprCall, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::warn;
 
@@ -15,20 +15,7 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
-        let mut expr: Option<ExprOrIdent> = None;
-        let file_info_borrowed = file_info.borrow();
-        for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
-            expr = ExprFinderVisitor::find_expr_at(stmt, offset);
-            if expr.is_some() {
-                break;
-            }
-        }
-        if expr.is_none() {
-            warn!("expr not found");
-            return (AnalyzeAstResult::default(), None);
-        }
-        let expr = expr.unwrap();
+    fn analyze_expr_ast(session: &mut SessionInfo, expr: &ExprOrIdent, file_symbol: &Rc<RefCell<Symbol>>, offset: u32) -> AnalyzeAstResult {
         let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
         let from_module;
         if let Some(module) = file_symbol.borrow().find_module() {
@@ -40,8 +27,43 @@ impl AstUtils {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(expr.range()))
         ]));
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context);
+        Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context)
+    }
+
+    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
+        let mut expr: Option<ExprOrIdent> = None;
+        let file_info_borrowed = file_info.borrow();
+        for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
+            expr = ExprFinderVisitor::find_expr_at(stmt, offset);
+            if expr.is_some() {
+                break;
+            }
+        }
+        let Some(expr) = expr else {
+            warn!("expr not found");
+            return (AnalyzeAstResult::default(), None);
+        };
+        let analyse_ast_result: AnalyzeAstResult = AstUtils::analyze_expr_ast(session, &expr, file_symbol, offset);
         (analyse_ast_result, Some(expr.range()))
+
+    }
+
+    pub fn get_symbols_with_func_call_symbools(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
+        let mut expr: Option<ExprOrIdent> = None;
+        let mut call_expr: Option<ExprCall> = None;
+        let file_info_borrowed = file_info.borrow();
+        for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
+            (expr, call_expr) = ExprFinderVisitor::find_expr_with_call_expr_at(stmt, offset);
+            if expr.is_some() {
+                break;
+            }
+        }
+        let Some(expr) = expr else {
+            warn!("expr not found");
+            return (AnalyzeAstResult::default(), None, None);
+        };
+        let analyse_ast_result: AnalyzeAstResult = AstUtils::analyze_expr_ast(session, &expr, file_symbol, offset);
+        (analyse_ast_result, Some(expr.range()), call_expr)
 
     }
 
@@ -124,6 +146,7 @@ impl AstUtils {
 pub struct ExprFinderVisitor<'a> {
     offset: TextSize,
     expr: Option<ExprOrIdent<'a>>,
+    last_call_expr: Option<&'a ExprCall>,
 }
 
 impl<'a> ExprFinderVisitor<'a> {
@@ -131,10 +154,21 @@ impl<'a> ExprFinderVisitor<'a> {
     pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> Option<ExprOrIdent> {
         let mut visitor = Self {
             offset: TextSize::new(offset),
-            expr: None
+            expr: None,
+            last_call_expr: None
         };
         visitor.visit_stmt(stmt);
         visitor.expr
+    }
+
+    pub fn find_expr_with_call_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent>, Option<ExprCall>) {
+        let mut visitor = Self {
+            offset: TextSize::new(offset),
+            expr: None,
+            last_call_expr: None
+        };
+        visitor.visit_stmt(stmt);
+        (visitor.expr, visitor.last_call_expr.cloned())
     }
 
 }
@@ -143,6 +177,11 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
 
     fn visit_expr(&mut self, expr: &'a Expr) {
         if expr.range().contains(self.offset) {
+            if let Expr::Call(expr_call) = expr {
+                if expr_call.arguments.range().contains(self.offset){
+                    self.last_call_expr = Some(expr_call);
+                }
+            }
             walk_expr(self, expr);
             if self.expr.is_none() {
                 self.expr = Some(ExprOrIdent::Expr(expr));
@@ -273,3 +312,4 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         }
     }
 }
+
