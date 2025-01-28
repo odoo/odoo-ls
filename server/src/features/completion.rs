@@ -541,10 +541,10 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
     if offset > attr.value.range().start().to_usize() && offset <= attr.value.range().end().to_usize() {
         return complete_expr( &attr.value, session, file, offset, is_param, expected_type);
     } else {
-        let parent = Evaluation::eval_from_ast(session, &attr.value, scope, &attr.range().start()).0;
+        let parent = Evaluation::eval_from_ast(session, &attr.value, scope.clone(), &attr.range().start()).0;
 
         for parent_eval in parent.iter() {
-            let parent_sym_eval_weak = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone()));
+            let parent_sym_eval_weak = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval_weak.weak.is_expired() {
                 let parent_sym_types = Symbol::follow_ref(&parent_sym_eval_weak, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
@@ -573,9 +573,9 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
 
 fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-    let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start()).0;
+    let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope.clone(), &expr_subscript.value.range().start()).0;
     for eval in subscripted.iter() {
-        let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file.clone()));
+        let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.weak.is_expired() {
             let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, true, false, None, &mut vec![]);
             for symbol_type in symbol_types.iter() {

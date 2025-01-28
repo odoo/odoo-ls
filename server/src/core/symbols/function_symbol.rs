@@ -2,8 +2,9 @@ use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
 use ruff_text_size::{TextRange, TextSize};
+use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, SymType}, core::evaluation::{Context, Evaluation}, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, SymType}, core::{evaluation::{Context, Evaluation}, model::Model}, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -34,6 +35,7 @@ pub struct FunctionSymbol {
     pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
+    pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
@@ -75,6 +77,7 @@ impl FunctionSymbol {
             arch_eval_status: BuildStatus::PENDING,
             odoo_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
+            model_dependencies: PtrWeakHashSet::new(),
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),

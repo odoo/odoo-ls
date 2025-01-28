@@ -136,7 +136,7 @@ pub type Context = HashMap<String, ContextValue>;
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak;
+type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak;
 
 
 #[derive(Debug, Clone)]
@@ -316,7 +316,7 @@ impl Evaluation {
         match self.symbol.sym {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
-                let symbol_eval_weak = self.symbol.get_symbol(session, &mut None, &mut vec![], None);
+                let symbol_eval_weak = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.clone()));
                 let out_of_scope = Symbol::follow_ref(&symbol_eval_weak, session, &mut None, true, false, Some(function.clone()), &mut vec![]);
                 for weak_sym in out_of_scope {
                     if !weak_sym.weak.is_expired() {
@@ -660,7 +660,7 @@ impl Evaluation {
                                                 }
                                                 let object_or_type_weak_eval = &Symbol::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
-                                                        session, &mut context, &mut diagnostics, None),
+                                                        session, &mut context, &mut diagnostics, Some(parent)),
                                                         session, &mut None, false, false, None, &mut diagnostics)[0];
                                                 is_instance = object_or_type_weak_eval.instance;
                                             }
@@ -758,7 +758,6 @@ impl Evaluation {
                                     &base_sym.borrow().as_func(),
                                     expr,
                                     context.as_ref().unwrap().get_key_value(&S!("parent")).unwrap_or((&S!(""), &ContextValue::SYMBOL(Weak::new()))).1.as_symbol(),
-                                    
                                     from_module,
                                     on_instance));
                             }
@@ -779,7 +778,7 @@ impl Evaluation {
                 if base_evals.len() == 0 || (base_evals.len() > 0 && base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).weak.is_expired()) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
+                let base_ref = base_evals[0].symbol.get_symbol(session, &mut None, &mut diagnostics, Some(parent.clone()));
                 let bases = Symbol::follow_ref(&base_ref, session, &mut None, false, false, None, &mut diagnostics);
                 for ibase in bases.iter() {
                     let base_loc = ibase.weak.upgrade();
@@ -834,7 +833,7 @@ impl Evaluation {
                 if eval_left.len() == 0 || (eval_left.len() > 0 && eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None).weak.is_expired()) { //TODO set context?
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, None); //TODO set context?
+                let base = &eval_left[0].symbol.get_symbol(session, &mut None, &mut diagnostics, Some(parent.clone())); //TODO set context?
                 let bases = Symbol::follow_ref(&base, session, &mut None, false, false, None, &mut diagnostics);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -854,7 +853,7 @@ impl Evaluation {
                                 context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.as_mut().unwrap().remove(&S!("range"));
                                 context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
-                                let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
+                                let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
                                 if !hook_result.weak.is_expired() {
                                     evals.push(Evaluation::eval_from_symbol(&hook_result.weak, hook_result.instance));
                                 }
@@ -1209,7 +1208,7 @@ impl EvaluationSymbol {
         }
     }
 
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak {
         let mut full_context = self.context.clone();
         //extend with local elements
         if let Some(context) = context {
@@ -1217,7 +1216,7 @@ impl EvaluationSymbol {
         }
         if self.get_symbol_hook.is_some() {
             let hook = self.get_symbol_hook.unwrap();
-            return hook(session, self, &mut Some(full_context), diagnostics, file_symbol);
+            return hook(session, self, &mut Some(full_context), diagnostics, scope);
         }
         match &self.sym {
             EvaluationSymbolPtr::WEAK(w) => {

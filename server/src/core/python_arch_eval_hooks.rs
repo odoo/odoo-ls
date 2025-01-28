@@ -411,7 +411,7 @@ impl PythonArchEvalHooks {
         }
     }
 
-    pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
         if let Some(context) = context {
             let arg = context.get(&S!("args"));
@@ -431,8 +431,8 @@ impl PythonArchEvalHooks {
                             } else {
                                 from_module = None;
                             }
-                            if let Some(file_symbol) = file_symbol {
-                                let mut f = file_symbol.borrow_mut();
+                            if let Some(scope) = scope {
+                                let mut f = scope.borrow_mut();
                                 f.add_model_dependencies(model);
                             }
                             let model = model.clone();
@@ -508,14 +508,14 @@ impl PythonArchEvalHooks {
         EvaluationSymbolWeak::new(Weak::new(), Some(true), false)
     }
 
-    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
-        let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, file_symbol);
+        let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, scope);
         result.instance = Some(false);
         result
     }
 
-    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
         if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
             let test_cursor_sym = session.sync_odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
@@ -528,7 +528,7 @@ impl PythonArchEvalHooks {
         evaluation_sym.get_weak().clone()
     }
 
-    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
         if context.is_some() {
             let parent_instance = context.as_ref().unwrap().get(&S!("parent_instance"));
@@ -571,7 +571,7 @@ impl PythonArchEvalHooks {
         }]);
     }
 
-    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
+    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak
     {
         if context.is_none() {
             return evaluation_sym.get_symbol(session, &mut None, diagnostics, None);

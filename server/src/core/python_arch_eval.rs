@@ -690,7 +690,7 @@ impl PythonArchEval {
                             let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start());
                             let mut evals = vec![];
                             for eval in eval.iter() {
-                                let symbol = eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(self.file.clone()));
+                                let symbol = eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(variable_rc.borrow().parent_file_or_function().unwrap().upgrade().unwrap().clone()));
                                 if let Some(symbol) = symbol.weak.upgrade() {
                                     let _enter_ = symbol.borrow().get_symbol(&(vec![], vec![S!("__enter__")]), u32::MAX);
                                     if let Some(_enter_) = _enter_.last() {
