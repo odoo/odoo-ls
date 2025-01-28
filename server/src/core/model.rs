@@ -5,6 +5,9 @@ use lsp_types::MessageType;
 use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
+use crate::constants::BuildStatus;
+use crate::constants::BuildSteps;
+use crate::constants::SymType;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
@@ -79,13 +82,14 @@ impl Model {
     }
 
     pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
-        self.symbols.insert(symbol);
-        self.add_dependents_to_validation(session);
+        self.symbols.insert(symbol.clone());
+        let from_module = symbol.borrow().find_module();
+        self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
+    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>) {
         self.symbols.remove(symbol);
-        self.add_dependents_to_validation(session);
+        self.add_dependents_to_validation(session, from_module);
     }
 
     pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
@@ -149,10 +153,23 @@ impl Model {
         self.dependents.insert(symbol.clone());
     }
 
-    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo) {
+    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<Rc<RefCell<Symbol>>>) {
         for dep in self.dependents.iter() {
             dep.borrow_mut().invalidate_sub_functions(session);
-            session.sync_odoo.add_to_validations(dep.clone());
+            let module = dep.borrow().find_module();
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(session, &module.as_ref().unwrap(), &module_change.as_ref().unwrap().borrow().as_module_package().dir_name, &mut None) {
+                let typ = dep.borrow().typ().clone();
+                match typ {
+                    SymType::FUNCTION => {
+                        dep.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                        dep.borrow_mut().set_build_status(BuildSteps::ODOO, BuildStatus::PENDING);
+                        session.sync_odoo.add_to_validations(dep.clone());
+                    },
+                    _ => {
+                        session.sync_odoo.add_to_validations(dep.clone());
+                    }
+                }
+            }
         }
     }
 }

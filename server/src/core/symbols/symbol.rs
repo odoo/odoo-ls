@@ -1176,6 +1176,10 @@ impl Symbol {
                 f.model_dependencies.insert(model.clone());
                 model.borrow_mut().add_dependent(&self.weak_self().unwrap().upgrade().unwrap());
             },
+            Symbol::Function(f) => {
+                f.model_dependencies.insert(model.clone());
+                model.borrow_mut().add_dependent(&self.weak_self().unwrap().upgrade().unwrap());
+            }
             _ => {}
         }
     }
@@ -1238,7 +1242,8 @@ impl Symbol {
                         if let Some(model_data) = &class.borrow().as_class_sym()._model {
                             let model = session.sync_odoo.models.get(&model_data.name).cloned();
                             if let Some(model) = model {
-                                model.borrow().add_dependents_to_validation(session);
+                                let from_module = class.borrow().find_module();
+                                model.borrow().add_dependents_to_validation(session, from_module);
                             }
                         }
                     }
@@ -1281,6 +1286,7 @@ impl Symbol {
             if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || matches!(mut_symbol.typ(), SymType::PACKAGE(_))) {
                 info!("Unloading symbol {:?} at {:?}", mut_symbol.name(), mut_symbol.paths());
             }
+            let module = mut_symbol.find_module();
             //unload symbol
             let parent = mut_symbol.parent().as_ref().unwrap().upgrade().unwrap().clone();
             let mut parent_bw = parent.borrow_mut();
@@ -1310,7 +1316,7 @@ impl Symbol {
                     if let Some(model_data) = c._model.as_ref() {
                         let model = session.sync_odoo.models.get(&model_data.name).cloned();
                         if let Some(model) = model {
-                            model.borrow_mut().remove_symbol(session, &ref_to_unload);
+                            model.borrow_mut().remove_symbol(session, &ref_to_unload, module);
                         }
                     }
                 },
