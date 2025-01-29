@@ -1175,7 +1175,7 @@ impl Evaluation {
                     let split_expr = value.split(".");
                     let mut obj = Some(on_object);
                     let mut date_mode = false;
-                    for name in split_expr {
+                    'split_name: for name in split_expr {
                         if date_mode {
                             if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
                                 diagnostics.push(Diagnostic::new(
@@ -1198,7 +1198,7 @@ impl Evaluation {
                                 Some(NumberOrString::String(S!("OLS30322"))),
                                 Some(EXTENSION_NAME.to_string()),
                                 format!("Invalid search domain field: Invalid dot notation.
-In a search domain, when using a dot separator, it should be used either on a Date or Relational field.
+In a search domain, when using a dot separator, it should be used either on a Date, Properties or Relational field.
 If you used a relational field and get this error, check that the comodel of this field is valid."),
                                 None,
                                 None,
@@ -1235,6 +1235,11 @@ If you used a relational field and get this error, check that the comodel of thi
                                             obj = Some(models[0].clone());
                                         }
                                     }
+                                }
+                                if s.borrow().is_specific_field(session, &["Properties"]) {
+                                    //TODO handle properties field
+                                    //property field, not handled for now. Skip the parsing to not generate diagnostics
+                                    break 'split_name
                                 }
                                 if s.borrow().is_specific_field(session, &["Date"]) {
                                     date_mode = true;
