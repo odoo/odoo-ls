@@ -15,12 +15,12 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_symbols_with_func_call_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
+    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
         let mut expr: Option<ExprOrIdent> = None;
         let mut call_expr: Option<ExprCall> = None;
         let file_info_borrowed = file_info.borrow();
         for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
-            (expr, call_expr) = ExprFinderVisitor::find_expr_with_call_expr_at(stmt, offset);
+            (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
             }
@@ -128,18 +128,13 @@ pub struct ExprFinderVisitor<'a> {
 }
 
 impl<'a> ExprFinderVisitor<'a> {
-
-    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> Option<ExprOrIdent> {
-        let mut visitor = Self {
-            offset: TextSize::new(offset),
-            expr: None,
-            last_call_expr: None
-        };
-        visitor.visit_stmt(stmt);
-        visitor.expr
-    }
-
-    pub fn find_expr_with_call_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent>, Option<ExprCall>) {
+    /*
+    Find expr from `stmt` at the given `offset`
+    Returns: (expr, last_call_expr)
+        expr: the expr being searched for
+        last_call_expr: The last call expr preceding the expr we are searching for
+     */
+    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent>, Option<ExprCall>) {
         let mut visitor = Self {
             offset: TextSize::new(offset),
             expr: None,
