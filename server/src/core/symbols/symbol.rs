@@ -1572,8 +1572,15 @@ impl Symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
-                    //TODO context is modified in each for loop, which is wrong if a key in context is specific to one result!
-                    let sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
+                    let mut sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
+                    match sym {
+                        EvaluationSymbolPtr::WEAK(ref mut w) => {
+                            if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+                                w.context.insert(S!("base_attr"), base_attr.clone());
+                            }
+                        },
+                        _ => {}
+                    }
                     if !sym.is_expired_if_weak() {
                         res.push_back(sym);
                     }
@@ -1641,7 +1648,7 @@ impl Symbol {
                                             }
                                         }
                                     }
-                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &w.context, stop_on_type, &mut vec![]);
+                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     index += 1;
                                     if !next_sym_refs.is_empty() {
                                         results.pop_front();
@@ -1653,7 +1660,7 @@ impl Symbol {
                                 },
                                 Symbol::Class(ref c) => {
                                     //On class, follow descriptor declarations
-                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &w.context, stop_on_type, &mut vec![]);
+                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     index += 1;
                                     if !next_sym_refs.is_empty() {
                                         results.pop_front();
