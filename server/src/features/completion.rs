@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
-use ruff_python_ast::identifier::Identifier;
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::Ranged;
-use tracing::info;
-use weak_table::traits::WeakElement;
 
 use crate::constants::SymType;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -15,9 +12,8 @@ use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
 use crate::S;
 use crate::core::symbols::symbol::Symbol;
+use crate::features::features_utils::FeaturesUtils;
 use crate::core::file_mgr::FileInfo;
-
-use super::hover::HoverFeature;
 
 
 #[allow(non_camel_case_types)]
@@ -1006,7 +1002,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, None, &vec![
+                value: FeaturesUtils::build_markdown_description(session, None, &vec![
                     Evaluation {
                         symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
                             context_of_symbol,

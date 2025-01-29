@@ -1,18 +1,17 @@
 use lsp_types::{GotoDefinitionResponse, Location, Range};
 use ruff_python_ast::ExprCall;
-use ruff_text_size::{Ranged, TextRange, TextSize};
+use ruff_text_size::TextSize;
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
-use crate::core::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr};
+use crate::core::evaluation::Evaluation;
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::ast_utils::AstUtils;
+use crate::features::features_utils::FeaturesUtils;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-
-use crate::S;
 
 pub struct DefinitionFeature {}
 
@@ -29,81 +28,17 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
-        let from_module = file_symbol.borrow().find_module();
         let mut field_found = false;
-        for (arg_index, arg) in call_expr.arguments.args.iter().enumerate() {
-            if offset <= arg.range().start().to_usize() || offset > arg.range().end().to_usize() {
-                continue;
+        let string_domain_fields= FeaturesUtils::find_domain_field_symbols(session, &field_name, call_expr, offset, field_range, file_symbol);
+        string_domain_fields.iter().for_each(|field|{
+            if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
+                let path = file_sym.borrow().paths()[0].clone();
+                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
+                field_found = true;
+                links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
-            let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
-            for callable_eval in callable_evals.iter() {
-                let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-                let Some(callable_sym) = callable.weak.upgrade() else {
-                     continue
-                };
-                if callable_sym.borrow().typ() != SymType::FUNCTION {
-                    continue
-                }
-                let func = callable_sym.borrow();
-                let func_arg = func.as_func().get_indexed_arg_in_call(
-                    call_expr,
-                    arg_index as u32,
-                    callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
-                let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
-                    continue
-                };
-                for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
-                    if !matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
-                        continue;
-                    }
-                    let Some(mut parent_object) = callable.context.get(&S!("base_attr")).map(|parent_object| parent_object.as_symbol().upgrade()) else {
-                        continue;
-                    };
-                    let mut range_start = field_range.start();
-                    for name in field_name.split(".").map(|x| x.to_string()) {
-                        if parent_object.is_none() {
-                            break;
-                        }
-                        let range_end = range_start + TextSize::new((name.len() + 1) as u32);
-                        let curser_section = TextRange::new(range_start, range_end).contains(TextSize::new(offset as u32));
-                        if curser_section {
-                            let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
-                            for field in fields {
-                                if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
-                                    let path = file_sym.borrow().paths()[0].clone();
-                                    let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
-                                    field_found = true;
-                                    links.push(Location{uri: FileMgr::pathname2uri(&path), range});
-                                }
-                            }
-                        } else {
-                            let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
-                                &name.to_string(),
-                                from_module.clone(),
-                                false,
-                                true,
-                                false,
-                                false);
-                            if symbols.is_empty() {
-                                break;
-                            }
-                            parent_object = None;
-                            for s in symbols.iter() {
-                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
-                                    let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
-                                    if models.len() == 1 {
-                                        parent_object = Some(models[0].clone());
-                                    }
-                                }
-                            }
-                        }
-                        range_start = range_end;
-                    }
-                }
-            }
-        }
-        field_found
+        });
+        string_domain_fields.len() > 0
     }
 
     fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<Location>) -> bool {
@@ -141,7 +76,7 @@ impl DefinitionFeature {
         character: u32
     ) -> Option<GotoDefinitionResponse> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, _range, call_expr) = AstUtils::get_symbols_with_func_call_symbols(session, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, _range, call_expr) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }
