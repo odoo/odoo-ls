@@ -141,7 +141,7 @@ impl DefinitionFeature {
         character: u32
     ) -> Option<GotoDefinitionResponse> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, _range, call_expr) = AstUtils::get_symbols_with_func_call_symbools(session, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, _range, call_expr) = AstUtils::get_symbols_with_func_call_symbols(session, file_symbol, file_info, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }

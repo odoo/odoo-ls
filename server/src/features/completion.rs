@@ -1013,7 +1013,8 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                             None),
                         value: None,
                         range: None
-                    }])
+                    }],
+                    &None, None)
             })),
         ..Default::default()
     }
