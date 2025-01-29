@@ -15,40 +15,7 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    fn analyze_expr_ast(session: &mut SessionInfo, expr: &ExprOrIdent, file_symbol: &Rc<RefCell<Symbol>>, offset: u32) -> AnalyzeAstResult {
-        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
-        let from_module;
-        if let Some(module) = file_symbol.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
-        } else {
-            from_module = ContextValue::BOOLEAN(false);
-        }
-        let mut context: Option<Context> = Some(HashMap::from([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(expr.range()))
-        ]));
-        Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context)
-    }
-
-    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
-        let mut expr: Option<ExprOrIdent> = None;
-        let file_info_borrowed = file_info.borrow();
-        for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
-            expr = ExprFinderVisitor::find_expr_at(stmt, offset);
-            if expr.is_some() {
-                break;
-            }
-        }
-        let Some(expr) = expr else {
-            warn!("expr not found");
-            return (AnalyzeAstResult::default(), None);
-        };
-        let analyse_ast_result: AnalyzeAstResult = AstUtils::analyze_expr_ast(session, &expr, file_symbol, offset);
-        (analyse_ast_result, Some(expr.range()))
-
-    }
-
-    pub fn get_symbols_with_func_call_symbools(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
+    pub fn get_symbols_with_func_call_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
         let mut expr: Option<ExprOrIdent> = None;
         let mut call_expr: Option<ExprCall> = None;
         let file_info_borrowed = file_info.borrow();
@@ -62,7 +29,18 @@ impl AstUtils {
             warn!("expr not found");
             return (AnalyzeAstResult::default(), None, None);
         };
-        let analyse_ast_result: AnalyzeAstResult = AstUtils::analyze_expr_ast(session, &expr, file_symbol, offset);
+        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
+        let from_module;
+        if let Some(module) = file_symbol.borrow().find_module() {
+            from_module = ContextValue::MODULE(Rc::downgrade(&module));
+        } else {
+            from_module = ContextValue::BOOLEAN(false);
+        }
+        let mut context: Option<Context> = Some(HashMap::from([
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(expr.range()))
+        ]));
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context);
         (analyse_ast_result, Some(expr.range()), call_expr)
 
     }

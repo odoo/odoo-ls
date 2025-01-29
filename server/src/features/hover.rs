@@ -1,15 +1,13 @@
-use ruff_python_ast::Expr;
-use ruff_text_size::TextRange;
+use ruff_python_ast::ExprCall;
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Hover, HoverContents, MarkupContent, Range};
-use serde::de::value;
-use weak_table::traits::WeakElement;
-use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
 use crate::features::ast_utils::AstUtils;
@@ -22,7 +20,7 @@ impl HoverFeature {
 
     pub fn get_hover(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, range) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
+        let (analyse_ast_result, range, call_expr) = AstUtils::get_symbols_with_func_call_symbols(session, file_symbol, file_info, offset as u32);
         let evals = analyse_ast_result.evaluations;
         if evals.is_empty() {
             return None;
@@ -34,7 +32,7 @@ impl HoverFeature {
         Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: HoverFeature::build_markdown_description(session, Some(file_symbol.clone()), &evals)
+                value: HoverFeature::build_markdown_description(session, Some(file_symbol.clone()), &evals, &call_expr, Some(offset))
             }),
             range: range
         })
@@ -234,7 +232,7 @@ impl HoverFeature {
         values
     }
 
-    pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>) -> String {
+    pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>, call_expr: &Option<ExprCall>, offset: Option<usize>) -> String {
         //let eval = &evals[0]; //TODO handle more evaluations
         let mut value = S!("");
         for (index, eval) in evals.iter().enumerate() {
@@ -245,47 +243,114 @@ impl HoverFeature {
             let Some(symbol) = eval_symbol.upgrade_weak() else {
                 continue;
             };
-            let mut context = Some(eval_symbol.as_weak().context.clone());
-            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
-            //search for a constant evaluation like a model name
+            //search for a constant evaluation like a model name or domain field
             if let Some(eval_value) = eval.value.as_ref() {
                 if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
                     let str = expr.value.to_string();
-                    let model = session.sync_odoo.models.get(&str).cloned();
-                    if let Some(model) = model {
-                        if let Some(file_symbol) = file_symbol.as_ref() {
-                            let from_module = file_symbol.borrow().find_module();
-                            let main_class = model.borrow().get_main_symbols(session, from_module.clone());
-                            for main_class in main_class.iter() {
-                                let main_class = main_class.borrow();
-                                let main_class_module = main_class.find_module();
-                                if let Some(main_class_module) = main_class_module {
-                                    value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
-                                    if main_class.doc_string().is_some() {
-                                        value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                    let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
+                    let mut string_domain_fields = vec![];
+                    if let (Some(call_expr), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
+                        let field_range = expr.range;
+                        let scope = Symbol::get_scope_symbol(file_sym.clone(), offset as u32, false);
+                        for (arg_index, arg) in call_expr.arguments.args.iter().enumerate() {
+                            if offset <= arg.range().start().to_usize() || offset > arg.range().end().to_usize() {
+                                continue;
+                            }
+                            let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
+                            for callable_eval in callable_evals.iter() {
+                                let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+                                let Some(callable_sym) = callable.weak.upgrade() else {
+                                     continue
+                                };
+                                if callable_sym.borrow().typ() != SymType::FUNCTION {
+                                    continue
+                                }
+                                let func = callable_sym.borrow();
+                                let func_arg = func.as_func().get_indexed_arg_in_call(
+                                    call_expr,
+                                    arg_index as u32,
+                                    callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
+                                let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
+                                    continue
+                                };
+                                for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
+                                    if !matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
+                                        continue;
                                     }
-                                    let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
-                                    other_imps.sort_by(|x, y| {
-                                        if x.1.is_none() && y.1.is_some() {
-                                            std::cmp::Ordering::Less
-                                        } else if x.1.is_some() && y.1.is_none() {
-                                            std::cmp::Ordering::Greater
-                                        } else {
-                                            x.0.borrow().find_module().unwrap().borrow().name().cmp(y.0.borrow().find_module().unwrap().borrow().name())
+                                    let Some(mut parent_object ) = callable.context.get(&S!("base_attr")).map(|parent_object| parent_object.as_symbol().upgrade()) else {
+                                        continue;
+                                    };
+                                    let mut range_start = field_range.start();
+                                    for name in str.split(".").map(|x| x.to_string()) {
+                                        if parent_object.is_none() {
+                                            break;
                                         }
-                                    });
-                                    value += "  \n***  \n";
-                                    for other_imp in other_imps.iter() {
-                                        let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
-                                        if other_imp.1.is_none() {
-                                            value += format!("inherited in {}  \n", mod_name).as_str();
+                                        let range_end = range_start + TextSize::new((name.len() + 1) as u32);
+                                        let curser_section = TextRange::new(range_start, range_end).contains(TextSize::new(offset as u32));
+                                        if curser_section {
+                                            let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
+                                            string_domain_fields.extend(fields.iter().map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true))));
                                         } else {
-                                            value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
+                                            let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
+                                                &name.to_string(),
+                                                from_module.clone(),
+                                                false,
+                                                true,
+                                                false,
+                                                false);
+                                            if symbols.is_empty() {
+                                                break;
+                                            }
+                                            parent_object = None;
+                                            for s in symbols.iter() {
+                                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
+                                                    let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                                                    if models.len() == 1 {
+                                                        parent_object = Some(models[0].clone());
+                                                    }
+                                                }
+                                            }
                                         }
+                                        range_start = range_end;
                                     }
                                 }
                             }
-                            continue;
+                        }
+                    }
+                    if string_domain_fields.len() >= 1{
+                        // restart with replacing current index evaluation with field evaluations
+                        string_domain_fields.extend(evals.iter().take(index).cloned());
+                        string_domain_fields.extend(evals.iter().skip(index + 1).cloned());
+                        return HoverFeature::build_markdown_description(session, file_symbol, &string_domain_fields, call_expr, offset)
+                    }
+                    if let Some(model) = session.sync_odoo.models.get(&str).cloned() {
+                        let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
+                        for main_class in main_classes.iter().map(|main_class_rc| main_class_rc.borrow()) {
+                            if let Some(main_class_module) = main_class.find_module() {
+                                value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
+                                if main_class.doc_string().is_some() {
+                                    value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                                }
+                                let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
+                                other_imps.sort_by(|x, y| {
+                                    if x.1.is_none() && y.1.is_some() {
+                                        std::cmp::Ordering::Less
+                                    } else if x.1.is_some() && y.1.is_none() {
+                                        std::cmp::Ordering::Greater
+                                    } else {
+                                        x.0.borrow().find_module().unwrap().borrow().name().cmp(y.0.borrow().find_module().unwrap().borrow().name())
+                                    }
+                                });
+                                value += "  \n***  \n";
+                                for other_imp in other_imps.iter() {
+                                    let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
+                                    if other_imp.1.is_none() {
+                                        value += format!("inherited in {}  \n", mod_name).as_str();
+                                    } else {
+                                        value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
+                                    }
+                                }
+                            }
                         }
                     }
                     continue;
@@ -293,6 +358,7 @@ impl HoverFeature {
             }
             // BLOCK 1: (type) **name** -> infered_type
             let mut context = Some(eval_symbol.as_weak().context.clone());
+            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
             value += HoverFeature::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
