@@ -293,7 +293,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
     let client : LanguageClient;
     try {
-        global.CURRENT_PYTHON_PATH = await getPythonPath(context);
+        await updatePythonPath(context);
         if (!workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
             displayDisablePythonLSMessage();
         }
@@ -328,10 +328,6 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
                         break;
                 }
                 await setStatusConfig(context);
-            }),
-            client.onRequest("Odoo/getPythonPath", async() => {
-                const config = await getCurrentConfig(context);
-                return {pythonPath: config.pythonPath ? config.pythonPath :global.CURRENT_PYTHON_PATH}
             }),
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
@@ -577,8 +573,8 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
         // Listen to changes to Python Interpreter
         onDidChangePythonInterpreterEvent.event(async (_) => {
             // Check if pythonPath changed or not
-            const pythonPath = await getPythonPath(context, false)
-            if (pythonPath === global.CURRENT_PYTHON_PATH) return;
+            const pythonPathChanged = await updatePythonPath(context, false)
+            if (!pythonPathChanged) return;
             let startClient = false;
             global.CAN_QUEUE_CONFIG_CHANGE = false;
             if (global.LSCLIENT) {
@@ -595,7 +591,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
             global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL, startClient);
             global.CAN_QUEUE_CONFIG_CHANGE = true;
-            global.CURRENT_PYTHON_PATH = pythonPath;
         }),
 
         // COMMANDS
@@ -846,10 +841,16 @@ async function checkStandalonePythonVersion(context: ExtensionContext): Promise<
     return true
 }
 
-async function getPythonPath(context, outputLogs: boolean = true): Promise<string>{
+async function updatePythonPath(context, outputLogs: boolean = true): Promise<boolean>{
     let pythonPath: string;
     let interpreter: IInterpreterDetails;
-    const config = await getCurrentConfig(context)
+	let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
+	const selectedConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
+    // if config is disabled return nothing
+	if (selectedConfig == -1 || !configs[selectedConfig]) {
+		return null;
+	}
+	let config = (Object.keys(configs[selectedConfig]).length !== 0 ? configs[selectedConfig] : null);
     try {
         interpreter = await getInterpreterDetails();
     } catch {
@@ -873,7 +874,15 @@ async function getPythonPath(context, outputLogs: boolean = true): Promise<strin
         global.OUTPUT_CHANNEL.appendLine("[INFO] Python VS code extension is ".concat(global.IS_PYTHON_EXTENSION_READY ? "ready" : "not ready"));
         global.OUTPUT_CHANNEL.appendLine("[INFO] Using Python at : ".concat(pythonPath));
     }
-    return pythonPath
+    if (config) {
+        if (config["finalPythonPath"]) {
+            if (config["finalPythonPath"] === pythonPath)
+                return false;
+        }
+        config["finalPythonPath"] = pythonPath;
+        workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
+    }
+    return true
 }
 
 async function setPythonLSNone() {

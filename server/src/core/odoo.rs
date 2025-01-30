@@ -1,4 +1,4 @@
-use crate::core::config::{Config, PythonPathRequest, PythonPathRequestResult};
+use crate::core::config::Config;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -774,19 +774,6 @@ impl Odoo {
             items: vec![configuration_item],
         };
         let config = session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params).unwrap().unwrap();
-        let python_path = session.send_request::<(), PythonPathRequestResult>(PythonPathRequest::METHOD, ());
-        if let Err(_e) = python_path {
-            session.log_message(MessageType::ERROR, S!("Unable to get PythonPath. Be sure that your editor support the route Odoo/getPythonPath"));
-            return Err(format!("{:?}", _e));
-        }
-        let python_path = python_path.unwrap();
-        let python_path = match python_path {
-            Some(p) => {p.python_path},
-            None => {
-                session.log_message(MessageType::WARNING, S!("No PythonPath provided. Be sure that your editor support the route Odoo/getPythonPath and that route always return a result. Using 'python3' instead"));
-                S!("python3")
-            }
-        };
         let config = config.get(0);
         if !config.is_some() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
@@ -882,12 +869,22 @@ impl Odoo {
                 .as_array().expect("the addons value must be an array")
                 .into_iter().map(|v| v.as_str().unwrap().to_string()).collect();
             config.odoo_path = odoo_conf.get("odooPath").expect("odooPath must exist").as_str().expect("odooPath must be a String").to_string();
+            if let Some(python_path) = odoo_conf.get("finalPythonPath") {
+                if python_path.is_string() {
+                    config.python_path = python_path.as_str().unwrap().to_string();
+                } else {
+                    session.log_message(MessageType::ERROR, String::from("pythonPath must be a string, using 'python' as pythonPath"));
+                    config.python_path = S!("python");
+                }
+            } else {
+                session.log_message(MessageType::ERROR, String::from("pythonPath must be defined, using 'python' as pythonPath"));
+                config.python_path = S!("python");
+            }
         } else {
             config.addons = vec![];
             config.odoo_path = S!("");
             session.log_message(MessageType::ERROR, S!("Unable to find selected configuration. No odoo path has been found."));
         }
-        config.python_path = python_path.clone();
         config.refresh_mode = _refresh_mode;
         config.auto_save_delay = _auto_save_delay;
         config.ac_filter_model_names = _ac_filter_model_names;
