@@ -1938,12 +1938,8 @@ impl Symbol {
                         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
-                                let tree = flatten_tree(&symbol.borrow().get_tree());
-                                if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-                                    if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
-                                "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
-                                        return true;
-                                    }
+                                if symbol.borrow().is_field_class(){
+                                    return true;
                                 }
                             }
                         }
@@ -1951,8 +1947,19 @@ impl Symbol {
                 }
                 false
             },
-            _ => {false}
+            _ => false
         }
+    }
+
+    pub fn is_field_class(&self) -> bool {
+        let tree = flatten_tree(&self.get_tree());
+        if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+            if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+        "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn is_specific_field(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
@@ -1986,6 +1993,11 @@ impl Symbol {
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
     pub fn get_member_symbol(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, only_fields: bool, all: bool, is_super: bool) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
+        let mut visited_classes: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+        return self._get_member_symbol_helper(session, name, from_module, prevent_comodel, only_fields, all, is_super, &mut visited_classes);
+    }
+
+    fn _get_member_symbol_helper(&self, session: &mut SessionInfo, name: &String, from_module: Option<Rc<RefCell<Symbol>>>, prevent_comodel: bool, only_fields: bool, all: bool, is_super: bool, visited_classes: &mut PtrWeakHashSet<Weak<RefCell<Symbol>>>) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut visited_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let mut extend_result = |syms: Vec<Rc<RefCell<Symbol>>>| {
@@ -2031,10 +2043,11 @@ impl Symbol {
                 if let Some(from_module) = from_module {
                     let model_symbols = model.clone().borrow().get_full_model_symbols(session, from_module.clone());
                     for model_symbol in model_symbols {
-                        if self.is_equal(&model_symbol) {
+                        if self.is_equal(&model_symbol) || visited_classes.contains(&model_symbol){
                             continue;
                         }
-                        let (attributs, att_diagnostic) = model_symbol.borrow().get_member_symbol(session, name, None, true, true, all, false);
+                        visited_classes.insert(model_symbol.clone());
+                        let (attributs, att_diagnostic) = model_symbol.borrow()._get_member_symbol_helper(session, name, None, true, only_fields, all, false, visited_classes);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             extend_result(attributs);
@@ -2048,10 +2061,11 @@ impl Symbol {
                         //only fields are visibles on inherits, not methods
                         let model_symbols = model_inherits_symbol.borrow().get_full_model_symbols(session, from_module.clone());
                         for model_symbol in model_symbols {
-                            if self.is_equal(&model_symbol) {
+                            if self.is_equal(&model_symbol) || visited_classes.contains(&model_symbol){
                                 continue;
                             }
-                            let (attributs, att_diagnostic) = model_symbol.borrow().get_member_symbol(session, name, None, true, true, all, false);
+                            visited_classes.insert(model_symbol.clone());
+                            let (attributs, att_diagnostic) = model_symbol.borrow()._get_member_symbol_helper(session, name, None, true, only_fields, all, false, visited_classes);
                             diagnostics.extend(att_diagnostic);
                             if all {
                                 extend_result(attributs);
@@ -2071,6 +2085,10 @@ impl Symbol {
                     Some(b) => b,
                     None => continue
                 };
+                if visited_classes.contains(&base){
+                    continue;
+                }
+                visited_classes.insert(base.clone());
                 let (s, s_diagnostic) = base.borrow().get_member_symbol(session, name, from_module.clone(), prevent_comodel, only_fields, all, false);
                     diagnostics.extend(s_diagnostic);
                 if !s.is_empty() {

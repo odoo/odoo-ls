@@ -16,6 +16,38 @@ pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
 
+    pub fn find_compute_field_symbols(session: &mut SessionInfo, compute_str: &String, call_expr: &ExprCall, offset: usize, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>>{
+        let mut compute_syms = vec![];
+        let from_module = file_symbol.borrow().find_module();
+        let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
+        for arg in call_expr.arguments.keywords.iter() {
+            let Some(ref arg_id) = arg.arg else {
+                continue;
+            };
+            if arg_id.as_str() != "compute" {
+                continue;
+            }
+            let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
+            for callable_eval in callable_evals.iter() {
+                let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+                let Some(callable_sym) = callable.weak.upgrade() else {
+                     continue
+                };
+                if !callable_sym.borrow().is_field_class(){
+                    continue;
+                }
+                let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
+                    continue;
+                };
+                if parent_class.borrow().as_class_sym()._model.is_none(){
+                    continue;
+                }
+                compute_syms = parent_class.borrow().get_member_symbol(session, compute_str, from_module.clone(), false, false, true, false).0;
+            }
+        }
+        compute_syms
+    }
+
     pub fn find_domain_field_symbols(session: &mut SessionInfo, field_name: &String, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>>{
         let mut string_domain_fields = vec![];
         let from_module = file_symbol.borrow().find_module();
