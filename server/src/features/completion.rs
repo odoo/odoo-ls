@@ -5,7 +5,7 @@ use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, Expr
 use ruff_text_size::Ranged;
 
 use crate::constants::SymType;
-use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -881,8 +881,8 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                 if var.evaluations().as_ref().unwrap().len() == 1 {
                     if var.evaluations().as_ref().unwrap()[0].value.is_some() {
                         match var.evaluations().as_ref().unwrap()[0].value.as_ref().unwrap() {
-                            crate::core::evaluation::EvaluationValue::ANY() => None,
-                            crate::core::evaluation::EvaluationValue::CONSTANT(expr) => {
+                            EvaluationValue::ANY() => None,
+                            EvaluationValue::CONSTANT(expr) => {
                                 match expr {
                                     Expr::StringLiteral(expr_string_literal) => {
                                         Some(CompletionItemLabelDetails {
@@ -913,9 +913,9 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                                     _ => {None}
                                 }
                             },
-                            crate::core::evaluation::EvaluationValue::DICT(_) => None,
-                            crate::core::evaluation::EvaluationValue::LIST(_) => None,
-                            crate::core::evaluation::EvaluationValue::TUPLE(_) => None,
+                            EvaluationValue::DICT(_) => None,
+                            EvaluationValue::LIST(_) => None,
+                            EvaluationValue::TUPLE(_) => None,
                         }
                     } else {
                         None
@@ -930,8 +930,8 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                 if func.evaluations().as_ref().unwrap().len() == 1 { //TODO handle multiple evaluations
                     if func.evaluations().as_ref().unwrap()[0].value.is_some() {
                         match func.evaluations().as_ref().unwrap()[0].value.as_ref().unwrap() {
-                            crate::core::evaluation::EvaluationValue::ANY() => None,
-                            crate::core::evaluation::EvaluationValue::CONSTANT(expr) => {
+                            EvaluationValue::ANY() => None,
+                            EvaluationValue::CONSTANT(expr) => {
                                 match expr {
                                     Expr::StringLiteral(expr_string_literal) => {
                                         Some(CompletionItemLabelDetails {
@@ -962,9 +962,9 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
                                     _ => {None}
                                 }
                             },
-                            crate::core::evaluation::EvaluationValue::DICT(_) => None,
-                            crate::core::evaluation::EvaluationValue::LIST(_) => None,
-                            crate::core::evaluation::EvaluationValue::TUPLE(_) => None,
+                            EvaluationValue::DICT(_) => None,
+                            EvaluationValue::LIST(_) => None,
+                            EvaluationValue::TUPLE(_) => None,
                         }
                     } else {
                         //TODO

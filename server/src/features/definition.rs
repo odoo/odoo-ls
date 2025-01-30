@@ -1,11 +1,11 @@
 use lsp_types::{GotoDefinitionResponse, Location, Range};
-use ruff_python_ast::ExprCall;
+use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
-use crate::core::evaluation::Evaluation;
+use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::ast_utils::AstUtils;
@@ -19,7 +19,7 @@ impl DefinitionFeature {
 
     fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<Location>) -> bool {
         let (field_name, field_range) = if let Some(eval_value) = eval.value.as_ref() {
-            if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
+            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 (expr.value.to_string(), expr.range)
             } else {
                 return false;
@@ -41,7 +41,7 @@ impl DefinitionFeature {
 
     fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<Location>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
+            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 expr.value.to_string()
             } else {
                 return false;
@@ -69,7 +69,7 @@ impl DefinitionFeature {
 
     fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<Location>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
+            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 expr.value.to_string()
             } else {
                 return false;

@@ -1,13 +1,13 @@
-use ruff_python_ast::ExprCall;
+use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::utils::PathSanitizer;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
-use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -120,8 +120,29 @@ impl FeaturesUtils {
         string_domain_fields
     }
 
+    fn check_for_string_special_syms(session: &mut SessionInfo, string_val: &String, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>> {
+        let string_domain_fields_syms: Vec<Rc<RefCell<Symbol>>> = FeaturesUtils::find_domain_field_symbols(session, string_val, call_expr, offset, field_range, file_symbol);
+        if string_domain_fields_syms.len() >= 1 {
+            return string_domain_fields_syms;
+        }
+        let compute_kwarg_syms: Vec<Rc<RefCell<Symbol>>> = FeaturesUtils::find_compute_field_symbols(session, string_val, call_expr, offset, file_symbol);
+        if compute_kwarg_syms.len() >= 1{
+            return compute_kwarg_syms;
+        }
+        vec![]
+    }
+
     pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>, call_expr: &Option<ExprCall>, offset: Option<usize>) -> String {
         let mut value = S!("");
+
+        let mut name_counts = HashMap::new();
+        for eval in evals.iter() {
+            let Some(symbol) = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).upgrade_weak() else {
+                continue;
+            };
+            *name_counts.entry(symbol.borrow().name().clone()).or_insert(0) += 1;
+        }
+
         for (index, eval) in evals.iter().enumerate() {
             if index != 0 {
                 value += "  \n***  \n";
@@ -132,14 +153,14 @@ impl FeaturesUtils {
             };
             //search for a constant evaluation like a model name or domain field
             if let Some(eval_value) = eval.value.as_ref() {
-                if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
+                if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                     let str = expr.value.to_string();
                     let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
                     if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
-                        let string_domain_fields_syms: Vec<Rc<RefCell<Symbol>>> = FeaturesUtils::find_domain_field_symbols(session, &str, call_expression, offset, expr.range, file_sym);
-                        if string_domain_fields_syms.len() >= 1{
+                        let special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
+                        if special_string_syms.len() >= 1{
                             // restart with replacing current index evaluation with field evaluations
-                            let string_domain_fields_evals: Vec<Evaluation> = string_domain_fields_syms.iter()
+                            let string_domain_fields_evals: Vec<Evaluation> = special_string_syms.iter()
                                 .map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true)))
                                 .chain(evals.iter().take(index).cloned())
                                 .chain(evals.iter().skip(index + 1).cloned())
@@ -204,6 +225,13 @@ impl FeaturesUtils {
                 }
             }
             // BLOCK 3: documentation
+            let mut documentation_block = None;
+            if *name_counts.get(symbol.borrow().name()).unwrap_or(&0) > 1 {
+                if let Some(symbol_module) = symbol.borrow().find_module() {
+                    let module_name = symbol_module.borrow().name().clone();
+                    documentation_block = Some(format!("From module `{}`", module_name));
+                }
+            }
             for typ in type_refs.iter() {
                 if let Some(typ) = typ.upgrade_weak() {
                     if typ.borrow().doc_string().is_some() {
@@ -216,10 +244,16 @@ impl FeaturesUtils {
                             format!("{}{}", nbsp_replacement, &line[leading_spaces..])
                         })
                         .collect::<Vec<String>>()
-                        .join("\n\n");
-                        value = value + "  \n***  \n" + &ds;
+                        .join("  \n");
+                        documentation_block = match documentation_block {
+                            Some(from_module_str) => Some(from_module_str + "  \n" + &ds),
+                            None => Some(ds)
+                        };
                     }
                 }
+            }
+            if let Some(documentation_block) = documentation_block{
+                value = value + "  \n***  \n" + &documentation_block;
             }
         }
         value
