@@ -250,10 +250,9 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 full_path = full_path.join(name);
             }
         }
-        if is_dir_cs(full_path.sanitize()) {
-            // if is_dir_cs(full_path.to_str().unwrap().to_string() + "-stubs") {
-            //     full_path.set_file_name(full_path.file_name().unwrap().to_str().unwrap().to_string() + "-stubs");
-            // }
+        if is_dir_cs(full_path.sanitize()) && (is_file_cs(full_path.join("__init__").with_extension("py").sanitize()) ||
+        is_file_cs(full_path.join("__init__").with_extension("pyi").sanitize())) {
+            //module directory
             let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
             if _rc_symbol.is_some() {
                 let _arc_symbol = _rc_symbol.unwrap();
@@ -284,7 +283,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                         Err(_) => {},
                     }
                 }
-            } else if cfg!(linux) {
+            } else if cfg!(target_os = "linux") {
                 for entry in glob((full_path.sanitize() + "*.so").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
@@ -293,6 +292,14 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                         Err(_) => {},
                     }
                 }
+            }
+        } else if is_dir_cs(full_path.sanitize()) {
+            //namespace directory
+            let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
+            if _rc_symbol.is_some() {
+                let _arc_symbol = _rc_symbol.unwrap();
+                SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
+                return Ok(_arc_symbol);
             }
         }
     }
