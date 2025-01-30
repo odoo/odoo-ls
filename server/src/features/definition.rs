@@ -28,13 +28,11 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let mut field_found = false;
         let string_domain_fields= FeaturesUtils::find_domain_field_symbols(session, &field_name, call_expr, offset, field_range, file_symbol);
         string_domain_fields.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
-                field_found = true;
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
         });
@@ -69,6 +67,28 @@ impl DefinitionFeature {
         model_found
     }
 
+    fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<Location>) -> bool {
+        let value = if let Some(eval_value) = eval.value.as_ref() {
+            if let crate::core::evaluation::EvaluationValue::CONSTANT(ruff_python_ast::Expr::StringLiteral(expr)) = eval_value {
+                expr.value.to_string()
+            } else {
+                return false;
+            }
+        } else {
+            return  false;
+        };
+        let Some(call_expr) = call_expr else { return false };
+        let compute_symbols= FeaturesUtils::find_compute_field_symbols(session, &value, call_expr, offset, file_symbol);
+        compute_symbols.iter().for_each(|field|{
+            if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
+                let path = file_sym.borrow().paths()[0].clone();
+                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
+                links.push(Location{uri: FileMgr::pathname2uri(&path), range});
+            }
+        });
+        compute_symbols.len() > 0
+    }
+
     pub fn get_location(session: &mut SessionInfo,
         file_symbol: &Rc<RefCell<Symbol>>,
         file_info: &Rc<RefCell<FileInfo>>,
@@ -86,6 +106,7 @@ impl DefinitionFeature {
         while index < evaluations.len() {
             let eval = evaluations[index].clone();
             if DefinitionFeature::check_for_domain_field(session, &eval, file_symbol, &call_expr, offset, &mut links) ||
+              DefinitionFeature::check_for_compute_string(session, &eval, file_symbol,&call_expr, offset, &mut links) ||
               DefinitionFeature::check_for_model_string(session, &eval, file_symbol, &mut links){
                 index += 1;
                 continue;
