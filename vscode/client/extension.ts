@@ -773,7 +773,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
             await checkAddons(context);
 
             global.STATUS_BAR.text = `Odoo (${config["name"]})`
-            await global.LSCLIENT.start();
+            global.LSCLIENT.start();
         }
     }
     catch (error) {
