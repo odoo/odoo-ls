@@ -8,5 +8,6 @@
         "sourceMap": true
     },
     "include": ["client/**/*.ts", "client/*.ts"],
-    "exclude": ["node_modules"]
+    "exclude": ["node_modules"],
+    "sourceMaps": true
 }

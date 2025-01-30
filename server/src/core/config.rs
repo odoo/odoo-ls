@@ -46,21 +46,6 @@ impl FromStr for DiagMissingImportsMode {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PythonPathRequestResult {
-    pub python_path: String,
-}
-
-#[derive(Debug)]
-pub enum PythonPathRequest {}
-
-impl Request for PythonPathRequest {
-    type Params = ();
-    type Result = PythonPathRequestResult;
-    const METHOD: &'static str = "Odoo/getPythonPath";
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub refresh_mode: RefreshMode,
