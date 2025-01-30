@@ -4,6 +4,8 @@ import * as path from "path";
 import { URI } from "vscode-languageclient";
 import untildify from 'untildify';
 import * as readline from 'readline';
+import { getInterpreterDetails, IInterpreterDetails, initializePython } from "./python";
+import { checkStandalonePythonVersion, getStandalonePythonPath } from "../extension";
 
 
 /**
@@ -147,4 +149,32 @@ export function areUniquelyEqual<T>(a: Array<T>, b: Array<T>): boolean {
 	const setA = new Set(a);
 	const setB = new Set(b);
 	return setA.size === setB.size && [...setA].every(val => setB.has(val));
+}
+
+export async function buildFinalPythonPath(context, config_python_path: string, outputLogs: boolean = true): Promise<String> {
+	let pythonPath: string = "";
+	let interpreter: IInterpreterDetails;
+	try {
+		interpreter = await getInterpreterDetails();
+	} catch {
+		interpreter = null;
+	}
+
+	//trying to use the VScode python extension
+	if (interpreter && global.IS_PYTHON_EXTENSION_READY !== false) {
+		pythonPath = interpreter.path[0]
+		await initializePython(context.subscriptions);
+		global.IS_PYTHON_EXTENSION_READY = true;
+	} else {
+		global.IS_PYTHON_EXTENSION_READY = false;
+		//python extension is not available switch to standalone mode
+		if (await checkStandalonePythonVersion(context, config_python_path)) {
+			pythonPath = config_python_path;
+		}
+	}
+	if (outputLogs){
+		global.OUTPUT_CHANNEL.appendLine("[INFO] Python VS code extension is ".concat(global.IS_PYTHON_EXTENSION_READY ? "ready" : "not ready"));
+		global.OUTPUT_CHANNEL.appendLine("[INFO] Using Python at : ".concat(pythonPath));
+	}
+	return pythonPath
 }

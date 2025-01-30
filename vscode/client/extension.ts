@@ -34,12 +34,9 @@ import {
     clientStopped
 } from './common/events'
 import {
-    IInterpreterDetails,
-    getInterpreterDetails,
-    initializePython,
     onDidChangePythonInterpreterEvent
 } from "./common/python";
-import { areUniquelyEqual, evaluateOdooPath, getCurrentConfig, validateAddonPath } from "./common/utils";
+import { areUniquelyEqual, buildFinalPythonPath, evaluateOdooPath, getCurrentConfig, validateAddonPath } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
 import {
@@ -802,29 +799,45 @@ export async function deactivate(): Promise<void> {
     }
 }
 
-async function getStandalonePythonPath(context: ExtensionContext) {
+export async function getStandalonePythonPath(context: ExtensionContext) {
     const config = await getCurrentConfig(context);
     const pythonPath = config && config["pythonPath"] ? config["pythonPath"] : "python3";
     return pythonPath
 }
 
-export async function getStandalonePythonVersion(context: ExtensionContext): Promise<semver.SemVer> {
-    const currentConfig = await getCurrentConfig(context);
-    let pythonPath = currentConfig["pythonPath"]
-    if (!pythonPath) {
+export async function getStandalonePythonVersion(python_path_from_config: string): Promise<semver.SemVer> {
+    let pythonPath = python_path_from_config
+    if (!python_path_from_config) {
         OUTPUT_CHANNEL.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
         pythonPath = "python3"
     }
 
-    const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
+    try {
+        const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
 
-    return semver.parse(versionString)
+        return semver.parse(versionString)
+    } catch (error) {
+        OUTPUT_CHANNEL.appendLine(`[ERROR] Failed to get python version: ${error}`);
+        window.showErrorMessage(
+            `Path to python executable is invalid. Please update the configuration. Used path: ${pythonPath}`,
+        );
+        return null
+    }
 }
 
-async function checkStandalonePythonVersion(context: ExtensionContext): Promise<boolean>{
+/**
+ * Check the version of the given path to Python
+ * @param context ExtensionContext
+ * @param python_path_from_config path to Python, that can differ from the one in the settings (for example because not yet saved)
+ * @returns either valid version or invalid
+ */
+export async function checkStandalonePythonVersion(context, python_path_from_config: string): Promise<boolean>{
     const currentConfig = await getCurrentConfig(context);
-    let pythonVersion = await getStandalonePythonVersion(context);
-    if (!pythonVersion || semver.lt(pythonVersion, "3.8.0")) {
+    let pythonVersion = await getStandalonePythonVersion(python_path_from_config);
+    if (!pythonVersion) {
+        return false;
+    }
+    if (semver.lt(pythonVersion, "3.8.0")) {
         window.showErrorMessage(
             `You must use python 3.8 or newer. Would you like to change it?`,
             "Update current configuration",
@@ -842,8 +855,6 @@ async function checkStandalonePythonVersion(context: ExtensionContext): Promise<
 }
 
 async function updatePythonPath(context, outputLogs: boolean = true): Promise<boolean>{
-    let pythonPath: string;
-    let interpreter: IInterpreterDetails;
 	let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
 	const selectedConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
     // if config is disabled return nothing
@@ -851,35 +862,14 @@ async function updatePythonPath(context, outputLogs: boolean = true): Promise<bo
 		return null;
 	}
 	let config = (Object.keys(configs[selectedConfig]).length !== 0 ? configs[selectedConfig] : null);
-    try {
-        interpreter = await getInterpreterDetails();
-    } catch {
-        interpreter = null;
-    }
-
-    //trying to use the VScode python extension
-    if (interpreter && global.IS_PYTHON_EXTENSION_READY !== false) {
-        pythonPath = interpreter.path[0]
-        await initializePython(context.subscriptions);
-        global.IS_PYTHON_EXTENSION_READY = true;
-    } else {
-        global.IS_PYTHON_EXTENSION_READY = false;
-        //python extension is not available switch to standalone mode
-        if (config){
-            pythonPath =  await getStandalonePythonPath(context);
-            await checkStandalonePythonVersion(context);
-        }
-    }
-    if (outputLogs){
-        global.OUTPUT_CHANNEL.appendLine("[INFO] Python VS code extension is ".concat(global.IS_PYTHON_EXTENSION_READY ? "ready" : "not ready"));
-        global.OUTPUT_CHANNEL.appendLine("[INFO] Using Python at : ".concat(pythonPath));
-    }
+    let pythonPath =  await getStandalonePythonPath(context);
+    let finalPythonPath = await buildFinalPythonPath(context, pythonPath);
     if (config) {
         if (config["finalPythonPath"]) {
-            if (config["finalPythonPath"] === pythonPath)
+            if (config["finalPythonPath"] === finalPythonPath)
                 return false;
         }
-        config["finalPythonPath"] = pythonPath;
+        config["finalPythonPath"] = finalPythonPath;
         workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
     }
     return true

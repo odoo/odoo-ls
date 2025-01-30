@@ -1,5 +1,5 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, workspace, ConfigurationTarget } from "vscode";
-import { getUri, getNonce, evaluateOdooPath } from "../../common/utils";
+import { getUri, getNonce, evaluateOdooPath, buildFinalPythonPath } from "../../common/utils";
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -138,7 +138,7 @@ export class ConfigurationWebView {
         panel.title = `Odoo: ${title}`
     }
 
-    private _saveConfig(configs: any, rawOdooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): void {
+    private async _saveConfig(configs: any, rawOdooPath: string, name: string, addons: Array<String>, pythonPath: string = "python3"): Promise<void> {
         let changes = [];
         let oldAddons = configs[this.configId]["addons"]
 
@@ -178,6 +178,7 @@ export class ConfigurationWebView {
             "addons": addons,
             "pythonPath": untildify(pythonPath),
             "validatedAddonsPaths": configs[this.configId]["validatedAddonsPaths"],
+            "finalPythonPath": await buildFinalPythonPath(this._context, untildify(pythonPath))
         };
         workspace.getConfiguration().update("Odoo.configurations",configs, ConfigurationTarget.Global);
 
@@ -209,7 +210,7 @@ export class ConfigurationWebView {
                     const name = message.name;
                     const addons = message.addons;
                     const pythonPath = message.pythonPath;
-                    this._saveConfig(configs, rawOdooPath, name, addons, pythonPath);
+                    await this._saveConfig(configs, rawOdooPath, name, addons, pythonPath);
                     break;
                 case "view_ready":
                     webview.postMessage({
