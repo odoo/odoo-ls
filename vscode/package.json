@@ -104,11 +104,11 @@
           "default": true,
           "markdownDescription": "Only show model names from module dependencies"
         },
-        "Odoo.disablePythonLanguageServer": {
+        "Odoo.disablePythonLanguageServerPopup": {
           "scope": "window",
           "type": "boolean",
-          "default": true,
-          "markdownDescription": "Set LanugageServer setting on Python extension to None on workspace level after user input (Does nothing if python extension is not active or already set to `None`)"
+          "default": false,
+          "markdownDescription": "Set LanguageServer setting on Python extension to None on workspace level after user input (Does nothing if python extension is not active or already set to `None`)"
         },
         "Odoo.diagMissingImportLevel": {
           "scope": "window",
