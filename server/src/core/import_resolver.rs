@@ -274,7 +274,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 return Ok(_arc_symbol);
             }
         } else if !(*parent).borrow().get_tree().0.is_empty() {
-            if cfg!(windows) {
+            if cfg!(target_os = "windows") {
                 for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
