@@ -166,13 +166,15 @@ impl PythonArchBuilder {
                 }
                 let mut dep_to_add = vec![];
                 let symbol = import_result.symbol.borrow();
-                for (name, loc_syms) in symbol.iter_symbols() {
-                    if all_name_allowed || name_filter.contains(&name) {
-                        let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &name, &import_result.range);
-                        let mut loc = variable.borrow_mut();
-                        loc.as_variable_mut().is_import_variable = true;
-                        loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
-                        dep_to_add.push(variable.clone());
+                if symbol.typ() != SymType::COMPILED {
+                    for (name, loc_syms) in symbol.iter_symbols() {
+                        if all_name_allowed || name_filter.contains(&name) {
+                            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &name, &import_result.range);
+                            let mut loc = variable.borrow_mut();
+                            loc.as_variable_mut().is_import_variable = true;
+                            loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
+                            dep_to_add.push(variable.clone());
+                        }
                     }
                 }
                 drop(symbol);
