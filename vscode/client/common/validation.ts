@@ -12,5 +12,6 @@ export function getConfigurationStructure(id: number = 0) {
         "odooPath": "",
         "addons": [],
         "validatedAddonsPaths": [],
+        "disablePythonLanguageServerPopup": false
     }
 }

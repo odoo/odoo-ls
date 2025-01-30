@@ -294,7 +294,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
     let client : LanguageClient;
     try {
         global.CURRENT_PYTHON_PATH = await getPythonPath(context);
-        if (workspace.getConfiguration('Odoo').get('disablePythonLanguageServer')){
+        if (!workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
             displayDisablePythonLSMessage();
         }
 
@@ -564,7 +564,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     global.IS_LOADING = false;
                 }
                 await setStatusConfig(context);
-                if (event.affectsConfiguration("Odoo.disablePythonLanguageServer") && workspace.getConfiguration('Odoo').get('disablePythonLanguageServer')){
+                if (event.affectsConfiguration("Odoo.disablePythonLanguageServerPopup") && !workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
                     displayDisablePythonLSMessage()
                 }
             }
@@ -903,7 +903,7 @@ async function displayDisablePythonLSMessage() {
                 await setPythonLSNone();
                 break;
             case "Don't Show again":
-                await workspace.getConfiguration('Odoo').update('disablePythonLanguageServer', false, ConfigurationTarget.Global)
+                await workspace.getConfiguration('Odoo').update("disablePythonLanguageServerPopup", true, ConfigurationTarget.Global)
         }
     });
 }
