@@ -661,7 +661,7 @@ impl PythonArchEval {
     }
 
     fn _visit_return(&mut self, session: &mut SessionInfo, return_stmt: &StmtReturn) {
-        let func = self.sym_stack[0].clone();
+        let func = self.sym_stack.last().unwrap().clone();
         if func.borrow().typ() == SymType::FUNCTION {
             if let Some(value) = return_stmt.value.as_ref() {
                 let (eval, diags) = Evaluation::eval_from_ast(session, value, func.clone(), &return_stmt.range.start());
