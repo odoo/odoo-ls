@@ -850,8 +850,9 @@ impl Odoo {
                             selected_configuration = value_str.to_string();
                         }
                     },
-                    "serverLogLevel" => {
-                        //Too late, set it with command line
+                    "serverLogLevel" | "disablePythonLanguageServerPopup" => {
+                        // Too late, set it with command line
+                        // disablePythonLanguageServerPopup, does not affect us, pass
                     },
                     _ => {
                         session.log_message(MessageType::ERROR, format!("Unknown config key: {}", key));
