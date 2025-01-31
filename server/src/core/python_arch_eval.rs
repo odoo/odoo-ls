@@ -3,12 +3,10 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::{u32, vec};
 
-use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
+use ruff_text_size::{Ranged, TextRange, TextSize};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace};
-use weak_table::traits::WeakElement;
-use std::path::PathBuf;
 
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
@@ -18,7 +16,6 @@ use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
-use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
@@ -79,21 +76,23 @@ impl PythonArchEval {
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
-            let ast = match self.file_mode {
-                true => {file_info.ast.as_ref().unwrap()},
+            let (ast, func_returns) = match self.file_mode {
+                true => (file_info.ast.as_ref().unwrap(), None),
                 false => {
-                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    let func_stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
+                    (&func_stmt.body, func_stmt.returns.as_ref())
                 }
             };
+            if !self.file_mode {
+                PythonArchEval::handle_function_returns(session, func_returns, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
+            }
             for (index, stmt) in ast.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
                 self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
             if !self.file_mode {
-                if self.sym_stack[0].borrow().as_func().evaluations.is_empty() {
-                    self.sym_stack[0].borrow_mut().as_func_mut().evaluations = vec![Evaluation::new_none()];
-                }
+                PythonArchEval::handle_func_evaluations(ast, &self.sym_stack[0]);
             }
         }
         drop(file_info);
@@ -524,6 +523,7 @@ impl PythonArchEval {
         }
         if !self.file_mode || variable.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
+            PythonArchEval::handle_function_returns(session, func_stmt.returns.as_ref(), &variable, &func_stmt.range.end(), &mut self.diagnostics);
             self.sym_stack.push(variable.clone());
             for (index, stmt) in func_stmt.body.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
@@ -531,6 +531,7 @@ impl PythonArchEval {
                 self.ast_indexes.pop();
             }
             self.sym_stack.pop();
+            PythonArchEval::handle_func_evaluations(&func_stmt.body, &variable);
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
         }
     }
@@ -712,6 +713,50 @@ impl PythonArchEval {
             self.ast_indexes.push(index as u16);
             self.visit_stmt(session, stmt);
             self.ast_indexes.pop();
+        }
+    }
+
+    // Handle function return annotation
+    // Evaluate return annotation and add it to function evaluations
+    fn handle_function_returns(
+        session: &mut SessionInfo,
+        func_returns: Option<&Box<Expr>>,
+        func_sym: &Rc<RefCell<Symbol>>,
+        max_infer: &TextSize,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
+        if let Some(returns_ann) = func_returns {
+            let (eval, diags) = Evaluation::eval_from_ast(
+                session,
+                &returns_ann,
+                func_sym.borrow().parent().and_then(|p| p.upgrade()).unwrap(),
+                max_infer,
+            );
+            func_sym.borrow_mut().set_evaluations(eval);
+            diagnostics.extend(diags);
+        }
+    }
+
+    // Handle function evaluation if traversing the body did not get any evaluations
+    // First we check if it is a function signature with no body ( like in stubs ) like def func():...
+    // If so we give it an Any evaluation because it is undetermined, otherwise we give it None, becauset that means
+    // we have a body but no return statement, which defaults to return None at the end
+    fn handle_func_evaluations(
+        func_body: &Vec<Stmt>,
+        func_sym: &Rc<RefCell<Symbol>>,
+    ){
+        if func_sym.borrow().as_func().evaluations.is_empty() {
+            let has_implementation = !matches!(
+                func_body.first(),
+                Some(Stmt::Expr(StmtExpr { range: _, value:  x})) if matches!(**x, Expr::EllipsisLiteral(_))
+            );
+            func_sym.borrow_mut().as_func_mut().evaluations  = vec![
+                if has_implementation {
+                    Evaluation::new_none()
+                } else {
+                    Evaluation::new_any()
+                }
+            ];
         }
     }
 

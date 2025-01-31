@@ -308,6 +308,16 @@ impl Evaluation {
         }
     }
 
+    pub fn new_any() -> Self {
+        Self {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::ANY,
+                get_symbol_hook: None,
+            },
+            value: None,
+            range: None
+        }
+    }
     //return the evaluation but valid outside of the given function scope
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
         let mut res = vec![];
