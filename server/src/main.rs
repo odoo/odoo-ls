@@ -7,7 +7,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, process};
 
 
 fn main() {
@@ -90,7 +90,10 @@ fn main() {
                 })
             }));
         }));
-        serv.run(cli.clientProcessId);
+        if !serv.run(cli.clientProcessId) {
+            info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
+            process::exit(1);
+        }
     } else {
         info!("starting server");
         let mut serv = Server::new_stdio();
@@ -106,7 +109,10 @@ fn main() {
                 })
             }));
         }));
-        serv.run(cli.clientProcessId);
+        if !serv.run(cli.clientProcessId) {
+            info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
+            process::exit(1);
+        }
     }
     info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
 }

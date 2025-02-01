@@ -69,6 +69,12 @@ impl <'a> SessionInfo<'a> {
                     }
                 }
             },
+            Ok(Message::Request(r)) => {
+                if r.method == Shutdown::METHOD {
+                    return Err(ServerError::ServerError("Server is shutting down, cancelling request".to_string()));
+                }
+                return Err(ServerError::ServerError("Not a Response.".to_string()))
+            }
             Ok(_) => return Err(ServerError::ServerError("Not a Response.".to_string())),
             Err(_) => return Err(ServerError::ServerError("Server disconnected".to_string())),
         }
