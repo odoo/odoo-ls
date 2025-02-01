@@ -773,7 +773,12 @@ impl Odoo {
         let config_params = ConfigurationParams {
             items: vec![configuration_item],
         };
-        let config = session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params).unwrap().unwrap();
+        let config = match session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params) {
+            Ok(config) => config.unwrap(),
+            Err(_) => {
+                return Err(S!("Unable to get configuration from client, client not available"));
+            }
+        };
         let config = config.get(0);
         if !config.is_some() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));

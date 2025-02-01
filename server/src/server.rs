@@ -1,6 +1,7 @@
-use std::{collections::HashMap, io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
+use std::{collections::HashMap, fmt, io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
 
-use crossbeam_channel::{Receiver, Select, Sender};
+use clap::error;
+use crossbeam_channel::{Receiver, RecvTimeoutError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument,
     DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification},
@@ -13,7 +14,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::EXTENSION_VERSION, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
+use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
 
 const THREAD_MAIN_COUNT: u16 = 1;
 const THREAD_READ_COUNT: u16 = 1;
@@ -273,15 +274,18 @@ impl Server {
             method: Shutdown::METHOD.to_string(),
             params: serde_json::Value::Null,
         });
-        for _ in 0..self.senders_s_to_main.len() {
+        for specific_sender in self.senders_s_to_main.iter() {
             self.sender_s_to_main.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
+            specific_sender.send(shutdown_notification.clone()).unwrap(); //send to specific channels too to close pending requests
         }
-        for _ in 0..self.senders_s_to_read.len() {
+        for specific_sender in self.senders_s_to_read.iter() {
             self.sender_s_to_read.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
+            specific_sender.send(shutdown_notification.clone()).unwrap(); //send to specific channels too to close pending requests
         }
         info!(message);
     }
-    pub fn run(mut self, client_pid: Option<u32>) {
+
+    pub fn run(mut self, client_pid: Option<u32>) -> bool {
         let mut select = Select::new();
         let receiver_clone = self.connection.as_ref().unwrap().receiver.clone();
         select.recv(&receiver_clone);
@@ -295,6 +299,8 @@ impl Server {
         if pid != 0 {
             pid_thread = Some(self.spawn_pid_thread(pid, stop_receiver));
         }
+        let mut wait_exit_notification = false;
+        let mut exit_no_error_code = false;
         loop {
             let index = select.ready();
             let res = if index == 0 {
@@ -316,10 +322,32 @@ impl Server {
             }
             let msg = res.unwrap();
 
+            if DEBUG_THREADS {
+                let msg_info = match msg {
+                    Message::Request(ref r) => format!("Request: {} - {}", r.method, r.id),
+                    Message::Response(ref r) => format!("Response: {}", r.id),
+                    Message::Notification(ref n) => format!("Notification: {}", n.method),
+                };
+                info!("Got message from index {}, : {:?}", index, msg_info);
+            }
+
             if index == 0 { //comes from client
                 if let Message::Request(r) = &msg {
-                    if self.connection.as_ref().unwrap().handle_shutdown(r).unwrap_or(false){
-                        self.shutdown_threads("Got a client shutdown request. Exiting.");
+                    if r.method == "shutdown" {
+                        let resp = lsp_server::Response::new_ok(r.id.clone(), ());
+                        let _ = self.connection.as_ref().unwrap().sender.send(resp.into());
+                        wait_exit_notification = true;
+                        continue;
+                    } else if wait_exit_notification {
+                        error!("Got Request after a shutdown request. Ignoring it.")
+                    }
+                } else if let Message::Notification(n) = &msg {
+                    if n.method == "exit" {
+                        if !wait_exit_notification {
+                            warn!("Got exit notification without a previous shutdown request. Exiting anyway.");
+                            exit_no_error_code = false;
+                        }
+                        self.shutdown_threads("Got a client exit notification. Exiting.");
                         break;
                     }
                 }
@@ -359,6 +387,7 @@ impl Server {
             thread.join().unwrap();
         }
         self.delayed_process_thread.join().unwrap();
+        exit_no_error_code
     }
 
     /* address a message to the right thread. */
@@ -368,10 +397,16 @@ impl Server {
                 match r.method.as_str() {
                     HoverRequest::METHOD | GotoDefinition::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
+                        if DEBUG_THREADS {
+                            info!("Sending request to read thread : {} - {}", r.method, r.id);
+                        }
                         self.sender_s_to_read.send(Message::Request(r)).unwrap();
                     },
                     Completion::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
+                        if DEBUG_THREADS {
+                            info!("Sending request to main thread : {} - {}", r.method, r.id);
+                        }
                         self.sender_s_to_main.send(Message::Request(r)).unwrap();
                     },
                     ResolveCompletionItem::METHOD => {
@@ -388,11 +423,17 @@ impl Server {
                     } else {
                         let mut t_id = thread_id - 1;
                         if t_id < THREAD_MAIN_COUNT {
+                            if DEBUG_THREADS {
+                                info!("Sending response to main thread : {}", r.id);
+                            }
                             self.senders_s_to_main.get(t_id as usize).unwrap().send(Message::Response(r)).unwrap();
                             return;
                         }
                         t_id -= THREAD_MAIN_COUNT;
                         if t_id < THREAD_READ_COUNT {
+                            if DEBUG_THREADS {
+                                info!("Sending response to read thread : {}", r.id);
+                            }
                             self.senders_s_to_read.get(t_id as usize).unwrap().send(Message::Response(r)).unwrap();
                             return;
                         }
@@ -412,6 +453,9 @@ impl Server {
                     DidOpenTextDocument::METHOD | DidChangeConfiguration::METHOD | DidChangeWorkspaceFolders::METHOD |
                     DidChangeTextDocument::METHOD | DidCloseTextDocument::METHOD | DidSaveTextDocument::METHOD |
                     DidRenameFiles::METHOD | DidCreateFiles::METHOD | DidChangeWatchedFiles::METHOD | DidDeleteFiles::METHOD => {
+                        if DEBUG_THREADS {
+                            info!("Sending notification to main thread : {}", n.method);
+                        }
                         self.sender_s_to_main.send(Message::Notification(n)).unwrap();
                     }
                     _ => {
