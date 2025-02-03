@@ -520,6 +520,8 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                     }
                 }
             }
+            //if we didn't find anything, still try to complete
+            return complete_expr(arg, session, file, offset, is_param, &vec![]);
         }
     }
     None
