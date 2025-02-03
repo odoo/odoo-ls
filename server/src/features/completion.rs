@@ -691,7 +691,11 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
 
 fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr: &ExprAttribute, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let mut items = vec![];
-    let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    let start_expr = attr.range.start().to_u32();
+    //TODO actually using start_expr instead of offset, because when we complete an attr, like "self.", the ast is invalid, preventing any rebuild
+    //As symbols are not rebuilt, boundaries are not rights, and a "return self." at the end of a function/class body would be out of scope.
+    //Temporary, by using the start of expr, we can hope that it is still in the right scope.
+    let scope = Symbol::get_scope_symbol(file.clone(), start_expr, is_param);
     if offset > attr.value.range().start().to_usize() && offset <= attr.value.range().end().to_usize() {
         return complete_expr( &attr.value, session, file, offset, is_param, expected_type);
     } else {
