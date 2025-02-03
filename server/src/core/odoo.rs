@@ -1043,7 +1043,8 @@ impl Odoo {
                 if config.odoo_path != old_config.odoo_path ||
                     config.addons != old_config.addons ||
                     config.additional_stubs != old_config.additional_stubs ||
-                    config.stdlib != old_config.stdlib {
+                    config.stdlib != old_config.stdlib ||
+                    config.python_path != old_config.python_path {
                         SyncOdoo::reset(session, config);
                 } else {
                     if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
