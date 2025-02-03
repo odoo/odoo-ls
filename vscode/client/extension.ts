@@ -569,25 +569,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
         // Listen to changes to Python Interpreter
         onDidChangePythonInterpreterEvent.event(async (_) => {
-            // Check if pythonPath changed or not
-            const pythonPathChanged = await updatePythonPath(context, false)
-            if (!pythonPathChanged) return;
-            let startClient = false;
-            global.CAN_QUEUE_CONFIG_CHANGE = false;
-            if (global.LSCLIENT) {
-                if (global.CLIENT_IS_STOPPING) {
-                    await waitForClientStop();
-                }
-                if (global.LSCLIENT?.isRunning()) {
-                    await stopClient();
-                }
-                await global.LSCLIENT.dispose();
-            }
-            if (await getCurrentConfig(context))  {
-                startClient = true;
-            }
-            global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL, startClient);
-            global.CAN_QUEUE_CONFIG_CHANGE = true;
+            await updatePythonPath(context, false);
         }),
 
         // COMMANDS
