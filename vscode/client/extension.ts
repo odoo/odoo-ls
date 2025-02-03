@@ -6,6 +6,7 @@ import * as fs from "fs";
 import * as semver from "semver";
 import {homedir} from "os"
 import {
+    extensions,
     commands,
     ExtensionContext,
     ExtensionMode,
@@ -43,6 +44,7 @@ import {
     migrateConfigToSettings
 } from "./migration/migrateConfig";
 import { constants } from "fs/promises";
+import { PVSC_EXTENSION_ID } from "@vscode/python-extension";
 
 
 function getClientOptions(): LanguageClientOptions {
@@ -564,6 +566,14 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             catch (error) {
                 global.LSCLIENT?.error(error);
                 await displayCrashMessage(context, error, global.SERVER_PID, 'event.onDidChangeConfiguration');
+            }
+        }),
+
+        extensions.onDidChange(async (_) => {
+            const pyExtWasInstalled = global.IS_PYTHON_EXTENSION_READY === true;
+            const pyExtInstalled = extensions.getExtension(PVSC_EXTENSION_ID) !== undefined;
+            if (pyExtWasInstalled !== pyExtInstalled){
+                await updatePythonPath(context, false);
             }
         }),
 

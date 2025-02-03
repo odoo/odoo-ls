@@ -161,9 +161,10 @@ export async function buildFinalPythonPath(context, config_python_path: string, 
 	}
 
 	//trying to use the VScode python extension
-	if (interpreter && global.IS_PYTHON_EXTENSION_READY !== false) {
+	if (interpreter) {
 		pythonPath = interpreter.path[0]
-		await initializePython(context.subscriptions);
+		await initializePython(context.subscriptions, global.PYTHON_EXTENSION_LISTENER_INSTALLED !== true);
+		global.PYTHON_EXTENSION_LISTENER_INSTALLED = true;
 		global.IS_PYTHON_EXTENSION_READY = true;
 	} else {
 		global.IS_PYTHON_EXTENSION_READY = false;
