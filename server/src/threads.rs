@@ -1,11 +1,11 @@
-use std::{path::PathBuf, sync::{Arc, Mutex}, time::Instant};
+use std::{path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
-    Notification}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown},
-    CompletionResponse, Hover, LogMessageParams, MessageType};
+    Notification, ShowMessage}, request::{Completion, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown},
+    CompletionResponse, Hover, LogMessageParams, MessageType, ShowMessageParams};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -80,8 +80,8 @@ impl <'a> SessionInfo<'a> {
         }
     }
 
-    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, force_delay: bool) {
-        if !force_delay && (session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10) {
+    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, forced_delay: bool) {
+        if !forced_delay && (session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10) {
             let tree = session.sync_odoo.tree_from_path(path);
             if tree.is_ok() { //is part of odoo (and in addons path)
                 let tree = tree.unwrap().clone();
@@ -90,7 +90,10 @@ impl <'a> SessionInfo<'a> {
             }
             SyncOdoo::process_rebuilds(session);
         } else {
-            let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now() }));
+            if forced_delay {
+                session.sync_odoo.watched_file_updates.store(session.sync_odoo.watched_file_updates.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+            }
+            let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now(), forced_delay}));
         }
     }
 
@@ -141,6 +144,7 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
 pub struct UpdateFileIndexData {
     pub path: PathBuf,
     pub time: Instant,
+    pub forced_delay: bool,
 }
 
 #[allow(non_camel_case_types)]
@@ -155,29 +159,46 @@ pub enum DelayedProcessingMessage {
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
     let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_save_delay, MAX_DELAY));
-    loop {
+    let check_reset =  |msg: Option<&DelayedProcessingMessage>| {
+        let length = sync_odoo.lock().unwrap().watched_file_updates.load(Ordering::SeqCst);
+        if length > 10 {
+            let index_lock_path = PathBuf::from(sync_odoo.lock().unwrap().config.odoo_path.clone()).join(".git").join("index.lock");
+            while index_lock_path.exists(){
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            let message = "Too many request, possible change of branch, restarting Odoo LS";
+            info!(message);
+            {
+                let mut session = SessionInfo{
+                    sender: sender_session.clone(),
+                    receiver: receiver_session.clone(),
+                    sync_odoo: &mut sync_odoo.lock().unwrap(),
+                    delayed_process_sender: Some(delayed_process_sender.clone())
+                };
+                let config = session.sync_odoo.config.clone();
+                session.send_notification(ShowMessage::METHOD, ShowMessageParams{
+                    typ: MessageType::INFO,
+                    message: message.to_string()
+                });
+                // Drain channel before resetting
+                let _: Vec<DelayedProcessingMessage> = receiver.try_iter().collect();
+                SyncOdoo::reset(&mut session, config);
+            }
+            return true;
+
+        }
+        if matches!(msg, Some(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time: _, forced_delay: true}))){
+            sync_odoo.lock().unwrap().watched_file_updates.store( length - 1, Ordering::SeqCst);
+        }
+        false
+    };
+    'main_loop: loop {
         let mut rebuild = false;
         let mut update_file_index = None;
         let mut delay = normal_delay;
-        let msg = receiver.recv();
-        let check_exit = || {
-            let length = receiver.len();
-            if length > 10 {
-                let index_lock_path = PathBuf::from(sync_odoo.lock().unwrap().config.odoo_path.clone()).join(".git").join("index.lock");
-                while index_lock_path.exists(){
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                }
-                info!("Too many request, possible change of branch, initiating server shutdown/restart");
-                let _ = sender_session.send(Message::Notification(lsp_server::Notification{
-                    method: Shutdown::METHOD.to_string(),
-                    params: serde_json::Value::Null,
-                }));
-                return true;
-            }
-            false
-        };
-        if check_exit() {
-            return;
+        let msg: Result<DelayedProcessingMessage, crossbeam_channel::RecvError> = receiver.recv();
+        if check_reset(msg.as_ref().ok()) {
+            continue;
         }
         match msg {
             Ok(DelayedProcessingMessage::EXIT) => {
@@ -186,10 +207,10 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             Ok(DelayedProcessingMessage::UPDATE_DELAY(duration)) => {
                 normal_delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
             }
-            Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time) | DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time})) => {
+            Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time) | DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time, forced_delay: _})) => {
                 match msg {
                     Ok(DelayedProcessingMessage::REBUILD(_)) => {rebuild = true;},
-                    Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: _ })) => {update_file_index = Some(path);},
+                    Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: _ , forced_delay: _})) => {update_file_index = Some(path);},
                     _ => ()
                 }
                 let mut last_time = time;
@@ -198,10 +219,10 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     std::thread::sleep(to_wait);
                     to_wait = std::time::Duration::ZERO;
                     loop {
-                        if check_exit() {
-                            return;
+                        let new_msg: Result<DelayedProcessingMessage, TryRecvError> = receiver.try_recv();
+                        if check_reset(new_msg.as_ref().ok()) {
+                            continue 'main_loop;
                         }
-                        let new_msg = receiver.try_recv();
                         match new_msg {
                             Ok(DelayedProcessingMessage::EXIT) => {return;},
                             Ok(DelayedProcessingMessage::UPDATE_DELAY(duration)) => {
@@ -221,7 +242,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                                     last_time = t;
                                 }
                             },
-                            Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: t })) => {
+                            Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: t, forced_delay: _})) => {
                                 update_file_index = Some(path);
                                 if t > last_time {
                                     to_wait = (t + delay) - std::time::Instant::now();

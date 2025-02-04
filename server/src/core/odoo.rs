@@ -6,7 +6,7 @@ use crate::features::hover::HoverFeature;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use lsp_server::ResponseError;
@@ -59,6 +59,7 @@ pub struct SyncOdoo {
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
     pub models: HashMap<String, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
+    pub watched_file_updates: Arc<AtomicU32>,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -92,6 +93,7 @@ impl SyncOdoo {
             modules: HashMap::new(),
             models: HashMap::new(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
+            watched_file_updates: Arc::new(AtomicU32::new(0)),
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
             rebuild_odoo: PtrWeakHashSet::new(),
@@ -130,6 +132,7 @@ impl SyncOdoo {
         session.sync_odoo.not_found_symbols = PtrWeakHashSet::new();
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
+        session.sync_odoo.watched_file_updates = Arc::new(AtomicU32::new(0));
         SyncOdoo::init(session, config);
     }
 
