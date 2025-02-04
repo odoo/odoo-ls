@@ -810,9 +810,6 @@ export async function getStandalonePythonVersion(python_path_from_config: string
         return semver.parse(versionString)
     } catch (error) {
         OUTPUT_CHANNEL.appendLine(`[ERROR] Failed to get python version: ${error}`);
-        window.showErrorMessage(
-            `Path to python executable is invalid. Please update the configuration. Used path: ${pythonPath}`,
-        );
         return null
     }
 }

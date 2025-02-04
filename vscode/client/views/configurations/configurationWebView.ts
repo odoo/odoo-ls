@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { URI } from "vscode-languageclient";
 import untildify from 'untildify';
+import { checkStandalonePythonVersion } from "../../extension";
 
 /**
  * This class manages the state and behavior of ConfigurationWebView webview panels.
@@ -21,6 +22,7 @@ export class ConfigurationWebView {
     public static readonly viewType = 'odooConfiguration';
     public configId: number | undefined;
     public config;
+    public finalPythonPath: String;
     private readonly _panel: WebviewPanel;
     private _disposables: Disposable[] = [];
     private readonly _context: vscode.ExtensionContext
@@ -38,6 +40,7 @@ export class ConfigurationWebView {
         this.configId = config.id;
         this.config = config;
         this.addons = config.addons;
+        this.finalPythonPath = config.finalPythonPath;
 
         // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
         // the panel or when the panel is closed programmatically)
@@ -287,7 +290,7 @@ export class ConfigurationWebView {
                         canSelectFiles: false,
                         canSelectFolders: false,
                     };
-                    window.showOpenDialog(pythonPathOptions).then(fileUri => {
+                    window.showOpenDialog(pythonPathOptions).then(async fileUri => {
                         if (fileUri && fileUri[0]) {
                             let config = configs[this.configId];
                             const odooPythonPath = fileUri[0].fsPath;
@@ -295,9 +298,14 @@ export class ConfigurationWebView {
                                 command: "update_python_path",
                                 pythonPath: odooPythonPath
                             });
+                            await this._verifyPythonPath(odooPythonPath, webview);
                         }
                     });
                     break;
+                case "change_python_path":
+                    await this._verifyPythonPath(message.pythonPath, webview);
+                    break;
+
             }
         },
             undefined,
@@ -330,5 +338,13 @@ export class ConfigurationWebView {
 	        this._context.globalState.update('Odoo.configsVersion', versions);
             displayOdooVersion(null);
         }
+    }
+
+    private async _verifyPythonPath(pythonPath: string, webview: Webview){
+        const valid = await checkStandalonePythonVersion(this._context, pythonPath);
+        webview.postMessage({
+            command: "update_python_path_validity",
+            valid: valid
+        });
     }
 }
