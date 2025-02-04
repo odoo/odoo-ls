@@ -37,6 +37,15 @@ window.addEventListener("message", event => {
       addonInputField.focus();
       addonInputField.setAttribute("value", '');
       break
+    case "update_python_path_validity":
+      const pythonPathHelper = document.getElementById('config-python-path-helper');
+      if (message.valid === true) {
+        pythonPathHelper.innerHTML = `<p id="path-helper-valid">Valid Python path.</p>`;
+      }
+      else {
+        pythonPathHelper.innerHTML = '<p id="path-helper-invalid">Invalid Python path.</p>';
+      }
+      break
   }
 });
 
@@ -46,6 +55,7 @@ function main() {
   const pathTextfield = document.getElementById('config-path-textfield');
   const pathButton = document.getElementById('config-path-button');
   const pythonPathButton = document.getElementById('config-python-path-button');
+  const pythonPathField = document.getElementById('config-python-path-textfield');
   const saveButton = document.getElementById('save-button');
   const deleteButton = document.getElementById('delete-button');
 
@@ -55,6 +65,7 @@ function main() {
   pathButton.addEventListener('vsc-click', openOdooFolder);
   if (pythonPathButton){
     pythonPathButton.addEventListener('vsc-click', openPythonPath);
+    pythonPathField.addEventListener('vsc-input', changePythonPath);
   }
   saveButton.addEventListener('click', saveConfig);
   deleteButton.addEventListener('click', deleteConfig);
@@ -86,6 +97,13 @@ function saveConfig() {
 function openPythonPath() {
   vscode.postMessage({
     command: "open_python_path"
+  });
+}
+
+function changePythonPath() {
+  vscode.postMessage({
+    command: "change_python_path",
+    pythonPath: document.getElementById("config-python-path-textfield").value,
   });
 }
 
