@@ -7,6 +7,7 @@ pub const EXTENSION_VERSION: &str = "0.2.8";
 pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;
+pub const DEBUG_STEPS: bool = false;
 
 pub type Tree = (Vec<String>, Vec<String>);
 
