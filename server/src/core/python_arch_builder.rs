@@ -9,7 +9,7 @@ use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
 use std::path::PathBuf;
 
-use crate::constants::{BuildStatus, BuildSteps, SymType};
+use crate::constants::{BuildStatus, BuildSteps, SymType, DEBUG_STEPS};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
@@ -60,7 +60,9 @@ impl PythonArchBuilder {
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
         }
-        trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
+        if DEBUG_STEPS {
+            trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
+        }
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = self.file.borrow().get_symbol_first_path();
         if self.file_mode {
@@ -78,6 +80,7 @@ impl PythonArchBuilder {
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
         if !file_info_rc.borrow().valid {
+            symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
             return
         }
         if self.file_mode {

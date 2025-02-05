@@ -32,7 +32,7 @@ impl PythonOdooBuilder {
 
     pub fn load_odoo_content(&mut self, session: &mut SessionInfo) {
         let mut symbol = self.symbol.borrow_mut();
-        if symbol.build_status(BuildSteps::ODOO) != BuildStatus::PENDING {
+        if symbol.build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE || symbol.build_status(BuildSteps::ODOO) != BuildStatus::PENDING {
             return;
         }
         let mut path = symbol.paths()[0].clone();

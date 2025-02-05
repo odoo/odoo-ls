@@ -66,7 +66,12 @@ impl PythonValidator {
         let file_info_rc = self.get_file_info(session.sync_odoo).clone();
         match sym_type {
             SymType::FILE | SymType::PACKAGE(_) => {
+                if self.sym_stack[0].borrow().build_status(BuildSteps::ODOO) != BuildStatus::DONE {
+                    return;
+                }
+                if DEBUG_STEPS {
                 trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
+                }
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
                 let file_info = file_info_rc.borrow();
@@ -82,7 +87,9 @@ impl PythonValidator {
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymType::FUNCTION => {
+                if DEBUG_STEPS {
                 trace!("Validating function {}", self.sym_stack[0].borrow().name());
+                }
                 self.file_mode = false;
                 let func = &self.sym_stack[0];
                 if func.borrow().as_func().arch_status == BuildStatus::PENDING || file_info_rc.borrow().text_hash != func.borrow().get_processed_text_hash(){ //TODO other checks to do? maybe odoo step, or?????????
@@ -95,6 +102,9 @@ impl PythonValidator {
                 if func.borrow().as_func().arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
                     let mut builder = PythonArchEval::new(func.clone());
                     builder.eval_arch(session);
+                }
+                if func.borrow().as_func().arch_eval_status != BuildStatus::DONE {
+                    return;
                 }
                 self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);

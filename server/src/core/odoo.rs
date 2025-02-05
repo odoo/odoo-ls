@@ -439,8 +439,11 @@ impl SyncOdoo {
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
+        trace!("Starting rebuild: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
         while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_odoo.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
-            trace!("remains: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+            if DEBUG_THREADS {
+                trace!("remains: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+            }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
             if let Some(sym_rc) = sym {
                 let tree = sym_rc.borrow().get_tree();
@@ -504,6 +507,7 @@ impl SyncOdoo {
             session.log_message(MessageType::INFO, S!("Rebuild required. Resetting database on breaktime..."));
             SessionInfo::request_reload(session);
         }
+        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
     }
 
     pub fn rebuild_arch_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
@@ -513,7 +517,9 @@ impl SyncOdoo {
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        if DEBUG_THREADS {
+            trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        }
         if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
@@ -526,7 +532,9 @@ impl SyncOdoo {
     }
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        if DEBUG_THREADS {
+            trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        }
         if symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
@@ -538,7 +546,9 @@ impl SyncOdoo {
     }
 
     pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        trace!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        if DEBUG_THREADS {
+            trace!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        }
         if symbol.borrow().build_status(BuildSteps::ODOO) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
@@ -549,7 +559,9 @@ impl SyncOdoo {
     }
 
     pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        if DEBUG_THREADS {
+            trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+        }
         if symbol.borrow().build_status(BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
             symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_validation.insert(symbol);
