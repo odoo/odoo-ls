@@ -304,8 +304,6 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             Message::Request(r) => {
                 let (value, error) = match r.method.as_str() {
                     Completion::METHOD => {
-                        //Handle completion in main because updates has to be done before the autocompletion
-                        //Moreover, autocompletion will trigger a process_rebuild if needed.
                         to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
                     },
                     _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
