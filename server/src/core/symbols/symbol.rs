@@ -1816,7 +1816,7 @@ impl Symbol {
                                     true => symbol.borrow().range().start().to_u32(),
                                     false => symbol.borrow().body_range().start().to_u32(),
                                 };
-                                if range < offset && symbol.borrow().body_range().end().to_u32() > offset {
+                                if range <= offset && symbol.borrow().body_range().end().to_u32() > offset {
                                     result = Symbol::get_scope_symbol(symbol.clone(), offset, is_param);
                                 }
                             },
@@ -1825,7 +1825,7 @@ impl Symbol {
                                     true => symbol.borrow().range().start().to_u32(),
                                     false => symbol.borrow().body_range().start().to_u32(),
                                 };
-                                if range < offset && symbol.borrow().body_range().end().to_u32() > offset {
+                                if range <= offset && symbol.borrow().body_range().end().to_u32() > offset {
                                     result = Symbol::get_scope_symbol(symbol.clone(), offset, is_param);
                                 }
                             }
