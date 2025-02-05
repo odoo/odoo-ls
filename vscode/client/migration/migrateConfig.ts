@@ -12,3 +12,8 @@ export async function migrateConfigToSettings(context: ExtensionContext){
         workspace.getConfiguration().update("Odoo.configurations", oldConfig, ConfigurationTarget.Global); // putting it the settings
     }
 }
+export async function migrateAfterDelay(context: ExtensionContext){
+    if (String(workspace.getConfiguration().get("Odoo.serverLogLevel")) == "afterDelay"){
+        workspace.getConfiguration().update("Odoo.serverLogLevel", "adaptive", ConfigurationTarget.Global)
+    }
+}

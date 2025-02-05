@@ -1197,7 +1197,7 @@ impl Odoo {
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
         if Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version) {
-            if (session.sync_odoo.config.refresh_mode != RefreshMode::AfterDelay && session.sync_odoo.config.refresh_mode != RefreshMode::Adaptive) || session.sync_odoo.state_init == InitState::NOT_READY {
+            if (matches!(session.sync_odoo.config.refresh_mode, RefreshMode::Off | RefreshMode::OnSave)) || session.sync_odoo.state_init == InitState::NOT_READY {
                 return
             }
             Odoo::update_file_index(session, path, false, false, false);
@@ -1254,7 +1254,7 @@ impl Odoo {
                 }
                 SyncOdoo::process_rebuilds(session);
             } else {
-                if force_delay || session.sync_odoo.config.refresh_mode == RefreshMode::AfterDelay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
+                if force_delay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
                     SessionInfo::request_update_file_index(session, &path, force_delay);
                 }
             }

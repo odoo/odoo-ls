@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RefreshMode {
-    AfterDelay,
     OnSave,
     Adaptive,
     Off
@@ -16,7 +15,7 @@ impl FromStr for RefreshMode {
 
     fn from_str(input: &str) -> Result<RefreshMode, Self::Err> {
         match input {
-            "afterDelay"  => Ok(RefreshMode::AfterDelay),
+            "afterDelay"  => Ok(RefreshMode::Adaptive),
             "onSave"  => Ok(RefreshMode::OnSave),
             "adaptive" => Ok(RefreshMode::Adaptive),
             "off"  => Ok(RefreshMode::Off),

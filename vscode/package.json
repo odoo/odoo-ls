@@ -79,13 +79,11 @@
           "default": "adaptive",
           "enum": [
             "onSave",
-            "afterDelay",
             "adaptive",
             "off"
           ],
           "enumDescriptions": [
             "Refreshes the server data when the user saves a file",
-            "Refreshes the server data after a delay (Odoo.autoRefreshDelay)",
             "Refreshed the server immediatly if it will be fast, otherwises during inactivity (based on autoRefreshDelay)",
             "Disables the auto-refresh feature"
           ],
