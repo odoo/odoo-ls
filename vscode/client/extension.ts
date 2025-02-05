@@ -41,6 +41,7 @@ import { areUniquelyEqual, buildFinalPythonPath, evaluateOdooPath, getCurrentCon
 import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
 import {
+    migrateAfterDelay,
     migrateConfigToSettings
 } from "./migration/migrateConfig";
 import { constants } from "fs/promises";
@@ -717,6 +718,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
 function handleMigration(context){
     migrateConfigToSettings(context)
+    migrateAfterDelay(context)
 }
 
 export async function activate(context: ExtensionContext): Promise<void> {
