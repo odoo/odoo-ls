@@ -1768,14 +1768,14 @@ impl Symbol {
                     let model_data =  sym.as_class_sym()._model.as_ref();
                     if let Some(model_data) = model_data {
                         if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
-                            for model_sym in model.borrow().all_symbols(session, from_module.clone()) {
-                                if !Rc::ptr_eq(symbol, &model_sym.0) {
-                                    for s in model_sym.0.borrow().all_symbols() {
+                            for (model_sym, dependency) in model.borrow().all_symbols(session, from_module.clone()) {
+                                if dependency.is_none() && !Rc::ptr_eq(symbol, &model_sym) {
+                                    for s in model_sym.borrow().all_symbols() {
                                         let name = s.borrow().name().clone();
                                         if let Some(vec) = result.get_mut(&name) {
-                                            vec.push((s, Some(model_sym.0.borrow().name().clone())));
+                                            vec.push((s, Some(model_sym.borrow().name().clone())));
                                         } else {
-                                            result.insert(name.clone(), vec![(s, Some(model_sym.0.borrow().name().clone()))]);
+                                            result.insert(name.clone(), vec![(s, Some(model_sym.borrow().name().clone()))]);
                                         }
                                     }
                                 }
