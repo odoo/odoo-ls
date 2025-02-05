@@ -166,7 +166,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             while index_lock_path.exists(){
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
-            let message = "Too many request, possible change of branch, restarting Odoo LS";
+            let message = "Too many requests, possible change of branch, restarting Odoo LS";
             info!(message);
             {
                 let mut session = SessionInfo{
