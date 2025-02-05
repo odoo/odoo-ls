@@ -92,7 +92,14 @@ impl PythonValidator {
                 }
                 self.file_mode = false;
                 let func = &self.sym_stack[0];
-                if func.borrow().as_func().arch_status == BuildStatus::PENDING || file_info_rc.borrow().text_hash != func.borrow().get_processed_text_hash(){ //TODO other checks to do? maybe odoo step, or?????????
+                let Some(parent_file) = func.borrow().get_file().and_then(|parent_weak| parent_weak.upgrade()) else {
+                    panic!("Parent file not found on validating function")
+                };
+                if file_info_rc.borrow().text_hash != parent_file.borrow().get_processed_text_hash(){
+                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
+                    return;
+                }
+                if func.borrow().as_func().arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);

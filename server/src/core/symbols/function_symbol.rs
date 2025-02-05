@@ -48,7 +48,6 @@ pub struct FunctionSymbol {
     pub args: Vec<Argument>,
     pub is_overloaded: bool, //used for @overload decorator. Only indicates if the decorator is present. Use is_overloaded() to know if this function is overloaded
     pub is_class_method: bool, //used for @classmethod decorator
-    pub processed_text_hash: u64,
 
     //Trait SymbolMgr
     //--- Body content
@@ -86,7 +85,6 @@ impl FunctionSymbol {
             args: vec![],
             is_overloaded: false,
             is_class_method: false,
-            processed_text_hash: 0,
         };
         res._init_symbol_mgr();
         res

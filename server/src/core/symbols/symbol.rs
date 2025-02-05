@@ -1385,9 +1385,9 @@ impl Symbol {
     pub fn set_processed_text_hash(&mut self, hash: u64){
         match self {
             Symbol::File(f) => f.processed_text_hash = hash,
-            Symbol::Function(f) => f.processed_text_hash = hash,
             Symbol::Package(PackageSymbol::Module(m)) => m.processed_text_hash = hash,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.processed_text_hash = hash,
+            Symbol::Function(_) => panic!("set_processed_text_hash called on Function"),
             Symbol::Root(_) => panic!("set_processed_text_hash called on Root"),
             Symbol::Namespace(_) => panic!("set_processed_text_hash called on Namespace"),
             Symbol::Compiled(_) => panic!("set_processed_text_hash called on Compiled"),
@@ -1399,9 +1399,9 @@ impl Symbol {
     pub fn get_processed_text_hash(&self) -> u64{
         match self {
             Symbol::File(f) => f.processed_text_hash,
-            Symbol::Function(f) => f.processed_text_hash,
             Symbol::Package(PackageSymbol::Module(m)) => m.processed_text_hash,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.processed_text_hash,
+            Symbol::Function(_) => panic!("get_processed_text_hash called on Function"),
             Symbol::Root(_) => panic!("get_processed_text_hash called on Root"),
             Symbol::Namespace(_) => panic!("get_processed_text_hash called on Namespace"),
             Symbol::Compiled(_) => panic!("get_processed_text_hash called on Compiled"),

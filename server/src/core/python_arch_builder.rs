@@ -96,7 +96,9 @@ impl PythonArchBuilder {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
-            symbol.borrow_mut().set_processed_text_hash(file_info.text_hash);
+            if self.file_mode {
+                symbol.borrow_mut().set_processed_text_hash(file_info.text_hash);
+            }
             self.visit_node(session, &ast);
             self._resolve_all_symbols(session);
             if self.file_mode {
@@ -431,8 +433,6 @@ impl PythonArchBuilder {
             self.sym_stack.push(sym.clone());
             self.visit_node(session, &func_def.body)?;
             self.sym_stack.pop();
-            let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&self.file.borrow().get_symbol_first_path()).unwrap();
-            sym.borrow_mut().set_processed_text_hash(file_info_rc.borrow().text_hash);
             sym.borrow_mut().as_func_mut().arch_status = BuildStatus::DONE;
         }
         Ok(())
