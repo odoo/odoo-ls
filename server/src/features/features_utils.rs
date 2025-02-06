@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
@@ -171,31 +172,37 @@ impl FeaturesUtils {
                     }
                     if let Some(model) = session.sync_odoo.models.get(&str).cloned() {
                         let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
-                        for main_class in main_classes.iter().map(|main_class_rc| main_class_rc.borrow()) {
+                        for main_class_rc in main_classes.iter() {
+                            let main_class = main_class_rc.borrow();
                             if let Some(main_class_module) = main_class.find_module() {
                                 value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
                                 if main_class.doc_string().is_some() {
                                     value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
                                 }
-                                let mut other_imps = model.borrow().all_symbols(session, from_module.clone());
-                                other_imps.sort_by(|x, y| {
-                                    if x.1.is_none() && y.1.is_some() {
-                                        std::cmp::Ordering::Less
-                                    } else if x.1.is_some() && y.1.is_none() {
-                                        std::cmp::Ordering::Greater
-                                    } else {
-                                        x.0.borrow().find_module().unwrap().borrow().name().cmp(y.0.borrow().find_module().unwrap().borrow().name())
-                                    }
-                                });
                                 value += "  \n***  \n";
-                                for other_imp in other_imps.iter() {
-                                    let mod_name = other_imp.0.borrow().find_module().unwrap().borrow().name().clone();
-                                    if other_imp.1.is_none() {
-                                        value += format!("inherited in {}  \n", mod_name).as_str();
-                                    } else {
-                                        value += format!("inherited in {} (require {})  \n", mod_name, other_imp.1.as_ref().unwrap()).as_str();
-                                    }
-                                }
+                                value += &model.borrow().all_symbols(session, from_module.clone()).into_iter()
+                                    .filter_map(|(sym, needed_module)| {
+                                        if Rc::ptr_eq(&sym, main_class_rc) {
+                                            None // Skip main_class
+                                        } else {
+                                            Some((sym.borrow().find_module().unwrap().borrow().name().clone(), needed_module))
+                                        }
+                                    }).unique_by(|(name, _)| name.clone())
+                                    .sorted_by(|x, y| {
+                                        if x.1.is_none() && y.1.is_some() {
+                                            std::cmp::Ordering::Less
+                                        } else if x.1.is_some() && y.1.is_none() {
+                                            std::cmp::Ordering::Greater
+                                        } else {
+                                            x.0.cmp(&y.0)
+                                        }
+                                    })
+                                    .map(|(mod_name, needed_module)| {
+                                        match needed_module {
+                                            Some(module) => format!("inherited in {} (require {})  \n", mod_name, module),
+                                            None => format!("inherited in {}  \n", mod_name)
+                                        }
+                                    }).collect::<String>();
                             }
                         }
                     }
