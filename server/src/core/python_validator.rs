@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtTry};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
@@ -220,10 +220,17 @@ impl PythonValidator {
                     self.validate_body(session, &w.body);
                     self.validate_body(session, &w.orelse);
                 },
-                Stmt::Return(r) => {},
-                _ => {
-                    trace!("Stmt not handled");
-                }
+                Stmt::Return(stmt_return) => self.visit_return_stmt(session, stmt_return),
+                Stmt::AugAssign(stmt_aug_assign) => self.visit_aug_assign(session, stmt_aug_assign),
+                Stmt::TypeAlias(stmt_type_alias) => self.visit_type_alias(session, stmt_type_alias),
+                Stmt::With(stmt_with) => self.visit_with(session, stmt_with),
+                Stmt::Match(stmt_match) => self.visit_match(session, stmt_match),
+                Stmt::Raise(stmt_raise) => self.visit_raise(session, stmt_raise),
+                Stmt::Assert(stmt_assert) => self.visit_assert(session, stmt_assert),
+                Stmt::Global(_) => {},
+                Stmt::Nonlocal(_) => {},
+                Stmt::Pass(_) => {},
+                Stmt::IpyEscapeCommand(_) => {},
             }
         }
     }
@@ -285,12 +292,25 @@ impl PythonValidator {
         }
     }
 
-    fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
+    fn visit_aug_assign(&mut self, session: &mut SessionInfo, assign: &StmtAugAssign) {
+        self.validate_expr(session, &assign.value, &assign.range.start());
+    }
 
+    fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
+        if let Some(value) = assign.value.as_ref() {
+            self.validate_expr(session, value, &assign.range.start());
+        }
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
+        self.validate_expr(session, &assign.value, &assign.range.start());
+    }
 
+    fn visit_with(&mut self, session: &mut SessionInfo, stmt_with: &StmtWith) {
+        for item in stmt_with.items.iter() {
+            self.validate_expr(session, &item.context_expr, &stmt_with.range.start());
+        }
+        self.validate_body(session, &stmt_with.body);
     }
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
@@ -397,5 +417,38 @@ impl PythonValidator {
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
         let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer);
         self.diagnostics.extend(diags);
+    }
+
+    fn visit_type_alias(&mut self, session: &mut SessionInfo<'_>, stmt_type_alias: &StmtTypeAlias) {
+        self.validate_expr(session, &stmt_type_alias.value, &stmt_type_alias.range.start());
+    }
+
+    fn visit_return_stmt(&mut self, session: &mut SessionInfo<'_>, stmt_return: &ruff_python_ast::StmtReturn) {
+        if let Some(value) = stmt_return.value.as_ref() {
+            self.validate_expr(session, value, &stmt_return.range.start());
+        }
+    }
+
+    fn visit_match(&mut self, session: &mut SessionInfo<'_>, stmt_match: &StmtMatch) {
+        self.validate_expr(session, &stmt_match.subject, &stmt_match.range.start());
+        for case in stmt_match.cases.iter() {
+            if let Some(guard) = case.guard.as_ref() {
+                self.validate_expr(session, guard, &case.pattern.start());
+            }
+            self.validate_body(session, &case.body);
+        }
+    }
+
+    fn visit_raise(&mut self, session: &mut SessionInfo<'_>, stmt_raise: &StmtRaise) {
+        if let Some(exc) = stmt_raise.exc.as_ref() {
+            self.validate_expr(session, exc, &stmt_raise.range.start());
+        }
+    }
+
+    fn visit_assert(&mut self, session: &mut SessionInfo<'_>, stmt_assert: &StmtAssert) {
+        self.validate_expr(session, &stmt_assert.test, &stmt_assert.range.start());
+        if let Some(msg) = stmt_assert.msg.as_ref() {
+            self.validate_expr(session, msg, &stmt_assert.range.start());
+        }
     }
 }
