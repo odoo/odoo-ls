@@ -1,5 +1,5 @@
 import { Disposable, Webview, WebviewPanel, window, Uri, workspace, ConfigurationTarget } from "vscode";
-import { getUri, getNonce, evaluateOdooPath, buildFinalPythonPath } from "../../common/utils";
+import { getUri, getNonce, evaluateOdooPath, buildFinalPythonPath, validateAddonPath } from "../../common/utils";
 import * as ejs from "ejs";
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -216,10 +216,12 @@ export class ConfigurationWebView {
                     await this._saveConfig(configs, rawOdooPath, name, addons, pythonPath);
                     break;
                 case "view_ready":
-                    webview.postMessage({
-                        command: 'render_addons',
-                        addons: configs[this.configId]["addons"]
-                    });
+                    // Check odooPath, pythonPath and addonsPath on startup
+                    await Promise.all([
+                        this._verifyRenderAddons(webview),
+                        this._verifyPythonPath(this.config.pythonPath, webview),
+                        this._verifyPath(this.config.rawOdooPath, webview),
+                    ]);
                     break;
                 case "open_odoo_folder":
                     const odooFolderOptions: vscode.OpenDialogOptions = {
@@ -251,7 +253,6 @@ export class ConfigurationWebView {
                     };
                     window.showOpenDialog(addonsFolderOptions).then(fileUri => {
                         if (fileUri && fileUri[0]) {
-                            this.addons = [...this.addons, ];
                             webview.postMessage({
                                 command: "read_addons_folder",
                                 addonPath: fileUri[0].fsPath,
@@ -268,10 +269,7 @@ export class ConfigurationWebView {
                     webview.postMessage({
                         command: "clear_addons_folder",
                     });
-                    webview.postMessage({
-                        command: "render_addons",
-                        addons: this.addons,
-                    });
+                    await this._verifyRenderAddons(webview);
                     break;
                 case "delete_addons_folder":
                     this.addons = message.addons;
@@ -313,7 +311,7 @@ export class ConfigurationWebView {
         );
     }
 
-    private async _verifyPath(rawOdooPath: URI, webview: Webview){
+    private async _verifyPath(rawOdooPath: string, webview: Webview){
         const displayOdooVersion = (version)=>{
             webview.postMessage({
                 command: "update_config_folder_validity",
@@ -338,6 +336,15 @@ export class ConfigurationWebView {
 	        this._context.globalState.update('Odoo.configsVersion', versions);
             displayOdooVersion(null);
         }
+    }
+
+    private async _verifyRenderAddons(webview: Webview){
+        let validAddons = await Promise.all(this.addons.map(async (addon) => { return (await validateAddonPath(addon) !== null)}));
+        webview.postMessage({
+            command: "render_addons",
+            addons: this.addons,
+            validAddons: validAddons
+        });
     }
 
     private async _verifyPythonPath(pythonPath: string, webview: Webview){

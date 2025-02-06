@@ -6,7 +6,7 @@ window.addEventListener("message", event => {
   const message = event.data;
   switch (message.command) {
     case "render_addons":
-      renderAddonsTree(message.addons);
+      renderAddonsTree(message.addons, message.validAddons);
       break;
     case "update_path":
       const pathField = document.getElementById('config-path-textfield');
@@ -145,7 +145,7 @@ function updateVersion(){
     rawOdooPath: document.getElementById("config-path-textfield").value,
   })
 }
-function renderAddonsTree(addons) {
+function renderAddonsTree(addons, validAddons) {
   const tree = document.getElementById('addons-tree');
   const icons = {
     leaf: 'folder'
@@ -161,7 +161,7 @@ function renderAddonsTree(addons) {
 
   let data = [];
   for (let i = 0; i < addons.length; i++) {
-    data.push({icons, actions, label: addons[i]});
+    data.push({icons, actions, label: addons[i], decorations: [{ appearance: 'filled-circle', color: validAddons[i]? '#0f0': '#f00' }]});
   }
   tree.data = data;
 
