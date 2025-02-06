@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.4.0 - 2025/05/02
+
+0.4.0 is the first Rust version of the tool that is coming to Beta. It means that if you didn't update to alpha version manually, this changelog is new for you since the 0.2.4 version (last published Python version of the tool, not maintained anymore)
+Some configuration migrations could fail while upgrading from the Python version. We apologize in advance if you have to set up them again !
+
+### VsCode
+
+- Add a commmand to restart the server manually
+- Updated welcome page to reflect new changes
+- Remove deprecated views
+- Remove "afterDelay" option, in favor of "adaptive" option. Threads are way more reactives than before and "adaptive" should
+be enough in all cases.
+- handle installation of python extension while Odoo is running
+
+### VsCode Fix
+
+- Fix the extension hanging while the server starts
+
+### Server
+
+- improve odoo detection to handle nightly builds of Odoo.
+- Return Class location on definition request of model name (strings)
+- Server will auto reset if too many changes occur in the workspace (git checkout detection purpose)
+- improve the rebuild queue, by putting functions in it with a module dependency, instead of the whole file. It lowers the needed
+computation on each change.
+- onSave settings will not trigger a rebuild anymore if ast in the file is invalid
+- Improve range of link given by GoToDefinition on packages
+- precompute model dependencies to improve performances
+- Add various odoo api method signatures (with_context...)
+- Add search domains diagnostics
+- Add search domains autocompletion
+- Add search domains GotoDefinition
+- Various hover display improvements: syntax, values and infered types on functions
+- Implement _inherits logic
+- Improve internal context usage to correctly reflect what contains the current parsing
+- Remove usage of the custom route Odoo/getPythonPath, and now using lsp default configuration
+- Improve message managements to make threads more reactive, and so the extension
+- use start of expr range to avoid some out of scope issues in autocompletion
+- Server do not restart anymore but reset on python path update
+
+### Server fixs
+
+- fix crash on importation of compiled files
+- Remove autocompletion items that are not in module dependencies
+
 ## 0.2.8 - 2024/18/12
 
 ### VsCode
