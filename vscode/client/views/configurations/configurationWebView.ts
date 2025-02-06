@@ -114,7 +114,7 @@ export class ConfigurationWebView {
      * rendered within the webview panel
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
-        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@bendera", "vscode-webview-elements", "dist", "bundled.js"]);
+        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@vscode-elements", "elements", "dist", "bundled.js"]);
         const htmlPath = getUri(webview, extensionUri, ["client", "views", "configurations", "configurationWebView.html"]);
         const styleUri = getUri(webview, extensionUri, ["client", "views", "configurations", "style.css"]);
         const codiconStyleUri = getUri(webview, extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"]);

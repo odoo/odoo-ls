@@ -73,13 +73,7 @@ export class WelcomeWebView {
      * Defines and returns the HTML that should be rendered within the webview panel.
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
-        const toolkitUri = getUri(webview, extensionUri, [
-            "node_modules",
-            "@vscode",
-            "webview-ui-toolkit",
-            "dist",
-            "toolkit.js",
-        ]);
+        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@vscode-elements", "elements", "dist", "bundled.js"]);
 
         const htmlPath = getUri(webview, extensionUri, ["client", "views", "welcome", "welcomeWebView.html"]);
         const htmlFile = fs.readFileSync(htmlPath.fsPath, 'utf-8');
@@ -108,7 +102,7 @@ export class WelcomeWebView {
         const data = {
             styleUri: styleUri,
             mainUri: mainUri,
-            toolkitUri: toolkitUri,
+            webviewElementsUri: webviewElementsUri,
             cspSource: webview.cspSource,
             alertHTML: alertData ? ejs.render(alertFile, alertData) : '',
             image_1: help_1,

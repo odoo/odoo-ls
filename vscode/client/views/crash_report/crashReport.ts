@@ -20,7 +20,7 @@ export class CrashReportWebView {
     private readonly _command: String;
     private readonly _debugFile: string;
     /**
-     * The ConfigurationWebView class private constructor (called only from the render method).
+     * The CrashReportWebView class private constructor (called only from the render method).
      *
      * @param panel A reference to the webview panel
      * @param extensionUri The URI of the directory containing the extension
@@ -100,7 +100,7 @@ export class CrashReportWebView {
      * rendered within the webview panel
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
-        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@bendera", "vscode-webview-elements", "dist", "bundled.js"]);
+        const webviewElementsUri = getUri(webview, extensionUri, ["node_modules", "@vscode-elements", "elements", "dist", "bundled.js"]);
         const htmlPath = getUri(webview, extensionUri, ["client", "views", "crash_report", "body.html"]);
         const styleUri = getUri(webview, extensionUri, ["client", "views", "crash_report", "style.css"]);
         const codiconStyleUri = getUri(webview, extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"]);

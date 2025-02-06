@@ -28,9 +28,8 @@ node_modules/
 **/venv/
 **/__pycache__/
 
-!node_modules/@bendera/vscode-webview-elements/**
+!node_modules/@vscode-elements/elements**
 !node_modules/@vscode/codicons/**
-!node_modules/@vscode/webview-ui-toolkit/**
 !node_modules/axios/**
 !node_modules/ejs/**
 !node_modules/vscode-languageclient/**
