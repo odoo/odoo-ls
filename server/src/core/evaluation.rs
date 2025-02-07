@@ -1350,7 +1350,9 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::SELF => {
-                let class = context.as_ref().unwrap().get(&S!("parent_for")).unwrap_or(context.as_ref().unwrap().get(&S!("base_attr")).unwrap_or(&ContextValue::BOOLEAN(false)));
+                let class = context.as_ref().
+                and_then(|context| context.get(&S!("parent_for")).or(context.get(&S!("base_attr"))))
+                .unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
                     ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: s.clone(), context: HashMap::new(), instance: Some(true), is_super: false},
                     _ => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false}
@@ -1371,7 +1373,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::NONE => eval,
             EvaluationSymbolPtr::DOMAIN => eval,
             EvaluationSymbolPtr::SELF => {
-                let class = context.as_ref().unwrap().get(&S!("base_call")).unwrap_or(&ContextValue::BOOLEAN(false));
+                let class = context.as_ref().and_then(|context| context.get(&S!("base_call"))).unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
                     ContextValue::SYMBOL(s) => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: s.clone(), context: HashMap::new(), instance: Some(true), is_super: false}),
                     _ => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false})
