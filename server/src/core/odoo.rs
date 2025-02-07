@@ -1136,7 +1136,7 @@ impl Odoo {
     pub fn handle_did_open(session: &mut SessionInfo, params: DidOpenTextDocumentParams) {
         //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
         // that we use the same base version of the file for future incrementation.
-        let path = params.text_document.uri.to_file_path().unwrap();
+        if let Ok(path) = params.text_document.uri.to_file_path() { //temp file has no file path
         session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
         if Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
             range: None,
@@ -1146,15 +1146,17 @@ impl Odoo {
                 return
             }
             Odoo::update_file_index(session, path,true, true, false);
+            }
         }
     }
 
     pub fn handle_did_close(session: &mut SessionInfo, params: DidCloseTextDocumentParams) {
-        let path = params.text_document.uri.to_file_path().unwrap();
+        if let Ok(path) = params.text_document.uri.to_file_path() {
         session.log_message(MessageType::INFO, format!("File closed: {}", path.sanitize()));
         let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path.to_str().unwrap().to_string());
         if let Some(file_info) = file_info {
             file_info.borrow_mut().opened = false;
+            }
         }
     }
 
@@ -1209,7 +1211,7 @@ impl Odoo {
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
-        let path = params.text_document.uri.to_file_path().unwrap();
+        if let Ok(path) = params.text_document.uri.to_file_path() {
         session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
         let version = params.text_document.version;
         if Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version) {
@@ -1217,6 +1219,7 @@ impl Odoo {
                 return
             }
             Odoo::update_file_index(session, path, false, false, false);
+            }
         }
     }
 
