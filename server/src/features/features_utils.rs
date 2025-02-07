@@ -4,6 +4,7 @@ use crate::core::file_mgr::FileMgr;
 use crate::utils::PathSanitizer;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
@@ -294,12 +295,13 @@ impl FeaturesUtils {
             value += "def ";
             value += symbol.name();
             //display args
-            let function = infered_types[0].upgrade_weak().unwrap();
-            let function = function.borrow();
-            let function = function.as_func();
+            let sym_eval_weak = infered_types[0].as_weak();
+            let sym_rc = sym_eval_weak.weak.upgrade().unwrap();
+            let sym_ref = sym_rc.borrow();
+            let function_sym = sym_ref.as_func();
             value += "(";
-            let max_index = function.args.len() as i32 - 1;
-            for (index, arg) in function.args.iter().enumerate() {
+            let max_index = function_sym.args.len() as i32 - 1;
+            for (index, arg) in function_sym.args.iter().enumerate() {
                 value += arg.symbol.upgrade().unwrap().borrow().name();
                 //TODO add parameter type
                 if index != max_index as usize {
@@ -307,7 +309,21 @@ impl FeaturesUtils {
                 }
             }
             value += ") -> ";
-            infered_types = function.evaluations.iter().map(|x| x.symbol.get_symbol_ptr().clone()).collect();
+            let call_parent = match sym_eval_weak.context.get(&S!("base_attr")){
+                Some(ContextValue::SYMBOL(s)) => s.clone(),
+                _ => {
+                    let parent = sym_ref.parent().and_then(|parent_weak| parent_weak.upgrade());
+                    if parent.is_some() && parent.as_ref().unwrap().borrow().typ() == SymType::CLASS {
+                        Rc::downgrade(&parent.unwrap())
+                    } else {
+                        Weak::new()
+                    }
+                }
+            };
+            // Set base_call to get correct function return type for syms with EvaluationSymbolPtr::SELF type
+            context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
+            infered_types = function_sym.evaluations.iter().map(|x| x.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None)).collect();
+            context.as_mut().unwrap().remove(&S!("base_call"));
         } else {
             if symbol.typ() == SymType::CLASS && infered_types.len() == 1 && infered_types[0].is_weak() && infered_types[0].as_weak().is_super{
                 value += &format!("(super[{}]) ", symbol.name());
