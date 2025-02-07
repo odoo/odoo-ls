@@ -22,6 +22,10 @@ A generic language server that can be used to provide common IDE features to you
 
 An extension that will bundle the Odoo Language Server and give needed settings and some UI improvements to your vscode.
 
+### Vim extension
+
+An integration of OdooLS is available in a side-project for now. Check it out here: https://github.com/Whenrow/odoo-ls.nvim
+
 ## State of the project
 
 All modules in this repository are actually in development and not released in a stable and valid version. You can face crashs or inconsistent results by using it. Please consult each directory to get a better idea of the state of each project.
