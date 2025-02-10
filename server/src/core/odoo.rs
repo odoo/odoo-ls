@@ -289,6 +289,9 @@ impl SyncOdoo {
         let root_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let config_odoo_path = session.sync_odoo.config.odoo_path.clone();
         let added_symbol = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol.clone(), false);
+        if added_symbol.is_none() {
+            panic!("Not able to find odoo with given path. Aborting...");
+        }
         added_symbol.as_ref().unwrap().borrow_mut().as_python_package_mut().self_import = true;
         session.sync_odoo.add_to_rebuild_arch(added_symbol.unwrap());
         SyncOdoo::process_rebuilds(session);
