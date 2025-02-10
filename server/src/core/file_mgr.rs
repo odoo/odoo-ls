@@ -154,12 +154,20 @@ impl FileInfo {
                 slash = "/";
             }
             let uri = format!("file://{}{}", slash, self.uri);
-            session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                uri: lsp_types::Uri::from_str(&uri).expect("Unable to parse uri"),
-                diagnostics: all_diagnostics,
-                version: Some(self.version),
-            });
-            self.need_push = false;
+            match lsp_types::Uri::from_str(&uri) {
+                Ok(uri) => {
+                    session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
+                        uri: uri,
+                        diagnostics: all_diagnostics,
+                        version: Some(self.version),
+                    });
+                    self.need_push = false;
+                },
+                Err(error) => {
+                    error!("Unable to transform uri to lsp uri: {}", error);
+                    error!("uri: {}", uri);
+                }
+            }
         }
     }
 
