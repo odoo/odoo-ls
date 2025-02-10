@@ -1786,7 +1786,9 @@ impl Symbol {
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
-                    Symbol::all_members(&base.upgrade().unwrap(), session, result, false, from_module.clone(), acc, false);
+                    if let Some(base) = base.upgrade() {
+                        Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
+                    }
                 }
             },
             _ => {
