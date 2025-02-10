@@ -4,11 +4,7 @@ use clap::error;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument,
-    DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification},
-    request::{Completion, GotoDefinition, HoverRequest, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions,
-    FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult,
-    OneOf, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
-    WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
+    DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
 use serde_json::json;
 #[cfg(target_os = "linux")]
 use nix;
@@ -209,6 +205,12 @@ impl Server {
                     trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\""), S!("(")]),
                     ..CompletionOptions::default()
                 }),
+                document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions{
+                    label: Some(S!("Odoo")),
+                    work_done_progress_options: WorkDoneProgressOptions{
+                        work_done_progress: Some(false)
+                    },
+                })),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -409,6 +411,12 @@ impl Server {
                         }
                         self.sender_s_to_main.send(Message::Request(r)).unwrap();
                     },
+                    DocumentSymbolRequest::METHOD => {
+                        if DEBUG_THREADS {
+                            info!("Sending request to read thread : {} - {}", r.method, r.id);
+                        }
+                        self.sender_s_to_read.send(Message::Request(r)).unwrap();
+                    }
                     ResolveCompletionItem::METHOD => {
                         info!("Got ignored CompletionItem/resolve")
                     }
