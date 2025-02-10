@@ -162,9 +162,12 @@ impl PythonArchEval {
             },
             Stmt::With(with_stmt) => {
                 self._visit_with(session, with_stmt);
-            }
+            },
             Stmt::Return(return_stmt) => {
                 self._visit_return(session, return_stmt);
+            },
+            Stmt::Match(match_stmt) => {
+                self._visit_match(session, match_stmt);
             }
             _ => {}
         }
@@ -720,6 +723,18 @@ impl PythonArchEval {
         for (index, stmt) in with_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
             self.visit_stmt(session, stmt);
+            self.ast_indexes.pop();
+        }
+    }
+
+    fn _visit_match(&mut self, session: &mut SessionInfo<'_>, match_stmt: &ruff_python_ast::StmtMatch) {
+        for (index_case, case) in match_stmt.cases.iter().enumerate() {
+            self.ast_indexes.push(index_case as u16);
+            for (index_body, stmt) in case.body.iter().enumerate() {
+                self.ast_indexes.push(index_body as u16);
+                self.visit_stmt(session, stmt);
+                self.ast_indexes.pop();
+            }
             self.ast_indexes.pop();
         }
     }

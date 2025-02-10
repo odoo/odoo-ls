@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtTry, StmtWith};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -243,6 +243,9 @@ impl PythonArchBuilder {
                 Stmt::With(with_stmt) => {
                     self.visit_with(session, with_stmt)?;
                 },
+                Stmt::Match(match_stmt) => {
+                    self.visit_match(session, match_stmt)?;
+                }
                 _ => {}
             }
         }
@@ -515,6 +518,33 @@ impl PythonArchBuilder {
             }
         }
         self.visit_node(session, &with_stmt.body)?;
+        Ok(())
+    }
+
+    fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
+        for case in match_stmt.cases.iter() {
+            match &case.pattern {
+                ruff_python_ast::Pattern::MatchValue(_) => {},
+                ruff_python_ast::Pattern::MatchSingleton(_) => {},
+                ruff_python_ast::Pattern::MatchSequence(_) => {}, //TODO unpack
+                ruff_python_ast::Pattern::MatchMapping(_) => {}, // TODO unpack
+                ruff_python_ast::Pattern::MatchClass(_) => {}, //TODO we could force x evaluation here, by creating a temporary x?
+                ruff_python_ast::Pattern::MatchStar(pattern_match_star) => {
+                    if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
+                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                            session, &name.to_string(), &pattern_match_star.range());
+                    }
+                },
+                ruff_python_ast::Pattern::MatchAs(pattern_match_as) => {
+                    if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
+                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                            session, &name.to_string(), &pattern_match_as.range());
+                    }
+                },
+                ruff_python_ast::Pattern::MatchOr(_) => todo!(),
+            }
+            self.visit_node(session, &case.body)?;
+        }
         Ok(())
     }
 }

@@ -111,7 +111,13 @@ impl AstUtils {
                 },
                 Stmt::With(with_stmt) => {
                     stmt = with_stmt.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in with stmt");
-                }
+                },
+                Stmt::Match(match_stmt) => {
+                    let case_index = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    stmt = match_stmt.cases.get(*case_index as usize).expect("Case not found in match stmt").body.get(*stmt_index as usize).expect("Stmt not found in match body");
+                },
                 _ => {}
             }
             i_index += 1;
