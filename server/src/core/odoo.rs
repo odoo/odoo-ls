@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -1278,6 +1279,27 @@ impl Odoo {
                 }
             }
         }
+    }
+
+    pub(crate) fn handle_document_symbols(session: &mut SessionInfo<'_>, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>, ResponseError> {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("Document symbol requested for {}",
+            params.text_document.uri.as_str(),
+        ));
+        let path = FileMgr::uri2pathname(params.text_document.uri.as_str());
+        if params.text_document.uri.to_string().ends_with(".py") || params.text_document.uri.to_string().ends_with(".pyi") {
+            if let Some(file_symbol) = session.sync_odoo.get_file_symbol(&PathBuf::from(path.clone())) {
+                let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                if let Some(file_info) = file_info {
+                    if file_info.borrow().ast.is_some() {
+                        return Ok(DocumentSymbolFeature::get_symbols(session, &file_symbol, &file_info));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
 }
