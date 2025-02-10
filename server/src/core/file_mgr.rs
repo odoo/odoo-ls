@@ -149,13 +149,8 @@ impl FileInfo {
                     all_diagnostics.push(self.update_range(d.clone()));
                 }
             }
-            let mut slash = "";
-            if cfg!(windows) {
-                slash = "/";
-            }
-            let uri = format!("file://{}{}", slash, self.uri);
             session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                uri: lsp_types::Uri::from_str(&uri).expect("Unable to parse uri"),
+                uri: FileMgr::pathname2uri(&self.uri),
                 diagnostics: all_diagnostics,
                 version: Some(self.version),
             });
@@ -320,11 +315,13 @@ impl FileMgr {
         if cfg!(windows) {
             slash = "/";
         }
-        let url = lsp_types::Uri::from_str(&format!("file://{}{}", slash, s));
-        if let Ok(url) = url {
-            return url;
-        } else {
-            panic!("unable to transform pathname to uri: {s}, {}", url.err().unwrap());
+        let pre_uri = match url::Url::parse(&format!("file://{}{}", slash, s)) {
+            Ok(pre_uri) => pre_uri,
+            Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
+        };
+        match lsp_types::Uri::from_str(pre_uri.as_str()) {
+            Ok(url) => url,
+            Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
         }
     }
 
