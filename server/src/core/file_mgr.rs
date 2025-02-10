@@ -149,13 +149,11 @@ impl FileInfo {
                     all_diagnostics.push(self.update_range(d.clone()));
                 }
             }
-            if !all_diagnostics.is_empty() {
-                session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                    uri: FileMgr::pathname2uri(&self.uri),
-                    diagnostics: all_diagnostics,
-                    version: Some(self.version),
-                });
-            }
+            session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
+                uri: FileMgr::pathname2uri(&self.uri),
+                diagnostics: all_diagnostics,
+                version: Some(self.version),
+            });
             self.need_push = false;
         }
     }
