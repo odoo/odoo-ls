@@ -65,6 +65,7 @@ pub struct SyncOdoo {
     rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub state_init: InitState,
+    pub opened_files: Vec<String>,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub must_reload_paths: Vec<(Weak<RefCell<Symbol>>, String)>,
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
@@ -99,6 +100,7 @@ impl SyncOdoo {
             rebuild_odoo: PtrWeakHashSet::new(),
             rebuild_validation: PtrWeakHashSet::new(),
             state_init: InitState::NOT_READY,
+            opened_files: vec![],
             not_found_symbols: PtrWeakHashSet::new(),
             must_reload_paths: vec![],
             load_odoo_addons: true,
@@ -197,7 +199,7 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::PYTHON_READY;
         SyncOdoo::build_database(session);
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
-        info!("Time taken: {} ms", start_time.elapsed().as_millis());
+        session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
     }
 
     pub fn load_builtins(session: &mut SessionInfo) {
@@ -263,7 +265,7 @@ impl SyncOdoo {
         let release_path = PathBuf::from(odoo_path.clone()).join("odoo/release.py");
         let odoo_addon_path = PathBuf::from(odoo_path.clone()).join("addons");
         if !release_path.exists() {
-            session.log_message(MessageType::ERROR, String::from("Unable to find release.py - Aborting"));
+            session.log_message(MessageType::ERROR, String::from("Unable to find release.py - Aborting and switching to non-odoo mode"));
             return false;
         }
         let (_version_major, _version_minor, _version_micro) = SyncOdoo::read_version(session, release_path);
@@ -273,7 +275,7 @@ impl SyncOdoo {
         let _full_version = format!("{}.{}.{}", _version_major, _version_minor, _version_micro);
         session.log_message(MessageType::INFO, format!("Odoo version: {}", _full_version));
         if _version_major < 14 {
-            session.log_message(MessageType::ERROR, String::from("Odoo version is less than 14. The tool only supports version 14 and above. Aborting..."));
+            session.log_message(MessageType::ERROR, String::from("Odoo version is less than 14. The tool only supports version 14 and above. Aborting and switching to non-odoo mode"));
             return false;
         }
         session.sync_odoo.version_major = _version_major;
@@ -296,9 +298,11 @@ impl SyncOdoo {
         if addon_symbol.is_empty() {
             let odoo = session.sync_odoo.get_symbol(&tree(vec!["odoo"], vec![]), u32::MAX);
             if odoo.is_empty() {
-                panic!("Not able to find odoo. Please check your configuration");
+                session.log_message(MessageType::WARNING, "Odoo not found. Switching to non-odoo mode...".to_string());
+                return false;
             }
-            panic!("Not able to find odoo/addons. Please check your configuration");
+            session.log_message(MessageType::WARNING, "Not able to find odoo/addons. Please check your configuration. Switching to non-odoo mode...".to_string());
+            return false;
         }
         let addon_symbol = addon_symbol[0].clone();
         if odoo_addon_path.exists() {
@@ -639,7 +643,13 @@ impl SyncOdoo {
                 return Ok(tree);
             }
         }
-        Err("Path not found in any module")
+        //path is not in either addons or python path. Then build a tree path that link to a dedicated part of the symbol trees
+        // with the prefix "$internal" (usage of $ to avoid conflict with real paths)
+        let mut tree: Tree = (vec![S!("$internal")], vec![]);
+        path.components().for_each(|c| {
+            tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
+        });
+        Ok(tree)
     }
 
     pub fn _unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Result<Rc<RefCell<Symbol>>, String> {
@@ -735,6 +745,11 @@ impl SyncOdoo {
         }
         for sym in found_sym.iter() {
             session.sync_odoo.not_found_symbols.remove(&sym);
+        }
+        if tree.0.len() > 0 && tree.0[0] == "$internal" {
+
+            session.sync_odoo.add_to_rebuild_arch(s.clone());
+            return true;
         }
         need_rebuild
     }
@@ -1137,25 +1152,27 @@ impl Odoo {
         //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
         // that we use the same base version of the file for future incrementation.
         if let Ok(path) = params.text_document.uri.to_file_path() { //temp file has no file path
-        session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
-        if Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
-            range: None,
-            range_length: None,
-                text: params.text_document.text}]), params.text_document.version) {
-            if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
-                return
-            }
-            Odoo::update_file_index(session, path,true, true, false);
+            session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
+            session.sync_odoo.opened_files.push(path.sanitize());
+            if Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
+                range: None,
+                range_length: None,
+                    text: params.text_document.text}]), params.text_document.version) {
+                if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+                    return
+                }
+                Odoo::update_file_index(session, path,true, true, false);
             }
         }
     }
 
     pub fn handle_did_close(session: &mut SessionInfo, params: DidCloseTextDocumentParams) {
         if let Ok(path) = params.text_document.uri.to_file_path() {
-        session.log_message(MessageType::INFO, format!("File closed: {}", path.sanitize()));
-        let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path.to_str().unwrap().to_string());
-        if let Some(file_info) = file_info {
-            file_info.borrow_mut().opened = false;
+            session.log_message(MessageType::INFO, format!("File closed: {}", path.sanitize()));
+            session.sync_odoo.opened_files.retain(|x| x != &path.sanitize());
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path.to_str().unwrap().to_string());
+            if let Some(file_info) = file_info {
+                file_info.borrow_mut().opened = false;
             }
         }
     }
@@ -1212,13 +1229,13 @@ impl Odoo {
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
         if let Ok(path) = params.text_document.uri.to_file_path() {
-        session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
-        let version = params.text_document.version;
-        if Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version) {
-            if (matches!(session.sync_odoo.config.refresh_mode, RefreshMode::Off | RefreshMode::OnSave)) || session.sync_odoo.state_init == InitState::NOT_READY {
-                return
-            }
-            Odoo::update_file_index(session, path, false, false, false);
+            session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
+            let version = params.text_document.version;
+            if Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version) {
+                if (matches!(session.sync_odoo.config.refresh_mode, RefreshMode::Off | RefreshMode::OnSave)) || session.sync_odoo.state_init == InitState::NOT_READY {
+                    return
+                }
+                Odoo::update_file_index(session, path, false, false, false);
             }
         }
     }

@@ -29,6 +29,7 @@ pub enum PackageType{
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
 pub enum SymType{
     ROOT,
+    DISK_DIR,
     NAMESPACE,
     PACKAGE(PackageType),
     FILE,

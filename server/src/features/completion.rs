@@ -1051,6 +1051,7 @@ fn get_sort_text_for_symbol(sym: &Rc<RefCell<Symbol>>/*, cl: Option<Rc<RefCell<S
 fn get_completion_item_kind(symbol: &Rc<RefCell<Symbol>>) -> CompletionItemKind {
     match symbol.borrow().typ() {
         SymType::ROOT => CompletionItemKind::TEXT,
+        SymType::DISK_DIR => CompletionItemKind::FOLDER,
         SymType::NAMESPACE => CompletionItemKind::FOLDER,
         SymType::PACKAGE(_) => CompletionItemKind::MODULE,
         SymType::FILE => CompletionItemKind::FILE,
