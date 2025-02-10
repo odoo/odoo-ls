@@ -79,7 +79,13 @@ impl PythonArchEval {
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
             let (ast, func_returns) = match self.file_mode {
-                true => (file_info.ast.as_ref().unwrap(), None),
+                true => {
+                    if file_info.text_hash != symbol.borrow().get_processed_text_hash(){
+                        symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
+                        return;
+                    }
+                    (file_info.ast.as_ref().unwrap(), None)
+                },
                 false => {
                     let func_stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
                     (&func_stmt.body, func_stmt.returns.as_ref())
