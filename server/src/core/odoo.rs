@@ -646,7 +646,10 @@ impl SyncOdoo {
     pub fn _unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Result<Rc<RefCell<Symbol>>, String> {
         let ub_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let symbol = ub_symbol.borrow();
-        let path_symbol = symbol.get_symbol(&session.sync_odoo.tree_from_path(&path).unwrap(), u32::MAX);
+        let Ok(tree) = &session.sync_odoo.tree_from_path(&path) else {
+            return Err(format!("Unable to build tree from path {}", path.to_str().unwrap_or("(unable to cast path to str)")));
+        };
+        let path_symbol = symbol.get_symbol(tree, u32::MAX);
         if path_symbol.is_empty() {
             return Err("Symbol not found".to_string());
         }
