@@ -3,11 +3,10 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWith};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
-use std::path::PathBuf;
 
 use crate::constants::{BuildStatus, BuildSteps, SymType, DEBUG_STEPS};
 use crate::core::python_utils;
@@ -17,7 +16,6 @@ use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
-use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -245,6 +243,9 @@ impl PythonArchBuilder {
                 },
                 Stmt::Match(match_stmt) => {
                     self.visit_match(session, match_stmt)?;
+                },
+                Stmt::While(while_stmt) => {
+                    self.visit_while(session, while_stmt)?;
                 }
                 _ => {}
             }
@@ -545,6 +546,12 @@ impl PythonArchBuilder {
             }
             self.visit_node(session, &case.body)?;
         }
+        Ok(())
+    }
+
+    fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        self.visit_node(session, &while_stmt.body)?;
+        self.visit_node(session, &while_stmt.orelse)?;
         Ok(())
     }
 }

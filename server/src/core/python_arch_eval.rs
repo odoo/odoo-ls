@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::{u32, vec};
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWith};
+use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace};
 
@@ -168,6 +168,9 @@ impl PythonArchEval {
             },
             Stmt::Match(match_stmt) => {
                 self._visit_match(session, match_stmt);
+            },
+            Stmt::While(while_stmt) => {
+                self.visit_while(session, while_stmt);
             }
             _ => {}
         }
@@ -737,6 +740,24 @@ impl PythonArchEval {
             }
             self.ast_indexes.pop();
         }
+    }
+
+    fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
+        self.ast_indexes.push(0 as u16); // 0 for body
+        for (index, stmt) in while_stmt.body.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(session, stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
+
+        self.ast_indexes.push(1 as u16); // 1 for else
+        for (index, stmt) in while_stmt.orelse.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
+            self.visit_stmt(session, stmt);
+            self.ast_indexes.pop();
+        }
+        self.ast_indexes.pop();
     }
 
     // Handle function return annotation

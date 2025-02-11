@@ -118,6 +118,16 @@ impl AstUtils {
                     let stmt_index = indexes.get(i_index).unwrap();
                     stmt = match_stmt.cases.get(*case_index as usize).expect("Case not found in match stmt").body.get(*stmt_index as usize).expect("Stmt not found in match body");
                 },
+                Stmt::While(while_stmt) => {
+                    let bloc = indexes.get(i_index).unwrap();
+                    i_index += 1;
+                    let stmt_index = indexes.get(i_index).unwrap();
+                    stmt = match bloc {
+                        0 => while_stmt.body.get(*stmt_index as usize).expect("index not found in while stmt body"),
+                        1 => while_stmt.orelse.get(*stmt_index as usize).expect("index not found in while stmt orelse"),
+                        _ => panic!("Wrong while bloc")
+                    }
+                }
                 _ => {}
             }
             i_index += 1;
