@@ -28,7 +28,7 @@ node_modules/
 **/venv/
 **/__pycache__/
 
-!node_modules/@vscode-elements/elements**
+!node_modules/@vscode-elements/elements/**
 !node_modules/@vscode/codicons/**
 !node_modules/axios/**
 !node_modules/ejs/**
