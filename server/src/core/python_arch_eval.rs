@@ -6,7 +6,7 @@ use std::{u32, vec};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::constants::*;
 use crate::core::import_resolver::resolve_import_stmt;
@@ -306,20 +306,26 @@ impl PythonArchEval {
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
+                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
                     variable_rc.borrow_mut().set_evaluations(eval);
                     self.diagnostics.extend(diags);
                 } else if assign.value.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &ann_assign_stmt.range.start());
+                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
                     variable_rc.borrow_mut().set_evaluations(eval);
                     self.diagnostics.extend(diags);
                 } else {
                     panic!("either value or annotation should exists");
                 }
                 let mut dep_to_add = vec![];
-                let v_mut = variable_rc.borrow_mut();
-                for evaluation in v_mut.evaluations().unwrap().iter() {
+                let mut evals_to_drop: Vec<usize> = vec![];
+                for (ix, evaluation) in variable_rc.borrow().evaluations().unwrap().iter().enumerate() {
                     if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
+                        if Rc::ptr_eq(&sym, &variable_rc){
+                            // TODO: investigate deps, and fix cyclic evals
+                            warn!("Found cyclic evaluation symbol: {}, parent: {}", sym.borrow().name(), parent.borrow().name());
+                            evals_to_drop.push(ix);
+                            continue;
+                        }
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -335,7 +341,10 @@ impl PythonArchEval {
                         }
                     }
                 }
-                drop(v_mut);
+                let mut v_mut = variable_rc.borrow_mut();
+                for ix in evals_to_drop.into_iter(){
+                    v_mut.evaluations_mut().unwrap().remove(ix);
+                }
                 for dep in dep_to_add {
                     self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
                 }
@@ -351,13 +360,19 @@ impl PythonArchEval {
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
+                let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &assign_stmt.range.start());
                 variable_rc.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
-                let v_mut = variable_rc.borrow_mut();
-                for evaluation in v_mut.evaluations().unwrap().iter() {
+                let mut evals_to_drop: Vec<usize> = vec![];
+                for (ix, evaluation) in variable_rc.borrow().evaluations().unwrap().iter().enumerate() {
                     if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
+                        if Rc::ptr_eq(&sym, &variable_rc){
+                            // TODO: investigate deps, and fix cyclic evals
+                            warn!("Found cyclic evaluation symbol: {}, parent: {}", sym.borrow().name(), parent.borrow().name());
+                            evals_to_drop.push(ix);
+                            continue;
+                        }
                         if let Some(file) = sym.borrow().get_file().clone() {
                             let sym_file = file.upgrade().unwrap().clone();
                             if !Rc::ptr_eq(&self.file, &sym_file) {
@@ -373,7 +388,10 @@ impl PythonArchEval {
                         }
                     }
                 }
-                drop(v_mut);
+                let mut v_mut = variable_rc.borrow_mut();
+                for ix in evals_to_drop.into_iter(){
+                    v_mut.evaluations_mut().unwrap().remove(ix);
+                }
                 for dep in dep_to_add {
                     self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
                 }
