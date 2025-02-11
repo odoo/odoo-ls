@@ -1594,7 +1594,8 @@ impl Symbol {
             Symbol::Variable(v) => {
                 let mut res = VecDeque::new();
                 for eval in v.evaluations.iter() {
-                    let mut sym = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
+                    let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
+                    let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
                     match sym {
                         EvaluationSymbolPtr::WEAK(ref mut w) => {
                             if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
