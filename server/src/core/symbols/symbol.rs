@@ -1625,7 +1625,7 @@ impl Symbol {
                             let sym = sym.borrow();
                             match *sym {
                                 Symbol::Variable(ref v) => {
-                                    if stop_on_type && !next_ref_weak.is_instance().unwrap_or(false) && !v.is_import_variable {
+                                    if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !v.is_import_variable {
                                         index += 1;
                                         continue;
                                     }
