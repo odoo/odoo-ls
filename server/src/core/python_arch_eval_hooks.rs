@@ -13,12 +13,7 @@ use crate::constants::*;
 use crate::threads::SessionInfo;
 use crate::S;
 
-use super::evaluation::Evaluation;
-use super::evaluation::ContextValue;
-use super::evaluation::EvaluationSymbol;
-use super::evaluation::EvaluationSymbolPtr;
-use super::evaluation::EvaluationSymbolWeak;
-use super::evaluation::EvaluationValue;
+use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
 use super::symbols::module_symbol::ModuleSymbol;
 
@@ -42,7 +37,6 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             let mut env = symbol.borrow_mut();
             let env_class = env_class.last().unwrap();
             let mut context = HashMap::new();
-            context.insert(S!("test_mode"), super::evaluation::ContextValue::BOOLEAN(true));
             env.set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
                     Rc::downgrade(env_class),
@@ -100,22 +94,32 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         let env_file = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![]), u32::MAX);
-        let env_model = odoo.get_symbol(&(vec![S!("odoo"), S!("api")], vec![S!("Environment")]), u32::MAX);
-        if !env_model.is_empty() {
-            let env_model = env_model.last().unwrap();
-            let mut context = HashMap::new();
-            context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
+        let mut sym_ref = symbol.borrow_mut();
+        for evaluation in sym_ref.evaluations_mut().unwrap(){
+            if let EvaluationSymbolPtr::WEAK(weak) = evaluation.symbol.get_mut_symbol_ptr() {
+                weak.context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
+            }
+        }
+        file_symbol.borrow_mut().add_dependency(&mut env_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+    }},
+    PythonArchEvalFileHook {file_tree: vec![S!("odoo"), S!("tests"), S!("common")],
+                            content_tree: vec![S!("TransactionCase"), S!("cr")],
+                            if_exist_only: true,
+                            func: |odoo: &mut SyncOdoo, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        let cursor_file = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![]), u32::MAX);
+        let cursor_sym = odoo.get_symbol(&(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
+        if !cursor_sym.is_empty() {
             symbol.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
-                    Rc::downgrade(env_model),
+                    Rc::downgrade(cursor_sym.last().unwrap()),
                     Some(true),
-                    context,
+                    HashMap::new(),
                     None
                 ),
                 value: None,
                 range: None,
             }]);
-            file_symbol.borrow_mut().add_dependency(&mut env_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+            file_symbol.borrow_mut().add_dependency(&mut cursor_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }},
     /* As __get__ doesn't exists in each class, the validator will not trigger hooks for them at function level, so we put it at file level. */

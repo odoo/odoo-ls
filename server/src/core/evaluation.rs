@@ -860,10 +860,14 @@ impl Evaluation {
                         diagnostics.extend(attributes_diagnostics);
                         if !attributes.is_empty() {
                             let is_instance = ibase.as_weak().instance.unwrap_or(false);
+                            let is_test_mode = ibase.as_weak().context.get(&S!("test_mode")).map(|c| c.as_bool()).unwrap_or(false);
                             attributes.iter().for_each(|attribute|{
                                 let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
                                 match eval.symbol.sym {
                                     EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                        if is_test_mode {
+                                            weak.context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
+                                        }
                                         weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
                                         weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
                                     },
@@ -1385,8 +1389,7 @@ impl EvaluationSymbol {
     /* Execute Hook, then return the effective EvaluationSymbolPtr */
     pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolPtr {
         let mut custom_eval = None;
-        if self.get_symbol_hook.is_some() {
-            let hook = self.get_symbol_hook.unwrap();
+        if let Some(hook) = self.get_symbol_hook {
             custom_eval = hook(session, self, context, diagnostics, file_symbol);
         }
         custom_eval.as_ref().unwrap_or(&self.sym).clone()
