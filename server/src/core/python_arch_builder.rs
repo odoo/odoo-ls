@@ -542,7 +542,7 @@ impl PythonArchBuilder {
                             session, &name.to_string(), &pattern_match_as.range());
                     }
                 },
-                ruff_python_ast::Pattern::MatchOr(_) => todo!(),
+                ruff_python_ast::Pattern::MatchOr(_) => {},
             }
             self.visit_node(session, &case.body)?;
         }
