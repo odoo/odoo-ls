@@ -194,24 +194,26 @@ impl SyncOdoo {
                 error!("{}", stderr);
             }
         }
-        SyncOdoo::load_builtins(session);
-        session.sync_odoo.state_init = InitState::PYTHON_READY;
-        SyncOdoo::build_database(session);
+        if SyncOdoo::load_builtins(session) {
+            session.sync_odoo.state_init = InitState::PYTHON_READY;
+            SyncOdoo::build_database(session);
+        }
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
         info!("Time taken: {} ms", start_time.elapsed().as_millis());
     }
 
-    pub fn load_builtins(session: &mut SessionInfo) {
+    pub fn load_builtins(session: &mut SessionInfo) -> bool {
         let path = PathBuf::from(&session.sync_odoo.stdlib_dir);
         let builtins_path = path.join("builtins.pyi");
         if !builtins_path.exists() {
-            session.log_message(MessageType::ERROR, String::from("Unable to find builtins.pyi"));
+            session.log_message(MessageType::ERROR, String::from("Unable to find builtins.pyi. Are you sure that typeshed has been downloaded. If you are building from source, make sure to initialize submodules with 'git submodule init' and 'git submodule update'."));
             error!("Unable to find builtins at: {}", builtins_path.sanitize());
-            return;
+            return false;
         };
         let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, session.sync_odoo.symbols.as_ref().unwrap().clone(), false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
         SyncOdoo::process_rebuilds(session);
+        true
     }
 
     pub fn build_database(session: &mut SessionInfo) {
