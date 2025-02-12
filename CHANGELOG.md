@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.1 - 2025/12/02
+
+Small patch that address crashes we got from your reports
+
+### Vscode Fixs
+
+- validate paths on config view opening
+
+### Server
+
+- Server will now answer to DocumentSymbol requests and give you a tree os symbols that you can find in a file.
+- Add validation and diagnostics on some missing Python statements (match, ...)
+- Better error message if missing typeshed
+
+### Server Fixs
+
+- crash fix: Handle new odoo structure available on master
+- crash fix: Do not evaluate documents that are not saved on disk and has an invalid path (will be improved later)
+- crash fix: Do not assume that base class is always valid, and silently ignore an invalid base class
+- crash fix: Do not evaluate architecture of a file if the hash of file has changed since the first building
+- crash fix: url encode paths to handle spaces or invalid characters in uris
+- crash fix: add a guard against empty contexts while getting symbol
+- crash fix: Fix crash on cyclic references involving only functions (temp fix before a proper implementation)
+- Fix multiple inference instance evaluation
+- add context information to be able to resolve ": Self" return value for functions
+- Test if odoo package is found or not and log it if not
+- Fix hook that transform Cursor into TestCursor in tests directories
+
 ## 0.4.0 - 2025/05/02
 
 0.4.0 is the first Rust version of the tool that is coming to Beta. It means that if you didn't update to alpha version manually, this changelog is new for you since the 0.2.4 version (last published Python version of the tool, not maintained anymore)
