@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, Expr, ExprNamed, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -246,11 +246,84 @@ impl PythonArchBuilder {
                 },
                 Stmt::While(while_stmt) => {
                     self.visit_while(session, while_stmt)?;
+                },
+                Stmt::Expr(stmt_expression) => {
+                    self.visit_expr(session, &stmt_expression.value);
+                },
+                Stmt::Return(return_stmt) => {
+                    if let Some(value) = return_stmt.value.as_ref() {
+                        self.visit_expr(session, &value);
+                    }
+                },
+                Stmt::Assert(assert_stmt) => {
+                    self.visit_expr(session, &assert_stmt.test);
+                },
+                Stmt::AugAssign(aug_assign_stmt) => {
+                    self.visit_expr(session, &aug_assign_stmt.target);
+                    self.visit_expr(session, &aug_assign_stmt.value);
                 }
-                _ => {}
+                Stmt::Delete(stmt_delete) => {
+                    stmt_delete.targets.iter().for_each(|del_target_expr| self.visit_expr(session, del_target_expr));
+                },
+                Stmt::TypeAlias(stmt_type_alias) => {
+                    self.visit_expr(session, &stmt_type_alias.value);
+                },
+                Stmt::Raise(stmt_raise) => {
+                    stmt_raise.exc.as_ref().map(|stmt_exc| self.visit_expr(session, &stmt_exc));
+                    stmt_raise.cause.as_ref().map(|stmt_cause| self.visit_expr(session, &stmt_cause));
+                },
+                Stmt::Global(_stmt_global) => {
+                    // TODO: Create variables
+                },
+                Stmt::Nonlocal(_stmt_nonlocal) => {
+                    // TODO: Create variables
+                },
+                Stmt::Break(_) => {},
+                Stmt::Continue(_) => {},
+                Stmt::Pass(_) => {},
+                Stmt::IpyEscapeCommand(_) => {},
             }
         }
         Ok(())
+    }
+
+    fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
+        match expr {
+            Expr::Named(named_expr) =>{
+                self.visit_named_expr(session, &named_expr);
+            },
+            Expr::BoolOp(expr_bool_op) => todo!(),
+            Expr::BinOp(expr_bin_op) => todo!(),
+            Expr::UnaryOp(expr_unary_op) => todo!(),
+            Expr::Lambda(expr_lambda) => todo!(),
+            Expr::If(expr_if) => todo!(),
+            Expr::Dict(expr_dict) => todo!(),
+            Expr::Set(expr_set) => todo!(),
+            Expr::ListComp(expr_list_comp) => todo!(),
+            Expr::SetComp(expr_set_comp) => todo!(),
+            Expr::DictComp(expr_dict_comp) => todo!(),
+            Expr::Generator(expr_generator) => todo!(),
+            Expr::Await(expr_await) => todo!(),
+            Expr::Yield(expr_yield) => todo!(),
+            Expr::YieldFrom(expr_yield_from) => todo!(),
+            Expr::Compare(expr_compare) => todo!(),
+            Expr::Call(expr_call) => todo!(),
+            Expr::FString(expr_fstring) => todo!(),
+            Expr::StringLiteral(expr_string_literal) => todo!(),
+            Expr::BytesLiteral(expr_bytes_literal) => todo!(),
+            Expr::NumberLiteral(expr_number_literal) => todo!(),
+            Expr::BooleanLiteral(expr_boolean_literal) => todo!(),
+            Expr::NoneLiteral(expr_none_literal) => todo!(),
+            Expr::EllipsisLiteral(expr_ellipsis_literal) => todo!(),
+            Expr::Attribute(expr_attribute) => todo!(),
+            Expr::Subscript(expr_subscript) => todo!(),
+            Expr::Starred(expr_starred) => todo!(),
+            Expr::Name(expr_name) => todo!(),
+            Expr::List(expr_list) => todo!(),
+            Expr::Tuple(expr_tuple) => todo!(),
+            Expr::Slice(expr_slice) => todo!(),
+            Expr::IpyEscapeCommand(expr_ipy_escape_command) => todo!(),
+        }
     }
 
     fn extract_all_symbol_eval_values(&self, value: &Option<&EvaluationValue>) -> (Vec<String>, bool) {
@@ -310,6 +383,9 @@ impl PythonArchBuilder {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
+            if let Some(ref expr) = assign.value{
+                self.visit_expr(session, expr);
+            }
             self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
     }
@@ -317,6 +393,9 @@ impl PythonArchBuilder {
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
+            if let Some(ref expr) = assign.value {
+                self.visit_expr(session, expr);
+            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
             let mut variable = variable.borrow_mut();
             if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
@@ -351,6 +430,11 @@ impl PythonArchBuilder {
                 }
             }
         }
+    }
+
+    fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
+        self.visit_expr(session, &named_expr.value);
+        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &named_expr.target.as_name_expr().unwrap().id.to_string(), &named_expr.target.range());
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
@@ -474,6 +558,7 @@ impl PythonArchBuilder {
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
+        self.visit_expr(session, &if_stmt.test);
         self.visit_node(session, &if_stmt.body)?;
         for else_clause in if_stmt.elif_else_clauses.iter() {
             self.visit_node(session, &else_clause.body)?;
@@ -484,6 +569,9 @@ impl PythonArchBuilder {
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
         let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
+            if let Some(ref expr) = assign.value {
+                self.visit_expr(session, expr);
+            }
             self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
         self.visit_node(session, &for_stmt.body)?;
@@ -550,6 +638,7 @@ impl PythonArchBuilder {
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        self.visit_expr(session, &while_stmt.test);
         self.visit_node(session, &while_stmt.body)?;
         self.visit_node(session, &while_stmt.orelse)?;
         Ok(())

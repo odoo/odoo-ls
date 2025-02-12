@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::{u32, vec};
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, Expr, ExprNamed, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -23,6 +23,7 @@ use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak}
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
+use super::python_utils::Assign;
 use super::symbols::function_symbol::FunctionSymbol;
 
 
@@ -171,8 +172,93 @@ impl PythonArchEval {
             },
             Stmt::While(while_stmt) => {
                 self.visit_while(session, while_stmt);
+            },
+            Stmt::Expr(stmt_expression) => {
+                self.visit_expr(session, &*stmt_expression.value);
+            },
+            Stmt::Assert(assert_stmt) => {
+                self.visit_expr(session, &assert_stmt.test);
             }
             _ => {}
+        }
+    }
+
+    fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
+        match expr {
+            Expr::Named(named_expr) => {
+                self.visit_named_expr(session, &named_expr);
+            },
+            Expr::BoolOp(bool_op_expr) => {
+                for expr in bool_op_expr.values.iter() {
+                    self.visit_expr(session, &expr);
+                }
+            },
+            Expr::BinOp(bin_op_expr) => {
+                self.visit_expr(session, &bin_op_expr.left);
+                self.visit_expr(session, &bin_op_expr.right);
+            },
+            Expr::UnaryOp(unary_op_expr) => {
+                self.visit_expr(session, &unary_op_expr.operand);
+            },
+            Expr::Lambda(_todo_lambda_expr) => {
+                // TODO:
+            },
+            Expr::If(_todo_if_expr) => {
+                // TODO:
+                // because of (x := 2) if predicate else (y := 4)
+                // whether x or y is defined depends on the `predicate`
+                // not very useful case
+                // also: (x := 2) if predicate else (x := "text")
+                // we should have two evaluations of x, yet `handle_assigns` sets evals not adds to evals
+            },
+            Expr::Dict(dict_expr) => {
+                dict_expr.iter().for_each(
+                    |dict_item| {
+                        dict_item.key.as_ref().map(|dict_key_expr| self.visit_expr(session, dict_key_expr));
+                        self.visit_expr(session, &dict_item.value);
+                    }
+                );
+            },
+            Expr::Set(expr_set) => {
+                expr_set.iter().for_each(
+                    |set_el_expr| {
+                        self.visit_expr(session, set_el_expr);
+                    }
+                );
+            },
+            Expr::ListComp(expr_list_comp) => {
+                self.visit_expr(session, &expr_list_comp.elt);
+            },
+            Expr::SetComp(expr_set_comp) => {
+                self.visit_expr(session, &expr_set_comp.elt);
+            },
+            Expr::DictComp(expr_dict_comp) => {
+                self.visit_expr(session, &expr_dict_comp.key);
+                self.visit_expr(session, &expr_dict_comp.value);
+            },
+            Expr::Generator(_todo_expr_generator) => {
+                // generators are lazily evaluated, maybe later
+            },
+            Expr::Await(expr_await) => todo!(),
+            Expr::Yield(expr_yield) => todo!(),
+            Expr::YieldFrom(expr_yield_from) => todo!(),
+            Expr::Compare(expr_compare) => todo!(),
+            Expr::Call(expr_call) => todo!(),
+            Expr::FString(expr_fstring) => todo!(),
+            Expr::StringLiteral(expr_string_literal) => todo!(),
+            Expr::BytesLiteral(expr_bytes_literal) => todo!(),
+            Expr::NumberLiteral(expr_number_literal) => todo!(),
+            Expr::BooleanLiteral(expr_boolean_literal) => todo!(),
+            Expr::NoneLiteral(expr_none_literal) => todo!(),
+            Expr::EllipsisLiteral(expr_ellipsis_literal) => todo!(),
+            Expr::Attribute(expr_attribute) => todo!(),
+            Expr::Subscript(expr_subscript) => todo!(),
+            Expr::Starred(expr_starred) => todo!(),
+            Expr::Name(expr_name) => todo!(),
+            Expr::List(expr_list) => todo!(),
+            Expr::Tuple(expr_tuple) => todo!(),
+            Expr::Slice(expr_slice) => todo!(),
+            Expr::IpyEscapeCommand(expr_ipy_escape_command) => todo!(),
         }
     }
 
@@ -296,26 +382,23 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
-        let assigns = match ann_assign_stmt.value.as_ref() {
-            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
-            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
-        };
-        for assign in assigns.iter() { //should only be one
+    fn handle_assigns(&mut self, session: &mut SessionInfo, assigns: Vec<Assign>, range: &TextRange){
+        for assign in assigns.iter() {
+            if let Some(ref expr) = assign.value {
+                self.visit_expr(session, expr);
+            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
-                if assign.annotation.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
-                    variable_rc.borrow_mut().set_evaluations(eval);
-                    self.diagnostics.extend(diags);
-                } else if assign.value.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
-                    variable_rc.borrow_mut().set_evaluations(eval);
-                    self.diagnostics.extend(diags);
+                let (eval, diags) = if let Some(ref annotation) = assign.annotation {
+                    Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start())
+                } else if let Some(ref value) = assign.value {
+                    Evaluation::eval_from_ast(session, value, parent.clone(), &range.start())
                 } else {
                     panic!("either value or annotation should exists");
-                }
+                };
+                variable_rc.borrow_mut().set_evaluations(eval);
+                self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
                 let mut evals_to_drop: Vec<usize> = vec![];
                 for (ix, evaluation) in variable_rc.borrow().evaluations().unwrap().iter().enumerate() {
@@ -354,52 +437,22 @@ impl PythonArchEval {
         }
     }
 
+    fn  _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
+        let assigns = match ann_assign_stmt.value.as_ref() {
+            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
+            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
+        };
+        self.handle_assigns(session, assigns, &ann_assign_stmt.range);
+    }
+
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
-        for assign in assigns.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
-            if let Some(variable_rc) = variable {
-                let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &assign_stmt.range.start());
-                variable_rc.borrow_mut().set_evaluations(eval);
-                self.diagnostics.extend(diags);
-                let mut dep_to_add = vec![];
-                let mut evals_to_drop: Vec<usize> = vec![];
-                for (ix, evaluation) in variable_rc.borrow().evaluations().unwrap().iter().enumerate() {
-                    if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
-                        if Rc::ptr_eq(&sym, &variable_rc){
-                            // TODO: investigate deps, and fix cyclic evals
-                            warn!("Found cyclic evaluation symbol: {}, parent: {}", sym.borrow().name(), parent.borrow().name());
-                            evals_to_drop.push(ix);
-                            continue;
-                        }
-                        if let Some(file) = sym.borrow().get_file().clone() {
-                            let sym_file = file.upgrade().unwrap().clone();
-                            if !Rc::ptr_eq(&self.file, &sym_file) {
-                                match Rc::ptr_eq(&variable_rc, &sym_file) {
-                                    true => {
-                                        dep_to_add.push(variable_rc.clone());
-                                    },
-                                    false => {
-                                        dep_to_add.push(sym_file);
-                                    }
-                                };
-                            }
-                        }
-                    }
-                }
-                let mut v_mut = variable_rc.borrow_mut();
-                for ix in evals_to_drop.into_iter(){
-                    v_mut.evaluations_mut().unwrap().remove(ix);
-                }
-                for dep in dep_to_add {
-                    self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
-                }
+        self.handle_assigns(session, assigns, &assign_stmt.range);
+    }
 
-            } else {
-                debug!("Symbol not found");
-            }
-        }
+    fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
+        let assigns = python_utils::unpack_assign(&vec![*named_expr.target.clone()], None, Some(&named_expr.value));
+        self.handle_assigns(session, assigns, &named_expr.range);
     }
 
     fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut Symbol, tree_not_found: &Tree, range: &TextRange) {
@@ -569,7 +622,7 @@ impl PythonArchEval {
     }
 
     fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
-        //TODO eval test (walrus op)
+        self.visit_expr(session, &if_stmt.test);
         self.ast_indexes.push(0 as u16);//0 for body
         for (index, stmt) in if_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
@@ -590,6 +643,7 @@ impl PythonArchEval {
     }
 
     fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
+        self.visit_expr(session, &for_stmt.iter);
         let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
             &for_stmt.iter,
             self.sym_stack.last().unwrap().clone(),
@@ -694,6 +748,9 @@ impl PythonArchEval {
     }
 
     fn _visit_return(&mut self, session: &mut SessionInfo, return_stmt: &StmtReturn) {
+        if let Some(value) = return_stmt.value.as_ref() {
+            self.visit_expr(session, &value);
+        }
         let func = self.sym_stack.last().unwrap().clone();
         if func.borrow().typ() == SymType::FUNCTION {
             if let Some(value) = return_stmt.value.as_ref() {
