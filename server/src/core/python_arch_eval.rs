@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::{u32, vec};
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, Expr, ExprNamed, FStringPart, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -24,6 +24,7 @@ use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak}
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
+use super::python_utils::Assign;
 use super::symbols::function_symbol::FunctionSymbol;
 
 
@@ -174,8 +175,147 @@ impl PythonArchEval {
             },
             Stmt::While(while_stmt) => {
                 self.visit_while(session, while_stmt);
+            },
+            Stmt::Expr(stmt_expression) => {
+                self.visit_expr(session, &*stmt_expression.value);
+            },
+            Stmt::Assert(assert_stmt) => {
+                self.visit_expr(session, &assert_stmt.test);
             }
-            _ => {}
+            Stmt::AugAssign(aug_assign_stmt) => {
+                self.visit_expr(session, &aug_assign_stmt.target);
+                self.visit_expr(session, &aug_assign_stmt.value);
+            }
+            Stmt::Delete(stmt_delete) => {
+                stmt_delete.targets.iter().for_each(|del_target_expr| self.visit_expr(session, del_target_expr));
+            },
+            Stmt::TypeAlias(stmt_type_alias) => {
+                self.visit_expr(session, &stmt_type_alias.value);
+            },
+            Stmt::Raise(stmt_raise) => {
+                stmt_raise.exc.as_ref().map(|stmt_exc| self.visit_expr(session, &stmt_exc));
+                stmt_raise.cause.as_ref().map(|stmt_cause| self.visit_expr(session, &stmt_cause));
+            },
+            Stmt::Global(_stmt_global) => {},
+            Stmt::Nonlocal(_stmt_nonlocal) => {},
+            Stmt::Break(_) => {},
+            Stmt::Continue(_) => {},
+            Stmt::Pass(_) => {},
+            Stmt::IpyEscapeCommand(_) => {},
+        }
+    }
+
+    fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
+        match expr {
+            Expr::Named(named_expr) => {
+                self.visit_named_expr(session, &named_expr);
+            },
+            Expr::BoolOp(bool_op_expr) => {
+                for expr in bool_op_expr.values.iter() {
+                    self.visit_expr(session, &expr);
+                }
+            },
+            Expr::BinOp(bin_op_expr) => {
+                self.visit_expr(session, &bin_op_expr.left);
+                self.visit_expr(session, &bin_op_expr.right);
+            },
+            Expr::UnaryOp(unary_op_expr) => {
+                self.visit_expr(session, &unary_op_expr.operand);
+            },
+            Expr::If(_todo_if_expr) => {
+                // TODO:
+                // This needs complex handling of sections
+            },
+            Expr::Dict(dict_expr) => {
+                dict_expr.iter().for_each(
+                    |dict_item| {
+                        dict_item.key.as_ref().map(|dict_key_expr| self.visit_expr(session, dict_key_expr));
+                        self.visit_expr(session, &dict_item.value);
+                    }
+                );
+            },
+            Expr::Set(expr_set) => {
+                expr_set.iter().for_each(
+                    |set_el_expr| {
+                        self.visit_expr(session, set_el_expr);
+                    }
+                );
+            },
+            Expr::ListComp(expr_list_comp) => {
+                self.visit_expr(session, &expr_list_comp.elt);
+            },
+            Expr::SetComp(expr_set_comp) => {
+                self.visit_expr(session, &expr_set_comp.elt);
+            },
+            Expr::DictComp(expr_dict_comp) => {
+                self.visit_expr(session, &expr_dict_comp.key);
+                self.visit_expr(session, &expr_dict_comp.value);
+            },
+            Expr::Await(expr_await) => {
+                self.visit_expr(session, &expr_await.value);
+            },
+            Expr::Yield(expr_yield) => {
+                expr_yield.value.as_ref().map(|yield_value| self.visit_expr(session, &yield_value));
+            },
+            Expr::YieldFrom(expr_yield_from) => {
+                self.visit_expr(session, &expr_yield_from.value);
+            },
+            Expr::Compare(expr_compare) => {
+                expr_compare.comparators.iter().for_each(|comp_expr| self.visit_expr(session, comp_expr));
+            },
+            Expr::Call(expr_call) => {
+                self.visit_expr(session, &expr_call.func);
+                expr_call.arguments.args.iter().for_each(|arg_expr| self.visit_expr(session, arg_expr));
+                expr_call.arguments.keywords.iter().for_each(|keyword| self.visit_expr(session, &keyword.value));
+            },
+            Expr::FString(expr_fstring) => {
+                expr_fstring.value.iter().for_each(|fstring_part|{
+                    match fstring_part{
+                        FStringPart::FString(fstr) => fstr.elements.expressions().for_each(
+                            |fstring_expr| self.visit_expr(session, &fstring_expr.expression)
+                        ),
+                        FStringPart::Literal(_) => {},
+                    }
+                });
+            },
+            Expr::Subscript(expr_subscript) => {
+                self.visit_expr(session, &expr_subscript.value);
+                self.visit_expr(session, &expr_subscript.slice);
+            },
+            Expr::List(expr_list) => {
+                expr_list.elts.iter().for_each(|elt_expr| self.visit_expr(session, elt_expr));
+            },
+            Expr::Tuple(expr_tuple) => {
+                expr_tuple.elts.iter().for_each(|elt_expr| self.visit_expr(session, elt_expr));
+            },
+            Expr::Slice(expr_slice) => {
+                expr_slice.upper.as_ref().map(|upper_expr| self.visit_expr(session, &upper_expr));
+                expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
+            },
+            // Expressions that cannot contained a named expressions are not traversed
+            Expr::Lambda(_todo_lambda_expr) => {
+                // Lambdas can have named expressions, but it is not a common use
+                // Like lambda vals: vals[(x := 0): x + 3]
+                // However x is only in scope in the lambda expression only
+                // It needs adding a new function, ast_indexes, then add the variable inside
+                // I deem it currently unnecessary
+            },
+            Expr::Generator(_todo_expr_generator) => {
+                // generators are lazily evaluated,
+                // thus named expression are only invoked when the generator is iterated
+                // which modifies the variable in it in a custom scope
+                // No method to handle that now, and it is a very niche use that is safe to not handle
+            },
+            Expr::StringLiteral(_expr_string_literal) => {},
+            Expr::BytesLiteral(_expr_bytes_literal) => {},
+            Expr::NumberLiteral(_expr_number_literal) => {},
+            Expr::BooleanLiteral(_expr_boolean_literal) => {},
+            Expr::NoneLiteral(_expr_none_literal) => {},
+            Expr::EllipsisLiteral(_expr_ellipsis_literal) => {},
+            Expr::Attribute(_expr_attribute) => {},
+            Expr::Starred(_expr_starred) => {},
+            Expr::IpyEscapeCommand(_expr_ipy_escape_command) => {},
+            Expr::Name(_expr_name) => {},
         }
     }
 
@@ -299,26 +439,23 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
-        let assigns = match ann_assign_stmt.value.as_ref() {
-            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
-            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
-        };
-        for assign in assigns.iter() { //should only be one
+    fn handle_assigns(&mut self, session: &mut SessionInfo, assigns: Vec<Assign>, range: &TextRange){
+        for assign in assigns.iter() {
+            if let Some(ref expr) = assign.value {
+                self.visit_expr(session, expr);
+            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
-                if assign.annotation.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
-                    variable_rc.borrow_mut().set_evaluations(eval);
-                    self.diagnostics.extend(diags);
-                } else if assign.value.is_some() {
-                    let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
-                    variable_rc.borrow_mut().set_evaluations(eval);
-                    self.diagnostics.extend(diags);
+                let (eval, diags) = if let Some(ref annotation) = assign.annotation {
+                    Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start())
+                } else if let Some(ref value) = assign.value {
+                    Evaluation::eval_from_ast(session, value, parent.clone(), &range.start())
                 } else {
                     panic!("either value or annotation should exists");
-                }
+                };
+                variable_rc.borrow_mut().set_evaluations(eval);
+                self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
                 let mut v_mut = variable_rc.borrow_mut();
                 let evaluations = v_mut.evaluations_mut().unwrap();
@@ -357,52 +494,22 @@ impl PythonArchEval {
         }
     }
 
+    fn  _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
+        let assigns = match ann_assign_stmt.value.as_ref() {
+            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
+            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
+        };
+        self.handle_assigns(session, assigns, &ann_assign_stmt.range);
+    }
+
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
-        for assign in assigns.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
-            if let Some(variable_rc) = variable {
-                let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &assign_stmt.range.start());
-                variable_rc.borrow_mut().set_evaluations(eval);
-                self.diagnostics.extend(diags);
-                let mut dep_to_add = vec![];
-                let mut v_mut = variable_rc.borrow_mut();
-                let evaluations = v_mut.evaluations_mut().unwrap();
-                let mut ix = 0;
-                while ix < evaluations.len(){
-                    let evaluation =  &evaluations[ix];
-                    if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
-                        if Rc::ptr_eq(&sym, &variable_rc){
-                            // TODO: investigate deps, and fix cyclic evals
-                            warn!("Found cyclic evaluation symbol: {}, parent: {}", sym.borrow().name(), parent.borrow().name());
-                            evaluations.remove(ix);
-                            continue;
-                        }
-                        if let Some(file) = sym.borrow().get_file().clone() {
-                            let sym_file = file.upgrade().unwrap().clone();
-                            if !Rc::ptr_eq(&self.file, &sym_file) {
-                                match Rc::ptr_eq(&variable_rc, &sym_file) {
-                                    true => {
-                                        dep_to_add.push(variable_rc.clone());
-                                    },
-                                    false => {
-                                        dep_to_add.push(sym_file);
-                                    }
-                                };
-                            }
-                        }
-                    }
-                    ix += 1
-                }
-                for dep in dep_to_add {
-                    self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
-                }
+        self.handle_assigns(session, assigns, &assign_stmt.range);
+    }
 
-            } else {
-                debug!("Symbol not found");
-            }
-        }
+    fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
+        let assigns = python_utils::unpack_assign(&vec![*named_expr.target.clone()], None, Some(&named_expr.value));
+        self.handle_assigns(session, assigns, &named_expr.range);
     }
 
     fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut Symbol, tree_not_found: &Tree, range: &TextRange) {
@@ -572,7 +679,7 @@ impl PythonArchEval {
     }
 
     fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
-        //TODO eval test (walrus op)
+        self.visit_expr(session, &if_stmt.test);
         self.ast_indexes.push(0 as u16);//0 for body
         for (index, stmt) in if_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
@@ -584,6 +691,7 @@ impl PythonArchEval {
             //TODO eval test of else clauses
             self.ast_indexes.push((index+1) as u16);//0 for body, so index + 1
             for (index_stmt, stmt) in elif_clause.body.iter().enumerate() {
+                elif_clause.test.as_ref().map(|test_clause| self.visit_expr(session, &test_clause));
                 self.ast_indexes.push(index_stmt as u16);
                 self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
@@ -593,6 +701,7 @@ impl PythonArchEval {
     }
 
     fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
+        self.visit_expr(session, &for_stmt.iter);
         let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
             &for_stmt.iter,
             self.sym_stack.last().unwrap().clone(),
@@ -684,6 +793,7 @@ impl PythonArchEval {
             self.ast_indexes.push(handler_iter as u16);
             match handler {
                 ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
+                    h.type_.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
                     for (index, stmt) in h.body.iter().enumerate() {
                         self.ast_indexes.push(index as u16);
                         self.visit_stmt(session, stmt);
@@ -697,6 +807,9 @@ impl PythonArchEval {
     }
 
     fn _visit_return(&mut self, session: &mut SessionInfo, return_stmt: &StmtReturn) {
+        if let Some(value) = return_stmt.value.as_ref() {
+            self.visit_expr(session, &value);
+        }
         let func = self.sym_stack.last().unwrap().clone();
         if func.borrow().typ() == SymType::FUNCTION {
             if let Some(value) = return_stmt.value.as_ref() {
@@ -711,6 +824,7 @@ impl PythonArchEval {
 
     fn _visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
         for item in with_stmt.items.iter() {
+            self.visit_expr(session, &item.context_expr);
             if let Some(var) = item.optional_vars.as_ref() {
                 match &**var {
                     Expr::Name(expr_name) => {
@@ -753,6 +867,7 @@ impl PythonArchEval {
 
     fn _visit_match(&mut self, session: &mut SessionInfo<'_>, match_stmt: &ruff_python_ast::StmtMatch) {
         for (index_case, case) in match_stmt.cases.iter().enumerate() {
+            case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
             self.ast_indexes.push(index_case as u16);
             for (index_body, stmt) in case.body.iter().enumerate() {
                 self.ast_indexes.push(index_body as u16);
@@ -764,6 +879,7 @@ impl PythonArchEval {
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
+        self.visit_expr(session, &while_stmt.test);
         self.ast_indexes.push(0 as u16); // 0 for body
         for (index, stmt) in while_stmt.body.iter().enumerate() {
             self.ast_indexes.push(index as u16);
