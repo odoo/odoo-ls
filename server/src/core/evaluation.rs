@@ -956,10 +956,16 @@ impl Evaluation {
                     }
                 }
             },
-            ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Ident(_) | ExprOrIdent::Parameter(_) => {
+            ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Expr(Expr::Named(_)) | ExprOrIdent::Ident(_) | ExprOrIdent::Parameter(_) => {
                 let infered_syms = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
                         Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
+                    },
+                    ExprOrIdent::Expr(Expr::Named(expr))  => {
+                        match *expr.target {
+                            Expr::Name(ref expr) => Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(expr.range.end().to_u32())),
+                            _ => panic!("NamedExpr can only have an identifier")
+                        }
                     },
                     ExprOrIdent::Ident(expr) => {
                         Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
@@ -971,6 +977,13 @@ impl Evaluation {
                         unreachable!();
                     }
                 };
+                match ast {
+                    ExprOrIdent::Expr(Expr::Named(expr))  => {
+                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
+                        diagnostics.extend(diags.clone());
+                    }
+                    _ => {}
+                }
 
                 if infered_syms.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
