@@ -320,6 +320,20 @@ impl Symbol {
         }
     }
 
+    pub fn as_namespace(&self) -> &NamespaceSymbol {
+        match self {
+            Symbol::Namespace(n) => n,
+            _ => {panic!("Not a namespace")}
+        }
+    }
+
+    pub fn as_namespace_mut(&mut self) -> &mut NamespaceSymbol {
+        match self {
+            Symbol::Namespace(n) => n,
+            _ => {panic!("Not a namespace")}
+        }
+    }
+
     pub fn as_variable(&self) -> &VariableSymbol {
         match self {
             Symbol::Variable(v) => v,
@@ -926,6 +940,9 @@ impl Symbol {
                     }
                     return Some(ref_sym);
                 }
+            } else if path.is_dir() {
+                let ref_sym = (*parent).borrow_mut().add_new_namespace(session, &name, &path_str);
+                return Some(ref_sym);
             }
         }
         None
@@ -1316,6 +1333,11 @@ impl Symbol {
                 },
                 SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
                     if ref_to_unload.borrow().as_python_package().self_import {
+                        session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
+                    }
+                },
+                SymType::FILE => {
+                    if ref_to_unload.borrow().as_file().self_import {
                         session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
                     }
                 }

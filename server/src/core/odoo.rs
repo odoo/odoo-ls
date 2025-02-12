@@ -290,21 +290,42 @@ impl SyncOdoo {
         }
         let root_symbol = session.sync_odoo.symbols.as_ref().unwrap().clone();
         let config_odoo_path = session.sync_odoo.config.odoo_path.clone();
-        let added_symbol = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo"),  root_symbol.clone(), false);
+        let added_symbol = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo"),  root_symbol.clone(), false);
         if added_symbol.is_none() {
             panic!("Not able to find odoo with given path. Aborting...");
         }
-        added_symbol.as_ref().unwrap().borrow_mut().as_python_package_mut().self_import = true;
-        session.sync_odoo.add_to_rebuild_arch(added_symbol.unwrap());
+        let odoo_typ = added_symbol.as_ref().unwrap().borrow().typ().clone();
+        match odoo_typ {
+            SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
+                added_symbol.as_ref().unwrap().borrow_mut().as_python_package_mut().self_import = true;
+                session.sync_odoo.add_to_rebuild_arch(added_symbol.as_ref().unwrap().clone());
+            },
+            SymType::NAMESPACE => {
+                //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
+                let main_file = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo").join("__main__.py"),  added_symbol.as_ref().unwrap().clone(), false);
+                if main_file.is_none() {
+                    panic!("Not able to find odoo/__main__.py. Aborting...");
+                }
+                main_file.as_ref().unwrap().borrow_mut().as_file_mut().self_import = true;
+                session.sync_odoo.add_to_rebuild_arch(main_file.unwrap());
+            },
+            _ => panic!("Root symbol is not a package or namespace (> 18.0)")
+        }
         SyncOdoo::process_rebuilds(session);
         //search common odoo addons path
-        let addon_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
+        let mut addon_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
         if addon_symbol.is_empty() {
             let odoo = session.sync_odoo.get_symbol(&tree(vec!["odoo"], vec![]), u32::MAX);
             if odoo.is_empty() {
                 panic!("Not able to find odoo. Please check your configuration");
             }
-            panic!("Not able to find odoo/addons. Please check your configuration");
+            //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
+            let addons_folder = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo").join("addons"), added_symbol.as_ref().unwrap().clone(), false);
+            if let Some(addons) = addons_folder {
+                addon_symbol = vec![addons];
+            } else {
+                panic!("Not able to find odoo/addons. Please check your configuration");
+            }
         }
         let addon_symbol = addon_symbol[0].clone();
         if odoo_addon_path.exists() {
