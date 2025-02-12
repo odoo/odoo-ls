@@ -18,6 +18,7 @@ pub struct FileSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
     pub in_workspace: bool,
+    pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4],
     pub dependents: [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3],
@@ -45,6 +46,7 @@ impl FileSymbol {
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             in_workspace: false,
+            self_import: false,
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
