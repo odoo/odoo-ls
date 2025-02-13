@@ -78,7 +78,7 @@ impl PythonArchEval {
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
-            let (ast, func_returns) = match self.file_mode {
+            let (ast, maybe_func_stmt) = match self.file_mode {
                 true => {
                     if file_info.text_hash != symbol.borrow().get_processed_text_hash(){
                         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
@@ -88,18 +88,17 @@ impl PythonArchEval {
                 },
                 false => {
                     let func_stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
-                    (&func_stmt.body, func_stmt.returns.as_ref())
+                    (&func_stmt.body, Some(func_stmt))
                 }
             };
-            if !self.file_mode {
-                PythonArchEval::handle_function_returns(session, func_returns, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
-            }
             for (index, stmt) in ast.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
                 self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
             if !self.file_mode {
+                self.handle_func_decorators(session, maybe_func_stmt, self.sym_stack[0].clone());
+                PythonArchEval::handle_function_returns(session, maybe_func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
                 PythonArchEval::handle_func_evaluations(ast, &self.sym_stack[0]);
             }
         }
@@ -555,7 +554,6 @@ impl PythonArchEval {
         }
         if !self.file_mode || variable.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
-            PythonArchEval::handle_function_returns(session, func_stmt.returns.as_ref(), &variable, &func_stmt.range.end(), &mut self.diagnostics);
             self.sym_stack.push(variable.clone());
             for (index, stmt) in func_stmt.body.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
@@ -563,6 +561,8 @@ impl PythonArchEval {
                 self.ast_indexes.pop();
             }
             self.sym_stack.pop();
+            PythonArchEval::handle_function_returns(session, Some(func_stmt), &variable, &func_stmt.range.end(), &mut self.diagnostics);
+            self.handle_func_decorators(session, Some(func_stmt), variable.clone());
             PythonArchEval::handle_func_evaluations(&func_stmt.body, &variable);
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
         }
@@ -782,19 +782,19 @@ impl PythonArchEval {
     // Evaluate return annotation and add it to function evaluations
     fn handle_function_returns(
         session: &mut SessionInfo,
-        func_returns: Option<&Box<Expr>>,
+        func_stmt: Option<&StmtFunctionDef>,
         func_sym: &Rc<RefCell<Symbol>>,
         max_infer: &TextSize,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        if let Some(returns_ann) = func_returns {
-            let (eval, diags) = Evaluation::eval_from_ast(
+        if let Some(returns_ann) = func_stmt.and_then(|func_stmt| func_stmt.returns.as_ref()) {
+            let (evals, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,
                 func_sym.borrow().parent().and_then(|p| p.upgrade()).unwrap(),
                 max_infer,
             );
-            func_sym.borrow_mut().set_evaluations(eval);
+            func_sym.borrow_mut().set_evaluations(evals);
             diagnostics.extend(diags);
         }
     }
@@ -819,6 +819,45 @@ impl PythonArchEval {
                     Evaluation::new_any()
                 }
             ];
+        }
+    }
+
+    // Read function decorators and set evaluations where applicable
+    // - api.returns -> self -> Self, string -> model name if exists
+    fn handle_func_decorators(
+        &mut self,
+        session: &mut SessionInfo,
+        maybe_func_stmt: Option<&StmtFunctionDef>,
+        func_sym: Rc<RefCell<Symbol>>,
+    ){
+        let Some(func_stmt) = maybe_func_stmt else {return};
+        for decorator in func_stmt.decorator_list.iter(){
+            let (decorator_base, first_arg_expr) = match &decorator.expression {
+                Expr::Call(call_expr) => {
+                    let Some(first_arg) = call_expr.arguments.args.first() else {continue};
+                    (&call_expr.func, first_arg)
+                },
+                _ => {continue;}
+            };
+            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, self.sym_stack.last().unwrap().clone(), &func_stmt.range.start());
+            self.diagnostics.extend(diags);
+            for decorator_eval in dec_evals.iter(){
+                let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None)  else {continue};
+                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
+                let dec_sym_tree = dec_sym.borrow().get_tree();
+                if dec_sym_tree.1 != vec![S!("returns")] || dec_sym_tree.0 != vec![S!("odoo"), S!("api")]{
+                    continue;
+                }
+                let Expr::StringLiteral(expr) = first_arg_expr else {continue};
+                let returns_str = expr.value.to_string();
+                if returns_str == S!("self"){
+                    func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+                }
+                let Some(model) = session.sync_odoo.models.get(&returns_str).cloned() else {continue};
+                let main_syms = model.borrow().get_main_symbols(session, func_sym.borrow().find_module());
+                let Some(main_module_sym) = main_syms.first() else {continue};
+                func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_module_sym), Some(false))]);
+            }
         }
     }
 
