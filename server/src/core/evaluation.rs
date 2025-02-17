@@ -604,7 +604,7 @@ impl Evaluation {
         let odoo = &mut session.sync_odoo;
         let mut evals = vec![];
         let mut diagnostics = vec![];
-        let module: Option<Rc<RefCell<Symbol>>> = parent.borrow().find_module();
+        let module = parent.borrow().find_module();
 
         match ast {
             ExprOrIdent::Expr(Expr::StringLiteral(expr)) => {
@@ -700,9 +700,11 @@ impl Evaluation {
                     However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_sym_weak_eval= base_eval[0].symbol.get_symbol_as_weak(session, context, &mut diagnostics, None);
-                let base_sym = base_sym_weak_eval.weak.upgrade();
-                if let Some(base_sym) = base_sym {
+                let base_sym_weak_eval= base_eval[0].symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
+                let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval, session, context, true, false, None, &mut diagnostics);
+                for base_eval_ptr in base_eval_ptrs.iter() {
+                    let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
+                    let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
                     if base_sym.borrow().typ() == SymType::CLASS {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
@@ -747,7 +749,7 @@ impl Evaluation {
                                                 }
                                                 let object_or_type_weak_eval = &Symbol::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
-                                                        session, context, &mut diagnostics, Some(parent)),
+                                                        session, context, &mut diagnostics, Some(parent.clone())),
                                                         session, &mut None, false, false, None, &mut diagnostics)[0];
                                                 if object_or_type_weak_eval.is_weak() {
                                                     is_instance = object_or_type_weak_eval.as_weak().instance;
@@ -795,7 +797,7 @@ impl Evaluation {
                             } else {
 
                                 //1: find __init__ method
-                                let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module, true, false, false, false);
+                                let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module.clone(), true, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(init) = init.0.first() {
                                     if let Some(init_eval) = init.borrow().evaluations() {
@@ -871,7 +873,7 @@ impl Evaluation {
                             }
                         }
                         if base_sym.borrow().evaluations().is_some() {
-                            let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                            let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
                             let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
                                 SymType::FILE | SymType::PACKAGE(_) => {
                                     parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
@@ -892,12 +894,11 @@ impl Evaluation {
                                     on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance"))
                                         .unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
                                 }
-                                let from_module = parent.borrow().find_module();
                                 diagnostics.extend(Evaluation::validate_call_arguments(session,
                                     &base_sym.borrow().as_func(),
                                     expr,
                                     call_parent.clone(),
-                                    from_module,
+                                    module.clone(),
                                     on_instance));
                             }
                             context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
