@@ -277,6 +277,15 @@ impl Evaluation {
             },
             Expr::BytesLiteral(_b) => {
                 (vec![S!("builtins")], vec![S!("bytes")])
+            },
+            Expr::EllipsisLiteral(_e) => {
+                (vec![S!("builtins")], vec![S!("Ellipsis")])
+            },
+            Expr::NoneLiteral(_n) => {
+                let mut eval = Evaluation::new_none();
+                eval.range = Some(range);
+                eval.value = Some(EvaluationValue::CONSTANT(values));
+                return eval
             }
             _ => {(vec![S!("builtins")], vec![S!("object")])}
         };
