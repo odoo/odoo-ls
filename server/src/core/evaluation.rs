@@ -1,4 +1,4 @@
-use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter};
+use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
@@ -975,6 +975,55 @@ impl Evaluation {
                 let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent.clone(), max_infer);
                 diagnostics.extend(diags);
                 evals.extend(body_evals.into_iter().chain(orelse_evals.into_iter()));
+            },
+            ExprOrIdent::Expr(Expr::UnaryOp(unary_operator)) => 'u_op_block: {
+                let method = match unary_operator.op {
+                    UnaryOp::USub =>  "__neg__",
+                    UnaryOp::UAdd =>  "__pos__",
+                    UnaryOp::Invert =>  "__invert__",
+                    UnaryOp::Not => {
+                        // `Not` just uses internal __bool__ or __len__ and always returns bool
+                        evals.push(Evaluation {
+                            symbol: EvaluationSymbol {
+                                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("bool")]), u32::MAX).last().expect("builtins class not found")),
+                                    context: HashMap::new(),
+                                    instance: Some(true),
+                                    is_super: false,
+                                }),
+                                get_symbol_hook: None
+                            },
+                            value: None,
+                            range: Some(unary_operator.range()),
+                        });
+                        break 'u_op_block
+                    },
+                };
+                let (bases, diags) = Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer);
+                diagnostics.extend(diags);
+                for base in bases.into_iter(){
+                    let base_sym_weak_eval= base.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
+                    let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval, session, context, true, false, None, &mut diagnostics);
+                    for base_eval_ptr in base_eval_ptrs.iter() {
+                        let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
+                        let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
+                        let (operator_functions, diags) = base_sym.borrow().get_member_symbol(session, &S!(method), module.clone(), true, false, false, false);
+                        diagnostics.extend(diags);
+                        for operator_function in operator_functions.into_iter(){
+                            for eval in operator_function.borrow().evaluations().unwrap_or(&vec![]).iter() {
+                                let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
+                                evals.push(Evaluation{
+                                    symbol: EvaluationSymbol {
+                                        sym: eval_ptr,
+                                        get_symbol_hook: None,
+                                    },
+                                    value: None,
+                                    range: Some(unary_operator.range())
+                                });
+                            }
+                        }
+                    }
+                }
             },
             _ => {}
         }
