@@ -966,7 +966,16 @@ impl Evaluation {
                     },
                     _ => {}
                 }
-            }
+            },
+            ExprOrIdent::Expr(Expr::If(if_expr)) => {
+                let (_, diags) = Evaluation::eval_from_ast(session, &if_expr.test, parent.clone(), max_infer);
+                diagnostics.extend(diags);
+                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent.clone(), max_infer);
+                diagnostics.extend(diags);
+                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent.clone(), max_infer);
+                diagnostics.extend(diags);
+                evals.extend(body_evals.into_iter().chain(orelse_evals.into_iter()));
+            },
             _ => {}
         }
         AnalyzeAstResult { evaluations: evals, diagnostics }
