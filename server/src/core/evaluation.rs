@@ -1,4 +1,4 @@
-use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Operator, Parameter};
+use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
@@ -269,7 +269,11 @@ impl Evaluation {
                 (vec![S!("builtins")], vec![S!("bool")])
             },
             Expr::NumberLiteral(_n) => {
-                (vec![S!("builtins")], vec![S!("int")]) //TODO
+                match _n.value {
+                    Number::Float(_) => (vec![S!("builtins")], vec![S!("float")]),
+                    Number::Int(_) => (vec![S!("builtins")], vec![S!("int")]),
+                    Number::Complex { .. } => (vec![S!("builtins")], vec![S!("complex")]),
+                }
             },
             Expr::BytesLiteral(_b) => {
                 (vec![S!("builtins")], vec![S!("bytes")])
