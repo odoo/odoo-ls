@@ -1552,8 +1552,10 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolPtr> {
+    pub fn next_refs(session: &mut SessionInfo, symbol_rc: Rc<RefCell<Symbol>>, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolPtr> {
         //if current symbol is a descriptor, we have to resolve __get__ method before going further
+        let mut res = VecDeque::new();
+        let symbol = &*symbol_rc.borrow();
         if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
             let base_attr = base_attr.as_symbol().upgrade();
             if let Some(base_attr) = base_attr {
@@ -1575,6 +1577,11 @@ impl Symbol {
                                     let mut eval = Evaluation::eval_from_symbol(&get_result.weak, get_result.instance);
                                     match eval.symbol.get_mut_symbol_ptr() {
                                         EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                            if let Some(eval_sym_rc) = weak.weak.upgrade(){
+                                                if Rc::ptr_eq(&eval_sym_rc, &symbol_rc){
+                                                    continue;
+                                                }
+                                            }
                                             weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_attr)));
                                             res.push_back(eval.symbol.get_symbol_ptr().clone());
                                         },
@@ -1590,31 +1597,24 @@ impl Symbol {
                 }
             }
         }
-        match symbol {
-            Symbol::Variable(v) => {
-                let mut res = VecDeque::new();
-                for eval in v.evaluations.iter() {
-                    let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
-                    let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
-                    match sym {
-                        EvaluationSymbolPtr::WEAK(ref mut w) => {
-                            if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
-                                w.context.insert(S!("base_attr"), base_attr.clone());
-                            }
-                        },
-                        _ => {}
-                    }
-                    if !sym.is_expired_if_weak() {
-                        res.push_back(sym);
-                    }
+        if let Symbol::Variable(v) = symbol {
+            for eval in v.evaluations.iter() {
+                let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
+                let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
+                match sym {
+                    EvaluationSymbolPtr::WEAK(ref mut w) => {
+                        if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+                            w.context.insert(S!("base_attr"), base_attr.clone());
+                        }
+                    },
+                    _ => {}
                 }
-                res
-            },
-            _ => {
-                let vec = VecDeque::new();
-                vec
+                if !sym.is_expired_if_weak() {
+                    res.push_back(sym);
+                }
             }
         }
+        res
     }
 
     /*
@@ -1629,7 +1629,7 @@ impl Symbol {
                 };
                 //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
                 //TODO there is no loop detection
-                let mut results = Symbol::next_refs(session, &symbol.borrow(), context, &w.context, stop_on_type, &mut vec![]);
+                let mut results = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);
                 if results.is_empty() {
                     return vec![evaluation.clone()];
                 }
@@ -1637,6 +1637,7 @@ impl Symbol {
                 let mut index = 0;
                 while index < results.len() {
                     let next_ref = &results[index];
+                    index += 1;
                     match next_ref {
                         EvaluationSymbolPtr::WEAK(next_ref_weak) => {
                             let sym = next_ref_weak.weak.upgrade();
@@ -1644,20 +1645,17 @@ impl Symbol {
                                 index += 1;
                                 continue;
                             }
-                            let sym = sym.unwrap();
-                            let sym = sym.borrow();
+                            let sym_rc = sym.unwrap();
+                            let sym = sym_rc.borrow();
                             match *sym {
                                 Symbol::Variable(ref v) => {
                                     if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !v.is_import_variable {
-                                        index += 1;
                                         continue;
                                     }
                                     if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
-                                        index += 1;
                                         continue;
                                     }
                                     if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
-                                        index += 1;
                                         continue;
                                     }
                                     if v.evaluations.is_empty() && can_eval_external {
@@ -1671,8 +1669,7 @@ impl Symbol {
                                             }
                                         }
                                     }
-                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &next_ref_weak.context, stop_on_type, &mut vec![]);
-                                    index += 1;
+                                    let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     if !next_sym_refs.is_empty() {
                                         results.pop_front();
                                         index -= 1;
@@ -1681,10 +1678,9 @@ impl Symbol {
                                         }
                                     }
                                 },
-                                Symbol::Class(ref c) => {
+                                Symbol::Class(_) => {
                                     //On class, follow descriptor declarations
-                                    let next_sym_refs = Symbol::next_refs(session, &sym, context, &next_ref_weak.context, stop_on_type, &mut vec![]);
-                                    index += 1;
+                                    let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     if !next_sym_refs.is_empty() {
                                         results.pop_front();
                                         index -= 1;
@@ -1693,14 +1689,11 @@ impl Symbol {
                                         }
                                     }
                                 },
-                                _ => {
-                                    index += 1;
-                                }
+                                _ => {}
                             }
                         },
-                        _ => {index += 1}
+                        _ => {}
                     }
-                    
                 }
                 Vec::from(results) // :'( a whole copy?
             },
