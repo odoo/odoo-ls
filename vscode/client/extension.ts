@@ -22,10 +22,8 @@ import {
     ConfigurationTarget,
 } from "vscode";
 import {
-    LanguageClient,
     LanguageClientOptions,
     ServerOptions,
-    integer,
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./views/welcome/welcomeWebView";
 import { ConfigurationWebView } from './views/configurations/configurationWebView';
@@ -44,6 +42,7 @@ import {
     migrateAfterDelay,
     migrateConfigToSettings
 } from "./migration/migrateConfig";
+import { SafeLanguageClient } from "./common/safeLanguageClient";
 import { constants } from "fs/promises";
 import { PVSC_EXTENSION_ID } from "@vscode/python-extension";
 
@@ -155,7 +154,7 @@ function updateLastRecordedVersion(context: ExtensionContext) {
     context.globalState.update("Odoo.lastRecordedVersion", context.extension.packageJSON.version);
 }
 
-function startLangServerTCP(addr: number, outputChannel: OutputChannel): LanguageClient {
+function startLangServerTCP(addr: number, outputChannel: OutputChannel): SafeLanguageClient {
     const serverOptions: ServerOptions = () => {
         return new Promise((resolve /*, reject */) => {
             const clientSocket = new net.Socket();
@@ -172,7 +171,7 @@ function startLangServerTCP(addr: number, outputChannel: OutputChannel): Languag
 
     clientOptions.outputChannel = outputChannel;
 
-    return new LanguageClient(
+    return new SafeLanguageClient(
         'odooServer',
         `Odoo Server`,
         serverOptions,
@@ -185,7 +184,7 @@ function startLangServer(
     args: string[],
     cwd: string,
     outputChannel: OutputChannel
-): LanguageClient {
+): SafeLanguageClient {
     const serverOptions: ServerOptions = {
         command,
         args,
@@ -194,7 +193,7 @@ function startLangServer(
     const clientOptions: LanguageClientOptions = getClientOptions();
     clientOptions.outputChannel = outputChannel;
 
-    return new LanguageClient('odooServer', 'Odoo Server', serverOptions, clientOptions);
+    return new SafeLanguageClient('odooServer', 'Odoo Server', serverOptions, clientOptions);
 }
 
 async function setStatusConfig(context: ExtensionContext) {
@@ -291,7 +290,7 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 }
 
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
-    let client : LanguageClient;
+    let client : SafeLanguageClient;
     try {
         await updatePythonPath(context);
         if (!workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
