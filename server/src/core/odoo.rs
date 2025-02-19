@@ -60,6 +60,7 @@ pub struct SyncOdoo {
     pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
     pub models: HashMap<String, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
+    pub terminate_rebuild: Arc<AtomicBool>,
     pub watched_file_updates: Arc<AtomicU32>,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -94,6 +95,7 @@ impl SyncOdoo {
             modules: HashMap::new(),
             models: HashMap::new(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
+            terminate_rebuild: Arc::new(AtomicBool::new(false)),
             watched_file_updates: Arc::new(AtomicU32::new(0)),
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
@@ -212,8 +214,7 @@ impl SyncOdoo {
         };
         let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, session.sync_odoo.symbols.as_ref().unwrap().clone(), false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
-        SyncOdoo::process_rebuilds(session);
-        true
+        SyncOdoo::process_rebuilds(session)
     }
 
     pub fn build_database(session: &mut SessionInfo) {
@@ -311,7 +312,9 @@ impl SyncOdoo {
             },
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
         }
-        SyncOdoo::process_rebuilds(session);
+        if !SyncOdoo::process_rebuilds(session){
+            return false;
+        }
         //search common odoo addons path
         let mut addon_symbol = session.sync_odoo.get_symbol(&tree(vec!["odoo", "addons"], vec![]), u32::MAX);
         if addon_symbol.is_empty() {
@@ -372,7 +375,9 @@ impl SyncOdoo {
                 }
             }
         }
-        SyncOdoo::process_rebuilds(session);
+        if !SyncOdoo::process_rebuilds(session){
+            return;
+        }
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
         //fs::write("out_architecture.json", self.get_symbol(&tree(vec!["odoo", "addons", "module_1"], vec![])).as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
         let modules_count = session.sync_odoo.modules.len();
@@ -459,7 +464,7 @@ impl SyncOdoo {
         }
     }
 
-    pub fn process_rebuilds(session: &mut SessionInfo) {
+    pub fn process_rebuilds(session: &mut SessionInfo) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         SyncOdoo::add_from_self_reload(session);
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
@@ -470,6 +475,10 @@ impl SyncOdoo {
         while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_odoo.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
             if DEBUG_THREADS {
                 trace!("remains: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+            }
+            if session.sync_odoo.terminate_rebuild.load(Ordering::SeqCst){
+                info!("Terminating rebuilds due to server shutdown");
+                return false;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
             if let Some(sym_rc) = sym {
@@ -523,7 +532,7 @@ impl SyncOdoo {
                     session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
                     session.request_delayed_rebuild();
                     session.sync_odoo.add_to_validations(sym_rc.clone());
-                    return;
+                    return true;
                 }
                 let mut validator = PythonValidator::new(sym_rc);
                 validator.validate(session);
@@ -535,6 +544,7 @@ impl SyncOdoo {
             SessionInfo::request_reload(session);
         }
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+        true
     }
 
     pub fn rebuild_arch_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {

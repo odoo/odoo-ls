@@ -36,6 +36,7 @@ pub struct Server {
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
     interrupt_rebuild_boolean: Arc<AtomicBool>,
+    terminate_rebuild_boolean: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -79,6 +80,7 @@ impl Server {
         let mut threads = vec![];
         let sync_odoo = Arc::new(Mutex::new(SyncOdoo::new()));
         let interrupt_rebuild_boolean = sync_odoo.lock().unwrap().interrupt_rebuild.clone();
+        let terminate_rebuild_boolean = sync_odoo.lock().unwrap().terminate_rebuild.clone();
         let mut receivers_w_to_s = vec![];
         let mut senders_s_to_main = vec![];
         let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
@@ -149,6 +151,7 @@ impl Server {
             delayed_process_thread,
             sync_odoo: sync_odoo,
             interrupt_rebuild_boolean: interrupt_rebuild_boolean,
+            terminate_rebuild_boolean
         }
     }
 
@@ -272,6 +275,7 @@ impl Server {
     }
 
     fn shutdown_threads(&mut self, message: &str){
+        self.terminate_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
         let shutdown_notification = Message::Notification(lsp_server::Notification{
             method: Shutdown::METHOD.to_string(),
             params: serde_json::Value::Null,
