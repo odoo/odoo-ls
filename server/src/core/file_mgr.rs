@@ -17,6 +17,8 @@ use crate::S;
 use crate::constants::*;
 use ruff_text_size::TextRange;
 
+use super::odoo::SyncOdoo;
+
 #[derive(Debug)]
 pub struct FileInfo {
     pub ast: Option<Vec<ruff_python_ast::Stmt>>,
@@ -259,10 +261,10 @@ impl FileMgr {
         (updated, return_info)
     }
 
-    pub fn delete_path(&mut self, session: &mut SessionInfo, uri: &String) {
-        let to_del = self.files.remove(uri);
+    pub fn delete_path(session: &mut SessionInfo, uri: &String) {
+        let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(uri);
         if let Some(to_del) = to_del {
-            if self.is_in_workspace(uri) {
+            if SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
                 to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
                 to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
@@ -274,9 +276,9 @@ impl FileMgr {
         }
     }
 
-    pub fn clear(&mut self, session: &mut SessionInfo) {
-        for file in self.files.values() {
-            if self.is_in_workspace(&file.borrow().uri) {
+    pub fn clear(session: &mut SessionInfo) {
+        for file in session.sync_odoo.get_file_mgr().borrow_mut().files.values().clone() {
+            if SyncOdoo::is_in_workspace_or_entry(session, &file.borrow().uri) {
                 let mut to_del = (**file).borrow_mut();
                 to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
                 to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
@@ -286,7 +288,7 @@ impl FileMgr {
                 to_del.publish_diagnostics(session)
             }
         }
-        self.files.clear();
+        session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
     }
 
     pub fn add_workspace_folder(&mut self, path: String) {

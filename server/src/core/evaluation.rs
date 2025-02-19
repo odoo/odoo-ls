@@ -205,7 +205,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("list")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("list")]), u32::MAX).last().expect("builtins list not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -221,7 +221,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).last().expect("builtins list not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -237,7 +237,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).last().expect("builtins list not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -278,7 +278,7 @@ impl Evaluation {
         };
         let symbol;
         if !values.is_none_literal_expr() {
-            symbol = Rc::downgrade(&odoo.get_symbol(&tree_value, u32::MAX).last().expect("builtins class not found"));
+            symbol = Rc::downgrade(&odoo.get_symbol("", &tree_value, u32::MAX).last().expect("builtins class not found"));
         } else {
             symbol = Weak::new();
         }
@@ -627,7 +627,7 @@ impl Evaluation {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
                         } else {
-                            if base_sym.borrow().get_tree() == (vec![S!("builtins")], vec![S!("super")]){
+                            if base_sym.borrow().match_tree_from_any_entry(session, &(vec![S!("builtins")], vec![S!("super")])){
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty(){
                                     let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer);
@@ -786,7 +786,7 @@ impl Evaluation {
                             base_sym.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
                             && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
                             && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
-                                let mut v = PythonValidator::new(base_sym.clone());
+                                let mut v = PythonValidator::new(base_sym.borrow().get_entry().unwrap(), base_sym.clone());
                                 v.validate(session);
                             }
                         }

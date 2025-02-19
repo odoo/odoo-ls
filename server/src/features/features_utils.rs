@@ -34,7 +34,7 @@ impl FeaturesUtils {
                 let Some(callable_sym) = callable.weak.upgrade() else {
                      continue
                 };
-                if !callable_sym.borrow().is_field_class(){
+                if !callable_sym.borrow().is_field_class(session){
                     continue;
                 }
                 let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {

@@ -1,5 +1,6 @@
 pub mod class_symbol;
 pub mod compiled_symbol;
+pub mod disk_dir_symbol;
 pub mod file_symbol;
 pub mod function_symbol;
 pub mod module_symbol;

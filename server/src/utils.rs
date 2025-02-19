@@ -2,6 +2,8 @@ use std::{fs, path::{Path, PathBuf}, str::FromStr};
 use path_slash::{PathBufExt, PathExt};
 use ruff_text_size::TextSize;
 
+use crate::constants::Tree;
+
 #[macro_export]
 macro_rules! S {
     ($x: expr) => {
@@ -100,6 +102,7 @@ impl ToFilePath for lsp_types::Uri {
 
 pub trait PathSanitizer {
     fn sanitize(&self) -> String;
+    fn to_tree(&self) -> Tree;
 }
 
 impl PathSanitizer for PathBuf {
@@ -118,6 +121,17 @@ impl PathSanitizer for PathBuf {
 
         path
     }
+
+    fn to_tree(&self) -> Tree {
+        let mut tree = (vec![], vec![]);
+        self.components().for_each(|c| {
+            tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
+        });
+        if matches!(tree.0.last().unwrap().as_str(), "__init__" | "__manifest__") {
+            tree.0.pop();
+        }
+        tree
+    }
 }
 
 impl PathSanitizer for Path {
@@ -135,6 +149,17 @@ impl PathSanitizer for Path {
         }
 
         path
+    }
+
+    fn to_tree(&self) -> Tree {
+        let mut tree = (vec![], vec![]);
+        self.components().for_each(|c| {
+            tree.0.push(c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "").to_string());
+        });
+        if matches!(tree.0.last().unwrap().as_str(), "__init__" | "__manifest__") {
+            tree.0.pop();
+        }
+        tree
     }
 }
 

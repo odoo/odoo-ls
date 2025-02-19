@@ -15,13 +15,15 @@ use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
 
-use super::evaluation::{Evaluation, EvaluationValue};
-use super::file_mgr::FileInfo;
+use super::entry_point::EntryPoint;
+use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationValue};
+use super::file_mgr::{FileInfo, FileMgr};
 use super::python_arch_builder::PythonArchBuilder;
 use super::python_arch_eval::PythonArchEval;
 
 #[derive(Debug)]
 pub struct PythonValidator {
+    entry_point: Rc<RefCell<EntryPoint>>,
     file_mode: bool,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
@@ -33,8 +35,9 @@ pub struct PythonValidator {
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> Self {
         Self {
+            entry_point,
             file_mode: true,
             sym_stack: vec![symbol],
             diagnostics: vec![],
@@ -103,11 +106,11 @@ impl PythonValidator {
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-                    let mut builder = PythonArchBuilder::new(func.clone());
+                    let mut builder = PythonArchBuilder::new(self.entry_point.clone(), func.clone());
                     builder.load_arch(session);
                 }
                 if func.borrow().as_func().arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
-                    let mut builder = PythonArchEval::new(func.clone());
+                    let mut builder = PythonArchEval::new(self.entry_point.clone(), func.clone());
                     builder.eval_arch(session);
                 }
                 if func.borrow().as_func().arch_eval_status != BuildStatus::DONE {
@@ -144,7 +147,7 @@ impl PythonValidator {
                 if !symbol.is_external() {
                     return
                 }
-                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &symbol.paths()[0].to_string());
+                FileMgr::delete_path(session, &symbol.paths()[0].to_string());
             } else {
                 drop(symbol);
                 let file_info = self.get_file_info(session.sync_odoo);
@@ -162,7 +165,7 @@ impl PythonValidator {
                     if let Some(sym) = sym {
                         let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(sym.clone());
+                            let mut v = PythonValidator::new(self.entry_point.clone(), sym.clone());
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
@@ -265,27 +268,43 @@ impl PythonValidator {
     fn _resolve_import(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
         let file_symbol = self.sym_stack[0].borrow().get_file();
         let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
-        let import_results = resolve_import_stmt(
-            session,
-            &file_symbol,
-            from_stmt,
-            name_aliases,
-            level,
-            &mut None);
-        for import_result in import_results.iter() {
-            if import_result.found && self.current_module.is_some() {
-                let module = import_result.symbol.borrow().find_module();
-                if let Some(module) = module {
-                    if !ModuleSymbol::is_in_deps(session, self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) && !self.safe_imports.last().unwrap() {
-                        self.diagnostics.push(Diagnostic::new(
-                            Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(NumberOrString::String(S!("OLS30103"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("{} is not in the dependencies of the module", module.borrow().as_module_package().dir_name),
-                            None,
-                            None,
-                        ))
+        for alias in name_aliases.iter() {
+            if alias.name.id == "*" {
+                continue;
+            }
+            if self.current_module.is_some() {
+                let var_name = if alias.asname.is_none() {
+                    S!(alias.name.split(".").next().unwrap())
+                } else {
+                    alias.asname.as_ref().unwrap().clone().to_string()
+                };
+                let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&var_name, &alias.range);
+                if let Some(variable) = variable {
+                    for evaluation in variable.borrow().evaluations().as_ref().unwrap().iter() {
+                        let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol.clone()));
+                        match eval_sym {
+                            EvaluationSymbolPtr::WEAK(w) => {
+                                if let Some(symbol) = w.weak.upgrade() {
+                                    let module = symbol.borrow().find_module();
+                                    if let Some(module) = module {
+                                        if !ModuleSymbol::is_in_deps(session, self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) && !self.safe_imports.last().unwrap() {
+                                            self.diagnostics.push(Diagnostic::new(
+                                                Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
+                                                Some(DiagnosticSeverity::ERROR),
+                                                Some(NumberOrString::String(S!("OLS30103"))),
+                                                Some(EXTENSION_NAME.to_string()),
+                                                format!("{} is not in the dependencies of the module", module.borrow().as_module_package().dir_name),
+                                                None,
+                                                None,
+                                            ))
+                                        }
+                                    }
+                                }
+                            },
+                            _ => {
+                                panic!("Internal error: evaluated has invalid evaluationType");
+                            }
+                        }
                     }
                 }
             }

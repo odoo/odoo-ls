@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
 
-use crate::{core::{config::RefreshMode, odoo::{Odoo, SyncOdoo}}, server::ServerError, S};
+use crate::{core::{config::RefreshMode, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
 pub struct SessionInfo<'a> {
     sender: Sender<Message>,
@@ -81,12 +81,8 @@ impl <'a> SessionInfo<'a> {
 
     pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, forced_delay: bool) {
         if !forced_delay && (session.delayed_process_sender.is_none() || !session.sync_odoo.need_rebuild && session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive && session.sync_odoo.get_rebuild_queue_size() < 10) {
-            let tree = session.sync_odoo.tree_from_path(path);
-            if tree.is_ok() { //is part of odoo (and in addons path)
-                let tree = tree.unwrap().clone();
-                let _ = SyncOdoo::_unload_path(session, path, false);
-                SyncOdoo::search_symbols_to_rebuild(session, &tree);
-            }
+            let _ = SyncOdoo::_unload_path(session, &path, false);
+            Odoo::search_symbols_to_rebuild(session, &path.sanitize());
             SyncOdoo::process_rebuilds(session);
         } else {
             if forced_delay {
@@ -267,12 +263,8 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                         SyncOdoo::reset(&mut session, config);
                     } else {
                         if let Some(path) = update_file_index {
-                            let tree = session.sync_odoo.tree_from_path(&path);
-                            if tree.is_ok() { //is part of odoo (and in addons path)
-                                let tree = tree.unwrap().clone();
-                                let _ = SyncOdoo::_unload_path(&mut session, &path, false);
-                                SyncOdoo::search_symbols_to_rebuild(&mut session, &tree);
-                            }
+                            let _ = SyncOdoo::_unload_path(&mut session, &path, false);
+                            Odoo::search_symbols_to_rebuild(&mut session, &path.sanitize());
                         }
                         SyncOdoo::process_rebuilds(&mut session);
                     }

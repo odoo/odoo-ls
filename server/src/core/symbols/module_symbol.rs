@@ -308,7 +308,7 @@ impl ModuleSymbol {
             if !session.sync_odoo.modules.contains_key(depend) {
                 let module = find_module(session, odoo_addons.clone(), depend);
                 if module.is_none() {
-                    session.sync_odoo.not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
+                    symbol.get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
                     symbol.not_found_paths_mut().push((BuildSteps::ARCH, vec![S!("odoo"), S!("addons"), depend.clone()]));
                     diagnostics.push(Diagnostic::new(
                         Range::new(Position::new(0, 0), Position::new(0, 1)),
