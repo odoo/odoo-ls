@@ -75,50 +75,14 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
     }},*/
     PythonArchEvalFileHook {odoo_entry: true,
                             file_tree: vec![S!("odoo"), S!("api")],
-                            content_tree: vec![S!("Environment"), S!("cr")],
+                            content_tree: vec![S!("Environment"), S!("registry")],
                             if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
-        let cursor_file = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("sql_db")], vec![]), u32::MAX);
-        let cursor_sym = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("sql_db")], vec![S!("Cursor")]), u32::MAX);
-        if !cursor_sym.is_empty() {
+                            func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        let registry_sym = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("modules"), S!("registry")], vec![S!("Registry")]), u32::MAX);
+        if !registry_sym.is_empty() {
             symbol.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
-                    Rc::downgrade(cursor_sym.last().unwrap()),
-                    Some(true),
-                    HashMap::new(),
-                    Some(PythonArchEvalHooks::eval_test_cursor)
-                ),
-                value: None,
-                range: None,
-            }]);
-            file_symbol.borrow_mut().add_dependency(&mut cursor_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
-        }
-    }},
-    PythonArchEvalFileHook {odoo_entry: true,
-                            file_tree: vec![S!("odoo"), S!("tests"), S!("common")],
-                            content_tree: vec![S!("TransactionCase"), S!("env")],
-                            if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
-        let env_file = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("api")], vec![]), u32::MAX);
-        let mut sym_ref = symbol.borrow_mut();
-        for evaluation in sym_ref.evaluations_mut().unwrap(){
-            if let EvaluationSymbolPtr::WEAK(weak) = evaluation.symbol.get_mut_symbol_ptr() {
-                weak.context.insert(S!("test_mode"), ContextValue::BOOLEAN(true));
-            }
-        }
-        file_symbol.borrow_mut().add_dependency(&mut env_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
-    }},
-    PythonArchEvalFileHook {odoo_entry: true,
-                            file_tree: vec![S!("odoo"), S!("tests"), S!("common")],
-                            content_tree: vec![S!("TransactionCase"), S!("cr")],
-                            if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
-        let cursor_file = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("sql_db")], vec![]), u32::MAX);
-        let cursor_sym = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
-        if !cursor_sym.is_empty() {
-            symbol.borrow_mut().set_evaluations(vec![Evaluation {
-                symbol: EvaluationSymbol::new_with_symbol(
-                    Rc::downgrade(cursor_sym.last().unwrap()),
+                    Rc::downgrade(registry_sym.last().unwrap()),
                     Some(true),
                     HashMap::new(),
                     None
@@ -126,7 +90,6 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                 value: None,
                 range: None,
             }]);
-            file_symbol.borrow_mut().add_dependency(&mut cursor_file.last().unwrap().borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
         }
     }},
     /* As __get__ doesn't exists in each class, the validator will not trigger hooks for them at function level, so we put it at file level. */
@@ -651,19 +614,6 @@ impl PythonArchEvalHooks {
             _ => {}
         }
         result
-    }
-
-    fn eval_test_cursor(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
-    {
-        if context.is_some() && context.as_ref().unwrap().get(&S!("test_mode")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool() {
-            let test_cursor_sym = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path, &(vec![S!("odoo"), S!("sql_db")], vec![S!("TestCursor")]), u32::MAX);
-            if test_cursor_sym.len() > 0 {
-                    return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Rc::downgrade(test_cursor_sym.last().unwrap()), Some(true), false)));
-            } else {
-                    return None;
-            }
-        }
-        Some(evaluation_sym.get_symbol_ptr().clone())
     }
 
     fn eval_get(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>

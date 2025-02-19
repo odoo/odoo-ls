@@ -51,6 +51,8 @@ impl PythonArchBuilderHooks {
                     // ----------- env.su ------------
                     let su_sym = sym.add_new_variable(session, &S!("su"), &range);
                     su_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("whether in superuser mode"));
+                    // ----------- env.registry -----------
+                    let _ = sym.add_new_variable(session, &S!("registry"), &range);
                 }
             },
             "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
