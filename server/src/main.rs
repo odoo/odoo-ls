@@ -81,11 +81,12 @@ fn main() {
         serv.initialize().expect("Error while initializing server");
         let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
         std::panic::set_hook(Box::new(move |panic_info| {
+            let backtrace = std::backtrace::Backtrace::capture();
             panic_hook(panic_info);
             let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
                 method: "Odoo/displayCrashNotification".to_string(),
                 params: json!({
-                    "crashInfo": format!("{panic_info}"),
+                    "crashInfo": format!("{panic_info}\n\nTraceback:\n{backtrace}"),
                     "pid": std::process::id()
                 })
             }));
@@ -101,10 +102,11 @@ fn main() {
         let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
         std::panic::set_hook(Box::new(move |panic_info| {
             panic_hook(panic_info);
+            let backtrace = std::backtrace::Backtrace::capture();
             let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
                 method: "Odoo/displayCrashNotification".to_string(),
                 params: json!({
-                    "crashInfo": format!("{panic_info}"),
+                    "crashInfo": format!("{panic_info}\n\nTraceback:\n{backtrace}"),
                     "pid": std::process::id()
                 })
             }));
