@@ -3,6 +3,7 @@ use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::constants::*;
+use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
@@ -25,6 +26,7 @@ use crate::core::symbols::root_symbol::RootSymbol;
 
 use super::class_symbol::ClassSymbol;
 use super::compiled_symbol::CompiledSymbol;
+use super::disk_dir_symbol::DiskDirSymbol;
 use super::file_symbol::FileSymbol;
 use super::namespace_symbol::{NamespaceDirectory, NamespaceSymbol};
 use super::package_symbol::{PackageSymbol, PythonPackageSymbol};
@@ -34,6 +36,7 @@ use super::variable_symbol::VariableSymbol;
 #[derive(Debug)]
 pub enum Symbol {
     Root(RootSymbol),
+    DiskDir(DiskDirSymbol),
     Namespace(NamespaceSymbol),
     Package(PackageSymbol),
     File(FileSymbol),
@@ -63,8 +66,11 @@ impl Symbol {
                 p.add_file(&file);
             },
             Symbol::Root(r) => {
-                r.add_file(session, &file);
-            }
+                r.add_file(&file);
+            },
+            Symbol::DiskDir(d) => {
+                d.add_file(&file);
+            },
             _ => { panic!("Impossible to add a file to a {}", self.typ()); }
         }
         file
@@ -89,7 +95,10 @@ impl Symbol {
                 p.add_file(&package);
             },
             Symbol::Root(r) => {
-                r.add_file(session, &package)
+                r.add_file(&package)
+            },
+            Symbol::DiskDir(d) => {
+                d.add_file(&package)
             }
             _ => { panic!("Impossible to add a package to a {}", self.typ()); }
         }
@@ -120,7 +129,7 @@ impl Symbol {
                 p.add_file(&package);
             },
             Symbol::Root(r) => {
-                r.add_file(session, &package)
+                r.add_file(&package)
             }
             _ => { panic!("Impossible to add a package to a {}", self.typ()); }
         }
@@ -139,7 +148,29 @@ impl Symbol {
                 p.add_file(&namespace);
             },
             Symbol::Root(r) => {
-                r.add_file(session, &namespace);
+                r.add_file(&namespace);
+            }
+            _ => { panic!("Impossible to add a namespace to a {}", self.typ()); }
+        }
+        namespace
+    }
+
+    pub fn add_new_disk_dir(&mut self, name: &String, path: &String) -> Rc<RefCell<Self>> {
+        let namespace = Rc::new(RefCell::new(Symbol::DiskDir(DiskDirSymbol::new(name.clone(), path.clone(), self.is_external()))));
+        namespace.borrow_mut().set_weak_self(Rc::downgrade(&namespace));
+        namespace.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
+        match self {
+            Symbol::Namespace(n) => {
+                n.add_file(&namespace);
+            },
+            Symbol::Package(p) => {
+                p.add_file(&namespace);
+            },
+            Symbol::Root(r) => {
+                r.add_file(&namespace);
+            },
+            Symbol::DiskDir(d) => {
+                d.add_file(&namespace);
             }
             _ => { panic!("Impossible to add a namespace to a {}", self.typ()); }
         }
@@ -158,10 +189,13 @@ impl Symbol {
                 p.add_file(&compiled);
             },
             Symbol::Root(r) => {
-                r.add_file(session, &compiled);
+                r.add_file(&compiled);
             },
             Symbol::Compiled(c) => {
                 c.add_compiled(&compiled);
+            },
+            Symbol::DiskDir(d) => {
+                d.add_file(&compiled);
             }
             _ => { panic!("Impossible to add a compiled to a {}", self.typ()); }
         }
@@ -376,6 +410,20 @@ impl Symbol {
         }
     }
 
+    pub fn as_disk_dir_sym(&self) -> &DiskDirSymbol {
+        match self {
+            Symbol::DiskDir(d) => d,
+            _ => {panic!("Not a disk_dir")}
+        }
+    }
+
+    pub fn as_disk_dir_sym_mut(&mut self) -> &mut DiskDirSymbol {
+        match self {
+            Symbol::DiskDir(d) => d,
+            _ => {panic!("Not a disk_dir")}
+        }
+    }
+
     pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
         match self {
             Symbol::File(f) => f,
@@ -391,6 +439,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => SymType::ROOT,
             Symbol::Namespace(_) => SymType::NAMESPACE,
+            Symbol::DiskDir(_) => SymType::DISK_DIR,
             Symbol::Package(PackageSymbol::Module(_)) => SymType::PACKAGE(PackageType::MODULE),
             Symbol::Package(PackageSymbol::PythonPackage(_)) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
             Symbol::File(_) => SymType::FILE,
@@ -404,6 +453,7 @@ impl Symbol {
     pub fn name(&self) -> &String {
         match self {
             Symbol::Root(r) => &r.name,
+            Symbol::DiskDir(d) => &d.name,
             Symbol::Namespace(n) => &n.name,
             Symbol::Package(p) => &p.name(),
             Symbol::File(f) => &f.name,
@@ -417,6 +467,7 @@ impl Symbol {
     pub fn doc_string(&self) -> &Option<String> {
         match self {
             Symbol::Root(_) => &None,
+            Self::DiskDir(_) => &None,
             Symbol::Namespace(_) => &None,
             Symbol::Package(_) => &None,
             Symbol::File(_) => &None,
@@ -430,6 +481,7 @@ impl Symbol {
     pub fn set_doc_string(&mut self, doc_string: Option<String>) {
         match self {
             Symbol::Root(_) => panic!(),
+            Self::DiskDir(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
             Symbol::Package(_) => panic!(),
             Symbol::File(_) => panic!(),
@@ -443,6 +495,7 @@ impl Symbol {
     pub fn is_external(&self) -> bool {
         match self {
             Symbol::Root(_) => false,
+            Self::DiskDir(d) => d.is_external,
             Symbol::Namespace(n) => n.is_external,
             Symbol::Package(p) => p.is_external(),
             Symbol::File(f) => f.is_external,
@@ -455,6 +508,7 @@ impl Symbol {
     pub fn set_is_external(&mut self, external: bool) {
         match self {
             Symbol::Root(_) => {},
+            Self::DiskDir(d) => d.is_external = external,
             Symbol::Namespace(n) => n.is_external = external,
             Symbol::Package(PackageSymbol::Module(m)) => m.is_external = external,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.is_external = external,
@@ -469,6 +523,7 @@ impl Symbol {
     pub fn has_range(&self) -> bool {
         match self {
             Symbol::Root(_) => false,
+            Self::DiskDir(_) => false,
             Symbol::Namespace(_) => false,
             Symbol::Package(_) => false,
             Symbol::File(_) => false,
@@ -482,6 +537,7 @@ impl Symbol {
     pub fn range(&self) -> &TextRange {
         match self {
             Symbol::Root(_) => panic!(),
+            Self::DiskDir(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
             Symbol::Package(_) => panic!(),
             Symbol::File(_) => panic!(),
@@ -495,6 +551,7 @@ impl Symbol {
     pub fn body_range(&self) -> &TextRange {
         match self {
             Symbol::Root(_) => panic!(),
+            Self::DiskDir(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
             Symbol::Package(_) => panic!(),
             Symbol::File(_) => panic!(),
@@ -510,6 +567,7 @@ impl Symbol {
             Symbol::Variable(_) => true,
             Symbol::Class(_) => true,
             Symbol::Function(_) => true,
+            Self::DiskDir(_) => false,
             Symbol::File(_) => false,
             Symbol::Compiled(_) => false,
             Symbol::Namespace(_) => false,
@@ -523,6 +581,7 @@ impl Symbol {
             Symbol::Variable(v) => Some(&v.ast_indexes),
             Symbol::Class(c) => Some(&c.ast_indexes),
             Symbol::Function(f) => Some(&f.ast_indexes),
+            Self::DiskDir(_) => None,
             Symbol::File(_) => None,
             Symbol::Compiled(_) => None,
             Symbol::Namespace(_) => None,
@@ -536,6 +595,7 @@ impl Symbol {
             Symbol::Variable(v) => &mut v.ast_indexes,
             Symbol::Class(c) => &mut c.ast_indexes,
             Symbol::Function(f) => &mut f.ast_indexes,
+            Self::DiskDir(_) => panic!(),
             Symbol::File(_) => panic!(),
             Symbol::Compiled(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
@@ -548,6 +608,7 @@ impl Symbol {
         match self {
             Symbol::Root(r) => r.weak_self.clone(),
             Symbol::Namespace(n) => n.weak_self.clone(),
+            Self::DiskDir(d) => d.weak_self.clone(),
             Symbol::Package(PackageSymbol::Module(m)) => m.weak_self.clone(),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self.clone(),
             Symbol::File(f) => f.weak_self.clone(),
@@ -562,6 +623,7 @@ impl Symbol {
         match self {
             Symbol::Root(r) => r.parent.clone(),
             Symbol::Namespace(n) => n.parent.clone(),
+            Self::DiskDir(d) => d.parent.clone(),
             Symbol::Package(p) => p.parent(),
             Symbol::File(f) => f.parent.clone(),
             Symbol::Compiled(c) => c.parent.clone(),
@@ -575,6 +637,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!(),
             Symbol::Namespace(n) => n.parent = parent,
+            Self::DiskDir(d) => d.parent = parent,
             Symbol::Package(p) => p.set_parent(parent),
             Symbol::File(f) => f.parent = parent,
             Symbol::Compiled(c) => c.parent = parent,
@@ -583,11 +646,12 @@ impl Symbol {
             Symbol::Variable(v) => v.parent = parent,
         }
     }
-    
+
     pub fn paths(&self) -> Vec<String> {
         match self {
             Symbol::Root(r) => r.paths.clone(),
             Symbol::Namespace(n) => n.paths(),
+            Symbol::DiskDir(d) => vec![d.path.clone()],
             Symbol::Package(p) => p.paths(),
             Symbol::File(f) => vec![f.path.clone()],
             Symbol::Compiled(c) => vec![c.path.clone()],
@@ -602,6 +666,7 @@ impl Symbol {
             Symbol::Namespace(n) => {
                 n.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::new() });
             },
+            Symbol::DiskDir(_) => {},
             Symbol::Package(_) => {},
             Symbol::File(_) => {},
             Symbol::Compiled(_) => {},
@@ -615,6 +680,7 @@ impl Symbol {
         match self{
             Symbol::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext().as_str(),
             Symbol::File(f) => f.path.clone(),
+            Symbol::DiskDir(d) => panic!("invalid symbol type to extract path"),
             Symbol::Root(_) => panic!("invalid symbol type to extract path"),
             Symbol::Namespace(_) => panic!("invalid symbol type to extract path"),
             Symbol::Compiled(_) => panic!("invalid symbol type to extract path"),
@@ -628,6 +694,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &n.dependencies,
+            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies(),
             Symbol::File(f) => &f.dependencies,
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -640,6 +707,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &mut n.dependencies,
+            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies_as_mut(),
             Symbol::File(f) => &mut f.dependencies,
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -652,6 +720,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &n.dependents,
+            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents(),
             Symbol::File(f) => &f.dependents,
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -664,6 +733,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &mut n.dependents,
+            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents_as_mut(),
             Symbol::File(f) => &mut f.dependents,
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -674,7 +744,7 @@ impl Symbol {
     }
     pub fn has_modules(&self) -> bool {
         match self {
-            Symbol::Root(_) | Symbol::Namespace(_) | Symbol::Package(_) => true,
+            Symbol::Root(_) | Symbol::Namespace(_) | Symbol::Package(_) | Symbol::DiskDir(_) => true,
             _ => {false}
         }
     }
@@ -684,6 +754,7 @@ impl Symbol {
             Symbol::Namespace(n) => {
                 Box::new(n.directories.iter().flat_map(|x| x.module_symbols.values()))
             },
+            Symbol::DiskDir(d) => Box::new(d.module_symbols.values()),
             Symbol::Package(PackageSymbol::Module(m)) => Box::new(m.module_symbols.values()),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => Box::new(p.module_symbols.values()),
             Symbol::File(_) => panic!("No module symbol on File"),
@@ -697,6 +768,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => false,
             Symbol::Namespace(n) => n.in_workspace,
+            Symbol::DiskDir(d) => d.in_workspace,
             Symbol::Package(PackageSymbol::Module(m)) => m.in_workspace,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace,
             Symbol::File(f) => f.in_workspace,
@@ -710,6 +782,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!(),
             Symbol::Namespace(n) => n.in_workspace = in_workspace,
+            Symbol::DiskDir(d) => d.in_workspace = in_workspace,
             Symbol::Package(PackageSymbol::Module(m)) => m.in_workspace = in_workspace,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace = in_workspace,
             Symbol::File(f) => f.in_workspace = in_workspace,
@@ -723,6 +796,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => {panic!()},
             Symbol::Namespace(_) => {panic!()},
+            Symbol::DiskDir(_) => {panic!()},
             Symbol::Package(PackageSymbol::Module(m)) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -768,6 +842,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => {panic!()},
             Symbol::Namespace(_) => {panic!()},
+            Symbol::DiskDir(_) => {panic!()},
             Symbol::Package(PackageSymbol::Module(m)) => {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
@@ -817,6 +892,7 @@ impl Symbol {
             }
             Symbol::Root(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
+            Symbol::DiskDir(_) => panic!(),
             Symbol::Package(PackageSymbol::Module(m)) => {
                 m.symbols.iter()
             },
@@ -838,6 +914,7 @@ impl Symbol {
             Symbol::File(_) => { None },
             Symbol::Root(_) => { None },
             Symbol::Namespace(_) => { None },
+            Symbol::DiskDir(_) => { None },
             Symbol::Package(_) => { None },
             Symbol::Compiled(_) => { None },
             Symbol::Class(_) => { None },
@@ -850,6 +927,7 @@ impl Symbol {
             Symbol::File(_) => { None },
             Symbol::Root(_) => { None },
             Symbol::Namespace(_) => { None },
+            Symbol::DiskDir(_) => { None },
             Symbol::Package(_) => { None },
             Symbol::Compiled(_) => { None },
             Symbol::Class(_) => { None },
@@ -862,6 +940,7 @@ impl Symbol {
             Symbol::File(_) => { panic!() },
             Symbol::Root(_) => { panic!() },
             Symbol::Namespace(_) => { panic!() },
+            Symbol::DiskDir(_) => { panic!() },
             Symbol::Package(_) => { panic!() },
             Symbol::Compiled(_) => { panic!() },
             Symbol::Class(_) => { panic!() },
@@ -876,6 +955,7 @@ impl Symbol {
             Symbol::File(f) => { &f.not_found_paths },
             Symbol::Root(_) => { &EMPTY_VEC },
             Symbol::Namespace(_) => { &EMPTY_VEC },
+            Symbol::DiskDir(_) => { &EMPTY_VEC },
             Symbol::Package(PackageSymbol::Module(m)) => { &m.not_found_paths },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => { &p.not_found_paths },
             Symbol::Compiled(_) => { &EMPTY_VEC },
@@ -890,6 +970,7 @@ impl Symbol {
             Symbol::File(f) => { &mut f.not_found_paths },
             Symbol::Root(_) => { panic!("no not_found_path on Root") },
             Symbol::Namespace(_) => { panic!("no not_found_path on Namespace") },
+            Symbol::DiskDir(_) => { panic!("no not_found_path on DiskDir") },
             Symbol::Package(PackageSymbol::Module(m)) => { &mut m.not_found_paths },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => { &mut p.not_found_paths },
             Symbol::Compiled(_) => { panic!("no not_found_path on Compiled") },
@@ -899,6 +980,22 @@ impl Symbol {
         }
     }
 
+    pub fn get_main_entry_tree(&self, session: &mut SessionInfo) -> (Vec<String>, Vec<String>) {
+        let mut tree = self.get_tree();
+        let len_first_part = tree.0.len();
+        let odoo_tree = &session.sync_odoo.main_entry_tree;
+        if len_first_part >= odoo_tree.len() {
+            for component in odoo_tree.iter() {
+                if tree.0.len() > 0 && &tree.0[0] == component {
+                    tree.0.remove(0);
+                } else {
+                    return self.get_tree();
+                }
+            }
+        }
+        tree
+    }
+
     ///Given a path, create the appropriated symbol and attach it to the given parent
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
@@ -906,7 +1003,7 @@ impl Symbol {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             return Some(parent.borrow_mut().add_new_file(session, &name, &path_str));
         }
-        if parent.borrow().get_tree().clone() == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+        if parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = parent.borrow_mut().add_new_module_package(session, &name, path);
             if let Some(module) = module {
                 ModuleSymbol::load_module_info(module.clone(), session, parent.clone());
@@ -929,7 +1026,7 @@ impl Symbol {
             return None;
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                if parent.borrow().get_tree().clone() == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
+                if parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
                     //Force namespace for odoo/addons
                     let ref_sym = (*parent).borrow_mut().add_new_namespace(session, &name, &path_str);
                     return Some(ref_sym);
@@ -971,6 +1068,38 @@ impl Symbol {
             drop(current);
             current_arc = parent.as_ref().unwrap().upgrade().unwrap();
             current = current_arc.borrow_mut();
+        }
+        res
+    }
+
+    
+
+    pub fn get_tree_and_entry(&self) -> (Tree, Option<Rc<RefCell<EntryPoint>>>) {
+        let mut res = ((vec![], vec![]), None);
+        if self.is_file_content() {
+            res.0.1.insert(0, self.name().clone());
+        } else {
+            res.0.0.insert(0, self.name().clone());
+        }
+        if self.typ() == SymType::ROOT || self.parent().is_none() {
+            return res
+        }
+        let parent = self.parent().clone();
+        let mut current_arc = parent.as_ref().unwrap().upgrade().unwrap();
+        let mut current = current_arc.borrow_mut();
+        while current.typ() != SymType::ROOT && current.parent().is_some() {
+            if current.is_file_content() {
+                res.0.1.insert(0, current.name().clone());
+            } else {
+                res.0.0.insert(0, current.name().clone());
+            }
+            let parent = current.parent().clone();
+            drop(current);
+            current_arc = parent.as_ref().unwrap().upgrade().unwrap();
+            current = current_arc.borrow_mut();
+        }
+        if current.typ() == SymType::ROOT {
+            res.1 = current.as_root().entry_point.clone();
         }
         res
     }
@@ -1050,6 +1179,9 @@ impl Symbol {
             }
             Symbol::Root(r) => {
                 r.module_symbols.get(name).cloned()
+            },
+            Symbol::DiskDir(d) => {
+                d.module_symbols.get(name).cloned()
             }
             _ => {None}
         }
@@ -1122,6 +1254,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => &n.dependencies[step as usize][level as usize],
+            Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
             Symbol::Package(p) => &p.dependencies()[step as usize][level as usize],
             Symbol::File(f) => &f.dependencies[step as usize][level as usize],
             Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
@@ -1138,6 +1271,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => &n.dependencies[step as usize],
+            Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
             Symbol::Package(p) => &p.dependencies()[step as usize],
             Symbol::File(f) => &f.dependencies[step as usize],
             Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
@@ -1163,6 +1297,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => &n.dependents[level as usize][step as usize],
+            Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
             Symbol::Package(p) => &p.dependents()[level as usize][step as usize],
             Symbol::File(f) => &f.dependents[level as usize][step as usize],
             Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
@@ -1297,6 +1432,7 @@ impl Symbol {
         }
     }
 
+    //unload a symbol and subsymbols. Return a list of paths of files and packages that have been deleted
     pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
@@ -1373,7 +1509,7 @@ impl Symbol {
 
     pub fn is_file_content(&self) -> bool{
         match self {
-            Symbol::Root(_) | Symbol::Namespace(_) | Symbol::Package(_) | Symbol::File(_) | Symbol::Compiled(_) => false,
+            Symbol::Root(_) | Symbol::Namespace(_) | Symbol::DiskDir(_) | Symbol::Package(_) | Symbol::File(_) | Symbol::Compiled(_) => false,
             Symbol::Class(_) | Symbol::Function(_) | Symbol::Variable(_) => true
         }
     }
@@ -1394,6 +1530,7 @@ impl Symbol {
         match self {
             Symbol::Root(r) => r.weak_self = Some(weak_self),
             Symbol::Namespace(n) => n.weak_self = Some(weak_self),
+            Symbol::DiskDir(d) => d.weak_self = Some(weak_self),
             Symbol::Package(PackageSymbol::Module(m)) => m.weak_self = Some(weak_self),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self = Some(weak_self),
             Symbol::File(f) => f.weak_self = Some(weak_self),
@@ -1407,6 +1544,7 @@ impl Symbol {
     pub fn set_processed_text_hash(&mut self, hash: u64){
         match self {
             Symbol::File(f) => f.processed_text_hash = hash,
+            Symbol::DiskDir(_) => panic!("set_processed_text_hash called on DiskDir"),
             Symbol::Package(PackageSymbol::Module(m)) => m.processed_text_hash = hash,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.processed_text_hash = hash,
             Symbol::Function(_) => panic!("set_processed_text_hash called on Function"),
@@ -1423,6 +1561,7 @@ impl Symbol {
             Symbol::File(f) => f.processed_text_hash,
             Symbol::Package(PackageSymbol::Module(m)) => m.processed_text_hash,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.processed_text_hash,
+            Symbol::DiskDir(_) => panic!("get_processed_text_hash called on DiskDir"),
             Symbol::Function(_) => panic!("get_processed_text_hash called on Function"),
             Symbol::Root(_) => panic!("get_processed_text_hash called on Root"),
             Symbol::Namespace(_) => panic!("get_processed_text_hash called on Namespace"),
@@ -1443,6 +1582,19 @@ impl Symbol {
             return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().get_in_parents(sym_types, stop_same_file);
         }
         return None;
+    }
+
+    pub fn get_root(&self) -> Option<Weak<RefCell<Symbol>>> {
+        self.get_in_parents(&vec![SymType::ROOT], false)
+    }
+
+    pub fn get_entry(&self) -> Option<Rc<RefCell<EntryPoint>>> {
+        if let Some(root) = self.get_root() {
+            if let Some(root) = root.upgrade() {
+                return root.borrow().as_root().entry_point.clone();
+            }
+        }
+        None
     }
 
     pub fn has_rc_in_parents(&self, rc: Rc<RefCell<Symbol>>, stop_same_file: bool) -> bool {
@@ -1487,6 +1639,7 @@ impl Symbol {
                 Symbol::Function(f) => { f.symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::Module(m)) => { m.symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::PythonPackage(p)) => { p.symbols.remove(symbol.borrow().name()); },
+                Symbol::DiskDir(_) => { panic!("A disk directory can not contain python code") },
                 Symbol::Compiled(_) => { panic!("A compiled symbol can not contain python code") },
                 Symbol::Namespace(_) => { panic!("A namespace can not contain python code") },
                 Symbol::Root(_) => { panic!("Root can not contain python code") },
@@ -1497,6 +1650,7 @@ impl Symbol {
                 Symbol::Class(_) => { panic!("A class can not contain a file structure") },
                 Symbol::File(_) => { panic!("A file can not contain a file structure"); },
                 Symbol::Function(_) => { panic!("A function can not contain a file structure") },
+                Symbol::DiskDir(d) => { d.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::Module(m)) => { m.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::PythonPackage(p)) => { p.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Compiled(c) => { c.module_symbols.remove(symbol.borrow().name()); },
@@ -1666,7 +1820,8 @@ impl Symbol {
                                         if let Some(file_symbol) = file_symbol {
                                             if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
                                             session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                                                let mut builder = PythonArchEval::new(file_symbol.upgrade().unwrap());
+                                                let file_entry = file_symbol.upgrade().unwrap().borrow().get_entry().unwrap();
+                                                let mut builder = PythonArchEval::new(file_entry, file_symbol.upgrade().unwrap());
                                                 builder.eval_arch(session);
                                             }
                                         }
@@ -1906,7 +2061,7 @@ impl Symbol {
             return Symbol::infer_name(odoo, &parent, name, position);
         }
         if results.is_empty() && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
-            let builtins = odoo.get_symbol(&(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
+            let builtins = odoo.get_symbol("", &(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
             return Symbol::infer_name(odoo, &builtins, name, None);
         }
         results
@@ -1963,7 +2118,7 @@ impl Symbol {
                         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
-                                if symbol.borrow().is_field_class(){
+                                if symbol.borrow().is_field_class(session){
                                     return true;
                                 }
                             }
@@ -1976,8 +2131,8 @@ impl Symbol {
         }
     }
 
-    pub fn is_field_class(&self) -> bool {
-        let tree = flatten_tree(&self.get_tree());
+    pub fn is_field_class(&self, session: &mut SessionInfo) -> bool {
+        let tree = flatten_tree(&self.get_main_entry_tree(session));
         if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
             if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
         "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
@@ -1996,7 +2151,7 @@ impl Symbol {
                         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
-                                let tree = flatten_tree(&symbol.borrow().get_tree());
+                                let tree = flatten_tree(&symbol.borrow().get_main_entry_tree(session));
                                 if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
                                     if field_names.contains(&tree[2].as_str()) {
                                         return true;
@@ -2010,6 +2165,22 @@ impl Symbol {
             },
             _ => {false}
         }
+    }
+
+    pub fn match_tree_from_any_entry(&self, session: &mut SessionInfo, tree: &Tree) -> bool {
+        let (mut self_tree, entry) = self.get_tree_and_entry();
+        'outer: for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(&entry.unwrap()) {
+            if entry.borrow().tree.len() > self_tree.0.len() {
+                continue;
+            }
+            for (index, tree_el) in entry.borrow().tree.iter().enumerate() {
+                if &self_tree.0[index] != tree_el {
+                    continue 'outer;
+                }
+            }
+            return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
+        }
+        false
     }
 
     /* similar to get_symbol: will return the symbol that is under this one with the specified name.
@@ -2170,6 +2341,7 @@ impl Symbol {
                         }
                     }
                 },
+                Symbol::DiskDir(_) => {},
                 Symbol::Root(_) => {},
                 Symbol::Namespace(_) => {},
                 Symbol::Package(_) => {},
@@ -2216,6 +2388,7 @@ impl Symbol {
                         }
                     }
                 },
+                Symbol::DiskDir(d) => {},
                 Symbol::Root(_) => {},
                 Symbol::Namespace(_) => {},
                 Symbol::Package(_) => {},

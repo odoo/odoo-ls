@@ -18,13 +18,16 @@ use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::S;
 
+use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::import_resolver::ImportResult;
+use super::odoo::SyncOdoo;
 use super::symbols::function_symbol::{Argument, ArgumentType};
 
 
 #[derive(Debug)]
 pub struct PythonArchBuilder {
+    entry_point: Rc<RefCell<EntryPoint>>,
     file: Rc<RefCell<Symbol>>,
     file_mode: bool,
     current_step: BuildSteps,
@@ -34,8 +37,9 @@ pub struct PythonArchBuilder {
 }
 
 impl PythonArchBuilder {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
+    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
         PythonArchBuilder {
+            entry_point: entry_point,
             file: symbol.clone(), //dummy, evaluated in load_arch
             file_mode: false, //dummy, evaluated in load_arch
             current_step: BuildSteps::ARCH, //dummy, evaluated in load_arch
@@ -67,7 +71,7 @@ impl PythonArchBuilder {
             let in_workspace = (self.file.borrow().parent().is_some() &&
                 self.file.borrow().parent().as_ref().unwrap().upgrade().is_some() &&
                 self.file.borrow().parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
-                session.sync_odoo.get_file_mgr().borrow().is_in_workspace(path.as_str());
+                SyncOdoo::is_in_workspace_or_entry(session, path.as_str());
             self.file.borrow_mut().set_in_workspace(in_workspace);
         }
         let file_info_rc = match self.file_mode {
@@ -126,7 +130,7 @@ impl PythonArchBuilder {
                     level,
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    session.sync_odoo.not_found_symbols.insert(self.file.clone());
+                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     let file_tree_flattened = [import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree_flattened));
                     continue;

@@ -132,7 +132,7 @@ impl DefinitionFeature {
                         _ => path.clone()
                     };
                     let range = match symbol.borrow().typ() {
-                        SymType::PACKAGE(_) | SymType::FILE => Range::default(),
+                        SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                         _ => session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &full_path, &symbol.borrow().range()),
                     };
                     links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});

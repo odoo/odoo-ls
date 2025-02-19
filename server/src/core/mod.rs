@@ -1,5 +1,6 @@
 pub mod config;
 pub mod evaluation;
+pub mod entry_point;
 pub mod file_mgr;
 pub mod import_resolver;
 pub mod model;

@@ -19,6 +19,7 @@ use crate::threads::SessionInfo;
 use crate::S;
 
 use super::config::DiagMissingImportsMode;
+use super::entry_point::EntryPoint;
 use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
@@ -28,6 +29,7 @@ use super::symbols::function_symbol::FunctionSymbol;
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
+    entry_point: Rc<RefCell<EntryPoint>>,
     file: Rc<RefCell<Symbol>>,
     file_mode: bool,
     current_step: BuildSteps,
@@ -38,8 +40,9 @@ pub struct PythonArchEval {
 }
 
 impl PythonArchEval {
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
+    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
         PythonArchEval {
+            entry_point,
             file: symbol.clone(), //dummy, evaluated in eval_arch
             file_mode: false, //dummy, evaluated in eval_arch
             current_step: BuildSteps::ARCH, //dummy, evaluated in eval_arch
@@ -106,11 +109,11 @@ impl PythonArchEval {
         drop(file_info);
         if self.file_mode {
             file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_file_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
+            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.sym_stack.first().unwrap().clone());
         } else {
             //then Symbol must be a function
             symbol.borrow_mut().as_func_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_function_eval(session.sync_odoo, self.sym_stack.first().unwrap().clone());
+            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, self.sym_stack.first().unwrap().clone());
         }
         let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
@@ -121,7 +124,7 @@ impl PythonArchEval {
                 }
             }
             if self.file_mode {
-                session.sync_odoo.get_file_mgr().borrow_mut().delete_path(session, &path);
+                FileMgr::delete_path(session, &path);
             }
         } else {
             drop(symbol);
@@ -208,7 +211,7 @@ impl PythonArchEval {
                         let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
                         if rc_file_sym.borrow_mut().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
                             session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
-                            let mut builder = PythonArchEval::new(rc_file_sym);
+                            let mut builder = PythonArchEval::new(self.entry_point.clone(), rc_file_sym);
                             builder.eval_arch(session);
                             if self.check_for_loop_evaluation(session, sym_ref.clone(), from_sym) {
                                 return true;
@@ -257,7 +260,7 @@ impl PythonArchEval {
                     let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
                     file_tree.extend(_import_result.name.split(".").map(str::to_string));
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
-                    session.sync_odoo.not_found_symbols.insert(self.file.clone());
+                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
@@ -279,7 +282,7 @@ impl PythonArchEval {
                 }
                 if !self.safe_import.last().unwrap() {
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
-                    session.sync_odoo.not_found_symbols.insert(self.file.clone());
+                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
                         self.diagnostics.push(Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
@@ -405,7 +408,7 @@ impl PythonArchEval {
     fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut Symbol, tree_not_found: &Tree, range: &TextRange) {
         let tree = flatten_tree(tree_not_found);
         file.not_found_paths_mut().push((BuildSteps::ARCH_EVAL, tree.clone()));
-        session.sync_odoo.not_found_symbols.insert(file.get_rc().unwrap());
+        self.entry_point.borrow_mut().not_found_symbols.insert(file.get_rc().unwrap());
         self.diagnostics.push(Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::WARNING),
