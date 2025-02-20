@@ -321,6 +321,17 @@ impl Evaluation {
         }
     }
 
+    pub fn new_self() -> Self {
+        Self {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::SELF,
+                get_symbol_hook: None,
+            },
+            value: None,
+            range: None
+        }
+    }
+
     pub fn new_any() -> Self {
         Self {
             symbol: EvaluationSymbol {
