@@ -791,14 +791,27 @@ impl PythonArchEval {
         diagnostics: &mut Vec<Diagnostic>,
     ) {
         if let Some(returns_ann) = func_returns {
-            let (eval, diags) = Evaluation::eval_from_ast(
+            let (evaluations, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,
                 func_sym.borrow().parent().and_then(|p| p.upgrade()).unwrap(),
                 max_infer,
             );
-            func_sym.borrow_mut().set_evaluations(eval);
             diagnostics.extend(diags);
+            let file_sym = func_sym.borrow().get_file().and_then(|file_weak| file_weak.upgrade());
+            // Check for type annotation `typing.Self`, if so, return a `self` evaluation
+            let final_evaluations = evaluations.into_iter().map(|eval|{
+                let sym_ptrs = Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, diagnostics, None), session, &mut None, false, false, file_sym.clone(), diagnostics);
+                for sym_ptr in sym_ptrs.iter(){
+                    let EvaluationSymbolPtr::WEAK(sym_weak) = sym_ptr else {continue};
+                    let Some(sym_rc) = sym_weak.weak.upgrade() else {continue};
+                    if sym_rc.borrow().match_tree_from_any_entry(session, &(vec![S!("typing")], vec![S!("Self")])){
+                        return Evaluation::new_self();
+                    }
+                }
+                eval
+            }).collect::<Vec<_>>();
+            func_sym.borrow_mut().set_evaluations(final_evaluations);
         }
     }
 
