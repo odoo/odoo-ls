@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
+use tracing::warn;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -61,6 +62,10 @@ impl PythonArchBuilderHooks {
                     if get_sym.is_empty() {
                         let range = sym.range().clone();
                         sym.add_new_function(session, &S!("__get__"), &range, &range.end());
+                    } else {
+                        if !["Id", "One2many"].contains(&name.as_str()){
+                            warn!("Found __get__ function for field of name ({})", name);
+                        }
                     }
                 }
             }
