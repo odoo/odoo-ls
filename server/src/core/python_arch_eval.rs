@@ -961,14 +961,46 @@ impl PythonArchEval {
             func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
             return;
         }
-        let Some(ref main_module_sym) = session.sync_odoo.models.get(&returns_str).cloned().and_then(
+        let Some(ref main_model_sym) = session.sync_odoo.models.get(&returns_str).cloned().and_then(
             |model| model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned()
         ) else {return};
-        func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_module_sym), Some(false))]);
+        func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
     }
 
-    // Read function decorators and set evaluations where applicable
-    // - api.returns -> self -> Self, string -> model name if exists
+    /// For @api.constrains and @api.onchange, both can only take a simple field name
+    fn handle_api_simple_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return};
+            let field_name = expr.value.to_string();
+            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
+            if syms.is_empty(){
+                self.diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(expr.start().to_u32(), 0), Position::new(expr.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+
+    /// Read function decorators and set evaluations where applicable
+    /// - api.returns -> self -> Self, string -> model name if exists
     fn handle_func_decorators(
         &mut self,
         session: &mut SessionInfo,
@@ -994,6 +1026,9 @@ impl PythonArchEval {
                 let dec_sym_tree = dec_sym.borrow().get_tree();
                 if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("returns")]){
                     PythonArchEval::handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
+                } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
+                        dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+                    self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
                 }
             }
         }

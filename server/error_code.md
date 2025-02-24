@@ -202,3 +202,6 @@ In a search domain, when using a dot separator on a Date field, you can use the 
 "Invalid search domain field: Invalid dot notation".
 In a search domain, when using a dot separator, it should be used either on a Date or Relational field.
 If you used a relational field and get this error, check that the comodel of this field is valid.
+
+### OLS30323
+"Field does not exist on model"
