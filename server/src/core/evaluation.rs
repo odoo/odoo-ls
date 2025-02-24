@@ -1236,7 +1236,7 @@ impl Evaluation {
         let mut found_pos_arg_with_kw = arg_index;
         let to_skip = min(min_arg_for_kword, vararg_index);
         for arg in exprCall.arguments.keywords.iter() {
-            if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionnary of keywords, like in self.func(a, b, **any_kwargs)
+            if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
                 for func_arg in function.args.iter().skip(to_skip as usize) {
                     if func_arg.symbol.upgrade().unwrap().borrow().name().to_string() == arg_identifier.id {

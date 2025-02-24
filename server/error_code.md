@@ -24,18 +24,18 @@ Check your python environment, the effective your sys.path and your addon paths.
 
 "XXXX not found".
 The symbol you used as a base class can not be resolved.
-Be sure that the symbol is refering to a valid python class.
+Be sure that the symbol is referring to a valid python class.
 
 ### OLS20003
 
 "XXXX not found".
 The symbol you used as a base class is not a class, or not evaluated to a class.
-Be sure that the symbol is refering to a valid python class.
+Be sure that the symbol is referring to a valid python class.
 
 ### OLS20004
 
 "Failed to evaluate XXXX".
-The extension failed to evaluate a symbol. This occurs more specificaly when the extension detect a loop in the imports.
+The extension failed to evaluate a symbol. This occurs more specifically when the extension detect a loop in the imports.
 If your code is working fine, it can happen if you use too many "import *" that can break the extension flow for now.
 
 ### OLS20005
@@ -67,7 +67,7 @@ See the error message to get the details from Ruff
 
 "This model is not in the dependencies of your module."
 With the Environment (often via self.env), you are trying to get a recordset of a model that is not defined in the current module or in the dependencies of the current module.
-Even if it could work, this is strongly not recommended, as the model you are refering to could be not available on a live database.
+Even if it could work, this is strongly not recommended, as the model you are referring to could be not available on a live database.
 Do not forget that even if your model is in an auto-installed module, it can be uninstalled by a user.
 
 ### OLS30102
@@ -96,13 +96,13 @@ The extension found some classes inheriting this model, but didn't find any clas
 
 ### OLS30201
 
-"A manifest shoul only contains one dictionnary".
-A \_\_manifest\_\_.py file should be evaluated with a literal_eval to a single dictionnary. Do not store any other information in it.
+"A manifest should only contains one dictionary".
+A \_\_manifest\_\_.py file should be evaluated with a literal_eval to a single dictionary. Do not store any other information in it.
 
 ### OLS30302
 
 "Do not use dict unpacking to build your manifest".
-Dict unpacking should be avoided. Do not create a dictionnary with values that must be unpacked like in ```{"a";1, **d}```
+Dict unpacking should be avoided. Do not create a dictionary with values that must be unpacked like in ```{"a";1, **d}```
 
 ### OLS30303
 

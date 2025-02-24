@@ -199,7 +199,7 @@ impl ModuleSymbol {
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30201"))),
                 Some(EXTENSION_NAME.to_string()),
-                "A manifest should only contains one dictionnary".to_string(),
+                "A manifest should only contains one dictionary".to_string(),
                 None,
                 None,
             ));
