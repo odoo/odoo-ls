@@ -211,7 +211,7 @@ impl FeaturesUtils {
             }
             // BLOCK 1: (type) **name** -> infered_type
             let mut context = Some(eval_symbol.as_weak().context.clone());
-            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
+            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None, &mut vec![]);
             value += FeaturesUtils::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
@@ -402,7 +402,7 @@ impl FeaturesUtils {
                                 for eval in func_eval.iter() {
                                     let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
                                     if !eval_symbol.is_expired_if_weak(){ //TODO improve
-                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
+                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, false, false, None, &mut vec![]);
                                         for weak_eval_symbol in weak_eval_symbols.iter() {
                                             if let Some(s_type) = weak_eval_symbol.upgrade_weak() {
                                                 let typ = s_type.borrow();

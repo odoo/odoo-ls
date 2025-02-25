@@ -1705,39 +1705,41 @@ impl Symbol {
     */
     pub fn next_refs(session: &mut SessionInfo, symbol: &Symbol, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolPtr> {
         //if current symbol is a descriptor, we have to resolve __get__ method before going further
-        if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
-            let base_attr = base_attr.as_symbol().upgrade();
-            if let Some(base_attr) = base_attr {
-                let attribute_type_sym = symbol;
-                //TODO shouldn't we set the from_module in the call to get_member_symbol?
-                let get_method = attribute_type_sym.get_member_symbol(session, &S!("__get__"), None, true, false, true, false).0.first().cloned();
-                match get_method {
-                    Some(get_method) if (base_attr.borrow().typ() == SymType::CLASS) => {
-                        let get_method = get_method.borrow();
-                        if get_method.evaluations().is_some() {
-                            let mut res = VecDeque::new();
-                            if context.is_none() {
-                                *context = Some(HashMap::new());
-                            }
-                            for get_method_eval in get_method.evaluations().unwrap().iter() {
-                                context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
-                                let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, diagnostics, None);
-                                if !get_result.weak.is_expired() {
-                                    let mut eval = Evaluation::eval_from_symbol(&get_result.weak, get_result.instance);
-                                    match eval.symbol.get_mut_symbol_ptr() {
-                                        EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_attr)));
-                                            res.push_back(eval.symbol.get_symbol_ptr().clone());
-                                        },
-                                        _ => {}
-                                    }
+        if !stop_on_type {
+            if let Some(base_attr) = symbol_context.get(&S!("base_attr")).or_else(|| symbol_context.get(&S!("field_parent"))) {
+                let base_attr = base_attr.as_symbol().upgrade();
+                if let Some(base_attr) = base_attr {
+                    let attribute_type_sym = symbol;
+                    //TODO shouldn't we set the from_module in the call to get_member_symbol?
+                    let get_method = attribute_type_sym.get_member_symbol(session, &S!("__get__"), None, true, false, true, false).0.first().cloned();
+                    match get_method {
+                        Some(get_method) if (base_attr.borrow().typ() == SymType::CLASS) => {
+                            let get_method = get_method.borrow();
+                            if get_method.evaluations().is_some() {
+                                let mut res = VecDeque::new();
+                                if context.is_none() {
+                                    *context = Some(HashMap::new());
                                 }
-                                context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
+                                for get_method_eval in get_method.evaluations().unwrap().iter() {
+                                    context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
+                                    let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, diagnostics, None);
+                                    if !get_result.weak.is_expired() {
+                                        let mut eval = Evaluation::eval_from_symbol(&get_result.weak, get_result.instance);
+                                        match eval.symbol.get_mut_symbol_ptr() {
+                                            EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                                weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_attr)));
+                                                res.push_back(eval.symbol.get_symbol_ptr().clone());
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+                                    context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
+                                }
+                                return res;
                             }
-                            return res;
-                        }
-                    },
-                    _ => {}
+                        },
+                        _ => {}
+                    }
                 }
             }
         }
