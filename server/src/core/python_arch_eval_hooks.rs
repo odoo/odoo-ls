@@ -631,7 +631,7 @@ impl PythonArchEvalHooks {
     }
 
     fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
-        let comodel = yarn!("{}", comodel.unwrap().as_string());
+        let comodel = yarn!("{}", comodel.as_string());
         let comodel_sym = session.sync_odoo.models.get(&comodel).cloned();
         if let Some(comodel_sym) = comodel_sym {
             let module = context.get(&S!("module"));
