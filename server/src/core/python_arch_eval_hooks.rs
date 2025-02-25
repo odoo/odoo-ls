@@ -587,20 +587,54 @@ impl PythonArchEvalHooks {
             range: None
         }]);
     }
+    fn eval_relational_with_related(session: &mut SessionInfo, related_field: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
+        let Some(ContextValue::SYMBOL(class_sym_weak)) = context.get(&S!("field_parent")) else {return None};
+        let Some(class_sym) = class_sym_weak.upgrade() else {return None};
+        let related_field_name = related_field.as_string();
+        let from_module = class_sym.borrow().find_module();
+        let mut parent_object = Some(class_sym.clone());
+        let mut syms = vec![];
+        let split_expr: Vec<String> = related_field_name.split(".").map(|x| x.to_string()).collect();
+        for (ix, name) in split_expr.iter().enumerate() {
+            if parent_object.is_none() {
+                break;
+            }
+            let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
+                &name.to_string(),
+                from_module.clone(),
+                false,
+                true,
+                true,
+                false);
+            if ix == split_expr.len() - 1 {
+                syms = symbols;
+                break;
+            } else if symbols.is_empty() {
+                break;
+            }
+            parent_object = None;
+            for s in symbols.iter() {
+                if !s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+                    break;
+                }
+                let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                if models.len() == 1 {
+                    parent_object = Some(models[0].clone());
+                    break;
+                }
+            }
+        }
+        if let Some(symbol) = syms.first(){
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Rc::downgrade(symbol), context: HashMap::new(), instance: Some(true), is_super: false}))
+        }
+        None
+    }
 
-    fn eval_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
-    {
-        if context.is_none() {
-            return None;
-        }
-        let comodel = context.as_ref().unwrap().get(&S!("comodel"));
-        if comodel.is_none() {
-            return None;
-        }
+    fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
         let comodel = yarn!("{}", comodel.unwrap().as_string());
         let comodel_sym = session.sync_odoo.models.get(&comodel).cloned();
         if let Some(comodel_sym) = comodel_sym {
-            let module = context.as_ref().unwrap().get(&S!("module"));
+            let module = context.get(&S!("module"));
             let mut from_module = None;
             if let Some(ContextValue::MODULE(m)) = module {
                 if let Some(m) = m.upgrade() {
@@ -613,6 +647,20 @@ impl PythonArchEvalHooks {
             }
         }
         Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(true), is_super: false}))
+    }
+
+    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
+    {
+        let Some(context) = context else {
+            return None;
+        };
+        if let Some(comodel) = context.get(&S!("comodel")) {
+            return PythonArchEvalHooks::eval_relational_with_comodel(session, comodel, context);
+        }
+        if let Some(related_field) = context.get(&S!("related")) {
+            return PythonArchEvalHooks::eval_relational_with_related(session, related_field, context);
+        }
+        None
     }
 
     fn _update_get_eval_relational(symbol: Rc<RefCell<Symbol>>) {
@@ -655,29 +703,36 @@ impl PythonArchEvalHooks {
             return None;
         }
         let parameters = parameters.unwrap().as_arguments();
-        let comodel = if let Some(first_param) = parameters.args.get(0) {
-            first_param
+        let (comodel, context_name) = if let Some(first_param) = parameters.args.get(0) {
+            (first_param, S!("comodel"))
         } else {
             let mut comodel_name = None;
+            let mut related_name = None;
             for keyword in parameters.keywords {
-                if keyword.arg.is_some() && keyword.arg.unwrap().id == "comodel_name" {
+                let Some (kw_arg) = keyword.arg else {continue};
+                if kw_arg.id == "comodel_name" {
                     comodel_name = Some(keyword.value);
+                } else if kw_arg.id == "related" {
+                    related_name = Some(keyword.value);
                 }
             }
             if let Some(comodel_name) = comodel_name {
-                &comodel_name.clone()
-            } else {
+                (&comodel_name.clone(), S!("comodel"))
+            } else if let Some(related_name) = related_name {
+                (&related_name.clone(), S!("related"))
+            }
+            else {
                 return None;
             }
         };
-        let parent = Symbol::get_scope_symbol(file_symbol.unwrap().clone(), 
-            context.as_ref().unwrap().get(&S!("range")).unwrap().as_text_range().start().to_u32(), 
+        let parent = Symbol::get_scope_symbol(file_symbol.unwrap().clone(),
+            context.as_ref().unwrap().get(&S!("range")).unwrap().as_text_range().start().to_u32(),
             false);
-        let comodel_string_evals = Evaluation::expr_to_str(session, comodel, parent, &parameters.range.start(), &mut vec![]);
+        let comodel_string_evals = Evaluation::expr_to_str(session, comodel, parent.clone(), &parameters.range.start(), &mut vec![]);
         if let Some(comodel_string_value) = comodel_string_evals.0 {
             return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                 weak: evaluation_sym.get_weak().weak.clone(),
-                context: HashMap::from([(S!("comodel"), ContextValue::STRING(comodel_string_value.to_string()))]),
+                context: HashMap::from([(context_name, ContextValue::STRING(comodel_string_value.to_string())), (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent)))]),
                 instance: Some(true),
                 is_super: false
             }));
