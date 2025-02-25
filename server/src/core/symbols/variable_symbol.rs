@@ -1,12 +1,11 @@
 use byteyarn::{yarn, Yarn};
 use ruff_text_size::TextRange;
 
-use crate::{constants::flatten_tree, core::evaluation::Evaluation, threads::SessionInfo};
-use core::fmt;
-use std::{cell::RefCell, f32::consts::E, rc::{Rc, Weak}};
+use crate::{constants::SymType, core::evaluation::Evaluation, threads::SessionInfo};
+use std::{cell::RefCell, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
- 
+
 #[derive(Debug)]
 pub struct VariableSymbol {
     pub name: Yarn,
@@ -64,7 +63,7 @@ impl VariableSymbol {
     pub fn get_relational_model(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
         for eval in self.evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak() {
                     if ["Many2one", "One2many", "Many2many"].contains(&symbol.borrow().name().as_str()) {
@@ -75,6 +74,8 @@ impl VariableSymbol {
                             continue;
                         };
                         return model.borrow().get_main_symbols(session, from_module);
+                    } else if symbol.borrow().typ() == SymType::CLASS { // Already evaluated from descriptor in follow_ref
+                        return vec![symbol];
                     }
                 }
             }

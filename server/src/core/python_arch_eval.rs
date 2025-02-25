@@ -961,7 +961,7 @@ impl PythonArchEval {
             func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
             return;
         }
-        let Some(ref main_model_sym) = session.sync_odoo.models.get(&returns_str).cloned().and_then(
+        let Some(ref main_model_sym) = session.sync_odoo.models.get(&yarn!("{}", returns_str)).cloned().and_then(
             |model| model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned()
         ) else {return};
         func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
@@ -985,6 +985,69 @@ impl PythonArchEval {
             let Expr::StringLiteral(expr) = arg else {return};
             let field_name = expr.value.to_string();
             let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
+            if syms.is_empty(){
+                self.diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(expr.start().to_u32(), 0), Position::new(expr.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+
+    /// For @api.depends, which can take a nested simple field name
+    fn handle_api_nested_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return};
+            let mut parent_object = Some(class_sym.clone());
+            let field_name = expr.value.to_string();
+            let mut syms = vec![];
+            let split_expr: Vec<String> = field_name.split(".").map(|x| x.to_string()).collect();
+            for (ix, name) in split_expr.iter().enumerate() {
+                if parent_object.is_none() {
+                    break;
+                }
+                let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
+                    &name.to_string(),
+                    from_module.clone(),
+                    false,
+                    true,
+                    true,
+                    false);
+                if ix == split_expr.len() - 1 {
+                    syms = symbols;
+                    break;
+                } else if symbols.is_empty() {
+                    break;
+                }
+                parent_object = None;
+                for s in symbols.iter() {
+                    if !s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+                        break;
+                    }
+                    let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                    if models.len() == 1 {
+                        parent_object = Some(models[0].clone());
+                        break;
+                    }
+                }
+            }
             if syms.is_empty(){
                 self.diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(expr.start().to_u32(), 0), Position::new(expr.end().to_u32(), 0)),
@@ -1024,11 +1087,13 @@ impl PythonArchEval {
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None)  else {continue};
                 let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
                 let dec_sym_tree = dec_sym.borrow().get_tree();
-                if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("returns")]){
+                if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("returns")]){
                     PythonArchEval::handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
-                } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
-                        dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+                } else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("onchange")]) ||
+                        dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("constrains")]){
                     self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
+                }else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("depends")]){
+                    self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
                 }
             }
         }
