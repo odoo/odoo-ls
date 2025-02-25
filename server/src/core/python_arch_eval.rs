@@ -882,6 +882,69 @@ impl PythonArchEval {
         }
     }
 
+    /// For @api.depends, which can take a nested simple field name
+    fn handle_api_nested_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return};
+            let mut parent_object = Some(class_sym.clone());
+            let field_name = expr.value.to_string();
+            let mut syms = vec![];
+            let split_expr: Vec<String> = field_name.split(".").map(|x| x.to_string()).collect();
+            for (ix, name) in split_expr.iter().enumerate() {
+                if parent_object.is_none() {
+                    break;
+                }
+                let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
+                    &name.to_string(),
+                    from_module.clone(),
+                    false,
+                    true,
+                    true,
+                    false);
+                if ix == split_expr.len() - 1 {
+                    syms = symbols;
+                    break;
+                } else if symbols.is_empty() {
+                    break;
+                }
+                parent_object = None;
+                for s in symbols.iter() {
+                    if !s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+                        break;
+                    }
+                    let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                    if models.len() == 1 {
+                        parent_object = Some(models[0].clone());
+                        break;
+                    }
+                }
+            }
+            if syms.is_empty(){
+                self.diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(expr.start().to_u32(), 0), Position::new(expr.end().to_u32(), 0)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+
     /// Read function decorators and set evaluations where applicable
     /// - api.returns -> self -> Self, string -> model name if exists
     fn handle_func_decorators(
@@ -912,6 +975,8 @@ impl PythonArchEval {
                 } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
                         dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
                     self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
+                }else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
+                    self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
                 }
             }
         }
