@@ -937,34 +937,39 @@ impl Evaluation {
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_ref = base_evals[0].symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
-                if base_ref.is_expired_if_weak() {
-                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
-                }
-                let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None, &mut diagnostics);
-                for ibase in bases.iter() {
-                    let base_loc = ibase.upgrade_weak();
-                    if let Some(base_loc) = base_loc {
-                        let is_super = ibase.is_weak() && ibase.as_weak().is_super;
-                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
-                        for diagnostic in attributes_diagnostics.iter_mut(){
-                            diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
+                for base_eval in base_evals.iter(){
+                    let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
+                    if base_ref.is_expired_if_weak() {
+                        return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                    }
+                    let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None, &mut diagnostics);
+                    for ibase in bases.iter() {
+                        let base_loc = ibase.upgrade_weak();
+                        if let Some(base_loc) = base_loc {
+                            let is_super = ibase.is_weak() && ibase.as_weak().is_super;
+                            let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
+                            for diagnostic in attributes_diagnostics.iter_mut(){
+                                diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
+                            }
+                            diagnostics.extend(attributes_diagnostics);
+                            if !attributes.is_empty() {
+                                let is_instance = ibase.as_weak().instance.unwrap_or(false);
+                                attributes.iter().for_each(|attribute|{
+                                    let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
+                                    match eval.symbol.sym {
+                                        EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
+                                            weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
+                                        },
+                                        _ => {}
+                                    }
+                                    evals.push(eval);
+                                });
+                            }
                         }
-                        diagnostics.extend(attributes_diagnostics);
-                        if !attributes.is_empty() {
-                            let is_instance = ibase.as_weak().instance.unwrap_or(false);
-                            attributes.iter().for_each(|attribute|{
-                                let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
-                                match eval.symbol.sym {
-                                    EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                        weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
-                                        weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
-                                    },
-                                    _ => {}
-                                }
-                                evals.push(eval);
-                            });
-                        }
+                    }
+                    if !evals.is_empty(){
+                        break; // Only check next evaluations if we fail to get attrs from first evaluation
                     }
                 }
             },
