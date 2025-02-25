@@ -660,7 +660,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                                 current_module.clone(),
                                 false,
                                 true,
-                                false,
+                                true,
                                 false);
                             if symbols.is_empty() {
                                 break;
@@ -672,10 +672,12 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                                     //only handle it if there is only one main symbol for this model
                                     if models.len() == 1 {
                                         obj = Some(models[0].clone());
+                                        break;
                                     }
                                 }
                                 if s.borrow().is_specific_field(session, &["Date"]) {
                                     date_mode = true;
+                                    break;
                                 }
                             }
                         }
