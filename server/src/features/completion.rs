@@ -710,7 +710,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
             //TODO shouldn't we set and clean context here?
             let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval.is_expired_if_weak() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, true, false, None, &mut vec![]);
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     if let Some(parent_sym) = parent_sym_type.upgrade_weak() {
                         let mut all_symbols: HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>> = HashMap::new();
@@ -742,7 +742,7 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.is_expired_if_weak() {
-            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, true, false, None, &mut vec![]);
+            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
@@ -868,7 +868,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         Rc::downgrade(symbol),
         None,
         false,
-    )), session, &mut None, true, true, None, &mut vec![]);
+    )), session, &mut None, false, true, None, &mut vec![]);
     let mut label_details = Some(CompletionItemLabelDetails {
         detail: None,
         description: None,

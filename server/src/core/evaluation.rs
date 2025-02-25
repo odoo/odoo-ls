@@ -414,7 +414,7 @@ impl Evaluation {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
                 let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.clone()));
-                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, true, false, Some(function.clone()), &mut vec![]);
+                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, false, false, Some(function.clone()), &mut vec![]);
                 for sym in out_of_scope {
                     if !sym.is_expired_if_weak() {
                         res.push(Evaluation {
