@@ -710,12 +710,12 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
             //TODO shouldn't we set and clean context here?
             let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval.is_expired_if_weak() {
+                let from_module = file.borrow().find_module().clone();
                 let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     if let Some(parent_sym) = parent_sym_type.upgrade_weak() {
                         let mut all_symbols: HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>> = HashMap::new();
-                        let from_module = file.borrow().find_module().clone();
-                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval.as_weak().is_super);
+                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module.clone(), &mut None, parent_sym_eval.as_weak().is_super);
                         for (_symbol_name, symbols) in all_symbols {
                             //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                             if _symbol_name.starts_with(attr.attr.id.as_str()) {
