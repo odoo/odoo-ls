@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::rc::Weak;
 use byteyarn::Yarn;
@@ -93,7 +94,7 @@ impl Model {
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
+    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             let module = s.borrow().find_module().expect("Model should be declared in a module");
@@ -101,26 +102,7 @@ impl Model {
                 symbol.push(s);
             }
         }
-        symbol.into_iter()
-    }
-
-    pub fn get_full_model_symbols(&self, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
-        let mut symbol: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
-        for s in self.symbols.iter() {
-            let module = s.borrow().find_module().expect("Model should be declared in a module");
-            if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                symbol.insert(s);
-            }
-        }
-        for inherit_model in self.get_inherited_models(session, Some(from_module.clone())).iter() {
-            for s in inherit_model.borrow().symbols.iter() {
-                let module = s.borrow().find_module().expect("Model should be declared in a module");
-                if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                    symbol.insert(s);
-                }
-            }
-        }
-        symbol.into_iter()
+        symbol
     }
 
     pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
@@ -140,25 +122,28 @@ impl Model {
         res
     }
 
-    pub fn get_inherited_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
-        let mut res = vec![];
+    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
+        let mut symbol_set  = PtrWeakHashSet::new();
         let mut already_in = HashSet::new();
-        if let Some(from_module) = from_module {
-            let symbols = self.get_symbols(session, Some(from_module));
-            for symbol in symbols {
-                if let Some(model_data) = &symbol.borrow().as_class_sym()._model {
-                    for inherit in model_data.inherit.iter() {
-                        if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
-                            if !already_in.contains(&model.borrow().name) {
-                                res.push(model.clone());
-                                already_in.insert(model.borrow().name.clone());
-                            }
+        let mut queue = VecDeque::from([model_rc]);
+        while let Some(current_model_rc) = queue.pop_front(){
+            let current_model = current_model_rc.borrow();
+            let symbols = current_model.get_symbols(session, Some(from_module.clone()));
+            for symbol in symbols.iter() {
+                let sym_ref = symbol.borrow();
+                let Some(model_data) = &sym_ref.as_class_sym()._model else {continue};
+                for inherit in model_data.inherit.iter() {
+                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
+                        if !already_in.contains(&model.borrow().name) {
+                            already_in.insert(model.borrow().name.clone());
+                            queue.push_back(model.clone());
                         }
                     }
                 }
             }
+            symbol_set.extend(symbols.into_iter());
         }
-        res
+        symbol_set
     }
 
     pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
