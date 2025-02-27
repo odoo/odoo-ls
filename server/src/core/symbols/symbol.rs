@@ -1068,7 +1068,7 @@ impl Symbol {
         }
         let parent = self.parent().clone();
         let mut current_arc = parent.as_ref().unwrap().upgrade().unwrap();
-        let mut current = current_arc.borrow_mut();
+        let mut current = current_arc.borrow();
         while current.typ() != SymType::ROOT && current.parent().is_some() {
             if current.is_file_content() {
                 res.1.insert(0, current.name().clone());
@@ -1078,7 +1078,7 @@ impl Symbol {
             let parent = current.parent().clone();
             drop(current);
             current_arc = parent.as_ref().unwrap().upgrade().unwrap();
-            current = current_arc.borrow_mut();
+            current = current_arc.borrow();
         }
         res
     }
@@ -1933,7 +1933,7 @@ impl Symbol {
 
     //store in result all available members for self: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>>, with_co_models: bool, only_fields: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -1948,6 +1948,9 @@ impl Symbol {
                 // Skip current class symbols for super
                 if !is_super{
                     for symbol in symbol.borrow().all_symbols() {
+                        if only_fields && !symbol.borrow().is_field(session){
+                            continue;
+                        }
                         let name = symbol.borrow().name().clone();
                         if let Some(vec) = result.get_mut(&name) {
                             vec.push((symbol, None));
@@ -1964,6 +1967,9 @@ impl Symbol {
                             for (model_sym, dependency) in model.borrow().all_symbols(session, from_module.clone()) {
                                 if dependency.is_none() && !Rc::ptr_eq(symbol, &model_sym) {
                                     for s in model_sym.borrow().all_symbols() {
+                                        if only_fields && !s.borrow().is_field(session){
+                                            continue;
+                                        }
                                         let name = s.borrow().name().clone();
                                         if let Some(vec) = result.get_mut(&name) {
                                             vec.push((s, Some(model_sym.borrow().name().clone())));
@@ -1980,12 +1986,15 @@ impl Symbol {
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
                     if let Some(base) = base.upgrade() {
-                        Symbol::all_members(&base, session, result, false, from_module.clone(), acc, false);
+                        Symbol::all_members(&base, session, result, false, only_fields, from_module.clone(), acc, false);
                     }
                 }
             },
             _ => {
                 for symbol in symbol.borrow().all_symbols() {
+                    if only_fields && !symbol.borrow().is_field(session){
+                        continue;
+                    }
                     let name = symbol.borrow().name().clone();
                     if let Some(vec) = result.get_mut(&name) {
                         vec.push((symbol, None));
