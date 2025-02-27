@@ -11,7 +11,7 @@ use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
-use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -19,11 +19,20 @@ use crate::S;
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
-
-    pub fn find_compute_field_symbols(session: &mut SessionInfo, compute_str: &String, call_expr: &ExprCall, offset: usize, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>>{
+    pub fn find_compute_field_symbols(
+        session: &mut SessionInfo,
+        scope: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        compute_str: &String,
+        call_expr: &ExprCall,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
+            return vec![];
+        };
+        if parent_class.borrow().as_class_sym()._model.is_none(){
+            return vec![];
+        }
         let mut compute_syms = vec![];
-        let from_module = file_symbol.borrow().find_module();
-        let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
         for arg in call_expr.arguments.keywords.iter() {
             let Some(ref arg_id) = arg.arg else {
                 continue;
@@ -40,22 +49,117 @@ impl FeaturesUtils {
                 if !callable_sym.borrow().is_field_class(session){
                     continue;
                 }
-                let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
-                    continue;
-                };
-                if parent_class.borrow().as_class_sym()._model.is_none(){
-                    continue;
-                }
                 compute_syms = parent_class.borrow().get_member_symbol(session, compute_str, from_module.clone(), false, false, true, false).0;
             }
+            break; // Already found compute arg
         }
         compute_syms
     }
 
-    pub fn find_domain_field_symbols(session: &mut SessionInfo, field_name: &String, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>>{
-        let mut string_domain_fields = vec![];
-        let from_module = file_symbol.borrow().find_module();
-        let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
+    fn find_simple_decorator_field_symbol(
+        session: &mut SessionInfo,
+        scope: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_name: &String,
+    ) ->  Vec<Rc<RefCell<Symbol>>>{
+        let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
+            return vec![];
+        };
+        if parent_class.borrow().as_class_sym()._model.is_none(){
+            return vec![];
+        }
+        parent_class.clone().borrow().get_member_symbol(session, field_name, from_module.clone(), false, false, true, false).0
+    }
+
+    fn find_nested_field(
+        session: &mut SessionInfo,
+        base_symbol: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_range: &TextRange,
+        field_name: &String,
+        offset: &usize,
+    ) ->  Vec<Rc<RefCell<Symbol>>>{
+        if base_symbol.borrow().as_class_sym()._model.is_none(){
+            return vec![];
+        }
+        let mut parent_object = Some(base_symbol);
+        let mut range_start = field_range.start() + TextSize::new(1);
+        for name in field_name.split(".").map(|x| x.to_string()) {
+            if parent_object.is_none() {
+                break;
+            }
+            let range_end = range_start + TextSize::new((name.len() + 1) as u32);
+            let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
+            if cursor_section {
+                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
+                return fields;
+            } else {
+                let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
+                    &name.to_string(),
+                    from_module.clone(),
+                    false,
+                    true,
+                    true,
+                    false);
+                if symbols.is_empty() {
+                    break;
+                }
+                parent_object = None;
+                for s in symbols.iter() {
+                    if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
+                        let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                        if models.len() == 1 {
+                            parent_object = Some(models[0].clone());
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+            range_start = range_end;
+        }
+        vec![]
+    }
+
+    fn find_nested_decorator_field_symbol(
+        session: &mut SessionInfo,
+        scope: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_range: &TextRange,
+        field_name: &String,
+        offset: &usize,
+    ) ->  Vec<Rc<RefCell<Symbol>>>{
+        let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
+            return vec![];
+        };
+        FeaturesUtils::find_nested_field(session, parent_class, from_module, field_range, field_name, offset)
+    }
+
+    fn find_domain_param_symbols(
+        session: &mut SessionInfo,
+        callable: &EvaluationSymbolWeak,
+        field_range: &TextRange,
+        field_name: &String,
+        offset: &usize,
+        from_module: &Option<Rc<RefCell<Symbol>>>,
+    ) -> Vec<Rc<RefCell<Symbol>>> {
+        let Some(parent_object) = callable.context.get(&S!("base_attr")).and_then(|parent_object| parent_object.as_symbol().upgrade()) else {
+            return vec![];
+        };
+        FeaturesUtils::find_nested_field(session, parent_object, from_module.clone(), field_range, field_name, offset)
+    }
+
+    pub fn find_parameter_symbols(
+        session: &mut SessionInfo,
+        scope: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_name: &String,
+        call_expr: &ExprCall,
+        offset: usize,
+        field_range: TextRange,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        let mut parameter_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
         for (arg_index, arg) in call_expr.arguments.args.iter().enumerate() {
             if offset <= arg.range().start().to_usize() || offset > arg.range().end().to_usize() {
                 continue;
@@ -70,6 +174,22 @@ impl FeaturesUtils {
                     continue
                 }
                 let func = callable_sym.borrow();
+
+                // Check if we are in api.onchange/constrains/depends
+                let func_sym_tree = func.get_tree();
+                if func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
+                    func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+                    parameter_symbols.extend(
+                        FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
+                    );
+                    continue;
+                }  else if func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
+                    parameter_symbols.extend(
+                        FeaturesUtils::find_nested_decorator_field_symbol(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
+                    );
+                    continue;
+                }
+
                 let func_arg = func.as_func().get_indexed_arg_in_call(
                     call_expr,
                     arg_index as u32,
@@ -77,59 +197,27 @@ impl FeaturesUtils {
                 let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
                     continue
                 };
+
                 for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
-                    if !matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
-                        continue;
-                    }
-                    let Some(mut parent_object) = callable.context.get(&S!("base_attr")).map(|parent_object| parent_object.as_symbol().upgrade()) else {
-                        continue;
-                    };
-                    let mut range_start = field_range.start() + TextSize::new(1);
-                    for name in field_name.split(".").map(|x| x.to_string()) {
-                        if parent_object.is_none() {
-                            break;
-                        }
-                        let range_end = range_start + TextSize::new((name.len() + 1) as u32);
-                        let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(offset as u32));
-                        if cursor_section {
-                            let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
-                            string_domain_fields.extend(fields);
-                            break;
-                        } else {
-                            let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
-                                &name.to_string(),
-                                from_module.clone(),
-                                false,
-                                true,
-                                false,
-                                false);
-                            if symbols.is_empty() {
-                                break;
-                            }
-                            parent_object = None;
-                            for s in symbols.iter() {
-                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
-                                    let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
-                                    if models.len() == 1 {
-                                        parent_object = Some(models[0].clone());
-                                    }
-                                }
-                            }
-                        }
-                        range_start = range_end;
+                    if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
+                        parameter_symbols.extend(
+                            FeaturesUtils::find_domain_param_symbols(session, &callable, &field_range, field_name, &offset, &from_module)
+                        );
                     }
                 }
             }
         }
-        string_domain_fields
+        parameter_symbols
     }
 
     fn check_for_string_special_syms(session: &mut SessionInfo, string_val: &String, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>> {
-        let string_domain_fields_syms: Vec<Rc<RefCell<Symbol>>> = FeaturesUtils::find_domain_field_symbols(session, string_val, call_expr, offset, field_range, file_symbol);
+        let from_module = file_symbol.borrow().find_module();
+        let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
+        let string_domain_fields_syms = FeaturesUtils::find_parameter_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, offset, field_range);
         if string_domain_fields_syms.len() >= 1 {
             return string_domain_fields_syms;
         }
-        let compute_kwarg_syms: Vec<Rc<RefCell<Symbol>>> = FeaturesUtils::find_compute_field_symbols(session, string_val, call_expr, offset, file_symbol);
+        let compute_kwarg_syms = FeaturesUtils::find_compute_field_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr);
         if compute_kwarg_syms.len() >= 1{
             return compute_kwarg_syms;
         }
