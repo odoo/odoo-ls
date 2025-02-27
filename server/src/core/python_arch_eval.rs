@@ -1092,7 +1092,7 @@ impl PythonArchEval {
                 } else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("onchange")]) ||
                         dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("constrains")]){
                     self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
-                }else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("depends")]){
+                } else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("depends")]){
                     self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
                 }
             }
