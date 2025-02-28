@@ -356,7 +356,7 @@ impl PythonValidator {
                 let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                 for eval_weak in eval_weaks.iter() {
                     let Some(symbol) = eval_weak.upgrade_weak() else {continue};
-                    if !symbol.borrow().is_field_class(){
+                    if !symbol.borrow().is_field_class(session){
                         continue;
                     }
                     if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) {
