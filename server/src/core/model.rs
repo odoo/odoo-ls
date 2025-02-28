@@ -122,6 +122,18 @@ impl Model {
         res
     }
 
+    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: &Rc<RefCell<Symbol>>) -> bool {
+        for sym in self.symbols.iter() {
+            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
+                let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
+                if ModuleSymbol::is_in_deps(session, from_module, &dir_name) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
         let mut symbol_set  = PtrWeakHashSet::new();
         let mut already_in = HashSet::new();
