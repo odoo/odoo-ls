@@ -10,6 +10,8 @@ use lsp_types::NumberOrString;
 use once_cell::sync::Lazy;
 use ruff_python_ast::Arguments;
 use ruff_python_ast::Expr;
+use ruff_text_size::Ranged;
+use ruff_text_size::TextRange;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbols::symbol::Symbol;
@@ -669,16 +671,16 @@ impl PythonArchEvalHooks {
         }]);
     }
 
-    fn find_special_arguments<'a>(parameters: &'a Arguments, find_comdel_name: bool) -> Option<(&'a Expr, String)> {
+    fn find_special_arguments<'a>(parameters: &'a Arguments, find_comdel_name: bool) -> Option<(&'a Expr, String, TextRange)> {
         let find_in_kwargs = |arg_name: &str, context_name: String| parameters.keywords.iter().find_map(|keyword| {
             keyword.arg
                 .as_ref().filter(|kw_arg| kw_arg.id == arg_name)
-                .map(|_| (&keyword.value, context_name.clone()))
+                .map(|_| (&keyword.value, context_name.clone(), keyword.range()))
         });
 
         if find_comdel_name {
             if let Some(first_param) = parameters.args.get(0) {
-                return Some((first_param, S!("comodel")))
+                return Some((first_param, S!("comodel"), first_param.range()))
             }
         }
         find_in_kwargs("comodel_name", S!("comodel")).or_else(|| find_in_kwargs("related", S!("related")))
@@ -690,7 +692,7 @@ impl PythonArchEvalHooks {
 
         let Some(parameters) = context.get(&S!("parameters")).map(|ps| ps.as_arguments()) else {return None};
 
-        let Some((field_name_expr, context_name)) = PythonArchEvalHooks::find_special_arguments(&parameters, relational) else {
+        let Some((field_name_expr, context_name, arg_range)) = PythonArchEvalHooks::find_special_arguments(&parameters, relational) else {
             return None;
         };
 
@@ -703,7 +705,11 @@ impl PythonArchEvalHooks {
         if let Some(related_string) = maybe_related_string {
             return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                 weak: evaluation_sym.get_weak().weak.clone(),
-                context: HashMap::from([(context_name, ContextValue::STRING(related_string.to_string())), (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent)))]),
+                context: HashMap::from([
+                    (context_name, ContextValue::STRING(related_string.to_string())),
+                    (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
+                    (S!("special_arg_range"), ContextValue::RANGE(arg_range)),
+                    ]),
                 instance: Some(true),
                 is_super: false
             }));
