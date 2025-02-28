@@ -334,15 +334,55 @@ impl PythonValidator {
     }
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
-        let cl = class.borrow();
-        let Some(model) = cl.as_class_sym()._model.as_ref() else {
+        let class_ref = class.borrow();
+        let Some(ref model_name) = class_ref.as_class_sym()._model else {
             return;
         };
         if self.current_module.is_none() {
             return;
         }
+        let from_module = class_ref.find_module();
+        // Check fields, check related and comodel arguments
+        for symbol in class_ref.all_symbols(){
+            let sym_ref = symbol.borrow();
+            if sym_ref.typ() != SymType::VARIABLE {
+                continue;
+            }
+            let Some(evals) = sym_ref.evaluations() else {
+                continue;
+            };
+            for eval in evals.iter() {
+                let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                for eval_weak in eval_weaks.iter() {
+                    let Some(symbol) = eval_weak.upgrade_weak() else {continue};
+                    if !symbol.borrow().is_field_class(){
+                        continue;
+                    }
+                    // Todo: Also check comodel
+                    let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) else {
+                        continue;
+                    };
+                    let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                        continue;
+                    };
+                    let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), from_module.clone());
+                    if syms.is_empty(){
+                        self.diagnostics.push(Diagnostic::new(
+                            Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30323"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("Field {related_field_name} does not exist on model {}", model_name.name),
+                            None,
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
         //Check inherit field
-        let inherit = cl.get_symbol(&(vec![], vec![Sy!("_inherit")]), u32::MAX);
+        let inherit = class_ref.get_symbol(&(vec![], vec![Sy!("_inherit")]), u32::MAX);
         if let Some(inherit) = inherit.last() {
             let inherit = inherit.borrow();
             let inherit_evals = &inherit.evaluations().unwrap();
