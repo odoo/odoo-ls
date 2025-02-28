@@ -28,7 +28,7 @@ pub enum ExpectedType {
     DOMAIN_COMPARATOR,
     CLASS(Rc<RefCell<Symbol>>),
     SIMPLE_FIELD,
-    NESTED_FIELD,
+    NESTED_FIELD(Option<String>),
 }
 
 pub struct CompletionFeature;
@@ -507,7 +507,7 @@ fn complete_decorator_call(
             dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
             &vec![ExpectedType::SIMPLE_FIELD]
         } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
-            &vec![ExpectedType::NESTED_FIELD]
+            &vec![ExpectedType::NESTED_FIELD(None)]
         } else {
             continue;
         };
@@ -527,14 +527,15 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
     if offset > expr_call.func.range().start().to_usize() && offset <= expr_call.func.range().end().to_usize() {
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
+    let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start()).0;
     for (arg_index, arg) in expr_call.arguments.args.iter().enumerate() {
         if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
-            let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-            let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start()).0;
             for callable_eval in callable_evals.iter() {
                 let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-                if let Some(callable_sym) = callable.weak.upgrade() {
-                    if callable_sym.borrow().typ() == SymType::FUNCTION {
+                let Some(callable_sym) = callable.weak.upgrade()  else {continue};
+                match callable_sym.borrow().typ(){
+                    SymType::FUNCTION => {
                         let func = callable_sym.borrow();
                         let func = func.as_func();
                         let func_arg = func.get_indexed_arg_in_call(
@@ -567,12 +568,47 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                 return complete_expr(arg, session, file, offset, is_param, &expected_type);
                             }
                         }
-                    }
-                }
+                    },
+                    SymType::CLASS => {
+                        // check for completion of first positional argument for comodel_name
+                        if arg_index != 0 || !callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]) {
+                            break;
+                        }
+                        return complete_expr(arg, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                    },
+                    _ => {}
+                };
             }
             //if we didn't find anything, still try to complete
             return complete_expr(arg, session, file, offset, is_param, &vec![]);
         }
+    }
+    for keyword in expr_call.arguments.keywords.iter(){
+        if offset <= keyword.value.range().start().to_usize() || offset > keyword.value.range().end().to_usize() {
+            continue;
+        }
+        for callable_eval in callable_evals.iter() {
+            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+            let Some(callable_sym) = callable.weak.upgrade() else {continue};
+            if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
+                continue;
+            }
+            let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
+                match kw_arg_id.id.as_str() {
+                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(callable_sym.borrow().name().clone()))]),
+                    "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
+                            Some(vec![ExpectedType::MODEL_NAME])
+                        } else {
+                            None
+                        },
+                    _ => None,
+                }
+            ) else {
+                continue;
+            };
+            return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
+        }
+        return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
     }
     None
 }
@@ -658,9 +694,9 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 }
             },
             ExpectedType::DOMAIN_FIELD(parent) => {
-                add_nested_field_names(session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent.clone(), true);
+                add_nested_field_names(session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent.clone(), true, &None);
             },
-            ExpectedType::SIMPLE_FIELD | ExpectedType::NESTED_FIELD => 'field_block:  {
+            ExpectedType::SIMPLE_FIELD | ExpectedType::NESTED_FIELD(_) => 'field_block:  {
                 let scope = Symbol::get_scope_symbol(file.clone(), expr_string_literal.range().start().to_u32(), true);
                 let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
                     break 'field_block;
@@ -671,8 +707,8 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 match expected_type {
                     ExpectedType::SIMPLE_FIELD =>  add_model_attributes(
                         session, &mut items, current_module.clone(), parent_class, false, true, expr_string_literal.value.to_str()),
-                    ExpectedType::NESTED_FIELD => add_nested_field_names(
-                        session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent_class, false),
+                    ExpectedType::NESTED_FIELD(maybe_field_type) => add_nested_field_names(
+                        session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent_class, false, maybe_field_type),
                     _ => unreachable!()
                 }
             }
@@ -853,6 +889,7 @@ fn add_nested_field_names(
     field_prefix: &str,
     parent: Rc<RefCell<Symbol>>,
     add_date_completions: bool,
+    specific_field_type: &Option<String>,
 ){
     let split_expr: Vec<String> = field_prefix.split(".").map(|x| x.to_string()).collect();
     let mut obj = Some(parent.clone());
@@ -889,7 +926,7 @@ fn add_nested_field_names(
                     if _symbol_name.starts_with(name) {
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
-                            if dep.is_none() {
+                            if dep.is_none() && (specific_field_type.is_none() || final_sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
                                 items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
                                 found_one = true;
                                 continue;

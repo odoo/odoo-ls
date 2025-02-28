@@ -2166,6 +2166,16 @@ impl Symbol {
         false
     }
 
+    pub fn is_specific_field_class(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
+        let tree = flatten_tree(&self.get_main_entry_tree(session));
+        if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+            if field_names.contains(&tree[2].as_str()) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn is_specific_field(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
         match self.typ() {
             SymType::VARIABLE => {
@@ -2175,11 +2185,8 @@ impl Symbol {
                         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
-                                let tree = flatten_tree(&symbol.borrow().get_main_entry_tree(session));
-                                if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-                                    if field_names.contains(&tree[2].as_str()) {
-                                        return true;
-                                    }
+                                if symbol.borrow().is_specific_field_class(session, field_names){
+                                    return true;
                                 }
                             }
                         }
