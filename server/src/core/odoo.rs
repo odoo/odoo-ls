@@ -505,7 +505,8 @@ impl SyncOdoo {
                         },
                         SymType::FILE => {
                             new_symbol.borrow_mut().as_file_mut().self_import = true;
-                        }
+                        },
+                        SymType::PACKAGE(PackageType::MODULE) => {},
                         _ => {panic!("Unexpected symbol type: {:?}", new_sym_typ);}
                     }
                     if matches!(new_symbol.borrow().typ(), SymType::PACKAGE(PackageType::MODULE)) {
@@ -1221,6 +1222,7 @@ impl Odoo {
     }
 
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &String) {
+        //search if the path does match a missing file path somewhere
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_main() {
             if entry.borrow().is_valid_for(path.as_str()) {
@@ -1232,6 +1234,30 @@ impl Odoo {
             if entry.borrow().is_valid_for(path.as_str()) {
                 let tree = entry.borrow().get_tree_for_entry(&PathBuf::from(path.clone()));
                 entry.borrow_mut().search_symbols_to_rebuild(session, &tree);
+            }
+        }
+        //test if the new path is a new module
+        if let Some(parent_path) = PathBuf::from(path).parent() {
+            let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
+            for entry in ep_mgr.borrow().addons_entry_points.iter() {
+                if entry.borrow().path == parent_path.sanitize() {
+                    let module_symbol = Symbol::create_from_path(session, &PathBuf::from(path), entry.borrow().get_symbol().unwrap().clone(), true);
+                    if module_symbol.is_some() {
+                        session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
+                    }
+                    break;
+                }
+            }
+            if parent_path.sanitize() == session.sync_odoo.config.odoo_path.clone() + "/odoo/addons" {
+                let addons_symbol = session.sync_odoo.get_main_entry().borrow().root.clone().borrow().get_symbol(&(vec![S!("odoo"), S!("addons")], vec![]), u32::MAX);
+                if !addons_symbol.is_empty() {
+                    let module_symbol = Symbol::create_from_path(session, &PathBuf::from(path), addons_symbol[0].clone(), true);
+                    if module_symbol.is_some() {
+                        session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
+                    }
+                } else {
+                    error!("Unable to find addons symbol to create new module");
+                }
             }
         }
     }
@@ -1251,8 +1277,8 @@ impl Odoo {
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&old_path);
             SyncOdoo::process_rebuilds(session);
             //2 - create new document
-            session.sync_odoo.opened_files.push(new_path.clone());
             Odoo::search_symbols_to_rebuild(session, &new_path);
+            SyncOdoo::process_rebuilds(session);
             let tree = session.sync_odoo.entry_point_mgr.borrow().tree_for_main(&new_path);
             if let Some(tree) = tree {
                 if session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree, u32::MAX).is_empty() {

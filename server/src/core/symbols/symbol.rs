@@ -1464,9 +1464,6 @@ impl Symbol {
             }
             //check if we should not reimport automatically
             match ref_to_unload.borrow().typ() {
-                SymType::PACKAGE(PackageType::MODULE) => {
-                    session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));
-                },
                 SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
                     if ref_to_unload.borrow().as_python_package().self_import {
                         session.sync_odoo.must_reload_paths.push((Rc::downgrade(&parent), ref_to_unload.borrow().paths().first().unwrap().clone()));

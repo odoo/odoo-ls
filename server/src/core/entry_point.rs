@@ -339,7 +339,7 @@ impl EntryPoint {
     }
 
     pub fn get_symbol(&self) -> Option<Rc<RefCell<Symbol>>> {
-        let tree = self.tree.clone();
+        let tree = self.addon_to_odoo_tree.as_ref().unwrap_or(&self.tree).clone();
         let symbol = self.root.borrow().get_symbol(&(tree, vec![]), u32::MAX);
         match symbol.len() {
             0 => None,
