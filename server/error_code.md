@@ -205,3 +205,9 @@ If you used a relational field and get this error, check that the comodel of thi
 
 ### OLS30323
 "Field does not exist on model"
+
+### OLS30324
+"Field comodel_name not in dependencies"
+
+### OLS30325
+"Field comodel_name does not exist"

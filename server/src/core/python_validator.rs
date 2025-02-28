@@ -341,7 +341,7 @@ impl PythonValidator {
         if self.current_module.is_none() {
             return;
         }
-        let from_module = class_ref.find_module();
+        let maybe_from_module = class_ref.find_module();
         // Check fields, check related and comodel arguments
         for symbol in class_ref.all_symbols(){
             let sym_ref = symbol.borrow();
@@ -359,24 +359,55 @@ impl PythonValidator {
                     if !symbol.borrow().is_field_class(){
                         continue;
                     }
-                    // Todo: Also check comodel
-                    let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) else {
-                        continue;
-                    };
-                    let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
-                        continue;
-                    };
-                    let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), from_module.clone());
-                    if syms.is_empty(){
-                        self.diagnostics.push(Diagnostic::new(
-                            Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(NumberOrString::String(S!("OLS30323"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Field {related_field_name} does not exist on model {}", model_name.name),
-                            None,
-                            None,
-                        ));
+                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            continue;
+                        };
+                        let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
+                        if syms.is_empty(){
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30323"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Field {related_field_name} does not exist on model {}", model_name.name),
+                                None,
+                                None,
+                            ));
+                        }
+                    } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(module) = class_ref.find_module() else {
+                            continue;
+                        };
+                        if !ModuleSymbol::is_in_deps(session, &module, &comodel_field_name){
+                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            if let Some(model) = session.sync_odoo.models.get(&comodel_field_name){
+                                let Some(ref from_module) = maybe_from_module else {continue};
+                                if !model.clone().borrow().model_in_deps(session, from_module) {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                        Some(DiagnosticSeverity::ERROR),
+                                        Some(NumberOrString::String(S!("OLS30324"))),
+                                        Some(EXTENSION_NAME.to_string()),
+                                        format!("Field comodel_name ({comodel_field_name}) is not in module dependencies"),
+                                        None,
+                                        None,
+                                    ));
+                                }
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30325"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Field comodel_name ({comodel_field_name}) does not exist"),
+                                    None,
+                                    None,
+                                ));
+                            }
+                        }
                     }
                 }
             }
