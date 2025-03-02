@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
+use std::{collections::HashMap, fmt, io::Error, panic, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread::JoinHandle};
 
 use clap::error;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Select, Sender};
@@ -10,7 +10,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
+use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, tool_api::tool_api::CAN_TOOL_API_RUN, S};
 
 const THREAD_MAIN_COUNT: u16 = 1;
 const THREAD_READ_COUNT: u16 = 1;
@@ -34,9 +34,11 @@ pub struct Server {
     sender_s_to_read: Sender<Message>, //unique channel server to all read threads
     delayed_process_thread: JoinHandle<()>,
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
-    sync_odoo: Arc<Mutex<SyncOdoo>>,
+    pub sync_odoo: Arc<Mutex<SyncOdoo>>,
     interrupt_rebuild_boolean: Arc<AtomicBool>,
     terminate_rebuild_boolean: Arc<AtomicBool>,
+
+    pub spy_thread: Option<JoinHandle<()>>,
 }
 
 #[derive(Debug)]
@@ -151,7 +153,8 @@ impl Server {
             delayed_process_thread,
             sync_odoo: sync_odoo,
             interrupt_rebuild_boolean: interrupt_rebuild_boolean,
-            terminate_rebuild_boolean
+            terminate_rebuild_boolean,
+            spy_thread: None,
         }
     }
 
@@ -287,6 +290,10 @@ impl Server {
         for specific_sender in self.senders_s_to_read.iter() {
             self.sender_s_to_read.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
             specific_sender.send(shutdown_notification.clone()).unwrap(); //send to specific channels too to close pending requests
+        }
+        CAN_TOOL_API_RUN.store(false, Ordering::SeqCst);
+        if let Some(spy_thread) = self.spy_thread.take() {
+            spy_thread.join().unwrap();
         }
         info!(message);
     }
