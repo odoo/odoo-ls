@@ -6,4 +6,5 @@ pub mod threads;
 pub mod features;
 pub mod server;
 pub mod tasks;
+pub mod tool_api;
 pub mod utils;

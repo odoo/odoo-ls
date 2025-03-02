@@ -68,7 +68,12 @@ fn main() {
     info!("Server version: {}", EXTENSION_VERSION);
     info!("Compiled setting: DEBUG_ODOO_BUILDER: {}", DEBUG_ODOO_BUILDER);
     info!("Compiled setting: DEBUG_MEMORY: {}", DEBUG_MEMORY);
+    info!("Compiled setting: DEBUG_THREADS: {}", DEBUG_THREADS);
+    info!("Compiled setting: DEBUG_STEPS: {}", DEBUG_STEPS);
     info!("Operating system: {}", std::env::consts::OS);
+    if cli.spy {
+        info!("Spy mode enabled");
+    }
     info!("");
 
     if cli.parse {
@@ -79,6 +84,9 @@ fn main() {
         info!(tag = "test", "starting server (debug mode)");
         let mut serv = Server::new_tcp().expect("Unable to start tcp connection");
         serv.initialize().expect("Error while initializing server");
+        if cli.spy {
+            serv.create_spy_connection(serv.sync_odoo.clone());
+        }
         let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
         std::panic::set_hook(Box::new(move |panic_info| {
             let backtrace = std::backtrace::Backtrace::capture();

@@ -2,11 +2,12 @@
 {
     "version": "1.0.0",
     "configurations": [
+
         {
             "name": "Launch Server (lldb)",
             "type": "lldb",
             "request": "launch",
-            "args": ["--use-tcp"],
+            "args": ["--use-tcp", "--spy"],
             "cargo": {
                 "args": [
                     "build"
@@ -29,7 +30,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/odoo_ls_server.exe",
-            "args": ["--use-tcp"],
+            "args": ["--use-tcp", "--spy"],
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal",
             "preLaunchTask": "cargo build"
