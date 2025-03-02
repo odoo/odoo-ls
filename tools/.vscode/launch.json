@@ -1,0 +1,15 @@
+// A launch configuration that compiles the extension and then opens it inside a new window
+{
+    "version": "1.0.0",
+    "configurations": [
+        {
+            "name": "OdooLS Spy",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/odoolsspy/odoo-ls-spy.py",
+            "args": [],
+            "cwd": "${workspaceFolder}/odoolsspy",
+            "console": "integratedTerminal",
+        },
+    ]
+}
