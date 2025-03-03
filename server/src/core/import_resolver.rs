@@ -1,6 +1,6 @@
 use glob::glob;
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
-use tracing::error;
+use tracing::{error, info};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -29,6 +29,7 @@ pub struct ImportResult {
 #[derive(Debug)]
 pub struct ImportCache {
     pub modules: HashMap<String, Option<Rc<RefCell<Symbol>>>>,
+    pub main_modules: HashMap<String, Option<Rc<RefCell<Symbol>>>>,
 }
 
 fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbol>>>, session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
@@ -263,11 +264,21 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
             None => {
                 if level.is_none() || level.unwrap() == 0 {
                     if let Some(ref cache) = session.sync_odoo.import_cache {
-                        if let Some(symbol) = cache.modules.get(branch) {
+                        let cache_module = if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
+                            cache.main_modules.get(branch)
+                        } else {
+                            cache.modules.get(branch)
+                        };
+                        if let Some(symbol) = cache_module {
                             if let Some(symbol) = symbol {
                                 sym = Some(symbol.clone());
                                 last_symbol = Some(symbol.clone());
                                 continue;
+                            } else{
+                                //we know we won't find it
+                                sym = None;
+                                last_symbol = None;
+                                break;
                             }
                         }
                     }
@@ -276,7 +287,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
                 for entry in entry_point_mgr.iter_for_import(for_entry) {
-                    if (entry.borrow().is_public() && (level.is_none() || level.unwrap() == 0)) || entry.borrow().is_valid_for(from_path) {
+                    if ((entry.borrow().is_public() && (level.is_none() || level.unwrap() == 0)) || entry.borrow().is_valid_for(from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol();
                         if let Some(entry_point) = entry_point {
                             let mut next_symbol = entry_point.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
@@ -289,9 +300,15 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                             if next_symbol.is_empty() {
                                 continue;
                             }
-                            if entry.borrow().is_public() && (level.is_none() || level.unwrap() == 0) {
-                                if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                                    cache.modules.insert(branch.clone(), Some(next_symbol[0].clone()));
+                            if level.is_none() || level.unwrap() == 0 {
+                                if entry.borrow().is_public() {
+                                    if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                                        cache.modules.insert(branch.clone(), Some(next_symbol[0].clone()));
+                                    }
+                                } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON) {
+                                    if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                                        cache.main_modules.insert(branch.clone(), Some(next_symbol[0].clone()));
+                                    }
                                 }
                             }
                             found = true;
@@ -302,8 +319,14 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                     }
                 }
                 if !found {
-                    if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                        cache.modules.insert(branch.clone(), None);
+                    if for_entry.borrow().typ != EntryPointType::CUSTOM {
+                        if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                            if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
+                                cache.main_modules.insert(branch.clone(), None);
+                            } else {
+                                cache.modules.insert(branch.clone(), None);
+                            }
+                        }
                     }
                     sym = None;
                     last_symbol = None;

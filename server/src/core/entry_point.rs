@@ -226,6 +226,15 @@ impl EntryPointMgr {
         )
     }
 
+    pub fn is_valid_for_main_entry(&self, path: &str) -> bool {
+        for entry in self.iter_main() {
+            if entry.borrow().is_valid_for(path) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn reset_entry_points(&mut self, with_custom_entries: bool) {
         self.builtins_entry_points.clear();
         self.public_entry_points.clear();

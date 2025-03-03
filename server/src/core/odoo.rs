@@ -527,7 +527,7 @@ impl SyncOdoo {
     pub fn process_rebuilds(session: &mut SessionInfo) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         SyncOdoo::add_from_self_reload(session);
-        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new() });
+        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
