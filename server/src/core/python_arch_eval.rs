@@ -320,13 +320,16 @@ impl PythonArchEval {
                     panic!("either value or annotation should exists");
                 }
                 let mut dep_to_add = vec![];
-                let mut evals_to_drop: Vec<usize> = vec![];
-                for (ix, evaluation) in variable_rc.borrow().evaluations().unwrap().iter().enumerate() {
+                let mut v_mut = variable_rc.borrow_mut();
+                let evaluations = v_mut.evaluations_mut().unwrap();
+                let mut ix = 0;
+                while ix < evaluations.len(){
+                    let evaluation =  &evaluations[ix];
                     if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
                         if Rc::ptr_eq(&sym, &variable_rc){
                             // TODO: investigate deps, and fix cyclic evals
                             warn!("Found cyclic evaluation symbol: {}, parent: {}", sym.borrow().name(), parent.borrow().name());
-                            evals_to_drop.push(ix);
+                            evaluations.remove(ix);
                             continue;
                         }
                         if let Some(file) = sym.borrow().get_file().clone() {
@@ -343,10 +346,7 @@ impl PythonArchEval {
                             }
                         }
                     }
-                }
-                let mut v_mut = variable_rc.borrow_mut();
-                for ix in evals_to_drop.into_iter(){
-                    v_mut.evaluations_mut().unwrap().remove(ix);
+                    ix += 1
                 }
                 for dep in dep_to_add {
                     self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
@@ -367,13 +367,16 @@ impl PythonArchEval {
                 variable_rc.borrow_mut().set_evaluations(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
-                let mut evals_to_drop: Vec<usize> = vec![];
-                for (ix, evaluation) in variable_rc.borrow().evaluations().unwrap().iter().enumerate() {
+                let mut v_mut = variable_rc.borrow_mut();
+                let evaluations = v_mut.evaluations_mut().unwrap();
+                let mut ix = 0;
+                while ix < evaluations.len(){
+                    let evaluation =  &evaluations[ix];
                     if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
                         if Rc::ptr_eq(&sym, &variable_rc){
                             // TODO: investigate deps, and fix cyclic evals
                             warn!("Found cyclic evaluation symbol: {}, parent: {}", sym.borrow().name(), parent.borrow().name());
-                            evals_to_drop.push(ix);
+                            evaluations.remove(ix);
                             continue;
                         }
                         if let Some(file) = sym.borrow().get_file().clone() {
@@ -390,10 +393,7 @@ impl PythonArchEval {
                             }
                         }
                     }
-                }
-                let mut v_mut = variable_rc.borrow_mut();
-                for ix in evals_to_drop.into_iter(){
-                    v_mut.evaluations_mut().unwrap().remove(ix);
+                    ix += 1
                 }
                 for dep in dep_to_add {
                     self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
