@@ -93,6 +93,10 @@ impl ToolAPI {
                 let sync_odoo = sync_odoo.lock().unwrap();
                 response_value = ToolAPI::list_entries(&sync_odoo);
             },
+            "$/ToolAPI/get_symbol" => {
+                let sync_odoo = sync_odoo.lock().unwrap();
+                response_value = ToolAPI::get_symbol(&sync_odoo, &request.params);
+            },
             _ => {
                 error!("ToolAPI: Unknown request method: {}", request.method);
                 return Response::new_err(request.id.clone(), lsp_server::ErrorCode::MethodNotFound as i32, format!("Method not found {}", request.method));
@@ -134,5 +138,16 @@ impl ToolAPI {
             entries.push(ToolAPI::entry_to_json(&entry.borrow()));
         }
         serde_json::Value::Array(entries)
+    }
+
+    fn get_symbol(sync_odoo: &SyncOdoo, params: &serde_json::Value) -> serde_json::Value {
+        /*let path = params["path"].as_str().unwrap();
+        let tree = params["tree"].as_str().unwrap();
+        let entry = sync_odoo.entry_point_mgr.borrow().get_entry(path, tree);
+        match entry {
+            Some(entry) => ToolAPI::entry_to_json(&entry.borrow()),
+            None => serde_json::Value::Null
+        }*/
+        serde_json::Value::Null
     }
 }
