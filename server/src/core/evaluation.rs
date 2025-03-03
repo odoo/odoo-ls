@@ -995,7 +995,7 @@ impl Evaluation {
                         evals.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                    weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("bool")]), u32::MAX).last().expect("builtins class not found")),
+                                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("bool")]), u32::MAX).last().expect("builtins class not found")),
                                     context: HashMap::new(),
                                     instance: Some(true),
                                     is_super: false,
@@ -1040,7 +1040,7 @@ impl Evaluation {
                     Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                weak: Rc::downgrade(&odoo.get_symbol(&(vec![S!("builtins")], vec![S!("str")]), u32::MAX).last().expect("builtins class not found")),
+                                weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("str")]), u32::MAX).last().expect("builtins class not found")),
                                 context: HashMap::new(),
                                 instance: Some(true),
                                 is_super: false,
