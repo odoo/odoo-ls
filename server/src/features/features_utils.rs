@@ -176,7 +176,7 @@ impl FeaturesUtils {
                 let func = callable_sym.borrow();
 
                 // Check if we are in api.onchange/constrains/depends
-                let func_sym_tree = func.get_tree();
+                let func_sym_tree = func.get_main_entry_tree(session);
                 if func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
                     func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
                     parameter_symbols.extend(

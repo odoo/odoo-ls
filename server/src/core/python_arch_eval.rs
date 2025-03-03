@@ -954,16 +954,37 @@ impl PythonArchEval {
         }
     }
 
-    fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+    fn handle_api_returns_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
         let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return};
         let returns_str = expr.value.to_string();
         if returns_str == S!("self"){
             func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
             return;
         }
-        let Some(ref main_model_sym) = session.sync_odoo.models.get(&yarn!("{}", returns_str)).cloned().and_then(
-            |model| model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned()
-        ) else {return};
+        let Some(model) = session.sync_odoo.models.get(&yarn!("{}", returns_str)).cloned() else {
+            self.diagnostics.push(Diagnostic::new(
+                FileMgr::textRange_to_temporary_Range(&expr.range()),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30102"))),
+                Some(EXTENSION_NAME.to_string()),
+                S!("Unknown model. Check your addons path"),
+                None,
+                None,
+            ));
+            return;
+        };
+        let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
+            self.diagnostics.push(Diagnostic::new(
+                FileMgr::textRange_to_temporary_Range(&expr.range()),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30101"))),
+                Some(EXTENSION_NAME.to_string()),
+                S!("This model is not in the dependencies of your module."),
+                None,
+                None,
+            ));
+            return
+        };
         func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
     }
 
@@ -987,7 +1008,7 @@ impl PythonArchEval {
             let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
             if syms.is_empty(){
                 self.diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(expr.start().to_u32(), 0), Position::new(expr.end().to_u32(), 0)),
+                    FileMgr::textRange_to_temporary_Range(&expr.range()),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30323"))),
                     Some(EXTENSION_NAME.to_string()),
@@ -1060,7 +1081,7 @@ impl PythonArchEval {
             let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
             if syms.is_empty(){
                 self.diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(expr.start().to_u32(), 0), Position::new(expr.end().to_u32(), 0)),
+                    FileMgr::textRange_to_temporary_Range(&expr.range()),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30323"))),
                     Some(EXTENSION_NAME.to_string()),
@@ -1096,11 +1117,11 @@ impl PythonArchEval {
             for decorator_eval in dec_evals.iter(){
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None)  else {continue};
                 let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
-                let dec_sym_tree = dec_sym.borrow().get_tree();
-                if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("returns")]){
-                    PythonArchEval::handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
-                } else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("onchange")]) ||
-                        dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("constrains")]){
+                let dec_sym_tree = dec_sym.borrow().get_main_entry_tree(session);
+                if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("returns")]){
+                    self.handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
+                } else if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]) ||
+                        dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]){
                     self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
                 } else if dec_sym_tree == (vec![yarn!("odoo"), yarn!("api")], vec![yarn!("depends")]){
                     self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
