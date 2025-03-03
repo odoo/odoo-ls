@@ -502,7 +502,7 @@ fn complete_decorator_call(
     for decorator_eval in dec_evals.iter(){
         let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut vec![], None)  else {continue};
         let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
-        let dec_sym_tree = dec_sym.borrow().get_tree();
+        let dec_sym_tree = dec_sym.borrow().get_main_entry_tree(session);
         let expected_types = if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
             dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
             &vec![ExpectedType::SIMPLE_FIELD]
