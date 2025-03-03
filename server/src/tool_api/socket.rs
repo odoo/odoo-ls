@@ -24,7 +24,13 @@ fn make_reader(stream: TcpStream) -> (Receiver<Message>, thread::JoinHandle<io::
     let (reader_sender, reader_receiver) = bounded::<Message>(0);
     let reader = thread::spawn(move || {
         let mut buf_read = BufReader::new(stream);
-        while let Some(msg) = Message::read(&mut buf_read).unwrap() {
+        while let Some(msg) = match Message::read(&mut buf_read) {
+            Ok(msg) => msg,
+            Err(e) => {
+                eprintln!("Error reading message: {}", e);
+                None
+            }
+        } {
             let is_exit = matches!(&msg, Message::Notification(n) if n.method == "exit");
             reader_sender.send(msg).unwrap();
             if is_exit {
