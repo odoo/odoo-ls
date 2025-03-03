@@ -277,16 +277,30 @@ impl FileMgr {
     }
 
     pub fn clear(session: &mut SessionInfo) {
-        for file in session.sync_odoo.get_file_mgr().borrow_mut().files.values().clone() {
-            if SyncOdoo::is_in_workspace_or_entry(session, &file.borrow().uri) {
-                let mut to_del = (**file).borrow_mut();
-                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
-                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                to_del.publish_diagnostics(session)
+        let file_mgr = session.sync_odoo.get_file_mgr();
+        let file_mgr = file_mgr.borrow_mut();
+        for file in file_mgr.files.values().clone() {
+            if !file_mgr.is_in_workspace(&file.borrow().uri) {
+                continue;
             }
+            let mut found = false;
+            for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
+                let entry = entry.borrow();
+                if &file.borrow().uri == &entry.path {
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                continue;
+            }
+            let mut to_del = (**file).borrow_mut();
+            to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+            to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
+            to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
+            to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
+            to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+            to_del.publish_diagnostics(session)
         }
         session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
     }
