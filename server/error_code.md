@@ -66,14 +66,14 @@ See the error message to get the details from Ruff
 ### OLS30101
 
 "This model is not in the dependencies of your module."
-With the Environment (often via self.env), you are trying to get a recordset of a model that is not defined in the current module or in the dependencies of the current module.
+With the Environment (often via self.env), or in @api.returns, you are trying to get a recordset of a model that is not defined in the current module or in the dependencies of the current module.
 Even if it could work, this is strongly not recommended, as the model you are referring to could be not available on a live database.
 Do not forget that even if your model is in an auto-installed module, it can be uninstalled by a user.
 
 ### OLS30102
 
 "Unknown model. Check your addons path"
-With the Environment (often via self.env), you are trying to get a recordset of a model that is unknown by OdooLS. It means that if the model exists in the codebase, OdooLS
+With the Environment (often via self.env), or in @api.returns, you are trying to get a recordset of a model that is unknown by OdooLS. It means that if the model exists in the codebase, OdooLS
 is not aware of it. Check the addons path you provided to be sure that the module declaring this model is in an addon path.
 
 ### OLS30103
