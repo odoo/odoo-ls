@@ -9,7 +9,6 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range}
 use crate::{constants::*, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
-use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
@@ -17,7 +16,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::entry_point::EntryPoint;
-use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationValue};
+use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
 use super::python_arch_builder::PythonArchBuilder;
 use super::python_arch_eval::PythonArchEval;
@@ -374,6 +373,34 @@ impl PythonValidator {
                                 None,
                                 None,
                             ));
+                            continue;
+                        }
+                        let field_type = symbol.borrow().name().clone();
+                        let found_same_type_match = syms.iter().any(|sym|{
+                            let related_eval_weaks = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                                Rc::downgrade(&sym),
+                                None,
+                                false,
+                            )), session, &mut None, true, true, None, &mut vec![]);
+                            related_eval_weaks.iter().any(|related_eval_weak|{
+                                let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
+                                    return false
+                                };
+                                let same_field = related_field_class_sym.borrow().is_specific_field_class(session, &[field_type.as_str()]);
+                                same_field
+                            })
+                        });
+                        if !found_same_type_match{
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30326"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Related field not same type"),
+                                None,
+                                None,
+                            ));
+
                         }
                     } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel")).map(|ctx_val| ctx_val.as_string()) {
                         let Some(module) = class_ref.find_module() else {
