@@ -1094,7 +1094,8 @@ impl PythonArchEval {
     }
 
     /// Read function decorators and set evaluations where applicable
-    /// - api.returns -> self -> Self, string -> model name if exists
+    /// - api.returns -> self -> Self, string -> model name if exists + validate
+    /// - validates api.depends/onchange/constrains
     fn handle_func_decorators(
         &mut self,
         session: &mut SessionInfo,

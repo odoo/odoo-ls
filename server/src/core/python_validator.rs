@@ -334,7 +334,7 @@ impl PythonValidator {
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
         let class_ref = class.borrow();
-        let Some(ref model_name) = class_ref.as_class_sym()._model else {
+        let Some(model_data) = class_ref.as_class_sym()._model.as_ref() else {
             return;
         };
         if self.current_module.is_none() {
@@ -369,7 +369,7 @@ impl PythonValidator {
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30323"))),
                                 Some(EXTENSION_NAME.to_string()),
-                                format!("Field {related_field_name} does not exist on model {}", model_name.name),
+                                format!("Field {related_field_name} does not exist on model {}", model_data.name),
                                 None,
                                 None,
                             ));
