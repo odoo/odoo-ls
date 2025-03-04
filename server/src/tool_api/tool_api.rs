@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::net::TcpListener;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -8,11 +10,13 @@ use std::time::Duration;
 
 use crossbeam_channel::Select;
 use lsp_server::{Connection, Message, Request, RequestId, Response};
+use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use serde_json::json;
 
 use crate::core::entry_point::{EntryPoint, EntryPointType};
 use crate::core::odoo::SyncOdoo;
+use crate::core::symbols::symbol::Symbol;
 
 use super::io_threads::ToolAPIIoThreads;
 use super::socket;
@@ -97,6 +101,10 @@ impl ToolAPI {
                 let sync_odoo = sync_odoo.lock().unwrap();
                 response_value = ToolAPI::get_symbol(&sync_odoo, &request.params);
             },
+            "$/ToolAPI/browse_tree" => {
+                let sync_odoo = sync_odoo.lock().unwrap();
+                response_value = ToolAPI::browse_tree(&sync_odoo, serde_json::from_value(request.params).unwrap());
+            },
             _ => {
                 error!("ToolAPI: Unknown request method: {}", request.method);
                 return Response::new_err(request.id.clone(), lsp_server::ErrorCode::MethodNotFound as i32, format!("Method not found {}", request.method));
@@ -150,4 +158,45 @@ impl ToolAPI {
         }*/
         serde_json::Value::Null
     }
+
+    fn browse_tree(sync_odoo: &SyncOdoo, params: BrowseTreeParams) -> serde_json::Value {
+        let mut entry = None;
+        let ep_mgr = sync_odoo.entry_point_mgr.borrow();
+        for e in ep_mgr.iter_all() {
+            if e.borrow().path == params.entry_path {
+                entry = Some(e);
+                break;
+            }
+        }
+        if let Some(entry) = entry {
+            let mut symbols = entry.borrow().root.borrow().get_symbol(&params.tree, u32::MAX);
+            if symbols.len() > 1 {
+                panic!()
+            }
+            if params.tree.0.is_empty() && params.tree.1.is_empty() {
+                symbols.push(entry.borrow().root.clone());
+            }
+            if let Some(symbol) = symbols.first() {
+                let has_modules = symbol.borrow().has_modules();
+                let module_sym: Vec<Rc<RefCell<Symbol>>> = if has_modules {
+                    symbol.borrow().all_module_symbol().map(|x| x.clone()).collect()
+                } else {
+                    vec![]
+                };
+                let module_sym: Vec<String> = module_sym.iter().map(|sym| {
+                    sym.borrow().name().clone()
+                }).collect();
+                return json!({
+                    "modules": module_sym,
+                });
+            }
+        }
+        serde_json::Value::Null
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct BrowseTreeParams {
+    pub entry_path: String,
+    pub tree: (Vec<String>, Vec<String>),
 }

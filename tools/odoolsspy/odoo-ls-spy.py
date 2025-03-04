@@ -8,12 +8,14 @@ import time
 from connection.connection import ConnectionManager
 from views.list_entries import EntryTab
 from views.monitoring import Monitoring
+from views.themes import setup_themes
 
 class OdooLSSpyApp:
     def __init__(self):
         self.connection_mgr = ConnectionManager()
         self.monitoring = Monitoring()
         self.entry_tab = EntryTab()
+        self.tree_browsers = []
         self.setup_ui()
 
     def setup_ui(self):
@@ -25,10 +27,7 @@ class OdooLSSpyApp:
         dpg.show_viewport()
         time.sleep(0.10)
 
-        with dpg.font_registry():
-            dpg.add_font("arial.ttf", 11, tag="arial11")
-            dpg.add_font("arialbd.ttf", 14, tag="arialbd14")
-            dpg.add_font("arial.ttf", 14, tag="arial14")
+        setup_themes()
 
         with dpg.viewport_menu_bar():
             with dpg.menu(label="File"):

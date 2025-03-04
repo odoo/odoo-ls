@@ -116,6 +116,7 @@ class ConnectionManager:
             message["id"] = self.get_next_id()
             self.answer_events[message["id"]] = Event()
         message_json = json.dumps(message)
+        print(message_json)
         lsp_message = f"Content-Length: {len(message_json)}\r\n\r\n{message_json}"
         self.connection.send(lsp_message.encode('utf-8'))
         if is_request:
