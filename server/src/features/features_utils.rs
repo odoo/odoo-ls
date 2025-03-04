@@ -1,6 +1,6 @@
 use byteyarn::{yarn, Yarn};
 use itertools::Itertools;
-use ruff_python_ast::{Expr, ExprCall};
+use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::function_symbol::Argument;
@@ -71,7 +71,7 @@ impl FeaturesUtils {
         parent_class.clone().borrow().get_member_symbol(session, field_name, from_module.clone(), false, false, true, false).0
     }
 
-    fn find_nested_field(
+    fn find_nested_fields(
         session: &mut SessionInfo,
         base_symbol: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
@@ -122,7 +122,7 @@ impl FeaturesUtils {
         vec![]
     }
 
-    fn find_nested_decorator_field_symbol(
+    fn find_nested_fields_in_class(
         session: &mut SessionInfo,
         scope: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
@@ -133,7 +133,7 @@ impl FeaturesUtils {
         let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
             return vec![];
         };
-        FeaturesUtils::find_nested_field(session, parent_class, from_module, field_range, field_name, offset)
+        FeaturesUtils::find_nested_fields(session, parent_class, from_module, field_range, field_name, offset)
     }
 
     fn find_domain_param_symbols(
@@ -147,10 +147,10 @@ impl FeaturesUtils {
         let Some(parent_object) = callable.context.get(&S!("base_attr")).and_then(|parent_object| parent_object.as_symbol().upgrade()) else {
             return vec![];
         };
-        FeaturesUtils::find_nested_field(session, parent_object, from_module.clone(), field_range, field_name, offset)
+        FeaturesUtils::find_nested_fields(session, parent_object, from_module.clone(), field_range, field_name, offset)
     }
 
-    pub fn find_argument_symbols(
+    fn find_positional_argument_symbols(
         session: &mut SessionInfo,
         scope: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
@@ -158,13 +158,9 @@ impl FeaturesUtils {
         call_expr: &ExprCall,
         offset: usize,
         field_range: TextRange,
+        arg_index: usize,
     ) -> Vec<Rc<RefCell<Symbol>>>{
-        let mut parameter_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
-        let Some((arg_index, arg)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
-            offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-        ) else {
-            return parameter_symbols;
-        };
+        let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
         for callable_eval in callable_evals.iter() {
             let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
@@ -180,13 +176,13 @@ impl FeaturesUtils {
             let func_sym_tree = func.get_main_entry_tree(session);
             if func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]) ||
                 func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]){
-                parameter_symbols.extend(
+                arg_symbols.extend(
                     FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
                 );
                 continue;
             }  else if func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")]){
-                parameter_symbols.extend(
-                    FeaturesUtils::find_nested_decorator_field_symbol(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
+                arg_symbols.extend(
+                    FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
                 );
                 continue;
             }
@@ -201,7 +197,7 @@ impl FeaturesUtils {
 
             for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
                 if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
-                    parameter_symbols.extend(
+                    arg_symbols.extend(
                         FeaturesUtils::find_domain_param_symbols(session, &callable, &field_range, field_name, &offset, &from_module)
                     );
                 }
@@ -209,7 +205,60 @@ impl FeaturesUtils {
 
         }
         //Process kwargs related/comodel_name
-        parameter_symbols
+        arg_symbols
+    }
+
+    fn find_keyword_argument_symbols(
+        session: &mut SessionInfo,
+        scope: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_name: &String,
+        call_expr: &ExprCall,
+        offset: usize,
+        field_range: TextRange,
+        keyword: &Keyword,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        // We only process the `related` keyword argument
+        if keyword.arg.as_ref().filter(|kw_arg| kw_arg.id == "related").is_none(){
+            return vec![];
+        }
+        let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
+        for callable_eval in callable_evals.iter() {
+            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+            let Some(callable_sym) = callable.weak.upgrade() else {
+                    continue
+            };
+            if !callable_sym.borrow().is_field_class(session) {
+                continue;
+            }
+            arg_symbols.extend(
+                FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
+            );
+        }
+        arg_symbols
+    }
+
+    pub fn find_argument_symbols(
+        session: &mut SessionInfo,
+        scope: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_name: &String,
+        call_expr: &ExprCall,
+        offset: usize,
+        field_range: TextRange,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        if let Some((arg_index, _)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
+            offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
+        ){
+            FeaturesUtils::find_positional_argument_symbols(session, scope, from_module, field_name, call_expr, offset, field_range, arg_index)
+        } else if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
+            offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
+        ){
+            FeaturesUtils::find_keyword_argument_symbols(session, scope, from_module, field_name, call_expr, offset, field_range, keyword)
+        } else {
+            vec![]
+        }
     }
 
     fn check_for_string_special_syms(session: &mut SessionInfo, string_val: &String, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>> {
