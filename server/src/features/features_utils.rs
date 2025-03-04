@@ -1,4 +1,4 @@
-use byteyarn::yarn;
+use byteyarn::{yarn, Yarn};
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -14,7 +14,7 @@ use crate::constants::SymType;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
-use crate::S;
+use crate::{S, Sy};
 
 pub struct FeaturesUtils {}
 
@@ -150,7 +150,7 @@ impl FeaturesUtils {
         FeaturesUtils::find_nested_field(session, parent_object, from_module.clone(), field_range, field_name, offset)
     }
 
-    pub fn find_parameter_symbols(
+    pub fn find_argument_symbols(
         session: &mut SessionInfo,
         scope: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
@@ -160,60 +160,62 @@ impl FeaturesUtils {
         field_range: TextRange,
     ) -> Vec<Rc<RefCell<Symbol>>>{
         let mut parameter_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
-        for (arg_index, arg) in call_expr.arguments.args.iter().enumerate() {
-            if offset <= arg.range().start().to_usize() || offset > arg.range().end().to_usize() {
+        let Some((arg_index, arg)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
+            offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
+        ) else {
+            return parameter_symbols;
+        };
+        let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
+        for callable_eval in callable_evals.iter() {
+            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+            let Some(callable_sym) = callable.weak.upgrade() else {
+                    continue
+            };
+            if callable_sym.borrow().typ() != SymType::FUNCTION {
                 continue;
             }
-            let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
-            for callable_eval in callable_evals.iter() {
-                let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-                let Some(callable_sym) = callable.weak.upgrade() else {
-                     continue
-                };
-                if callable_sym.borrow().typ() != SymType::FUNCTION {
-                    continue
-                }
-                let func = callable_sym.borrow();
+            let func = callable_sym.borrow();
 
-                // Check if we are in api.onchange/constrains/depends
-                let func_sym_tree = func.get_main_entry_tree(session);
-                if func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
-                    func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+            // Check if we are in api.onchange/constrains/depends
+            let func_sym_tree = func.get_main_entry_tree(session);
+            if func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]) ||
+                func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]){
+                parameter_symbols.extend(
+                    FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
+                );
+                continue;
+            }  else if func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")]){
+                parameter_symbols.extend(
+                    FeaturesUtils::find_nested_decorator_field_symbol(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
+                );
+                continue;
+            }
+
+            let func_arg = func.as_func().get_indexed_arg_in_call(
+                call_expr,
+                arg_index as u32,
+                callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
+            let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
+                continue
+            };
+
+            for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
+                if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
                     parameter_symbols.extend(
-                        FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
+                        FeaturesUtils::find_domain_param_symbols(session, &callable, &field_range, field_name, &offset, &from_module)
                     );
-                    continue;
-                }  else if func_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
-                    parameter_symbols.extend(
-                        FeaturesUtils::find_nested_decorator_field_symbol(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
-                    );
-                    continue;
-                }
-
-                let func_arg = func.as_func().get_indexed_arg_in_call(
-                    call_expr,
-                    arg_index as u32,
-                    callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
-                let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
-                    continue
-                };
-
-                for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
-                    if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
-                        parameter_symbols.extend(
-                            FeaturesUtils::find_domain_param_symbols(session, &callable, &field_range, field_name, &offset, &from_module)
-                        );
-                    }
                 }
             }
+
         }
+        //Process kwargs related/comodel_name
         parameter_symbols
     }
 
     fn check_for_string_special_syms(session: &mut SessionInfo, string_val: &String, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: &Rc<RefCell<Symbol>>) -> Vec<Rc<RefCell<Symbol>>> {
         let from_module = file_symbol.borrow().find_module();
         let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
-        let string_domain_fields_syms = FeaturesUtils::find_parameter_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, offset, field_range);
+        let string_domain_fields_syms = FeaturesUtils::find_argument_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, offset, field_range);
         if string_domain_fields_syms.len() >= 1 {
             return string_domain_fields_syms;
         }
@@ -252,18 +254,6 @@ impl FeaturesUtils {
                 if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                     let str = expr.value.to_string();
                     let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
-                    if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
-                        let special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
-                        if special_string_syms.len() >= 1{
-                            // restart with replacing current index evaluation with field evaluations
-                            let string_domain_fields_evals: Vec<Evaluation> = special_string_syms.iter()
-                                .map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true)))
-                                .chain(evals.iter().take(index).cloned())
-                                .chain(evals.iter().skip(index + 1).cloned())
-                                .collect();
-                            return FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset))
-                        }
-                    }
                     if let Some(model) = session.sync_odoo.models.get(&yarn!("{}", str)).cloned() {
                         let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
                         for main_class_rc in main_classes.iter() {
@@ -299,8 +289,20 @@ impl FeaturesUtils {
                                     }).collect::<String>();
                             }
                         }
+                        continue;
                     }
-                    continue;
+                    if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
+                        let special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
+                        if special_string_syms.len() >= 1{
+                            // restart with replacing current index evaluation with field evaluations
+                            let string_domain_fields_evals: Vec<Evaluation> = special_string_syms.iter()
+                                .map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true)))
+                                .chain(evals.iter().take(index).cloned())
+                                .chain(evals.iter().skip(index + 1).cloned())
+                                .collect();
+                            return FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset))
+                        }
+                    }
                 }
             }
             // BLOCK 1: (type) **name** -> inferred_type

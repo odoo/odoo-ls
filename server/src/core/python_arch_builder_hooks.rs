@@ -70,7 +70,7 @@ impl PythonArchBuilderHooks {
                         }
                     }
                     // ----------- __init__ ------------
-                    let get_sym = sym.get_symbol(&(vec![], vec![S!("__init__")]), u32::MAX);
+                    let get_sym = sym.get_symbol(&(vec![], vec![Sy!("__init__")]), u32::MAX);
                     if get_sym.is_empty() {
                         let range = sym.range().clone();
                         sym.add_new_function(session, &S!("__init__"), &range, &range.end());
