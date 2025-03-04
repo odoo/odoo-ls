@@ -205,12 +205,16 @@ If you used a relational field and get this error, check that the comodel of thi
 
 ### OLS30323
 "Field does not exist on model"
+In related keyword argument or decorators api.onchange/depends/constrains, the field provided
+should exist and be able to be resolved from current module
 
 ### OLS30324
 "Field comodel_name not in dependencies"
+In relational fields, comodel_name supplied exists but not in dependencies
 
 ### OLS30325
 "Field comodel_name does not exist"
+In relational fields, comodel_name does not exist in current configuration
 
 ### OLS30326
 "Related field not same type"
