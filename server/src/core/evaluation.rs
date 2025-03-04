@@ -921,7 +921,6 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                // TODO handle multiple base_evals
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
@@ -955,9 +954,6 @@ impl Evaluation {
                                 });
                             }
                         }
-                    }
-                    if !evals.is_empty(){
-                        break; // Only check next evaluations if we fail to get attrs from first evaluation
                     }
                 }
             },
