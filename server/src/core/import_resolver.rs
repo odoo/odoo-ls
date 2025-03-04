@@ -125,7 +125,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             if name_symbol.is_none() {
                 if !name.contains(".") && from_symbol.is_some() {
                     //check the last name is not a symbol in the file
-                    let name_symbol_vec = from_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], vec![name.clone()]), u32::MAX);
+                    let name_symbol_vec = from_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], vec![name.clone()]), u32::MAX);
                     name_symbol = name_symbol_vec.last().cloned();
                 }
                 if name_symbol.is_none() {
@@ -166,7 +166,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         None);
         if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
             //TODO what if multiple values?
-            name_symbol = next_symbol.as_ref().unwrap().borrow_mut().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
+            name_symbol = next_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
             if name_symbol.is_none() {
                 result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
                 continue;
@@ -248,7 +248,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
     for branch in names.iter() {
         match sym {
             Some(ref s) => {
-                let mut next_symbol = s.borrow_mut().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
+                let mut next_symbol = s.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
                 if next_symbol.is_empty() && matches!(s.borrow().typ(), SymType::ROOT | SymType::NAMESPACE | SymType::PACKAGE(_) | SymType::COMPILED | SymType::DISK_DIR) {
                     next_symbol = match _resolve_new_symbol(session, s.clone(), &branch, asname.clone()) {
                         Ok(v) => vec![v],
@@ -449,7 +449,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     }
     for (index, branch) in names.iter().enumerate() {
         if index != names.len() -1 {
-            let mut next_symbol = sym.as_ref().unwrap().borrow_mut().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
+            let mut next_symbol = sym.as_ref().unwrap().borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
             if next_symbol.is_empty() {
                 next_symbol = match _resolve_new_symbol(session, sym.as_ref().unwrap().clone(), &branch, None) {
                     Ok(v) => vec![v],

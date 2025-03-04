@@ -400,7 +400,7 @@ impl SyncOdoo {
     fn build_modules(session: &mut SessionInfo) {
         {
             let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
-            let addons_path = addons_symbol.borrow_mut().paths().clone();
+            let addons_path = addons_symbol.borrow().paths().clone();
             for addon_path in addons_path.iter() {
                 info!("searching modules in {}", addon_path);
                 if PathBuf::from(addon_path).exists() {
@@ -715,7 +715,7 @@ impl SyncOdoo {
         false
     }
 
-    pub fn get_file_mgr(&mut self) -> Rc<RefCell<FileMgr>> {
+    pub fn get_file_mgr(&self) -> Rc<RefCell<FileMgr>> {
         self.file_mgr.clone()
     }
 
@@ -733,7 +733,7 @@ impl SyncOdoo {
                 let parent = path_symbol.borrow().parent().clone().unwrap().upgrade().unwrap();
                 if clean_cache {
                     FileMgr::delete_path(session, &path.sanitize());
-                    let mut to_del = Vec::from_iter(path_symbol.borrow_mut().all_module_symbol().map(|x| x.clone()));
+                    let mut to_del = Vec::from_iter(path_symbol.borrow().all_module_symbol().map(|x| x.clone()));
                     let mut index = 0;
                     while index < to_del.len() {
                         FileMgr::delete_path(session, &to_del[index].borrow().paths()[0]);
@@ -1244,7 +1244,7 @@ impl Odoo {
         if let Ok(path) = params.text_document.uri.to_file_path() {
             session.log_message(MessageType::INFO, format!("File closed: {}", path.sanitize()));
             session.sync_odoo.opened_files.retain(|x| x != &path.sanitize());
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path.to_str().unwrap().to_string());
+            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path.to_str().unwrap().to_string());
             if let Some(file_info) = file_info {
                 file_info.borrow_mut().opened = false;
             }
@@ -1430,7 +1430,7 @@ impl Odoo {
         ));
         let path = FileMgr::uri2pathname(params.text_document.uri.as_str());
         if params.text_document.uri.to_string().ends_with(".py") || params.text_document.uri.to_string().ends_with(".pyi") {
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
                 if file_info.borrow().ast.is_some() {
                     return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));

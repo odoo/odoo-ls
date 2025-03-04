@@ -80,7 +80,7 @@ impl PythonArchEval {
             panic!("Trying to eval_arch a symbol without any path")
         }
         let path = self.file.borrow().get_symbol_first_path();
-        let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
+        let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
             let (ast, maybe_func_stmt) = match self.file_mode {
@@ -349,7 +349,7 @@ impl PythonArchEval {
                     let file_sym = sym_ref.borrow().get_file();
                     if file_sym.is_some() {
                         let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if rc_file_sym.borrow_mut().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
+                        if rc_file_sym.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
                             session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
                             let mut builder = PythonArchEval::new(self.entry_point.clone(), rc_file_sym);
                             builder.eval_arch(session);
@@ -380,7 +380,7 @@ impl PythonArchEval {
             &mut Some(&mut self.diagnostics));
 
         for _import_result in import_results.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);
+            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&_import_result.name, &_import_result.range);
             let Some(variable) = variable.clone() else {
                 continue;
             };
@@ -444,7 +444,7 @@ impl PythonArchEval {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(assign.target.id.to_string()), &assign.target.range);
+            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(assign.target.id.to_string()), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = if let Some(ref annotation) = assign.annotation {
@@ -594,7 +594,7 @@ impl PythonArchEval {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
-        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(class_stmt.name.to_string()), &class_stmt.range);
+        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(class_stmt.name.to_string()), &class_stmt.range);
         if variable.is_none() {
             panic!("Class not found");
         }
@@ -611,7 +611,7 @@ impl PythonArchEval {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
-        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(func_stmt.name.to_string()), &func_stmt.range);
+        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(func_stmt.name.to_string()), &func_stmt.range);
         if variable.is_none() {
             panic!("Function symbol not found");
         }
@@ -722,7 +722,7 @@ impl PythonArchEval {
                                 let iter = iter[0].borrow();
                                 let eval_iter = &iter.evaluations().unwrap()[0];
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
-                                    let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
+                                    let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
                                     let symbol = &eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None);
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
@@ -828,7 +828,7 @@ impl PythonArchEval {
             if let Some(var) = item.optional_vars.as_ref() {
                 match &**var {
                     Expr::Name(expr_name) => {
-                        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(expr_name.id.to_string()), &expr_name.range());
+                        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(expr_name.id.to_string()), &expr_name.range());
                         if let Some(variable_rc) = variable {
                             let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                             let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start());
