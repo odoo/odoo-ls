@@ -29,7 +29,7 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let string_domain_fields= FeaturesUtils::find_parameter_symbols(
+        let string_domain_fields= FeaturesUtils::find_argument_symbols(
             session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &field_name, call_expr, offset, field_range
         );
         string_domain_fields.iter().for_each(|field|{

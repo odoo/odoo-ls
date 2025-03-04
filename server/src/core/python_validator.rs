@@ -379,11 +379,11 @@ impl PythonValidator {
                         let Some(module) = class_ref.find_module() else {
                             continue;
                         };
-                        if !ModuleSymbol::is_in_deps(session, &module, &comodel_field_name){
+                        if !ModuleSymbol::is_in_deps(session, &module, &yarn!("{}", comodel_field_name)){
                             let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
-                            if let Some(model) = session.sync_odoo.models.get(&comodel_field_name){
+                            if let Some(model) = session.sync_odoo.models.get(&yarn!("{}", comodel_field_name)){
                                 let Some(ref from_module) = maybe_from_module else {continue};
                                 if !model.clone().borrow().model_in_deps(session, from_module) {
                                     self.diagnostics.push(Diagnostic::new(

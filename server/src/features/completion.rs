@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
-use byteyarn::Yarn;
+use byteyarn::{yarn, Yarn};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::{Ranged, TextSize};
@@ -28,7 +28,7 @@ pub enum ExpectedType {
     DOMAIN_COMPARATOR,
     CLASS(Rc<RefCell<Symbol>>),
     SIMPLE_FIELD,
-    NESTED_FIELD(Option<String>),
+    NESTED_FIELD(Option<Yarn>),
 }
 
 pub struct CompletionFeature;
@@ -503,10 +503,10 @@ fn complete_decorator_call(
         let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut vec![], None)  else {continue};
         let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
         let dec_sym_tree = dec_sym.borrow().get_main_entry_tree(session);
-        let expected_types = if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
-            dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+        let expected_types = if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]) ||
+            dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]){
             &vec![ExpectedType::SIMPLE_FIELD]
-        } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
+        } else if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")]){
             &vec![ExpectedType::NESTED_FIELD(None)]
         } else {
             continue;
@@ -595,7 +595,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
             }
             let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
                 match kw_arg_id.id.as_str() {
-                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(callable_sym.borrow().name().clone()))]),
+                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(yarn!("{}", callable_sym.borrow().name())))]),
                     "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
                             Some(vec![ExpectedType::MODEL_NAME])
                         } else {
@@ -889,7 +889,7 @@ fn add_nested_field_names(
     field_prefix: &str,
     parent: Rc<RefCell<Symbol>>,
     add_date_completions: bool,
-    specific_field_type: &Option<String>,
+    specific_field_type: &Option<Yarn>,
 ){
     let split_expr: Vec<String> = field_prefix.split(".").map(|x| x.to_string()).collect();
     let mut obj = Some(parent.clone());
