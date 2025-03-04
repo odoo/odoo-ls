@@ -967,9 +967,6 @@ impl Evaluation {
                             }
                         }
                     }
-                    if !evals.is_empty(){
-                        break; // Only check next evaluations if we fail to get attrs from first evaluation
-                    }
                 }
             },
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Expr(Expr::Named(_)) | ExprOrIdent::Ident(_) | ExprOrIdent::Parameter(_) => {
