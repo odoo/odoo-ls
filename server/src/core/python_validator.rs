@@ -8,7 +8,6 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range}
 use crate::constants::*;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
-use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
@@ -16,7 +15,7 @@ use crate::utils::PathSanitizer as _;
 use crate::S;
 
 use super::entry_point::EntryPoint;
-use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationValue};
+use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
 use super::python_arch_builder::PythonArchBuilder;
 use super::python_arch_eval::PythonArchEval;
@@ -53,13 +52,13 @@ impl PythonValidator {
         if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
         }
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
+        let file_info_rc = odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
         file_info_rc
     }
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        let symbol = self.sym_stack[0].borrow_mut();
+        let symbol = self.sym_stack[0].borrow();
         self.current_module = symbol.find_module();
         if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
@@ -278,7 +277,7 @@ impl PythonValidator {
                 } else {
                     alias.asname.as_ref().unwrap().clone().to_string()
                 };
-                let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&var_name, &alias.range);
+                let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&var_name, &alias.range);
                 if let Some(variable) = variable {
                     for evaluation in variable.borrow().evaluations().as_ref().unwrap().iter() {
                         let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol.clone()));
@@ -333,15 +332,114 @@ impl PythonValidator {
     }
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
-        let cl = class.borrow();
-        let Some(model) = cl.as_class_sym()._model.as_ref() else {
+        let class_ref = class.borrow();
+        let Some(model_data) = class_ref.as_class_sym()._model.as_ref() else {
             return;
         };
         if self.current_module.is_none() {
             return;
         }
+        let maybe_from_module = class_ref.find_module();
+        // Check fields, check related and comodel arguments
+        for symbol in class_ref.all_symbols(){
+            let sym_ref = symbol.borrow();
+            if sym_ref.typ() != SymType::VARIABLE {
+                continue;
+            }
+            let Some(evals) = sym_ref.evaluations() else {
+                continue;
+            };
+            for eval in evals.iter() {
+                let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                for eval_weak in eval_weaks.iter() {
+                    let Some(symbol) = eval_weak.upgrade_weak() else {continue};
+                    if !symbol.borrow().is_field_class(session){
+                        continue;
+                    }
+                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            continue;
+                        };
+                        let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
+                        if syms.is_empty(){
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30323"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Field {related_field_name} does not exist on model {}", model_data.name),
+                                None,
+                                None,
+                            ));
+                            continue;
+                        }
+                        let field_type = symbol.borrow().name().clone();
+                        let found_same_type_match = syms.iter().any(|sym|{
+                            let related_eval_weaks = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                                Rc::downgrade(&sym),
+                                None,
+                                false,
+                            )), session, &mut None, true, true, None, &mut vec![]);
+                            related_eval_weaks.iter().any(|related_eval_weak|{
+                                let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
+                                    return false
+                                };
+                                let same_field = related_field_class_sym.borrow().is_specific_field_class(session, &[field_type.as_str()]);
+                                same_field
+                            })
+                        });
+                        if !found_same_type_match{
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30326"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Related field not same type"),
+                                None,
+                                None,
+                            ));
+
+                        }
+                    } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(module) = class_ref.find_module() else {
+                            continue;
+                        };
+                        if !ModuleSymbol::is_in_deps(session, &module, &comodel_field_name){
+                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            if let Some(model) = session.sync_odoo.models.get(&comodel_field_name){
+                                let Some(ref from_module) = maybe_from_module else {continue};
+                                if !model.clone().borrow().model_in_deps(session, from_module) {
+                                    self.diagnostics.push(Diagnostic::new(
+                                        Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                        Some(DiagnosticSeverity::ERROR),
+                                        Some(NumberOrString::String(S!("OLS30324"))),
+                                        Some(EXTENSION_NAME.to_string()),
+                                        format!("Field comodel_name ({comodel_field_name}) is not in module dependencies"),
+                                        None,
+                                        None,
+                                    ));
+                                }
+                            } else {
+                                self.diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                    Some(DiagnosticSeverity::ERROR),
+                                    Some(NumberOrString::String(S!("OLS30325"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Field comodel_name ({comodel_field_name}) does not exist"),
+                                    None,
+                                    None,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
         //Check inherit field
-        let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
+        let inherit = class_ref.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
         if let Some(inherit) = inherit.last() {
             let inherit = inherit.borrow();
             let inherit_evals = &inherit.evaluations().unwrap();

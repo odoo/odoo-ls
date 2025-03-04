@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::{u32, vec};
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, Arguments, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -78,10 +78,10 @@ impl PythonArchEval {
             panic!("Trying to eval_arch a symbol without any path")
         }
         let path = self.file.borrow().get_symbol_first_path();
-        let file_info_rc = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
+        let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
-            let (ast, func_returns) = match self.file_mode {
+            let (ast, maybe_func_stmt) = match self.file_mode {
                 true => {
                     if file_info.text_hash != symbol.borrow().get_processed_text_hash(){
                         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
@@ -91,18 +91,17 @@ impl PythonArchEval {
                 },
                 false => {
                     let func_stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
-                    (&func_stmt.body, func_stmt.returns.as_ref())
+                    (&func_stmt.body, Some(func_stmt))
                 }
             };
-            if !self.file_mode {
-                PythonArchEval::handle_function_returns(session, func_returns, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
-            }
             for (index, stmt) in ast.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
                 self.visit_stmt(session, stmt);
                 self.ast_indexes.pop();
             }
             if !self.file_mode {
+                self.handle_func_decorators(session, maybe_func_stmt, self.sym_stack[0].clone());
+                PythonArchEval::handle_function_returns(session, maybe_func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
                 PythonArchEval::handle_func_evaluations(ast, &self.sym_stack[0]);
             }
         }
@@ -209,7 +208,7 @@ impl PythonArchEval {
                     let file_sym = sym_ref.borrow().get_file();
                     if file_sym.is_some() {
                         let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if rc_file_sym.borrow_mut().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
+                        if rc_file_sym.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
                             session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
                             let mut builder = PythonArchEval::new(self.entry_point.clone(), rc_file_sym);
                             builder.eval_arch(session);
@@ -240,7 +239,7 @@ impl PythonArchEval {
             &mut Some(&mut self.diagnostics));
 
         for _import_result in import_results.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);
+            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&_import_result.name, &_import_result.range);
             let Some(variable) = variable.clone() else {
                 continue;
             };
@@ -305,7 +304,7 @@ impl PythonArchEval {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
+            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
@@ -360,7 +359,7 @@ impl PythonArchEval {
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
+            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&assign.target.id.to_string(), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().as_ref().unwrap().upgrade().unwrap().clone();
                 let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &assign_stmt.range.start());
@@ -487,7 +486,7 @@ impl PythonArchEval {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
-        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
+        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&class_stmt.name.to_string(), &class_stmt.range);
         if variable.is_none() {
             panic!("Class not found");
         }
@@ -504,7 +503,7 @@ impl PythonArchEval {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
-        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
+        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range);
         if variable.is_none() {
             panic!("Function symbol not found");
         }
@@ -558,7 +557,6 @@ impl PythonArchEval {
         }
         if !self.file_mode || variable.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
-            PythonArchEval::handle_function_returns(session, func_stmt.returns.as_ref(), &variable, &func_stmt.range.end(), &mut self.diagnostics);
             self.sym_stack.push(variable.clone());
             for (index, stmt) in func_stmt.body.iter().enumerate() {
                 self.ast_indexes.push(index as u16);
@@ -566,6 +564,7 @@ impl PythonArchEval {
                 self.ast_indexes.pop();
             }
             self.sym_stack.pop();
+            PythonArchEval::handle_function_returns(session, Some(func_stmt), &variable, &func_stmt.range.end(), &mut self.diagnostics);
             PythonArchEval::handle_func_evaluations(&func_stmt.body, &variable);
             variable.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
         }
@@ -613,7 +612,7 @@ impl PythonArchEval {
                                 let iter = iter[0].borrow();
                                 let eval_iter = &iter.evaluations().unwrap()[0];
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
-                                    let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id.to_string(), &for_stmt.target.range());
+                                    let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&for_stmt.target.as_name_expr().unwrap().id.to_string(), &for_stmt.target.range());
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
                                     let symbol = &eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None);
                                     variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
@@ -714,7 +713,7 @@ impl PythonArchEval {
             if let Some(var) = item.optional_vars.as_ref() {
                 match &**var {
                     Expr::Name(expr_name) => {
-                        let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&expr_name.id.to_string(), &expr_name.range());
+                        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&expr_name.id.to_string(), &expr_name.range());
                         if let Some(variable_rc) = variable {
                             let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                             let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start());
@@ -785,12 +784,12 @@ impl PythonArchEval {
     // Evaluate return annotation and add it to function evaluations
     fn handle_function_returns(
         session: &mut SessionInfo,
-        func_returns: Option<&Box<Expr>>,
+        func_stmt: Option<&StmtFunctionDef>,
         func_sym: &Rc<RefCell<Symbol>>,
         max_infer: &TextSize,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        if let Some(returns_ann) = func_returns {
+        if let Some(returns_ann) = func_stmt.and_then(|func_stmt| func_stmt.returns.as_ref()) {
             let (evaluations, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,
@@ -835,6 +834,183 @@ impl PythonArchEval {
                     Evaluation::new_any()
                 }
             ];
+        }
+    }
+
+    fn handle_api_returns_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+        let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return};
+        let returns_str = expr.value.to_string();
+        if returns_str == S!("self"){
+            func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+            return;
+        }
+        let Some(model) = session.sync_odoo.models.get(&returns_str).cloned() else {
+            self.diagnostics.push(Diagnostic::new(
+                FileMgr::textRange_to_temporary_Range(&expr.range()),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30102"))),
+                Some(EXTENSION_NAME.to_string()),
+                S!("Unknown model. Check your addons path"),
+                None,
+                None,
+            ));
+            return;
+        };
+        let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
+            self.diagnostics.push(Diagnostic::new(
+                FileMgr::textRange_to_temporary_Range(&expr.range()),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30101"))),
+                Some(EXTENSION_NAME.to_string()),
+                S!("This model is not in the dependencies of your module."),
+                None,
+                None,
+            ));
+            return
+        };
+        func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
+    }
+
+    /// For @api.constrains and @api.onchange, both can only take a simple field name
+    fn handle_api_simple_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return};
+            let field_name = expr.value.to_string();
+            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
+            if syms.is_empty(){
+                self.diagnostics.push(Diagnostic::new(
+                    FileMgr::textRange_to_temporary_Range(&expr.range()),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+
+    pub fn get_nested_sub_field(
+        session: &mut SessionInfo,
+        field_name: &String,
+        class_sym: Rc<RefCell<Symbol>>,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        let mut parent_object = Some(class_sym);
+        let mut syms = vec![];
+        let split_expr: Vec<String> = field_name.split(".").map(|x| x.to_string()).collect();
+        for (ix, name) in split_expr.iter().enumerate() {
+            if parent_object.is_none() {
+                break;
+            }
+            let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
+                &name.to_string(),
+                from_module.clone(),
+                false,
+                true,
+                true,
+                false);
+            if ix == split_expr.len() - 1 {
+                syms = symbols;
+                break;
+            } else if symbols.is_empty() {
+                break;
+            }
+            parent_object = None;
+            for s in symbols.iter() {
+                if !s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+                    break;
+                }
+                let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                if models.len() == 1 {
+                    parent_object = Some(models[0].clone());
+                    break;
+                }
+            }
+        }
+        syms
+    }
+
+    /// For @api.depends, which can take a nested simple field name
+    fn handle_api_nested_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return};
+            let field_name = expr.value.to_string();
+            let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
+            if syms.is_empty(){
+                self.diagnostics.push(Diagnostic::new(
+                    FileMgr::textRange_to_temporary_Range(&expr.range()),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ));
+            }
+        }
+    }
+
+    /// Read function decorators and set evaluations where applicable
+    /// - api.returns -> self -> Self, string -> model name if exists + validate
+    /// - validates api.depends/onchange/constrains
+    fn handle_func_decorators(
+        &mut self,
+        session: &mut SessionInfo,
+        maybe_func_stmt: Option<&StmtFunctionDef>,
+        func_sym: Rc<RefCell<Symbol>>,
+    ){
+        let Some(func_stmt) = maybe_func_stmt else {return};
+        for decorator in func_stmt.decorator_list.iter(){
+            let (decorator_base, decorator_args) = match &decorator.expression {
+                Expr::Call(call_expr) => {
+                    (&call_expr.func, &call_expr.arguments)
+                },
+                _ => {continue;}
+            };
+            if decorator_args.args.is_empty(){
+                continue; // All the decorators we handle have at least one arg for now
+            }
+            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, self.sym_stack.last().unwrap().clone(), &func_stmt.range.start());
+            self.diagnostics.extend(diags);
+            for decorator_eval in dec_evals.iter(){
+                let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None)  else {continue};
+                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
+                let dec_sym_tree = dec_sym.borrow().get_main_entry_tree(session);
+                if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("returns")]){
+                    self.handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
+                } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
+                        dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+                    self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
+                } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
+                    self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
+                }
+            }
         }
     }
 
