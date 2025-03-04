@@ -53,13 +53,13 @@ impl PythonValidator {
         if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
         }
-        let file_info_rc = odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
+        let file_info_rc = odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
         file_info_rc
     }
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        let symbol = self.sym_stack[0].borrow_mut();
+        let symbol = self.sym_stack[0].borrow();
         self.current_module = symbol.find_module();
         if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
@@ -278,7 +278,7 @@ impl PythonValidator {
                 } else {
                     alias.asname.as_ref().unwrap().clone().to_string()
                 };
-                let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(var_name), &alias.range);
+                let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(var_name), &alias.range);
                 if let Some(variable) = variable {
                     for evaluation in variable.borrow().evaluations().as_ref().unwrap().iter() {
                         let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol.clone()));

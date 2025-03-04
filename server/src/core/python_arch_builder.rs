@@ -195,7 +195,7 @@ impl PythonArchBuilder {
                     let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
                     if !evaluated_type.is_expired() {
                         let evaluated_type = evaluated_type.upgrade().unwrap();
-                        let evaluated_type_file = evaluated_type.borrow_mut().get_file().unwrap().clone().upgrade().unwrap();
+                        let evaluated_type_file = evaluated_type.borrow().get_file().unwrap().clone().upgrade().unwrap();
                         if !Rc::ptr_eq(&self.file, &evaluated_type_file) {
                             self.file.borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
                         }

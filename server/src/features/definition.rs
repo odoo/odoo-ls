@@ -35,7 +35,7 @@ impl DefinitionFeature {
         string_domain_fields.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
-                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
+                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
         });
@@ -62,7 +62,7 @@ impl DefinitionFeature {
             let class_symbol = class_symbol_rc.borrow();
             if let Some(model_file_sym) = class_symbol.get_file().and_then(|model_file_sym_weak| model_file_sym_weak.upgrade()){
                 let path = model_file_sym.borrow().paths()[0].clone();
-                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &class_symbol.range());
+                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
                 model_found = true;
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
@@ -87,7 +87,7 @@ impl DefinitionFeature {
         compute_symbols.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
-                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
+                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
         });
@@ -138,7 +138,7 @@ impl DefinitionFeature {
                     };
                     let range = match symbol.borrow().typ() {
                         SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                        _ => session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &full_path, &symbol.borrow().range()),
+                        _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range()),
                     };
                     links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
                 }

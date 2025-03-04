@@ -580,7 +580,7 @@ impl PythonArchEvalHooks {
         }
         let return_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &tree, u32::MAX);
         if return_sym.is_empty() {
-            let file = symbol.borrow_mut().get_file().clone();
+            let file = symbol.borrow().get_file().clone();
             file.as_ref().unwrap().upgrade().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
             entry_point.borrow_mut().not_found_symbols.insert(symbol);
             return;

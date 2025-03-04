@@ -1097,7 +1097,7 @@ impl Symbol {
         }
         let parent = self.parent().clone();
         let mut current_arc = parent.as_ref().unwrap().upgrade().unwrap();
-        let mut current = current_arc.borrow_mut();
+        let mut current = current_arc.borrow();
         while current.typ() != SymType::ROOT && current.parent().is_some() {
             if current.is_file_content() {
                 res.0.1.insert(0, current.name().clone());
@@ -1107,7 +1107,7 @@ impl Symbol {
             let parent = current.parent().clone();
             drop(current);
             current_arc = parent.as_ref().unwrap().upgrade().unwrap();
-            current = current_arc.borrow_mut();
+            current = current_arc.borrow();
         }
         if current.typ() == SymType::ROOT {
             res.1 = current.as_root().entry_point.clone();
@@ -1127,7 +1127,7 @@ impl Symbol {
             iter_sym = vec![_mod_iter_sym.unwrap()];
             if symbol_tree_files.len() > 1 {
                 for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
-                    if let Some(s) = iter_sym.last().unwrap().clone().borrow_mut().get_module_symbol(fk) {
+                    if let Some(s) = iter_sym.last().unwrap().clone().borrow().get_module_symbol(fk) {
                         iter_sym = vec![s.clone()];
                     } else {
                         return vec![];
@@ -1139,7 +1139,7 @@ impl Symbol {
                     if iter_sym.len() > 1 {
                         trace!("TODO: explore all implementation possibilities");
                     }
-                    let _iter_sym = iter_sym[0].borrow_mut().get_sub_symbol(fk, position);
+                    let _iter_sym = iter_sym[0].borrow().get_sub_symbol(fk, position);
                     iter_sym = _iter_sym.symbols;
                     if iter_sym.is_empty() {
                         return vec![];
@@ -1159,7 +1159,7 @@ impl Symbol {
                     trace!("TODO: explore all implementation possibilities");
                 }
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    let _iter_sym = iter_sym[0].borrow_mut().get_sub_symbol(fk, position);
+                    let _iter_sym = iter_sym[0].borrow().get_sub_symbol(fk, position);
                     iter_sym = _iter_sym.symbols;
                     return iter_sym.clone();
                 }
@@ -1452,10 +1452,10 @@ impl Symbol {
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while !vec_to_unload.is_empty() {
             let ref_to_unload = vec_to_unload.front().unwrap().clone();
-            let mut_symbol = ref_to_unload.borrow_mut();
+            let sym_ref = ref_to_unload.borrow();
             // Unload children first
             let mut found_one = false;
-            for sym in mut_symbol.all_symbols() {
+            for sym in sym_ref.all_symbols() {
                 found_one = true;
                 vec_to_unload.push_front(sym.clone());
             }
@@ -1463,14 +1463,14 @@ impl Symbol {
                 continue;
             }
             vec_to_unload.pop_front();
-            if DEBUG_MEMORY && (mut_symbol.typ() == SymType::FILE || matches!(mut_symbol.typ(), SymType::PACKAGE(_))) {
-                info!("Unloading symbol {:?} at {:?}", mut_symbol.name(), mut_symbol.paths());
+            if DEBUG_MEMORY && (sym_ref.typ() == SymType::FILE || matches!(sym_ref.typ(), SymType::PACKAGE(_))) {
+                info!("Unloading symbol {:?} at {:?}", sym_ref.name(), sym_ref.paths());
             }
-            let module = mut_symbol.find_module();
+            let module = sym_ref.find_module();
             //unload symbol
-            let parent = mut_symbol.parent().as_ref().unwrap().upgrade().unwrap().clone();
+            let parent = sym_ref.parent().as_ref().unwrap().upgrade().unwrap().clone();
             let mut parent_bw = parent.borrow_mut();
-            drop(mut_symbol);
+            drop(sym_ref);
             parent_bw.remove_symbol(ref_to_unload.clone());
             drop(parent_bw);
             if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
@@ -1590,7 +1590,7 @@ impl Symbol {
             return None;
         }
         if self.parent().is_some() {
-            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().get_in_parents(sym_types, stop_same_file);
+            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow().get_in_parents(sym_types, stop_same_file);
         }
         return None;
     }
@@ -1616,7 +1616,7 @@ impl Symbol {
             return false;
         }
         if self.parent().is_some() {
-            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().has_rc_in_parents(rc, stop_same_file);
+            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow().has_rc_in_parents(rc, stop_same_file);
         }
         false
     }
@@ -1692,7 +1692,7 @@ impl Symbol {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
-            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow_mut().parent_file_or_function();
+            return self.parent().as_ref().unwrap().upgrade().unwrap().borrow().parent_file_or_function();
         }
         None
     }
