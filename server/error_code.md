@@ -211,3 +211,7 @@ If you used a relational field and get this error, check that the comodel of thi
 
 ### OLS30325
 "Field comodel_name does not exist"
+
+### OLS30326
+"Related field not same type"
+Type of references field in related keyword argument does not match the current field
