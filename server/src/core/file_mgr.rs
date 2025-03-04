@@ -226,7 +226,7 @@ impl FileMgr {
         }
     }
 
-    pub fn text_range_to_range(&mut self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
+    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
         let file = self.files.get(path);
         if let Some(file) = file {
             return Range {
@@ -278,7 +278,7 @@ impl FileMgr {
 
     pub fn clear(session: &mut SessionInfo) {
         let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow_mut();
+        let file_mgr = file_mgr.borrow();
         for file in file_mgr.files.values().clone() {
             if !file_mgr.is_in_workspace(&file.borrow().uri) {
                 continue;
