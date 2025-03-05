@@ -309,13 +309,15 @@ impl PythonArchEval {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
                 if assign.annotation.is_some() {
                     let (eval, diags) = Evaluation::eval_from_ast(session, &assign.annotation.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
-                    variable_rc.borrow_mut().set_evaluations(eval);
+                    variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
                     self.diagnostics.extend(diags);
-                } else if assign.value.is_some() {
+                }
+                if assign.value.is_some() {
                     let (eval, diags) = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent.clone(), &ann_assign_stmt.range.start());
-                    variable_rc.borrow_mut().set_evaluations(eval);
+                    variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
                     self.diagnostics.extend(diags);
-                } else {
+                }
+                if assign.annotation.is_none() && assign.value.is_none() {
                     panic!("either value or annotation should exists");
                 }
                 let mut dep_to_add = vec![];
