@@ -454,7 +454,7 @@ impl PythonArchEval {
                 } else {
                     panic!("either value or annotation should exists");
                 };
-                variable_rc.borrow_mut().set_evaluations(eval);
+                variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
                 let mut v_mut = variable_rc.borrow_mut();
