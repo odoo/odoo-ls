@@ -34,7 +34,8 @@ pub struct PythonArchBuilder {
     current_step: BuildSteps,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
-    diagnostics: Vec<Diagnostic>
+    diagnostics: Vec<Diagnostic>,
+    ast_indexes: Vec<u16>,
 }
 
 impl PythonArchBuilder {
@@ -46,7 +47,8 @@ impl PythonArchBuilder {
             current_step: BuildSteps::ARCH, //dummy, evaluated in load_arch
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
-            diagnostics: vec![]
+            diagnostics: vec![],
+            ast_indexes: vec![],
         }
     }
 
@@ -62,6 +64,7 @@ impl PythonArchBuilder {
             self.file = file.clone();
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
+            self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
         }
         if DEBUG_STEPS {
             trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
@@ -215,7 +218,8 @@ impl PythonArchBuilder {
     }
 
     fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) -> Result<(), Error> {
-        for stmt in nodes.iter() {
+        for (index, stmt) in nodes.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
             match stmt {
                 Stmt::Import(import_stmt) => {
                     self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
@@ -285,6 +289,7 @@ impl PythonArchBuilder {
                 Stmt::Pass(_) => {},
                 Stmt::IpyEscapeCommand(_) => {},
             }
+            self.ast_indexes.pop();
         }
         Ok(())
     }
@@ -537,6 +542,10 @@ impl PythonArchBuilder {
         let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
+
+        sym_bw.ast_indexes_mut().clear();
+        sym_bw.ast_indexes_mut().extend(self.ast_indexes.iter());
+
         let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() {
@@ -628,9 +637,13 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
+        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
             session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
+
+        sym_bw.ast_indexes_mut().clear();
+        sym_bw.ast_indexes_mut().extend(self.ast_indexes.iter());
+
         let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
@@ -671,14 +684,16 @@ impl PythonArchBuilder {
             if_stmt.body.first().unwrap().range().start(),
             None // Take preceding section (if test)
         );
+        self.ast_indexes.push(0 as u16); //0 for body
         self.visit_node(session, &if_stmt.body)?;
+        self.ast_indexes.pop();
 
         let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
 
         let mut stmt_sections = vec![body_section];
         let mut else_clause_exists = false;
 
-        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
+        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().enumerate().map(|(index, elif_else_clause)|{
             match elif_else_clause.test {
                 Some(ref test_clause) => {
                     last_test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
@@ -693,7 +708,9 @@ impl PythonArchBuilder {
                 elif_else_clause.body.first().unwrap().range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
+            self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
             self.visit_node(session, &elif_else_clause.body)?;
+            self.ast_indexes.pop();
             let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             Ok::<SectionIndex, Error>(clause_section)
         });
@@ -728,7 +745,9 @@ impl PythonArchBuilder {
             None
         );
 
+        self.ast_indexes.push(0 as u16);
         self.visit_node(session, &for_stmt.body)?;
+        self.ast_indexes.pop();
         let mut stmt_sections = vec![SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())];
 
         if !for_stmt.orelse.is_empty(){
@@ -736,7 +755,9 @@ impl PythonArchBuilder {
                 for_stmt.orelse.first().unwrap().range().start(),
                 Some(previous_section.clone())
             );
+            self.ast_indexes.push(1 as u16);
             self.visit_node(session, &for_stmt.orelse)?;
+            self.ast_indexes.pop();
             stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
@@ -754,7 +775,9 @@ impl PythonArchBuilder {
         // try block is always executed, so it has the same section as the one preceding it.
         // Finally is always executed if it exists, so it belongs to the lower section
         let scope = self.sym_stack.last().unwrap().clone();
+        self.ast_indexes.push(0 as u16);
         self.visit_node(session, &try_stmt.body)?;
+        self.ast_indexes.pop();
         if !try_stmt.handlers.is_empty(){
             // Branching around except _T, except, and else act similar to if-elif-else
             // The direct link (eq. to empty section) to previous scope is always there
@@ -762,7 +785,8 @@ impl PythonArchBuilder {
             let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             let mut stmt_sections = vec![previous_section.clone()];
             let mut catch_all_except_exists = false;
-            for handler in try_stmt.handlers.iter() {
+            self.ast_indexes.push(3 as u16);
+            for (index, handler) in try_stmt.handlers.iter().enumerate() {
                 match handler {
                     ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
                         if !catch_all_except_exists { catch_all_except_exists = h.type_.is_none()};
@@ -770,11 +794,14 @@ impl PythonArchBuilder {
                             h.body.first().unwrap().range().start(),
                             Some(previous_section.clone())
                         );
+                        self.ast_indexes.push(index as u16);
                         self.visit_node(session, &h.body)?;
                         stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                        self.ast_indexes.pop();
                     }
                 }
             }
+            self.ast_indexes.pop();
             if !try_stmt.orelse.is_empty(){
                 if catch_all_except_exists{
                     stmt_sections.remove(0);
@@ -783,7 +810,9 @@ impl PythonArchBuilder {
                     try_stmt.orelse.first().unwrap().range().start(),
                     Some(previous_section.clone())
                 );
+                self.ast_indexes.push(1 as u16);
                 self.visit_node(session, &try_stmt.orelse)?;
+                self.ast_indexes.pop();
                 stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
             }
             // Next section is either the start of the finally block, or right after the try block if finally does not exist
@@ -793,7 +822,9 @@ impl PythonArchBuilder {
                 Some(SectionIndex::OR(stmt_sections))
             );
         }
+        self.ast_indexes.push(2 as u16);
         self.visit_node(session, &try_stmt.finalbody)?;
+        self.ast_indexes.pop();
         Ok(())
     }
 
@@ -850,7 +881,7 @@ impl PythonArchBuilder {
         let scope = self.sym_stack.last().unwrap().clone();
         let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
-        for case in match_stmt.cases.iter() {
+        for (case_ix, case) in match_stmt.cases.iter().enumerate() {
             case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
@@ -860,7 +891,9 @@ impl PythonArchBuilder {
                 Some(previous_section.clone())
             );
             traverse_match(&case.pattern, session, &scope);
+            self.ast_indexes.push(case_ix as u16);
             self.visit_node(session, &case.body)?;
+            self.ast_indexes.pop();
             stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         }
         scope.borrow_mut().as_mut_symbol_mgr().add_section(
@@ -879,7 +912,9 @@ impl PythonArchBuilder {
         );
         let previous_section = SectionIndex::INDEX(body_section.index - 1);
         self.visit_expr(session, &while_stmt.test);
+        self.ast_indexes.push(0 as u16); // 0 for body
         self.visit_node(session, &while_stmt.body)?;
+        self.ast_indexes.pop();
         let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
         let mut stmt_sections = vec![body_section];
         if !while_stmt.orelse.is_empty(){
@@ -887,7 +922,9 @@ impl PythonArchBuilder {
                 while_stmt.orelse.first().unwrap().range().start(),
                 Some(previous_section.clone())
             );
+            self.ast_indexes.push(1 as u16); // 1 for else
             self.visit_node(session, &while_stmt.orelse)?;
+            self.ast_indexes.pop();
             stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
