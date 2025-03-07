@@ -1042,7 +1042,8 @@ impl Odoo {
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
         let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
-        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
+        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") || 
+        params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
@@ -1064,7 +1065,8 @@ impl Odoo {
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
         let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
-        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") {
+        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") ||
+        params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
