@@ -58,6 +58,9 @@ pub struct SyncOdoo {
     pub full_version: String,
     pub config: Config,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
+    pub has_main_entry:bool,
+    pub has_odoo_main_entry: bool,
+    pub has_valid_python: bool,
     pub main_entry_tree: Vec<String>,
     pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
@@ -92,6 +95,9 @@ impl SyncOdoo {
             full_version: "0.0.0".to_string(),
             config: Config::new(),
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
+            has_main_entry: false,
+            has_odoo_main_entry: false,
+            has_valid_python: false,
             main_entry_tree: vec![],
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
             stubs_dirs: vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
@@ -180,6 +186,7 @@ impl SyncOdoo {
                 session.send_notification("$Odoo/loadingStatusUpdate", "stop");
                 return;
             }
+            session.sync_odoo.has_valid_python = true;
             let output = output.unwrap();
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -282,6 +289,11 @@ impl SyncOdoo {
 
     fn build_base(session: &mut SessionInfo) -> bool {
         let odoo_path = session.sync_odoo.config.odoo_path.clone();
+        let Some(odoo_path) = odoo_path else {
+            info!("Odoo path not provided. Continuing in single file mode");
+            return false;
+        };
+        session.sync_odoo.has_main_entry = true;
         let odoo_sym = session.sync_odoo.entry_point_mgr.borrow_mut().set_main_entry(odoo_path.clone());
         let odoo_entry = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref().unwrap().clone();
         session.sync_odoo.main_entry_tree = odoo_entry.borrow().tree.clone();
@@ -306,7 +318,7 @@ impl SyncOdoo {
         session.sync_odoo.version_micro = _version_micro;
         session.sync_odoo.full_version = _full_version;
         //build base
-        let config_odoo_path = PathBuf::from(session.sync_odoo.config.odoo_path.clone());
+        let config_odoo_path = PathBuf::from(odoo_path.clone());
         let Some(odoo_sym) = odoo_sym else {
             panic!("Odoo root symbol not found")
         };
@@ -336,9 +348,9 @@ impl SyncOdoo {
             return false;
         }
         //search common odoo addons path
-        let mut addon_symbol = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path, &tree(vec!["odoo", "addons"], vec![]), u32::MAX);
+        let mut addon_symbol = session.sync_odoo.get_symbol(&odoo_path.clone(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX);
         if addon_symbol.is_empty() {
-            let odoo = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path, &tree(vec!["odoo"], vec![]), u32::MAX);
+            let odoo = session.sync_odoo.get_symbol(&odoo_path, &tree(vec!["odoo"], vec![]), u32::MAX);
             if odoo.is_empty() {
                 session.log_message(MessageType::WARNING, "Odoo not found. Switching to non-odoo mode...".to_string());
                 return false;
@@ -378,12 +390,13 @@ impl SyncOdoo {
                         S!("addons")]));
             }
         }
+        session.sync_odoo.has_odoo_main_entry = true;
         return true;
     }
 
     fn build_modules(session: &mut SessionInfo) {
         {
-            let addons_symbol = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path, &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
+            let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
             let addons_path = addons_symbol.borrow_mut().paths().clone();
             for addon_path in addons_path.iter() {
                 info!("searching modules in {}", addon_path);
@@ -939,7 +952,10 @@ impl Odoo {
             config.addons = odoo_conf.get("validatedAddonsPaths").expect("An odoo config must contains a addons value")
                 .as_array().expect("the addons value must be an array")
                 .into_iter().map(|v| v.as_str().unwrap().to_string()).collect();
-            config.odoo_path = odoo_conf.get("odooPath").expect("odooPath must exist").as_str().expect("odooPath must be a String").to_string();
+            let odoo_path = odoo_conf.get("odooPath");
+            if let Some(odoo_path) = odoo_path {
+                config.odoo_path = Some(odoo_path.as_str().expect("odooPath must be a String").to_string());
+            }
             if let Some(python_path) = odoo_conf.get("finalPythonPath") {
                 if python_path.is_string() {
                     config.python_path = python_path.as_str().unwrap().to_string();
@@ -953,7 +969,7 @@ impl Odoo {
             }
         } else {
             config.addons = vec![];
-            config.odoo_path = S!("");
+            config.odoo_path = None;
             session.log_message(MessageType::ERROR, S!("Unable to find selected configuration. No odoo path has been found."));
         }
         config.refresh_mode = _refresh_mode;
@@ -1260,7 +1276,7 @@ impl Odoo {
                     break;
                 }
             }
-            if parent_path.sanitize() == session.sync_odoo.config.odoo_path.clone() + "/odoo/addons" {
+            if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_ref().unwrap_or(&"".to_string()).clone() + "/odoo/addons" {
                 let addons_symbol = session.sync_odoo.get_main_entry().borrow().root.clone().borrow().get_symbol(&(vec![S!("odoo"), S!("addons")], vec![]), u32::MAX);
                 if !addons_symbol.is_empty() {
                     let module_symbol = Symbol::create_from_path(session, &PathBuf::from(path), addons_symbol[0].clone(), true);

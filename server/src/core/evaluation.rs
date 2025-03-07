@@ -28,6 +28,43 @@ pub enum EvaluationValue {
     TUPLE(Vec<ruff_python_ast::Expr>) //expr is a literal
 }
 
+impl EvaluationValue {
+    pub fn as_any(&self) -> bool {
+        match self {
+            EvaluationValue::ANY() => true,
+            _ => false
+        }
+    }
+
+    pub fn as_constant(&self) -> &ruff_python_ast::Expr {
+        match self {
+            EvaluationValue::CONSTANT(e) => e,
+            _ => panic!("Not a constant")
+        }
+    }
+
+    pub fn as_dict(&self) -> &Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> {
+        match self {
+            EvaluationValue::DICT(d) => d,
+            _ => panic!("Not a dict")
+        }
+    }
+
+    pub fn as_list(&self) -> &Vec<ruff_python_ast::Expr> {
+        match self {
+            EvaluationValue::LIST(l) => l,
+            _ => panic!("Not a list")
+        }
+    }
+
+    pub fn as_tuple(&self) -> &Vec<ruff_python_ast::Expr> {
+        match self {
+            EvaluationValue::TUPLE(t) => t,
+            _ => panic!("Not a tuple")
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Evaluation {
     //symbol lead to type evaluation, and value/range hold the evaluated value in case of a 'constant' value, like in "variable = 5".
