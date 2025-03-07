@@ -4,6 +4,7 @@ use byteyarn::{yarn, Yarn};
 use lsp_types::Diagnostic;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
+use serde_json::json;
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps, SymType}, core::{evaluation::{Context, Evaluation}, model::Model}, threads::SessionInfo};
@@ -187,5 +188,19 @@ impl FunctionSymbol {
             return self.args.get(arg_index as usize);
         }
         None
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "type": SymType::FUNCTION.to_string(),
+            "doc_string": self.doc_string,
+            "ast_indexes": self.ast_indexes,
+            "is_external": self.is_external,
+            "range": json!({
+                "start": self.range.start().to_u32(),
+                "end": self.range.end().to_u32(),
+            }),
+            "evaluations": self.evaluations.iter().map(|eval| json!("to implement")).collect::<Vec<serde_json::Value>>(),
+        })
     }
 }

@@ -44,12 +44,14 @@ class OdooLSSpyApp:
                 dpg.add_table_column(init_width_or_weight=1, no_header_label=True, no_header_width=True)
                 dpg.add_table_column(init_width_or_weight=1, no_header_label=True, no_header_width=True)
 
-                with dpg.table_row() as left_table_row:
+                with dpg.table_row():
                     with dpg.child_window(tag="left_table_row_wdw", width=-1, height=-1):
                         with dpg.tab_bar(tag="left_tab_bar"):
                             pass
 
-                    dpg.add_text("Contenu de la colonne de droite")
+
+                    with dpg.child_window(tag="right_table_row_wdw", width=-1, height=-1):
+                        dpg.add_text("Waiting for something to display...")
 
         with dpg.theme() as bg_window_theme:
             with dpg.theme_component(dpg.mvWindowAppItem):

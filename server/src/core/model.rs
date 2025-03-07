@@ -83,6 +83,10 @@ impl Model {
         res
     }
 
+    pub fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
     pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         self.symbols.insert(symbol.clone());
         let from_module = symbol.borrow().find_module();

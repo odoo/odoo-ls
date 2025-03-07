@@ -2,6 +2,7 @@ use byteyarn::{yarn, Yarn};
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
+use serde_json::json;
 use tracing::info;
 use weak_table::PtrWeakHashSet;
 use std::collections::{HashMap, HashSet};
@@ -404,6 +405,22 @@ impl ModuleSymbol {
 
     pub fn is_in_workspace(&self) -> bool {
         self.in_workspace
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        let module_sym: Vec<serde_json::Value> = self.module_symbols.values().map(|sym| {
+            json!({
+                "name": sym.borrow().name().clone(),
+                "type": sym.borrow().typ().to_string(),
+            })
+        }).collect();
+        json!({
+            "type": "MODULE_PACKAGE",
+            "path": self.path,
+            "is_external": self.is_external,
+            "in_workspace": self.in_workspace,
+            "module_symbols": module_sym,
+        })
     }
 
 }

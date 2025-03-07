@@ -1,5 +1,6 @@
 use byteyarn::Yarn;
 use ruff_text_size::{TextRange, TextSize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -93,6 +94,19 @@ impl ClassSymbol {
             }
         }
         false
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "type": SymType::CLASS.to_string(),
+            "doc_string": self.doc_string,
+            "ast_indexes": self.ast_indexes,
+            "is_external": self.is_external,
+            "range": json!({
+                "start": self.range.start().to_u32(),
+                "end": self.range.end().to_u32(),
+            })
+        })
     }
 
 }

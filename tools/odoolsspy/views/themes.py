@@ -5,6 +5,10 @@ def setup_themes():
         dpg.add_font("arial.ttf", 11, tag="arial11")
         dpg.add_font("arialbd.ttf", 14, tag="arialbd14")
         dpg.add_font("arial.ttf", 14, tag="arial14")
+        with dpg.font("FontAwesome.otf", 12, tag="arialFA12"):
+            dpg.add_font_range_hint(dpg.mvFontRangeHint_Default)
+            # add specific range of glyphs
+            dpg.add_font_range(0xe000, 0xf8ff)
 
     with dpg.theme(tag="header_theme_main"):
         with dpg.theme_component(dpg.mvCollapsingHeader):
@@ -35,3 +39,11 @@ def setup_themes():
             dpg.add_theme_color(dpg.mvThemeCol_Header, (33, 99, 117, 255), category=dpg.mvThemeCat_Core)
             dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, (39, 119, 140, 255), category=dpg.mvThemeCat_Core)
             dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, (47, 143, 168, 255), category=dpg.mvThemeCat_Core)
+
+    with dpg.theme(tag="tree_node_folder"):
+        with dpg.theme_component(dpg.mvTreeNode):
+            dpg.add_theme_color(dpg.mvThemeCol_Header, (209, 177, 15, 150))
+            dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, (222, 188, 16, 200))
+            dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, (235, 199, 16, 255))
+        with dpg.theme_component(dpg.mvTreeNode):
+            dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (209, 177, 15, 150))  # color even if closed

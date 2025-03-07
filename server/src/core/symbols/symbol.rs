@@ -372,6 +372,20 @@ impl Symbol {
         }
     }
 
+    pub fn as_compiled(&self) -> &CompiledSymbol {
+        match self {
+            Symbol::Compiled(c) => c,
+            _ => {panic!("Not a compiled symbol")}
+        }
+    }
+
+    pub fn as_compiled_mut(&mut self) -> &mut CompiledSymbol {
+        match self {
+            Symbol::Compiled(c) => c,
+            _ => {panic!("Not a compiled symbol")}
+        }
+    }
+
     pub fn as_variable(&self) -> &VariableSymbol {
         match self {
             Symbol::Variable(v) => v,

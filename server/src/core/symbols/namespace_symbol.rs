@@ -1,9 +1,10 @@
 use byteyarn::Yarn;
+use serde_json::json;
 use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use crate::constants::BuildSteps;
+use crate::{constants::{BuildSteps, SymType}, tool_api::to_json::{dependencies_to_json, dependents_to_json}};
 
 use super::symbol::Symbol;
 
@@ -146,6 +147,30 @@ impl NamespaceSymbol {
 
     pub fn is_in_workspace(&self) -> bool {
         self.in_workspace
+    }
+    
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut directories = vec![];
+        for directory in self.directories.iter() {
+            let module_sym: Vec<serde_json::Value> = directory.module_symbols.values().map(|sym| {
+                json!({
+                    "name": sym.borrow().name().clone(),
+                    "type": sym.borrow().typ().to_string(),
+                })
+            }).collect();
+            directories.push(json!({
+                "path": directory.path,
+                "module_symbols": module_sym,
+            }));
+        }
+        json!({
+            "type": SymType::NAMESPACE.to_string(),
+            "is_external": self.is_external,
+            "in_workspace": self.in_workspace,
+            "directories": directories,
+            "dependencies": dependencies_to_json(&self.dependencies),
+            "dependents": dependents_to_json(&self.dependents),
+        })
     }
 
 }

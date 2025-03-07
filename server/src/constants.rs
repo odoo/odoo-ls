@@ -56,12 +56,24 @@ pub enum BuildSteps {
     VALIDATION = 3,
 }
 
+impl fmt::Display for BuildSteps {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum BuildStatus {
     PENDING,
     IN_PROGRESS,
     INVALID,
     DONE
+}
+
+impl fmt::Display for BuildStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "unicodedata", "stringprep", "readline", "rlcompleter",

@@ -1,7 +1,8 @@
 use byteyarn::{yarn, Yarn};
 use ruff_text_size::TextRange;
+use serde_json::json;
 
-use crate::{constants::SymType, core::evaluation::Evaluation, threads::SessionInfo};
+use crate::{constants::{flatten_tree, SymType}, core::evaluation::Evaluation, threads::SessionInfo};
 use std::{cell::RefCell, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
@@ -81,6 +82,22 @@ impl VariableSymbol {
             }
         }
         vec![]
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "type": SymType::VARIABLE.to_string(),
+            "doc_string": self.doc_string,
+            "ast_indexes": self.ast_indexes,
+            "is_external": self.is_external,
+            "range": json!({
+                "start": self.range.start().to_u32(),
+                "end": self.range.end().to_u32(),
+            }),
+            "is_import_variable": self.is_import_variable,
+            "is_parameter": self.is_parameter,
+            "evaluations": self.evaluations.iter().map(|eval| json!("to implement")).collect::<Vec<serde_json::Value>>(),
+        })
     }
 
 }

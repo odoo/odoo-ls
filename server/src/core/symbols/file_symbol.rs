@@ -1,7 +1,8 @@
 use byteyarn::{yarn, Yarn};
+use serde_json::json;
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model};
+use crate::{constants::{BuildStatus, BuildSteps, SymType}, core::model::Model, tool_api::to_json::{dependencies_to_json, dependents_to_json}};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -142,6 +143,54 @@ impl FileSymbol {
 
     pub fn is_in_workspace(&self) -> bool {
         self.in_workspace
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "type": SymType::FILE.to_string(),
+            "path": self.path,
+            "is_external": self.is_external,
+            "in_workspace": self.in_workspace,
+            "arch_status": self.arch_status.to_string(),
+            "arch_eval_status": self.arch_eval_status.to_string(),
+            "odoo_status": self.odoo_status.to_string(),
+            "validation_status": self.validation_status.to_string(),
+            "not_found_paths": self.not_found_paths.iter().map(|(step, paths)| {
+                json!({
+                    "step": step.to_string(),
+                    "paths": paths,
+                })
+            }).collect::<Vec<serde_json::Value>>(),
+            "self_import": self.self_import,
+            "model_dependencies": self.model_dependencies.iter().map(|x| json!(x.borrow().get_name())).collect::<Vec<serde_json::Value>>(),
+            "dependencies": dependencies_to_json(&self.dependencies),
+            "dependents": dependents_to_json(&self.dependents),
+            "processed_text_hash": self.processed_text_hash,
+
+            "sections": self.sections.iter().map(|x| {
+                json!({
+                    "start": x.start,
+                    "index": x.index,
+                })
+            }).collect::<Vec<serde_json::Value>>(),
+            "symbols": self.symbols.iter().map(|(name, sections)| {
+                json!({
+                    "name": name,
+                    "sections": sections.iter().map(|(section, symbols)| {
+                        json!({
+                            "section": section,
+                            "symbols": symbols.iter().map(|sym| json!(sym.borrow().name())).collect::<Vec<serde_json::Value>>(),
+                        })
+                    }).collect::<Vec<serde_json::Value>>(),
+                })
+            }).collect::<Vec<serde_json::Value>>(),
+            "ext_symbols": self.ext_symbols.iter().map(|(name, symbols)| {
+                json!({
+                    "name": name,
+                    "symbols": symbols.iter().map(|sym| json!(sym.borrow().name())).collect::<Vec<serde_json::Value>>(),
+                })
+            }).collect::<Vec<serde_json::Value>>(),
+        })
     }
 
 }
