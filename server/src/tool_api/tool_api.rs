@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use serde_json::json;
 
+use crate::constants::{PackageType, SymType};
 use crate::core::entry_point::{EntryPoint, EntryPointType};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
@@ -99,7 +100,7 @@ impl ToolAPI {
             },
             "$/ToolAPI/get_symbol" => {
                 let sync_odoo = sync_odoo.lock().unwrap();
-                response_value = ToolAPI::get_symbol(&sync_odoo, &request.params);
+                response_value = ToolAPI::get_symbol(&sync_odoo, serde_json::from_value(request.params).unwrap());
             },
             "$/ToolAPI/browse_tree" => {
                 let sync_odoo = sync_odoo.lock().unwrap();
@@ -148,14 +149,56 @@ impl ToolAPI {
         serde_json::Value::Array(entries)
     }
 
-    fn get_symbol(sync_odoo: &SyncOdoo, params: &serde_json::Value) -> serde_json::Value {
-        /*let path = params["path"].as_str().unwrap();
-        let tree = params["tree"].as_str().unwrap();
-        let entry = sync_odoo.entry_point_mgr.borrow().get_entry(path, tree);
-        match entry {
-            Some(entry) => ToolAPI::entry_to_json(&entry.borrow()),
-            None => serde_json::Value::Null
-        }*/
+    fn get_symbol(sync_odoo: &SyncOdoo, params: GetSymbolParams) -> serde_json::Value {
+        let mut entry = None;
+        let ep_mgr = sync_odoo.entry_point_mgr.borrow();
+        for e in ep_mgr.iter_all() {
+            if e.borrow().path == params.entry_path {
+                entry = Some(e);
+                break;
+            }
+        }
+        if let Some(entry) = entry {
+            let mut symbols = entry.borrow().root.borrow().get_symbol(&params.tree, u32::MAX);
+            if symbols.len() > 1 {
+                panic!()
+            }
+            if params.tree.0.is_empty() && params.tree.1.is_empty() {
+                symbols.push(entry.borrow().root.clone());
+            }
+            let Some(symbol) = symbols.first() else {return serde_json::Value::Null};
+            let typ = symbol.borrow().typ();
+            match typ {
+                SymType::ROOT => {
+                    return symbol.borrow().as_root().to_json();
+                }
+                SymType::DISK_DIR => {
+                    return symbol.borrow().as_disk_dir_sym().to_json();
+                }
+                SymType::NAMESPACE => {
+                    return symbol.borrow().as_namespace().to_json();
+                },
+                SymType::PACKAGE(PackageType::MODULE) => {
+                    return symbol.borrow().as_module_package().to_json();
+                },
+                SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
+                    return symbol.borrow().as_python_package().to_json();
+                },
+                SymType::FILE => {
+                    return symbol.borrow().as_file().to_json();
+                },
+                SymType::COMPILED => {return symbol.borrow().as_compiled().to_json();},
+                SymType::VARIABLE => {
+                    return symbol.borrow().as_variable().to_json();
+                },
+                SymType::CLASS => {
+                    return symbol.borrow().as_class_sym().to_json();
+                },
+                SymType::FUNCTION => {
+                    return symbol.borrow().as_func().to_json();
+                },
+            }
+        }
         serde_json::Value::Null
     }
 
@@ -183,8 +226,11 @@ impl ToolAPI {
                 } else {
                     vec![]
                 };
-                let module_sym: Vec<String> = module_sym.iter().map(|sym| {
-                    sym.borrow().name().clone()
+                let module_sym: Vec<serde_json::Value> = module_sym.iter().map(|sym| {
+                    json!({
+                        "name": sym.borrow().name().clone(),
+                        "type": sym.borrow().typ().to_string(),
+                    })
                 }).collect();
                 return json!({
                     "modules": module_sym,
@@ -197,6 +243,12 @@ impl ToolAPI {
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct BrowseTreeParams {
+    pub entry_path: String,
+    pub tree: (Vec<String>, Vec<String>),
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct GetSymbolParams {
     pub entry_path: String,
     pub tree: (Vec<String>, Vec<String>),
 }

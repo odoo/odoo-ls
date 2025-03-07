@@ -1,4 +1,6 @@
-use crate::{constants::BuildSteps, core::entry_point::EntryPoint, threads::SessionInfo, S};
+use serde_json::json;
+
+use crate::{constants::{BuildSteps, SymType}, core::entry_point::EntryPoint, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
@@ -29,6 +31,19 @@ impl RootSymbol {
     pub fn add_file(&mut self, file: &Rc<RefCell<Symbol>>) {
         file.borrow_mut().set_is_external(true);
         self.module_symbols.insert(file.borrow().name().clone(), file.clone());
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        let module_sym: Vec<serde_json::Value> = self.module_symbols.values().map(|sym| {
+            json!({
+                "name": sym.borrow().name().clone(),
+                "type": sym.borrow().typ().to_string(),
+            })
+        }).collect();
+        json!({
+            "type": SymType::ROOT.to_string(),
+            "module_symbols": module_sym,
+        })
     }
 
 }
