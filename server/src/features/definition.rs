@@ -81,8 +81,8 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let compute_symbols = FeaturesUtils::find_compute_field_symbols(
-            session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &value, call_expr
+        let compute_symbols = FeaturesUtils::find_field_symbols(
+            session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &value, call_expr, &offset
         );
         compute_symbols.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
