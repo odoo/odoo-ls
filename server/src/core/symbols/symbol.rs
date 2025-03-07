@@ -1959,7 +1959,7 @@ impl Symbol {
 
     //store in result all available members for self: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -1975,6 +1975,9 @@ impl Symbol {
                 if !is_super{
                     for symbol in symbol.borrow().all_symbols() {
                         if only_fields && !symbol.borrow().is_field(session){
+                            continue;
+                        }
+                        if only_methods && symbol.borrow().typ() != SymType::FUNCTION{
                             continue;
                         }
                         let name = symbol.borrow().name().clone();
@@ -1996,6 +1999,9 @@ impl Symbol {
                                         if only_fields && !s.borrow().is_field(session){
                                             continue;
                                         }
+                                        if only_methods && symbol.borrow().typ() != SymType::FUNCTION{
+                                            continue;
+                                        }
                                         let name = s.borrow().name().clone();
                                         if let Some(vec) = result.get_mut(&name) {
                                             vec.push((s, Some(model_sym.borrow().name().clone())));
@@ -2012,7 +2018,7 @@ impl Symbol {
                 for base in bases.iter() {
                     //no comodel as we will process only model in base class (overrided _name?)
                     if let Some(base) = base.upgrade() {
-                        Symbol::all_members(&base, session, result, false, only_fields, from_module.clone(), acc, false);
+                        Symbol::all_members(&base, session, result, false, only_fields, only_methods, from_module.clone(), acc, false);
                     }
                 }
             },

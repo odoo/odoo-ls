@@ -29,6 +29,7 @@ pub enum ExpectedType {
     CLASS(Rc<RefCell<Symbol>>),
     SIMPLE_FIELD,
     NESTED_FIELD(Option<OYarn>),
+    METHOD_NAME,
 }
 
 pub struct CompletionFeature;
@@ -604,6 +605,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                         } else {
                             None
                         },
+                    "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
                     _ => None,
                 }
             ) else {
@@ -699,7 +701,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
             ExpectedType::DOMAIN_FIELD(parent) => {
                 add_nested_field_names(session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent.clone(), true, &None);
             },
-            ExpectedType::SIMPLE_FIELD | ExpectedType::NESTED_FIELD(_) => 'field_block:  {
+            ExpectedType::SIMPLE_FIELD | ExpectedType::NESTED_FIELD(_) | ExpectedType::METHOD_NAME => 'field_block:  {
                 let scope = Symbol::get_scope_symbol(file.clone(), expr_string_literal.range().start().to_u32(), true);
                 let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
                     break 'field_block;
@@ -709,12 +711,14 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 }
                 match expected_type {
                     ExpectedType::SIMPLE_FIELD =>  add_model_attributes(
-                        session, &mut items, current_module.clone(), parent_class, false, true, expr_string_literal.value.to_str()),
+                        session, &mut items, current_module.clone(), parent_class, false, true, false, expr_string_literal.value.to_str()),
+                    ExpectedType::METHOD_NAME =>  add_model_attributes(
+                        session, &mut items, current_module.clone(), parent_class, false, false, true, expr_string_literal.value.to_str()),
                     ExpectedType::NESTED_FIELD(maybe_field_type) => add_nested_field_names(
                         session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent_class, false, maybe_field_type),
                     _ => unreachable!()
                 }
-            }
+            },
             ExpectedType::CLASS(_) => {},
         }
     }
@@ -744,7 +748,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                 let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
-                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, attr.attr.id.as_str())
+                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str())
                 }
             }
         }
@@ -923,7 +927,7 @@ fn add_nested_field_names(
         if let Some(object) = &obj {
             if index == split_expr.len() - 1 {
                 let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
-                Symbol::all_members(&object, session, &mut all_symbols, true, true, from_module.clone(), &mut None, false);
+                Symbol::all_members(&object, session, &mut all_symbols, true, true, false, from_module.clone(), &mut None, false);
                 for (_symbol_name, symbols) in all_symbols {
                     //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                     if _symbol_name.starts_with(name) {
@@ -978,10 +982,11 @@ fn add_model_attributes(
     parent_sym: Rc<RefCell<Symbol>>,
     is_super: bool,
     only_fields: bool,
+    only_methods: bool,
     attribute_name: &str
 ){
     let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
-    Symbol::all_members(&parent_sym, session, &mut all_symbols, true, only_fields, from_module.clone(), &mut None, is_super);
+    Symbol::all_members(&parent_sym, session, &mut all_symbols, true, only_fields, only_methods, from_module.clone(), &mut None, is_super);
     for (_symbol_name, symbols) in all_symbols {
         //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
         if _symbol_name.starts_with(attribute_name) {
