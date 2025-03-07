@@ -1,3 +1,4 @@
+use serde_json::json;
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model, threads::SessionInfo, S};
@@ -188,6 +189,22 @@ impl PythonPackageSymbol {
         let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::new());
         let section_vec = sections.entry(section).or_insert(vec![]);
         section_vec.push(content.clone());
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        let module_sym: Vec<serde_json::Value> = self.module_symbols.values().map(|sym| {
+            json!({
+                "name": sym.borrow().name().clone(),
+                "type": sym.borrow().typ().to_string(),
+            })
+        }).collect();
+        json!({
+            "type": "PYTHON_PACKAGE",
+            "path": self.path,
+            "is_external": self.is_external,
+            "in_workspace": self.in_workspace,
+            "module_symbols": module_sym,
+        })
     }
 
 }
