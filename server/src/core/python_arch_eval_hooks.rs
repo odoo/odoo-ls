@@ -34,8 +34,8 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                         content_tree: vec![S!("BaseModel"), S!("env")],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
-        let env_file = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("api")], vec![]), u32::MAX);
-        let env_class = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("api")], vec![S!("Environment")]), u32::MAX);
+        let env_file = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("api")], vec![]), u32::MAX);
+        let env_class = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("api")], vec![S!("Environment")]), u32::MAX);
         if !env_class.is_empty() {
             let mut env = symbol.borrow_mut();
             let env_class = env_class.last().unwrap();
@@ -78,7 +78,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             content_tree: vec![S!("Environment"), S!("registry")],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
-        let registry_sym = odoo.get_symbol(&odoo.config.odoo_path, &(vec![S!("odoo"), S!("modules"), S!("registry")], vec![S!("Registry")]), u32::MAX);
+        let registry_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("modules"), S!("registry")], vec![S!("Registry")]), u32::MAX);
         if !registry_sym.is_empty() {
             symbol.borrow_mut().set_evaluations(vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
@@ -480,7 +480,7 @@ impl PythonArchEvalHooks {
         let name = symbol.borrow().name().clone();
         for hook in arch_eval_file_hooks.iter() {
             if name.eq(hook.file_tree.last().unwrap()) {
-                if (hook.odoo_entry && odoo_tree.0 == hook.file_tree) || (!hook.odoo_entry && tree.0 == hook.file_tree) {
+                if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree.0 == hook.file_tree) || (!hook.odoo_entry && tree.0 == hook.file_tree) {
                     if hook.content_tree.is_empty() {
                         (hook.func)(session.sync_odoo, entry_point, symbol.clone(), symbol.clone());
                     } else {
@@ -500,7 +500,7 @@ impl PythonArchEvalHooks {
         let name = symbol.borrow().name().clone();
         for hook in arch_eval_function_hooks.iter() {
             if name.eq(hook.tree.1.last().unwrap()) {
-                if (hook.odoo_entry && odoo_tree == hook.tree) || (!hook.odoo_entry && tree == hook.tree) {
+                if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook.tree) || (!hook.odoo_entry && tree == hook.tree) {
                     (hook.func)(session.sync_odoo, entry_point, symbol.clone());
                 }
             }
@@ -635,7 +635,7 @@ impl PythonArchEvalHooks {
     }
 
     fn _update_get_eval_func_level(odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, function: Rc<RefCell<Symbol>>, tree: Tree) {
-        let return_sym = odoo.get_symbol(&odoo.config.odoo_path, &tree, u32::MAX);
+        let return_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &tree, u32::MAX);
         if return_sym.is_empty() {
             let file = function.borrow_mut().get_file().clone();
             file.as_ref().unwrap().upgrade().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
@@ -659,7 +659,7 @@ impl PythonArchEvalHooks {
         if get_sym.is_empty() {
             return;
         }
-        let return_sym = odoo.get_symbol(&odoo.config.odoo_path, &tree, u32::MAX);
+        let return_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &tree, u32::MAX);
         if return_sym.is_empty() {
             let file = symbol.borrow_mut().get_file().clone();
             file.as_ref().unwrap().upgrade().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));

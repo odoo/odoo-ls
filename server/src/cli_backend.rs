@@ -28,7 +28,7 @@ impl CliBackend {
     }
 
     pub fn run(&self) {
-        let community_path = self.cli.community_path.clone().expect("Please provide a Community path");
+        let community_path = self.cli.community_path.clone();
         let mut server = SyncOdoo::new();
         let (s, r) = crossbeam_channel::unbounded();
         let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), &mut server);

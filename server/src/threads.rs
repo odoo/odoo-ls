@@ -157,7 +157,8 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
     let check_reset =  |msg: Option<&DelayedProcessingMessage>| {
         let length = sync_odoo.lock().unwrap().watched_file_updates.load(Ordering::SeqCst);
         if length > 10 {
-            let index_lock_path = PathBuf::from(sync_odoo.lock().unwrap().config.odoo_path.clone()).join(".git").join("index.lock");
+            let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path.as_ref().unwrap().clone();
+            let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
             while index_lock_path.exists(){
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
