@@ -20,41 +20,42 @@ use crate::{oyarn, Sy, S};
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
-    pub fn find_compute_field_symbols(
+    pub fn find_field_symbols(
         session: &mut SessionInfo,
         scope: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
-        compute_str: &String,
+        field_value: &String,
         call_expr: &ExprCall,
+        offset: &usize,
     ) -> Vec<Rc<RefCell<Symbol>>>{
+        if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
+            *offset > arg.range().start().to_usize() && *offset <= arg.range().end().to_usize()
+        ){
+            let Some(ref arg_id) = keyword.arg else {
+                return vec![];
+            };
+            if !["compute", "inverse", "search"].contains(&arg_id.as_str()){
+                return vec![];
+            }
+        } else {
+            return vec![];
+        }
         let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
             return vec![];
         };
         if parent_class.borrow().as_class_sym()._model.is_none(){
             return vec![];
         }
-        let mut compute_syms = vec![];
-        for arg in call_expr.arguments.keywords.iter() {
-            let Some(ref arg_id) = arg.arg else {
-                continue;
-            };
-            if arg_id.as_str() != "compute" {
-                continue;
+        let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
+        if !evaluations.iter().any(|eval|
+            match eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade() {
+                Some(sym_rc) => sym_rc.borrow().is_field_class(session),
+                None => false
             }
-            let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start()).0;
-            for callable_eval in callable_evals.iter() {
-                let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-                let Some(callable_sym) = callable.weak.upgrade() else {
-                    continue
-                };
-                if !callable_sym.borrow().is_field_class(session){
-                    continue;
-                }
-                compute_syms = parent_class.borrow().get_member_symbol(session, compute_str, from_module.clone(), false, false, true, false).0;
-            }
-            break; // Already found compute arg
+        ){
+            return vec![];
         }
-        compute_syms
+        parent_class.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, false, true, false).0
     }
 
     fn find_simple_decorator_field_symbol(
@@ -270,7 +271,7 @@ impl FeaturesUtils {
         if string_domain_fields_syms.len() >= 1 {
             return string_domain_fields_syms;
         }
-        let compute_kwarg_syms = FeaturesUtils::find_compute_field_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr);
+        let compute_kwarg_syms = FeaturesUtils::find_field_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, &offset);
         if compute_kwarg_syms.len() >= 1{
             return compute_kwarg_syms;
         }
