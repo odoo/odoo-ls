@@ -1,101 +1,106 @@
-try:
-    import dearpygui.dearpygui as dpg
-except ImportError:
-    print("DearPyGui is not installed. Please install it using 'pip install dearpygui'")
-    exit(1)
+import sys
 import threading
 import time
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QMenuBar, QVBoxLayout,
+    QWidget, QTableWidget, QTableWidgetItem, QTabWidget, QLabel, QPushButton, QSplitter, QStackedWidget, QSizePolicy,
+    QGridLayout
+)
+from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from connection.connection import ConnectionManager
 from views.list_entries import EntryTab
 from views.monitoring import Monitoring
-from views.themes import setup_themes
 
-class OdooLSSpyApp:
+class OdooLSSpyApp(QMainWindow):
     def __init__(self):
-        self.connection_mgr = ConnectionManager()
-        self.monitoring = Monitoring()
-        self.entry_tab = EntryTab()
+        super().__init__()
+
+        self.connection_mgr = ConnectionManager(self)
+        #self.monitoring = Monitoring()
+        self.entry_tab = EntryTab(self)
         self.tree_browsers = []
-        self.setup_ui()
 
-    def setup_ui(self):
-        dpg.create_context()
-        dpg.create_viewport(title='Odoo LS Spy', width=1620, height=1080)
-        dpg.setup_dearpygui()
-        dpg.set_viewport_clear_color((15, 15, 15, 255))
-        dpg.maximize_viewport()
-        dpg.show_viewport()
-        time.sleep(0.10)
+        self.setWindowTitle("Odoo LS Spy")
+        self.setGeometry(100, 100, 1920, 1080)
+        self.init_ui()
 
-        setup_themes()
+        self.connection_mgr.connect()
 
-        with dpg.viewport_menu_bar():
-            with dpg.menu(label="File"):
-                dpg.add_menu_item(label="Open EntryPoints list", callback=lambda: self.open_entry_points_list())
-                dpg.add_menu_item(label="Close", callback=lambda: self.close())
+    def init_ui(self):
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
 
-            with dpg.value_registry():
-                dpg.add_bool_value(tag="cpu_wdw_visibility", default_value=True)
-            with dpg.menu(label="Settings"):
-                dpg.add_menu_item(label="Toggle CPU usage", callback=self.monitoring.toggle_cpu_usage, check=True, user_data="cpu_wdw_visibility", default_value=True)
+        # Création du splitter principal
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        with dpg.window(tag="bg_window", no_title_bar=True, no_resize=True, no_move=True, no_close=True, no_scrollbar=True):
-            with dpg.table(tag="resize_table", borders_outerH=False, borders_innerH=False, resizable=True, header_row=False):
-                dpg.add_table_column(init_width_or_weight=1, no_header_label=True, no_header_width=True)
-                dpg.add_table_column(init_width_or_weight=1, no_header_label=True, no_header_width=True)
+        self.layout = QVBoxLayout(self.central_widget)
+        self.layout.addWidget(self.splitter)
 
-                with dpg.table_row():
-                    with dpg.child_window(tag="left_table_row_wdw", width=-1, height=-1):
-                        with dpg.tab_bar(tag="left_tab_bar"):
-                            pass
+        # Menu Bar
+        menu_bar = self.menuBar()
+        file_menu = menu_bar.addMenu("File")
+
+        open_action = QAction("Open EntryPoints list", self)
+        open_action.triggered.connect(self.open_entry_points_list)
+        file_menu.addAction(open_action)
+
+        close_action = QAction("Close", self)
+        close_action.triggered.connect(self.close)
+        file_menu.addAction(close_action)
+
+        # Settings Menu
+        settings_menu = menu_bar.addMenu("Settings")
+        toggle_cpu_action = QAction("Toggle CPU usage", self, checkable=True)
+        #toggle_cpu_action.triggered.connect(self.monitoring.toggle_cpu_usage)
+        settings_menu.addAction(toggle_cpu_action)
+
+        # Left tab bar
+        self.left_tab_bar = QTabWidget()
+        self.splitter.addWidget(self.left_tab_bar)
 
 
-                    with dpg.child_window(tag="right_table_row_wdw", width=-1, height=-1):
-                        dpg.add_text("Waiting for something to display...")
+        self.right_panel = QWidget()
+        self.right_panel_layout = QGridLayout()
+        self.right_panel.setLayout(self.right_panel_layout)
+        self.right_panel.layout().addWidget(QLabel("Waiting for something to display..."), 0, 0)
 
-        with dpg.theme() as bg_window_theme:
-            with dpg.theme_component(dpg.mvWindowAppItem):
-                dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0, parent=dpg.last_item())
+        self.splitter.addWidget(self.right_panel)
 
-        with dpg.theme() as table_theme:
-            with dpg.theme_component(dpg.mvTable):
-                dpg.add_theme_style(dpg.mvStyleVar_CellPadding, 0, 0)
+        # Start monitoring
+        #self.monitoring.start()
 
-        dpg.bind_item_theme("bg_window", bg_window_theme)
-        dpg.bind_item_theme("left_table_row_wdw", bg_window_theme)
-        dpg.bind_item_theme("resize_table", table_theme)
+    def clear_right_window(self):
+        for i in reversed(range(self.right_panel.layout().count())): 
+            self.right_panel.layout().takeAt(i).widget().deleteLater()
 
-        with dpg.window(label="connection_wdw", no_title_bar=True, width=500, height=300, modal=True) as connecting_window:
-            dpg.add_text("Waiting for a connection on localhost:8072...")
-            dpg.set_item_pos(connecting_window, [100, 100])
-            thread = threading.Thread(target=self.connection_mgr.connect, args=(self, connecting_window,), daemon=True)
-            thread.start()
-
-        self.monitoring.start()
-
-        dpg.set_viewport_resize_callback(self.update_viewport_size)
-
-    def update_viewport_size(self):
-        self.monitoring.update_window_position()
-        width, height = dpg.get_viewport_width(), dpg.get_viewport_height()
-        dpg.set_item_width("bg_window", width)
-        dpg.set_item_height("bg_window", height - 80)
-        dpg.set_item_pos("bg_window", [0, 20])
+    def on_connection_established(self):
+        print("Connection established!")
 
     def open_entry_points_list(self):
         if self.connection_mgr.connection is None:
             return
         self.entry_tab.setup_tab(self, self.connection_mgr)
 
-    def close(self):
-        dpg.stop_dearpygui()
-
-    def run(self):
-        dpg.start_dearpygui()
+    def closeEvent(self, event):
+        if self.connection_mgr.connection_thread and self.connection_mgr.connection_thread.isRunning():
+            self.connection_mgr.connection_thread.requestInterruption()
+            self.connection_mgr.connection_thread.wait()
+        if self.connection_mgr.listening_thread and self.connection_mgr.listening_thread.isRunning():
+            self.connection_mgr.listening_thread.requestInterruption()
+            self.connection_mgr.listening_thread.wait()
         self.connection_mgr.send_exit_notification()
-        self.monitoring.close_window()
-        dpg.destroy_context()
+        # self.monitoring.close_window()
+        event.accept()
+
+
+def main():
+    app = QApplication(sys.argv)
+    window = OdooLSSpyApp()
+    window.showMaximized()
+    sys.exit(app.exec())
+
 
 if __name__ == "__main__":
-    app = OdooLSSpyApp()
-    app.run()
+    main()

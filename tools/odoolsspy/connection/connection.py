@@ -3,21 +3,88 @@ import socket
 import threading
 import time
 import dearpygui.dearpygui as dpg
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from threading import Event
 
+class ConnectionThread(QThread):
+    connection_successful = pyqtSignal()
+
+    def __init__(self, connection_mgr):
+        super().__init__()
+        self.connection_mgr = connection_mgr
+
+    def run(self):
+        self.connection_mgr._try_connect(self)
+        self.connection_successful.emit()
+
+class ListenToMessagesThread(QThread):
+
+    def __init__(self, connection_mgr):
+        super().__init__()
+        self.connection_mgr = connection_mgr
+
+    def run(self):
+        self.connection_mgr.listen_to_messages()
+
+class ConnectionPopup(QWidget):
+    def __init__(self, app, connection_mgr):
+        super().__init__()
+        self.app = app
+        self.connection_mgr = connection_mgr
+        self.init_ui()
+        self.start_connection()
+
+    def init_ui(self):
+        self.setWindowTitle("Connection")
+        self.setFixedSize(400, 150)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setStyleSheet("""
+            QWidget#popup {
+                background-color: #666666;
+            }
+        """)
+        self.setObjectName("popup")
+
+        layout = QVBoxLayout()
+        self.label = QLabel("Waiting to connect to a running Odoo LS with --spy parameter")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(self.label)
+        layout.addWidget(self.progress)
+        self.setLayout(layout)
+
+    def start_connection(self):
+        self.connection_mgr.connection_thread = ConnectionThread(self.connection_mgr)
+        self.connection_mgr.connection_thread.connection_successful.connect(self.close)
+        self.connection_mgr.connection_thread.start()
+
+    def close(self):
+        super().close()
+        self.app.entry_tab.setup_tab(self.app, self.app.connection_mgr)
+
+
 class ConnectionManager:
-    def __init__(self):
+    def __init__(self, app):
+        self.app = app
         self.connection = None
         self.answers = {}
         self.answer_events = {}
         self.request_id = 1
+        self.listening_thread = None
+        self.connection_thread = None
+        self.popup = None
 
     def get_next_id(self):
         self.request_id += 1
         return self.request_id
 
-    def connect(self, app, connection_wdw):
-        while True:
+    def _try_connect(self, thread):
+        while not thread.isInterruptionRequested():
             try:
                 self.connection = socket.create_connection(("localhost", 8072), timeout=1)
                 print("Connected to localhost:8072")
@@ -25,11 +92,13 @@ class ConnectionManager:
             except Exception as e:
                 print(f"Failed to connect: {e}. Retrying in 1 second...")
                 time.sleep(1)
-        dpg.configure_item(connection_wdw, show=False)
-        # Create a thread to listen to messages
-        thread = threading.Thread(target=self.listen_to_messages, daemon=True)
-        thread.start()
-        app.entry_tab.setup_tab(app, app.connection_mgr)
+        if self.connection:
+            self.listening_thread = ListenToMessagesThread(self)
+            self.listening_thread.start()
+
+    def connect(self):
+        self.popup = ConnectionPopup(self.app, self)
+        self.popup.show()
 
     def read_lsp_message(self):
         """Lit un message LSP complet depuis la connexion."""
@@ -70,7 +139,7 @@ class ConnectionManager:
 
     def listen_to_messages(self):
         """Écoute et traite les messages LSP en boucle."""
-        while self.connection:
+        while self.connection and not self.listening_thread.isInterruptionRequested():
             try:
                 message = self.read_lsp_message()
                 try:
@@ -126,9 +195,3 @@ class ConnectionManager:
         if self.connection is not None:
             print("sending exit notification")
             self.send_message("exit", {}, False)
-
-    def handle_is_busy(self, message_data):
-        from views.monitoring import set_busy
-        set_busy(message_data["params"]["is_busy"])
-
-connection_manager = ConnectionManager()
