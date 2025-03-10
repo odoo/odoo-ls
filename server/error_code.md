@@ -219,3 +219,7 @@ In relational fields, comodel_name does not exist in current configuration
 ### OLS30326
 "Related field is not of the same type"
 Type of references field in related keyword argument does not match the current field
+
+### OLS30327
+"Method does not exist on current model"
+For compute, search, inverse arguments, this error is shown when the method is not found on the current model

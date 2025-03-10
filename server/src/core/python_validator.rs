@@ -436,6 +436,38 @@ impl PythonValidator {
                             }
                         }
                     }
+                    for special_fn_field_name in ["compute", "inverse", "search"]{
+                        let Some(method_name) = eval_weak.as_weak().context.get(&S!(special_fn_field_name)).map(|ctx_val| ctx_val.as_string()) else {
+                            continue;
+                        };
+                        let Some(module) = class_ref.find_module() else {
+                            continue;
+                        };
+                        let (symbols, _diagnostics) = class.clone().borrow().get_member_symbol(session,
+                            &method_name.to_string(),
+                            Some(module.clone()),
+                            false,
+                            false,
+                            true,
+                            false
+                        );
+                        let method_found = symbols.iter().any(|symbol| symbol.borrow().typ() == SymType::FUNCTION);
+                        if !method_found{
+                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            self.diagnostics.push(Diagnostic::new(
+                                Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(NumberOrString::String(S!("OLS30327"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Method {method_name} not found on current model"),
+                                None,
+                                None,
+                            ));
+
+                        }
+                    }
                 }
             }
         }

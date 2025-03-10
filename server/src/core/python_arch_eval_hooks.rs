@@ -685,30 +685,56 @@ impl PythonArchEvalHooks {
         find_in_kwargs("comodel_name", S!("comodel")).or_else(|| find_in_kwargs("related", S!("related")))
     }
 
+    fn find_special_method_arguments(
+        session: &mut SessionInfo,
+        parameters: &Arguments,
+        parent: Rc<RefCell<Symbol>>,
+    ) -> Context{
+        let mut context = HashMap::new();
+        for kw_arg in parameters.keywords.iter(){
+            let Some(kw_arg_name) = kw_arg.arg.as_ref().map(|kw_id| kw_id.id.as_str()) else {
+                continue;
+            };
+            if !["compute", "inverse", "search"].contains(&kw_arg_name){
+                continue;
+            }
+            let maybe_related_string = Evaluation::expr_to_str(session, &kw_arg.value, parent.clone(), &parameters.range.start(), &mut vec![]).0;
+            let Some(related_string) = maybe_related_string else {
+                continue;
+            };
+            context.insert(S!(kw_arg_name), ContextValue::STRING(related_string));
+            context.insert(format!("{kw_arg_name}_range"), ContextValue::RANGE(kw_arg.range()));
+        }
+        context
+    }
+
     fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>, relational: bool) -> Option<EvaluationSymbolPtr>
     {
         let Some(context) = maybe_context else {return None};
 
         let Some(parameters) = context.get(&S!("parameters")).map(|ps| ps.as_arguments()) else {return None};
 
-        let Some((field_name_expr, context_name, arg_range)) = PythonArchEvalHooks::find_special_arguments(&parameters, relational) else {
-            return None;
-        };
-
         let parent = Symbol::get_scope_symbol(
             file_symbol.unwrap().clone(),
             context.get(&S!("range")).unwrap().as_text_range().start().to_u32(),
             false
         );
-        let maybe_related_string = Evaluation::expr_to_str(session, &field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
-        if let Some(related_string) = maybe_related_string {
-            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
-                weak: evaluation_sym.get_weak().weak.clone(),
-                context: HashMap::from([
+        let mut context = PythonArchEvalHooks::find_special_method_arguments(session, &parameters, parent.clone());
+
+        if let Some((field_name_expr, context_name, arg_range)) = PythonArchEvalHooks::find_special_arguments(&parameters, relational){
+            let maybe_related_string = Evaluation::expr_to_str(session, &field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
+            if let Some(related_string) = maybe_related_string {
+                context.extend([
                     (context_name, ContextValue::STRING(related_string.to_string())),
                     (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
                     (S!("special_arg_range"), ContextValue::RANGE(arg_range)),
-                    ]),
+                ]);
+            }
+        }
+        if !context.is_empty(){
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
+                weak: evaluation_sym.get_weak().weak.clone(),
+                context,
                 instance: Some(true),
                 is_super: false
             }));
