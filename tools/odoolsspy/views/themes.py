@@ -47,3 +47,15 @@ def setup_themes():
             dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, (235, 199, 16, 255))
         with dpg.theme_component(dpg.mvTreeNode):
             dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (209, 177, 15, 150))  # color even if closed
+
+    with dpg.theme(tag="no_padding_theme"):
+        with dpg.theme_component(dpg.mvWindowAppItem):
+            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 0, 0, parent=dpg.last_item())
+
+    with dpg.theme(tag="padding_theme"):
+        with dpg.theme_component(dpg.mvWindowAppItem):
+            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 30, 30, parent=dpg.last_item())
+
+    with dpg.theme(tag="no_padding_table_theme"):
+        with dpg.theme_component(dpg.mvTable):
+            dpg.add_theme_style(dpg.mvStyleVar_CellPadding, 0, 0)
