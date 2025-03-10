@@ -1,98 +1,186 @@
-import dearpygui.dearpygui as dpg
-import json
+import sys
+from PyQt6.QtWidgets import QApplication, QTreeView, QWidget, QVBoxLayout, QFileIconProvider
+from PyQt6.QtCore import Qt, QAbstractItemModel, QModelIndex
+from PyQt6.QtGui import QIcon
 
 from views.symbols import Symbol
 
-class TreeBrowser():
+class TreeBrowser(QWidget):
 
-    def __init__(self, path, tree):
+    def __init__(self, app, path, tree):
+        self.app = app
         self.path = path
         self.tree = tree
-        self.tab_id = str(hash(path + str(tree)))
-        self.label = "Tree: " + tree[0][-1]
         self.symbols = {}
+        super().__init__()
 
     def setup_ui(self, app):
-        if dpg.does_item_exist(self.tab_id):
-            if dpg.get_item_parent(self.tab_id) == None:
-                dpg.delete_item(self.tab_id)
-        dpg.add_tab(tag=self.tab_id, parent="left_tab_bar", label=self.label, closable=True)
-        previous = TreeBrowserSymbol(app, self.path, [[], []], {"type": "ROOT"}, "Root", self.tab_id, self.tab_id)
-        previous.load_sub_symbols()
-        dpg.set_value(previous.ui_id, True)
+        root = Node(app, "Root", self.path, [[], []], typ="ROOT")
+        self.model = CustomFileModel(root)
+        self.tree_view = QTreeView()
+        self.tree_view.setModel(self.model)
+        self.selection_model = self.tree_view.selectionModel()
+        self.selection_model.selectionChanged.connect(self.on_selection_changed)
+        previous = root
+        parent = QModelIndex()
         #do not add them here, but open them here
         for tree_el in self.tree[0]:
-            previous = previous.expand_sub_symbol(app, self.path, tree_el, None)
-            previous.load_sub_symbols()
+            previous.load_children()
+            for inode in previous.children:
+                if inode.name == tree_el:
+                    previous = inode
+                    break
+            if previous:
+                parent = self.expand_node(parent, previous)
+            else:
+                break
         for tree_el in self.tree[1]:
-            previous = previous.expand_sub_symbol(app, self.path, tree_el, None)
-            previous.load_sub_symbols()
-        dpg.set_value(previous.ui_id, True)
+            if not previous:
+                break
+            previous.load_children()
+            previous = None
+            for inode in previous.children:
+                if inode.name == tree_el:
+                    previous = inode
+                    break
+            if previous:
+                parent = self.expand_node(parent, previous)
+            else:
+                break
+        layout = QVBoxLayout()
+        layout.addWidget(self.tree_view)
+        self.setLayout(layout)
 
-class TreeBrowserSymbol:
+    def expand_node(self, parent: QModelIndex, node):
+        """Expands a node in the tree view"""
+        if not node or not node.parent:
+            return
 
-    def __init__(self, app, entry_path, tree, entry, name, parent, tab_id):
-        self.ui_id = None
-        self.tab_id = tab_id
-        self.tree = tree
-        self.sub_mod_symbols = {}
-        self.sub_symbols = {}
-        self.sub_loaded = False
+        node_index = self.model.index(node.row(), 0, parent)
+
+        if node_index.isValid():
+            self.tree_view.setExpanded(node_index, True)
+
+        return node_index
+
+    def on_selection_changed(self, selected, deselected):
+        for index in selected.indexes():  # Get selected indexes
+            if index.isValid():
+                node = index.internalPointer()
+                from views.symbols import Symbol
+                self.symbol = Symbol(self.app, node.name, self.path, node.tree)
+                self.app.clear_right_window()
+                self.app.right_panel_layout.addWidget(self.symbol)
+
+class Node:
+    """Représente un nœud dans la structure personnalisée."""
+    def __init__(self, app, name, entry_path, tree, typ, parent=None):
         self.name = name
-        self.parent = parent
         self.app = app
         self.entry_path = entry_path
-        self.typ = entry["type"]
-        self.symbol = None
-        self.build_col_header()
-        
-        with dpg.texture_registry():
-            self.image = dpg.load_image("folder.png")
+        self.tree = tree
+        self.parent = parent
+        self.children = []
+        self.typ = typ
+        self.is_loaded = False
 
-    def build_col_header(self):
-        self.ui_id = dpg.add_tree_node(parent=self.parent, label=self.name, default_open=False, selectable=True, open_on_arrow=True)
-        if self.typ == "DISK_DIR":
-            dpg.bind_item_theme(self.ui_id, "tree_node_folder")
-        elif self.typ == "ROOT":
-            dpg.bind_item_theme(self.ui_id, "tree_node_folder")
+    def add_child(self, child):
+        child.parent = self
+        self.children.append(child)
+
+    def load_children(self):
+        """ Load only if opened"""
+        if not self.is_loaded:
+            id = self.app.connection_mgr.send_message("$/ToolAPI/browse_tree", {
+                "entry_path": self.entry_path,
+                "tree": self.tree
+            })
+            response = self.app.connection_mgr.get_response(id)
+            if "result" in response:
+                self.is_loaded = True
+                result = response["result"]
+                modules = result["modules"]
+                for entry in modules:
+                    self.add_child(Node(self.app, entry["name"], self.entry_path, [self.tree[0] + [entry["name"]], []], entry["type"]))
+
+    def child(self, row):
+        return self.children[row] if 0 <= row < len(self.children) else None
+
+    def child_count(self):
+        return len(self.children)
+
+
+    def row(self):
+        if self.parent and self in self.parent.children:
+            return self.parent.children.index(self)
+        return 0
+
+class CustomFileModel(QAbstractItemModel):
+    """Un modèle basé sur une structure hiérarchique personnalisée."""
+    def __init__(self, root, parent=None):
+        super().__init__(parent)
+        self.root = root  # Le nœud racine
+        self.icon_provider = QFileIconProvider()
+
+    def index(self, row, column, parent=QModelIndex()):
+        """Retourne un index pour un élément donné."""
+        if not parent.isValid():
+            parent_node = self.root
         else:
-            dpg.bind_item_theme(self.ui_id, "tree_node_folder")
-        dpg.bind_item_font(self.ui_id, "arial14")
-        with dpg.item_handler_registry() as handler:
-            dpg.add_item_clicked_handler(callback=self.on_clicked)
-            dpg.bind_item_handler_registry(self.ui_id, handler)
+            parent_node = parent.internalPointer()
 
-    def load_sub_symbols(self):
-        if self.sub_loaded:
-            return
-        id = self.app.connection_mgr.send_message("$/ToolAPI/browse_tree", {
-            "entry_path": self.entry_path,
-            "tree": self.tree
-        })
-        response = self.app.connection_mgr.get_response(id)
-        if "result" in response:
-            self.sub_loaded = True
-            result = response["result"]
-            modules = result["modules"]
-            for entry in modules:
-                sym = TreeBrowserSymbol(self.app, self.entry_path, [self.tree[0] + [entry["name"]], []], entry, entry["name"], self.ui_id, self.tab_id)
-                self.sub_mod_symbols[entry["name"]] = sym
-        else:
-            dpg.add_text("Failed to retrieve entry points", parent=self.parent)
+        child_node = parent_node.child(row)
+        if child_node:
+            return self.createIndex(row, column, child_node)
+        return QModelIndex()
 
-    def expand_sub_symbol(self, app, entry_path, mod_el, content_el):
-        sym_to_build = self.sub_mod_symbols[mod_el] if mod_el else self.sub_symbols[content_el]
-        sym_to_build.load_sub_symbols()
-        dpg.set_value(sym_to_build.ui_id, True)
-        return sym_to_build
+    def parent(self, index):
+        """Retourne l'index du parent d'un élément."""
+        if not index.isValid():
+            return QModelIndex()
 
-    def on_clicked(self):
-        if not self.sub_loaded:
-            load = dpg.add_text("Loading", parent= self.ui_id)
-            self.load_sub_symbols()
-            dpg.delete_item(load)
-            for children in dpg.get_item_children("right_table_row_wdw"):
-                dpg.delete_item(children)
-            if not self.symbol:
-                self.symbol = Symbol(self.name, self.tree)
-            self.symbol.display("right_table_row_wdw")
+        child_node = index.internalPointer()
+        if child_node:
+            parent_node = child_node.parent
+            if parent_node and parent_node != self.root:
+                return self.createIndex(parent_node.row(), 0, parent_node)
+
+        return QModelIndex()
+
+    def rowCount(self, parent=QModelIndex()):
+        """Retourne le nombre de lignes pour un élément donné."""
+        if not parent.isValid():
+            return self.root.child_count()
+        node = parent.internalPointer()
+
+        if not node.is_loaded:
+            node.load_children()
+        return node.child_count()
+
+    def columnCount(self, parent=QModelIndex()):
+        """Nombre de colonnes (1 pour un affichage basique)."""
+        return 1
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        """Retourne les données à afficher."""
+        if not index.isValid():
+            return None
+
+        node = index.internalPointer()
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            return node.name
+
+        if role == Qt.ItemDataRole.DecorationRole:
+            if node.typ == "DISK_DIR":
+                return self.icon_provider.icon(QFileIconProvider.IconType.Folder)
+            else:
+                return self.icon_provider.icon(QFileIconProvider.IconType.File)
+
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        """Sets column header text."""
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+            return "Root"
+        return None
