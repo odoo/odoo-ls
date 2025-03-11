@@ -286,6 +286,22 @@ impl Evaluation {
         }
     }
 
+    pub fn new_set(odoo:&mut SyncOdoo, range: TextRange) -> Evaluation {
+        Evaluation {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("set")]), u32::MAX).last().expect("builtins set not found")),
+                    context: HashMap::new(),
+                    instance: Some(true),
+                    is_super: false,
+                }),
+                get_symbol_hook: None
+            },
+            value: None,
+            range: Some(range)
+        }
+    }
+
     pub fn new_domain(odoo: &mut SyncOdoo) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
@@ -630,6 +646,9 @@ impl Evaluation {
                     }
                 }
                 evals.push(Evaluation::new_tuple(odoo, values, expr.range));
+            },
+            ExprOrIdent::Expr(Expr::Set(expr)) => {
+                evals.push(Evaluation::new_set(odoo, expr.range))
             },
             ExprOrIdent::Expr(Expr::Dict(expr)) => {
                 let mut values: Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> = Vec::new();
@@ -1553,14 +1572,14 @@ impl EvaluationSymbolPtr {
             _ => None
         }
     }
-    
+
     pub(crate) fn is_weak(&self) -> bool {
         match self {
             EvaluationSymbolPtr::WEAK(w) => true,
             _ => false
         }
     }
-    
+
     pub(crate) fn as_weak(&self) -> &EvaluationSymbolWeak {
         match self {
             EvaluationSymbolPtr::WEAK(w) => &w,

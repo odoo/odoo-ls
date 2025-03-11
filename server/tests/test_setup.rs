@@ -18,12 +18,12 @@ fn test_setup() {
 #[test]
 fn test_start_odoo_server() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let odoo = setup::setup::setup_server();
+    let odoo = setup::setup::setup_server(true);
 
     /* Let's ensure that the architecture is loaded */
-    assert!(odoo.get_symbol(&(vec![S!("odoo")], vec![])).is_some());
+    assert!(!odoo.get_symbol(env::var("COMMUNITY_PATH").unwrap().as_str(), &(vec![S!("odoo")], vec![]), u32::MAX).is_empty());
     /* Let's ensure that odoo/addons is loaded */
-    assert!(odoo.get_symbol(&(vec![S!("odoo"), S!("addons")], vec![])).is_some());
+    assert!(!odoo.get_symbol(env::var("COMMUNITY_PATH").unwrap().as_str(), &(vec![S!("odoo"), S!("addons")], vec![]), u32::MAX).is_empty());
     /* And let's test that our test module has well been added and available in odoo/addons */
-    assert!(odoo.get_symbol(&(vec![S!("odoo"), S!("addons"), S!("module_1")], vec![])).is_some());
+    assert!(!odoo.get_symbol(env::var("COMMUNITY_PATH").unwrap().as_str(), &(vec![S!("odoo"), S!("addons"), S!("module_1")], vec![]), u32::MAX).is_empty());
 }
