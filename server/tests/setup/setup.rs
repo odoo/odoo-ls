@@ -45,7 +45,7 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
 
     let mut config = Config::new();
     config.addons = vec![test_addons_path.sanitize()];
-    config.odoo_path = community_path;
+    config.odoo_path = community_path.map(|x| PathBuf::from(x).sanitize());
     config.python_path = S!("python");
     config.refresh_mode = odoo_ls_server::core::config::RefreshMode::Off;
     config.diag_missing_imports = DiagMissingImportsMode::All;

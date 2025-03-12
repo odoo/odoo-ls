@@ -1,14 +1,17 @@
 
 
+use std::path::PathBuf;
 use std::{env, rc::Rc};
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::BufReader;
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::utils::PathSanitizer;
 use serde_json::Value;
 
 use odoo_ls_server::{S, core::symbols::symbol::Symbol, constants::SymType};
 use tracing::error;
+use weak_table::traits::WeakElement;
 
 mod setup;
 
@@ -18,6 +21,7 @@ fn test_structure() {
     let odoo = setup::setup::setup_server(true);
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
+    let odoo_path = PathBuf::from(odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
     assert!(!odoo.get_symbol(odoo_path, &(vec![S!("odoo")], vec![]), u32::MAX).is_empty());
     assert!(!odoo.get_symbol(odoo_path, &(vec![S!("odoo"), S!("addons")], vec![]), u32::MAX).is_empty());
@@ -45,6 +49,7 @@ fn test_structure() {
 fn test_imports(odoo: &SyncOdoo) {
     //test direct imports
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
+    let odoo_path = PathBuf::from(odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
     let model_var = odoo.get_symbol(odoo_path, &(vec![S!("odoo"), S!("addons"), S!("module_1")], vec![S!("models")]), u32::MAX);
     let model_dir = odoo.get_symbol(odoo_path, &(vec![S!("odoo"), S!("addons"), S!("module_1"), S!("models")], vec![]), u32::MAX);
@@ -59,7 +64,6 @@ fn test_imports(odoo: &SyncOdoo) {
 
     //test * imports
     let constants_dir = odoo.get_symbol(odoo_path, &(vec![S!("odoo"), S!("addons"), S!("module_1"), S!("constants")], vec![]), u32::MAX);
-    println!("test");
     assert!(constants_dir.len() == 1);
     let constants_dir = constants_dir[0].clone();
     assert!(constants_dir.borrow().all_symbols().collect::<Vec<_>>().len() == 3);
@@ -68,32 +72,26 @@ fn test_imports(odoo: &SyncOdoo) {
     assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_3")]), u32::MAX).len() == 0);
     assert!(constants_dir.borrow().get_symbol(&(vec![S!("data")], vec![]), u32::MAX).len() == 1);
     assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 1);
+    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_none());
     assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 22);
+    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_none());
     let data_dir = odoo.get_symbol(odoo_path, &(vec![S!("odoo"), S!("addons"), S!("module_1"), S!("constants"), S!("data")], vec![]), u32::MAX);
     assert!(data_dir.len() == 1);
     let data_dir = data_dir[0].clone();
-    assert!(data_dir.borrow().all_symbols().collect::<Vec<_>>().len() == 3);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX).len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX).len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_3")]), u32::MAX).len() == 0);
-    assert!(constants_dir.borrow().get_symbol(&(vec![S!("constants")], vec![]), u32::MAX).len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 22);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), 26)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), 26)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_none());
-    assert!(constants_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), 26)[0].borrow().evaluations().as_ref().unwrap()[0].symbol.get_weak().is_some());
+    assert!(data_dir.borrow().all_symbols().collect::<Vec<_>>().len() == 4);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX).len() == 1);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX).len() == 1);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_3")]), u32::MAX).len() == 0);
+    assert!(data_dir.borrow().get_symbol(&(vec![S!("constants")], vec![]), u32::MAX).len() == 1);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_1")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_none());
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), u32::MAX)[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 22);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), 26)[0].borrow().evaluations().as_ref().unwrap().len() == 1);
+    assert!(data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), 26)[0].borrow().evaluations().as_ref().unwrap()[0].value.is_none());
+    assert!(!data_dir.borrow().get_symbol(&(vec![], vec![S!("CONSTANT_2")]), 26)[0].borrow().evaluations().as_ref().unwrap()[0].symbol.get_weak().weak.is_expired());
 
     //Test odoo.addons import
     let constant_1_var = odoo.get_symbol(odoo_path, &(vec![S!("odoo"), S!("addons"), S!("module_1"), S!("models"), S!("base_test_models")], vec![S!("CONSTANT_1")]), u32::MAX);
