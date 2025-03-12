@@ -39,7 +39,6 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceRoot}/target/debug/deps/test_ls-41ae513a18d41487.exe",
-            "args": ["--use-tcp"],
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal",
             "preLaunchTask": "cargo build"

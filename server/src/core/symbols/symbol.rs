@@ -1778,6 +1778,15 @@ impl Symbol {
                 let Some(symbol) = w.weak.upgrade() else {
                     return vec![evaluation.clone()];
                 };
+                if stop_on_value {
+                    if let Some(evals) = symbol.borrow().evaluations() {
+                        for eval in evals.iter() {
+                            if eval.value.is_some() {
+                                return vec![evaluation.clone()];
+                            }
+                        }
+                    }
+                }
                 //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
                 //TODO there is no loop detection
                 let mut results = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);

@@ -138,16 +138,17 @@ impl PythonArchBuilder {
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
-                    let all = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                    let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                         Rc::downgrade(all), None, false
                     )), session, &mut None, false, true, None, &mut self.diagnostics);
-                    if let Some(all) = all.get(0) {
-                        if !all.is_expired_if_weak() {
-                            let all = all.upgrade_weak();
-                            if let Some(all) = all {
-                                let all = (*all).borrow();
-                                if all.evaluations().is_some() && all.evaluations().unwrap().len() == 1 {
-                                    let value = &all.evaluations().unwrap()[0].value;
+                    if let Some(all_value_first) = all_value.get(0) {
+                        if !all_value_first.is_expired_if_weak() {
+                            let all_upgraded = all_value_first.upgrade_weak();
+                            if let Some(all_upgraded_unwrapped) = all_upgraded {
+                                let all_upgraded_unwrapped_bw = (*all_upgraded_unwrapped).borrow();
+                                let evals = all_upgraded_unwrapped_bw.evaluations();
+                                if all_upgraded_unwrapped_bw.evaluations().is_some() && all_upgraded_unwrapped_bw.evaluations().unwrap().len() == 1 {
+                                    let value = &all_upgraded_unwrapped_bw.evaluations().unwrap()[0].value;
                                     if value.is_some() {
                                         let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                                         if parse_error {
