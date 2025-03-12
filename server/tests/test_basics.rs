@@ -1,18 +1,12 @@
 
 
+use std::collections::HashSet;
 use std::env;
-use std::{path::PathBuf, rc::Rc};
-use std::cell::RefCell;
-use std::fs::File;
-use std::io::BufReader;
 use odoo_ls_server::core::evaluation::EvaluationValue;
-use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
-use serde_json::Value;
 
-use odoo_ls_server::{constants::SymType, core::{entry_point::EntryPointMgr, odoo::SyncOdoo, symbols::symbol::Symbol}, S};
-use tracing::error;
+use odoo_ls_server::S;
 
 mod setup;
 
@@ -155,65 +149,26 @@ fn test_if_section_assign() {
     let session = setup::setup::prepare_custom_entry_point(&mut odoo, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
 
-    let sym_a = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!("a")]), u32::MAX);
-    assert!(sym_a.len() == 2);
-    assert!(sym_a[0].borrow().name() == "a");
-    assert!(sym_a[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_a[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_a[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_a[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_a[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_a[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 5);
-    assert!(sym_a[1].borrow().name() == "a");
-    assert!(sym_a[1].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_a[1].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_a[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_a[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_a[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_a[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 6);
-
-    let sym_b = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!("b")]), u32::MAX);
-    assert!(sym_b.len() == 1);
-    assert!(sym_b[0].borrow().name() == "b");
-    assert!(sym_b[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_b[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_b[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_b[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_b[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_b[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 7);
-
-
-    let sym_c = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!("c")]), u32::MAX);
-    assert!(sym_c.len() == 2);
-    assert!(sym_c[0].borrow().name() == "c");
-    assert!(sym_c[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_c[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_c[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_c[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_c[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_c[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 5);
-    assert!(sym_c[1].borrow().name() == "c");
-    assert!(sym_c[1].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_c[1].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_c[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_c[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_c[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_c[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 6);
-
-    let sym_d = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!("d")]), u32::MAX);
-    assert!(sym_d.len() == 2);
-    assert!(sym_d[0].borrow().name() == "d");
-    assert!(sym_d[0].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_d[0].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_d[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_d[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_d[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_d[0].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 4);
-    assert!(sym_d[1].borrow().name() == "d");
-    assert!(sym_d[1].borrow().evaluations().as_ref().unwrap().len() == 1);
-    assert!(sym_d[1].borrow().evaluations().as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(sym_d[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
-    assert!(sym_d[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(sym_d[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
-    assert!(sym_d[1].borrow().evaluations().as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 5);
+    let assert_get_int_eval_values = |var_name: &str, length: usize, values: HashSet<i32>|{
+        let syms = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!(var_name)]), u32::MAX);
+        assert!(syms.len() == length); // Check Number of symbols
+        assert_eq!(syms.iter()
+        .map(|sym| {
+            let sym = sym.borrow();
+            assert!(sym.name() == var_name); // Check variable name
+            let evaluations = sym.evaluations();
+            let eval = evaluations.as_ref().unwrap();
+            assert_eq!(eval.len(), 1);  // Check that each symbol has one evaluation
+            let value = eval[0].value.as_ref().unwrap();
+            assert!(matches!(value, EvaluationValue::CONSTANT(Expr::NumberLiteral(_)))); // Check that the evaluation is a num literal
+            let number = value.as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap();
+            number.as_i32().unwrap()
+        })
+        .collect::<HashSet<_>>(), values); // Check evaluation values
+    };
+    assert_get_int_eval_values("a", 2, HashSet::from([5, 6]));
+    assert_get_int_eval_values("b", 1, HashSet::from([7]));
+    assert_get_int_eval_values("c", 2, HashSet::from([5, 6]));
+    assert_get_int_eval_values("d", 2, HashSet::from([4, 5]));
+    assert_get_int_eval_values("e", 3, HashSet::from([1, 2 ,3]));
 }

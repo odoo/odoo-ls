@@ -3,7 +3,7 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -469,7 +469,7 @@ impl Evaluation {
     pub fn from_sections(parent: &Symbol, sections: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>) -> Vec<Evaluation> {
         let mut res = vec![];
         let section = parent.as_symbol_mgr().get_section_for(u32::MAX);
-        let syms = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut vec![]);
+        let syms = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
         for sym in syms {
             let mut is_instance = None;
             if matches!(sym.borrow().typ(), SymType::VARIABLE | SymType::FUNCTION) {

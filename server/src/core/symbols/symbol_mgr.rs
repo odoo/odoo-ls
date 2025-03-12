@@ -1,6 +1,6 @@
-use std::{cell::RefCell, rc::Rc, collections::HashMap};
+use std::{cell::RefCell, rc::Rc, collections::{HashMap, HashSet}};
 
-use ruff_text_size::TextRange;
+use ruff_text_size::TextSize;
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::Symbol};
 
@@ -19,14 +19,16 @@ pub struct SectionRange {
     pub previous_indexes: SectionIndex,
 }
 
+
 pub trait SymbolMgr {
     fn get_section_for(&self, position: u32) -> SectionRange;
-    fn add_section(&mut self, range: TextRange) -> SectionRange;
+    fn get_last_index(&self) -> u32;
+    fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<Symbol>>>;
     fn get_ext_symbol(&self, name: String) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
     fn _init_symbol_mgr(&mut self);
-    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<Symbol>>>;
+    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> Vec<Rc<RefCell<Symbol>>>;
 }
 
 
@@ -74,22 +76,20 @@ macro_rules! impl_section_mgr_for {
             last_section.clone()
         }
 
-        /* Add a section at the END of the sections */
-        fn add_section(&mut self, range: TextRange) -> SectionRange {
-            if cfg!(debug_assertions) {
-                assert!(range.start().to_u32() > self.sections.last().unwrap().start);
-            }
+        fn get_last_index(&self) -> u32 {
+            (self.sections.len() - 1) as u32
+        }
 
-            let last_index = (self.sections.len() -1) as u32;
-            let mut previous_index = SectionIndex::INDEX(last_index);
-            if range.start().to_u32() == self.sections.last().unwrap().start {
-                previous_index = self.sections.last().unwrap().previous_indexes.clone();
-                self.sections.pop(); //remove last as it would have a size of 0
-            }
+        /* Add a section at the END of the sections */
+        fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange{
+            let previous_indexes = maybe_previous_indexes.unwrap_or_else(|| {
+                let last_index = self.get_last_index();
+                SectionIndex::INDEX(last_index)
+            });
             let new_section = SectionRange {
-                start: range.start().to_u32(),
+                start: range_start.to_u32(),
                 index: self.sections.len() as u32,
-                previous_indexes: previous_index,
+                previous_indexes,
             };
             self.sections.push(new_section.clone());
             new_section
@@ -104,7 +104,7 @@ macro_rules! impl_section_mgr_for {
             let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
             if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
-                return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut vec![]);
+                return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new());
             }
             vec![]
         }
@@ -114,23 +114,28 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut Vec<u32>) -> Vec<Rc<RefCell<Symbol>>> {
+        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> Vec<Rc<RefCell<Symbol>>> {
             let mut res = vec![];
             match index {
                 SectionIndex::NONE => { return res; },
                 SectionIndex::INDEX(index) => {
+                    if acc.contains(index){
+                        return res;
+                    }
                     let section = self.sections.get(*index as usize).unwrap();
                     //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
-                    for loc_sym in map.get(index).unwrap().iter().rev() {
-                        if loc_sym.borrow().range().start().to_u32() < position {
-                            res.push(loc_sym.clone());
-                            break;
+                    if let Some(symbols) = map.get(index) {
+                        for loc_sym in symbols.iter().rev() {
+                            if loc_sym.borrow().range().start().to_u32() < position {
+                                res.push(loc_sym.clone());
+                                break;
+                            }
                         }
                     }
+                    acc.insert(*index);
                     if !res.is_empty() {
                         return res;
                     }
-                    acc.push(*index);
                     res = self._get_loc_symbol(map, position, &section.previous_indexes, acc);
                 },
                 SectionIndex::OR(indexes) => {

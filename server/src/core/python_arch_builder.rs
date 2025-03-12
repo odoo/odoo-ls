@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
@@ -23,6 +23,7 @@ use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::symbols::function_symbol::{Argument, ArgumentType};
+use super::symbols::symbol_mgr::SectionIndex;
 
 
 #[derive(Debug)]
@@ -478,10 +479,41 @@ impl PythonArchBuilder {
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
+        let scope = self.sym_stack.last().unwrap().clone();
+        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            if_stmt.body.first().unwrap().range().start(),
+            None
+        );
+        let previous_section = SectionIndex::INDEX(body_section.index - 1);
         self.visit_node(session, &if_stmt.body)?;
-        for else_clause in if_stmt.elif_else_clauses.iter() {
-            self.visit_node(session, &else_clause.body)?;
+
+        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+
+        let mut stmt_sections = vec![body_section];
+        let mut else_clause_exists = false;
+
+        stmt_sections.extend(if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                elif_else_clause.body.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
+            if elif_else_clause.test.is_none(){
+                else_clause_exists = true;
+            }
+            self.visit_node(session, &elif_else_clause.body)?;
+            let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            Ok::<SectionIndex, Error>(clause_section)
+        }).collect::<Result<Vec<_>, _>>()?);
+
+        if !else_clause_exists{
+            // If there is no else clause, the there is an implicit else clause
+            // Which bypasses directly to the previous_section
+            stmt_sections.push(previous_section);
         }
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            if_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 
