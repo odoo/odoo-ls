@@ -171,4 +171,9 @@ fn test_if_section_assign() {
     assert_get_int_eval_values("c", 2, HashSet::from([5, 6]));
     assert_get_int_eval_values("d", 2, HashSet::from([4, 5]));
     assert_get_int_eval_values("e", 3, HashSet::from([1, 2 ,3]));
+    assert_get_int_eval_values("f", 4, HashSet::from([32, 33, 34, 35]));
+    assert_get_int_eval_values("g", 2, HashSet::from([98, 99]));
+    assert_get_int_eval_values("h", 2, HashSet::from([98, 5]));
+    assert_get_int_eval_values("i", 2, HashSet::from([67, 76]));
+    assert_get_int_eval_values("j", 2, HashSet::from([37, 27]));
 }
