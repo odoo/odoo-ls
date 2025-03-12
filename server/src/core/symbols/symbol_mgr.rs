@@ -66,14 +66,7 @@ macro_rules! impl_section_mgr_for {
         }
 
         fn get_section_for(&self, position: u32) -> SectionRange {
-            let mut last_section = self.sections.last().unwrap();
-            for section in self.sections.iter().rev().skip(1) { //reverse to fasten most calls as they will be with TextSize::MAX
-                if section.start <= position {
-                    break;
-                }
-                last_section = section;
-            }
-            last_section.clone()
+            self.sections.iter().rev().find(|section| section.start <= position).unwrap_or(self.sections.last().unwrap()).clone()
         }
 
         fn get_last_index(&self) -> u32 {

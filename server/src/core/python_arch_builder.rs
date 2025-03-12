@@ -519,13 +519,36 @@ impl PythonArchBuilder {
     }
 
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
+        // TODO: Handle breaks for sections
+        let scope = self.sym_stack.last().unwrap().clone();
         let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
+            scope.borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
+        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            for_stmt.body.first().unwrap().range().start(),
+            None
+        );
+        let previous_section = SectionIndex::INDEX(body_section.index - 1);
         self.visit_node(session, &for_stmt.body)?;
-        //TODO should split evaluations as in if
-        self.visit_node(session, &for_stmt.orelse)?;
+        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let mut stmt_sections = vec![body_section];
+
+        if !for_stmt.orelse.is_empty(){
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                for_stmt.orelse.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
+            self.visit_node(session, &for_stmt.orelse)?;
+            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+        } else {
+            stmt_sections.push(previous_section.clone());
+        }
+
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            for_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 
@@ -587,8 +610,31 @@ impl PythonArchBuilder {
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        // TODO: Handle breaks for sections
+        let scope = self.sym_stack.last().unwrap().clone();
+        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            while_stmt.body.first().unwrap().range().start(),
+            None
+        );
+        let previous_section = SectionIndex::INDEX(body_section.index - 1);
         self.visit_node(session, &while_stmt.body)?;
-        self.visit_node(session, &while_stmt.orelse)?;
+        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let mut stmt_sections = vec![body_section];
+        if !while_stmt.orelse.is_empty(){
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                while_stmt.orelse.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
+            self.visit_node(session, &while_stmt.orelse)?;
+            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+        } else {
+            stmt_sections.push(previous_section.clone());
+        }
+
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            while_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 }
