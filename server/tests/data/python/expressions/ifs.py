@@ -19,3 +19,9 @@ else:
 d = 4
 if True:
     d = 5
+
+e = 1
+if True:
+    e = 2
+elif True:
+    e = 3
