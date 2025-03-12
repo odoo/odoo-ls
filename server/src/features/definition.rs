@@ -28,11 +28,13 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let string_domain_fields= FeaturesUtils::find_domain_field_symbols(session, &field_name, call_expr, offset, field_range, file_symbol);
+        let string_domain_fields = FeaturesUtils::find_argument_symbols(
+            session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &field_name, call_expr, offset, field_range
+        );
         string_domain_fields.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
-                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
+                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
         });
@@ -59,7 +61,7 @@ impl DefinitionFeature {
             let class_symbol = class_symbol_rc.borrow();
             if let Some(model_file_sym) = class_symbol.get_file().and_then(|model_file_sym_weak| model_file_sym_weak.upgrade()){
                 let path = model_file_sym.borrow().paths()[0].clone();
-                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &class_symbol.range());
+                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
                 model_found = true;
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
@@ -78,11 +80,13 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let compute_symbols= FeaturesUtils::find_compute_field_symbols(session, &value, call_expr, offset, file_symbol);
+        let compute_symbols = FeaturesUtils::find_compute_field_symbols(
+            session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &value, call_expr
+        );
         compute_symbols.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
-                let range = session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &path, &field.borrow().range());
+                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
                 links.push(Location{uri: FileMgr::pathname2uri(&path), range});
             }
         });
@@ -133,7 +137,7 @@ impl DefinitionFeature {
                     };
                     let range = match symbol.borrow().typ() {
                         SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                        _ => session.sync_odoo.get_file_mgr().borrow_mut().text_range_to_range(session, &full_path, &symbol.borrow().range()),
+                        _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range()),
                     };
                     links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
                 }

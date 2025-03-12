@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
-use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
-use ruff_text_size::Ranged;
+use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
+use ruff_text_size::{Ranged, TextSize};
 
 use crate::constants::SymType;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -26,6 +26,8 @@ pub enum ExpectedType {
     DOMAIN_FIELD(Rc<RefCell<Symbol>>),
     DOMAIN_COMPARATOR,
     CLASS(Rc<RefCell<Symbol>>),
+    SIMPLE_FIELD,
+    NESTED_FIELD(Option<String>),
 }
 
 pub struct CompletionFeature;
@@ -102,6 +104,11 @@ fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: 
 }
 
 fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_function_def: &ruff_python_ast::StmtFunctionDef, offset: usize) -> Option<CompletionResponse> {
+    for decorator in stmt_function_def.decorator_list.iter(){
+        if let Some(result) = complete_decorator_call(session, file, offset, decorator, &stmt_function_def.range.start()){
+            return Some(result);
+        }
+    }
     if !stmt_function_def.body.is_empty() {
         if offset > stmt_function_def.body.first().unwrap().range().start().to_usize() && stmt_function_def.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_function_def.body, session, file, offset);
@@ -473,18 +480,61 @@ fn complete_compare(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_
     None
 }
 
+fn complete_decorator_call(
+    session: &mut SessionInfo,
+    file: &Rc<RefCell<Symbol>>,
+    offset: usize,
+    decorator: &Decorator,
+    max_infer: &TextSize,
+) -> Option<CompletionResponse> {
+    let (decorator_base, decorator_args) = match &decorator.expression {
+        Expr::Call(call_expr) => {
+            (&call_expr.func, &call_expr.arguments)
+        },
+        _ => {return None;}
+    };
+    if decorator_args.args.is_empty(){
+        return None; // All the decorators we handle have at least one arg for now
+    }
+    let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, false);
+    let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer).0;
+    for decorator_eval in dec_evals.iter(){
+        let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut vec![], None)  else {continue};
+        let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
+        let dec_sym_tree = dec_sym.borrow().get_main_entry_tree(session);
+        let expected_types = if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("onchange")]) ||
+            dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("constrains")]){
+            &vec![ExpectedType::SIMPLE_FIELD]
+        } else if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("depends")]){
+            &vec![ExpectedType::NESTED_FIELD(None)]
+        } else {
+            continue;
+        };
+        // if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("returns")]){
+        //     // Todo
+        // } else
+        for arg in decorator_args.args.iter() {
+            if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
+                return complete_expr(arg, session, file, offset, false, &expected_types);
+            }
+        }
+    }
+    None
+}
+
 fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_call: &ruff_python_ast::ExprCall, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     if offset > expr_call.func.range().start().to_usize() && offset <= expr_call.func.range().end().to_usize() {
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
+    let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start()).0;
     for (arg_index, arg) in expr_call.arguments.args.iter().enumerate() {
         if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
-            let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-            let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start()).0;
             for callable_eval in callable_evals.iter() {
                 let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-                if let Some(callable_sym) = callable.weak.upgrade() {
-                    if callable_sym.borrow().typ() == SymType::FUNCTION {
+                let Some(callable_sym) = callable.weak.upgrade()  else {continue};
+                match callable_sym.borrow().typ(){
+                    SymType::FUNCTION => {
                         let func = callable_sym.borrow();
                         let func = func.as_func();
                         let func_arg = func.get_indexed_arg_in_call(
@@ -517,12 +567,47 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                                 return complete_expr(arg, session, file, offset, is_param, &expected_type);
                             }
                         }
-                    }
-                }
+                    },
+                    SymType::CLASS => {
+                        // check for completion of first positional argument for comodel_name
+                        if arg_index != 0 || !callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]) {
+                            break;
+                        }
+                        return complete_expr(arg, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                    },
+                    _ => {}
+                };
             }
             //if we didn't find anything, still try to complete
             return complete_expr(arg, session, file, offset, is_param, &vec![]);
         }
+    }
+    for keyword in expr_call.arguments.keywords.iter(){
+        if offset <= keyword.value.range().start().to_usize() || offset > keyword.value.range().end().to_usize() {
+            continue;
+        }
+        for callable_eval in callable_evals.iter() {
+            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+            let Some(callable_sym) = callable.weak.upgrade() else {continue};
+            if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
+                continue;
+            }
+            let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
+                match kw_arg_id.id.as_str() {
+                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(callable_sym.borrow().name().clone()))]),
+                    "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
+                            Some(vec![ExpectedType::MODEL_NAME])
+                        } else {
+                            None
+                        },
+                    _ => None,
+                }
+            ) else {
+                continue;
+            };
+            return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
+        }
+        return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
     }
     None
 }
@@ -608,80 +693,24 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 }
             },
             ExpectedType::DOMAIN_FIELD(parent) => {
-                let split_expr: Vec<String> = expr_string_literal.value.to_str().split(".").map(|x| x.to_string()).collect();
-                let mut obj = Some(parent.clone());
-                let mut date_mode = false;
-                for (index, name) in split_expr.iter().enumerate() {
-                    if date_mode {
-                        if index != split_expr.len() - 1 {
-                            break;
-                        }
-                        for value in ["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"] {
-                            if value.starts_with(name) {
-                                items.push(CompletionItem {
-                                    label: value.to_string(),
-                                    insert_text: None,
-                                    kind: Some(lsp_types::CompletionItemKind::VARIABLE),
-                                    label_details: None,
-                                    sort_text: None,
-                                    ..Default::default()
-                                });
-                            }
-                        }
-                        date_mode = false;
-                        continue;
-                    }
-                    if obj.is_none() {
-                        break;
-                    }
-                    if let Some(object) = &obj {
-                        if index == split_expr.len() - 1 {
-                            let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
-                            Symbol::all_members(&object, session, &mut all_symbols, true, current_module.clone(), &mut None, false);
-                            for (_symbol_name, symbols) in all_symbols {
-                                //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
-                                if _symbol_name.starts_with(name) {
-                                    let mut found_one = false;
-                                    for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
-                                        if final_sym.borrow().is_field(session) && dep.is_none() {
-                                            items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
-                                            found_one = true;
-                                            continue;
-                                        }
-                                    }
-                                    if found_one {
-                                        continue;
-                                    }
-                                }
-                            }
-                        } else {
-                            let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
-                                &name.to_string(),
-                                current_module.clone(),
-                                false,
-                                true,
-                                false,
-                                false);
-                            if symbols.is_empty() {
-                                break;
-                            }
-                            obj = None;
-                            for s in symbols.iter() {
-                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
-                                    let models = s.borrow().as_variable().get_relational_model(session, current_module.clone());
-                                    //only handle it if there is only one main symbol for this model
-                                    if models.len() == 1 {
-                                        obj = Some(models[0].clone());
-                                    }
-                                }
-                                if s.borrow().is_specific_field(session, &["Date"]) {
-                                    date_mode = true;
-                                }
-                            }
-                        }
-                    }
-                }
+                add_nested_field_names(session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent.clone(), true, &None);
             },
+            ExpectedType::SIMPLE_FIELD | ExpectedType::NESTED_FIELD(_) => 'field_block:  {
+                let scope = Symbol::get_scope_symbol(file.clone(), expr_string_literal.range().start().to_u32(), true);
+                let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
+                    break 'field_block;
+                };
+                if parent_class.borrow().as_class_sym()._model.is_none(){
+                    break 'field_block;
+                }
+                match expected_type {
+                    ExpectedType::SIMPLE_FIELD =>  add_model_attributes(
+                        session, &mut items, current_module.clone(), parent_class, false, true, expr_string_literal.value.to_str()),
+                    ExpectedType::NESTED_FIELD(maybe_field_type) => add_nested_field_names(
+                        session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent_class, false, maybe_field_type),
+                    _ => unreachable!()
+                }
+            }
             ExpectedType::CLASS(_) => {},
         }
     }
@@ -703,26 +732,15 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
     } else {
         let parent = Evaluation::eval_from_ast(session, &attr.value, scope.clone(), &attr.range().start()).0;
 
+        let from_module = file.borrow().find_module().clone();
         for parent_eval in parent.iter() {
             //TODO shouldn't we set and clean context here?
             let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval.is_expired_if_weak() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, true, false, None, &mut vec![]);
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
-                    if let Some(parent_sym) = parent_sym_type.upgrade_weak() {
-                        let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
-                        let from_module = file.borrow().find_module().clone();
-                        Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval.as_weak().is_super);
-                        for (_symbol_name, symbols) in all_symbols {
-                            //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
-                            if _symbol_name.starts_with(attr.attr.id.as_str()) {
-                                if let Some((final_sym, dep)) = symbols.first() {
-                                    let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
-                                    items.push(build_completion_item_from_symbol(session, final_sym, context_of_symbol, dep.clone()));
-                                }
-                            }
-                        }
-                    }
+                    let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
+                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, attr.attr.id.as_str())
                 }
             }
         }
@@ -739,7 +757,7 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.is_expired_if_weak() {
-            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, true, false, None, &mut vec![]);
+            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
@@ -859,13 +877,125 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
     None
 }
 
+/* *********************************************************************
+**************************** Common utils ******************************
+********************************************************************** */
+
+fn add_nested_field_names(
+    session: &mut SessionInfo,
+    items: &mut Vec<CompletionItem>,
+    from_module: Option<Rc<RefCell<Symbol>>>,
+    field_prefix: &str,
+    parent: Rc<RefCell<Symbol>>,
+    add_date_completions: bool,
+    specific_field_type: &Option<String>,
+){
+    let split_expr: Vec<String> = field_prefix.split(".").map(|x| x.to_string()).collect();
+    let mut obj = Some(parent.clone());
+    let mut date_mode = false;
+    for (index, name) in split_expr.iter().enumerate() {
+        if add_date_completions && date_mode {
+            if index != split_expr.len() - 1 {
+                break;
+            }
+            for value in ["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"] {
+                if value.starts_with(name) {
+                    items.push(CompletionItem {
+                        label: value.to_string(),
+                        insert_text: None,
+                        kind: Some(lsp_types::CompletionItemKind::VARIABLE),
+                        label_details: None,
+                        sort_text: None,
+                        ..Default::default()
+                    });
+                }
+            }
+            date_mode = false;
+            continue;
+        }
+        if obj.is_none() {
+            break;
+        }
+        if let Some(object) = &obj {
+            if index == split_expr.len() - 1 {
+                let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+                Symbol::all_members(&object, session, &mut all_symbols, true, true, from_module.clone(), &mut None, false);
+                for (_symbol_name, symbols) in all_symbols {
+                    //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
+                    if _symbol_name.starts_with(name) {
+                        let mut found_one = false;
+                        for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
+                            if dep.is_none() && (specific_field_type.is_none() || final_sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
+                                items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
+                                found_one = true;
+                                continue;
+                            }
+                        }
+                        if found_one {
+                            continue;
+                        }
+                    }
+                }
+            } else {
+                let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
+                    &name.to_string(),
+                    from_module.clone(),
+                    false,
+                    true,
+                    true,
+                    false);
+                if symbols.is_empty() {
+                    break;
+                }
+                obj = None;
+                for s in symbols.iter() {
+                    if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
+                        let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                        //only handle it if there is only one main symbol for this model
+                        if models.len() == 1 {
+                            obj = Some(models[0].clone());
+                            break;
+                        }
+                    }
+                    if add_date_completions && s.borrow().is_specific_field(session, &["Date"]) {
+                        date_mode = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn add_model_attributes(
+    session: &mut SessionInfo,
+    items: &mut Vec<CompletionItem>,
+    from_module: Option<Rc<RefCell<Symbol>>>,
+    parent_sym: Rc<RefCell<Symbol>>,
+    is_super: bool,
+    only_fields: bool,
+    attribute_name: &str
+){
+    let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+    Symbol::all_members(&parent_sym, session, &mut all_symbols, true, only_fields, from_module.clone(), &mut None, is_super);
+    for (_symbol_name, symbols) in all_symbols {
+        //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
+        if _symbol_name.starts_with(attribute_name) {
+            if let Some((final_sym, dep)) = symbols.first() {
+                let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
+                items.push(build_completion_item_from_symbol(session, final_sym, context_of_symbol, dep.clone()));
+            }
+        }
+    }
+}
+
 fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<String>) -> CompletionItem {
     //TODO use dependency to show it? or to filter depending of configuration
     let typ = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
         Rc::downgrade(symbol),
         None,
         false,
-    )), session, &mut None, true, true, None, &mut vec![]);
+    )), session, &mut None, false, true, None, &mut vec![]);
     let mut label_details = Some(CompletionItemLabelDetails {
         detail: None,
         description: None,

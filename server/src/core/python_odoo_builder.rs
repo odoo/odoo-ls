@@ -46,7 +46,7 @@ impl PythonOdooBuilder {
         if DEBUG_ODOO_BUILDER {
             info!("Loading Odoo content for: {}", path);
         }
-        let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path).expect("File not found in cache").clone();
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
         if file_info.borrow().ast.is_none() {
             symbol.set_build_status(BuildSteps::ODOO, BuildStatus::DONE);
             return;
@@ -60,7 +60,7 @@ impl PythonOdooBuilder {
     }
 
     fn _load(&mut self, session: &mut SessionInfo) {
-        let symbol = self.symbol.borrow_mut();
+        let symbol = self.symbol.borrow();
         let iterator = symbol.get_sorted_symbols();
         if session.sync_odoo.has_odoo_main_entry {
             return;

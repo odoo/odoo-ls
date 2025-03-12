@@ -402,7 +402,7 @@ impl Evaluation {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
                 let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.clone()));
-                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, true, false, Some(function.clone()), &mut vec![]);
+                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, false, false, Some(function.clone()), &mut vec![]);
                 for sym in out_of_scope {
                     if !sym.is_expired_if_weak() {
                         res.push(Evaluation {
@@ -921,37 +921,38 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
                 diagnostics.extend(diags);
-                // TODO handle multiple base_evals
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_ref = base_evals[0].symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
-                if base_ref.is_expired_if_weak() {
-                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
-                }
-                let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None, &mut diagnostics);
-                for ibase in bases.iter() {
-                    let base_loc = ibase.upgrade_weak();
-                    if let Some(base_loc) = base_loc {
-                        let is_super = ibase.is_weak() && ibase.as_weak().is_super;
-                        let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
-                        for diagnostic in attributes_diagnostics.iter_mut(){
-                            diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
-                        }
-                        diagnostics.extend(attributes_diagnostics);
-                        if !attributes.is_empty() {
-                            let is_instance = ibase.as_weak().instance.unwrap_or(false);
-                            attributes.iter().for_each(|attribute|{
-                                let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
-                                match eval.symbol.sym {
-                                    EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                        weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
-                                        weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
-                                    },
-                                    _ => {}
-                                }
-                                evals.push(eval);
-                            });
+                for base_eval in base_evals.iter(){
+                    let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
+                    if base_ref.is_expired_if_weak() {
+                        return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                    }
+                    let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None, &mut diagnostics);
+                    for ibase in bases.iter() {
+                        let base_loc = ibase.upgrade_weak();
+                        if let Some(base_loc) = base_loc {
+                            let is_super = ibase.is_weak() && ibase.as_weak().is_super;
+                            let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
+                            for diagnostic in attributes_diagnostics.iter_mut(){
+                                diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
+                            }
+                            diagnostics.extend(attributes_diagnostics);
+                            if !attributes.is_empty() {
+                                let is_instance = ibase.as_weak().instance.unwrap_or(false);
+                                attributes.iter().for_each(|attribute|{
+                                    let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
+                                    match eval.symbol.sym {
+                                        EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
+                                            weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
+                                        },
+                                        _ => {}
+                                    }
+                                    evals.push(eval);
+                                });
+                            }
                         }
                     }
                 }
@@ -1202,7 +1203,7 @@ impl Evaluation {
         let mut found_pos_arg_with_kw = arg_index;
         let to_skip = min(min_arg_for_kword, vararg_index);
         for arg in exprCall.arguments.keywords.iter() {
-            if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionnary of keywords, like in self.func(a, b, **any_kwargs)
+            if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
                 for func_arg in function.args.iter().skip(to_skip as usize) {
                     if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {

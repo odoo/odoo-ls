@@ -167,7 +167,7 @@ impl ModuleSymbol {
             module.loaded = true;
             loaded.push(module.dir_name.clone());
             let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
-            let manifest_file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
+            let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
             let mut manifest_file_info = (*manifest_file_info).borrow_mut();
             manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
             manifest_file_info.publish_diagnostics(session);
@@ -198,7 +198,7 @@ impl ModuleSymbol {
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30201"))),
                 Some(EXTENSION_NAME.to_string()),
-                "A manifest should only contains one dictionnary".to_string(),
+                "A manifest should only contains one dictionary".to_string(),
                 None,
                 None,
             ));
