@@ -103,3 +103,19 @@ except ValueError:
 else:
     p = 40
 p
+
+q = 33
+match p:
+    case 20:
+        q = 34
+    case 30:
+        q  = 43
+q
+
+r = 33
+match p:
+    case 20:
+        r = 34
+    case x:
+        r  = 43
+r
