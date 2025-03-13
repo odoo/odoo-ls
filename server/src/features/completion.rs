@@ -787,7 +787,7 @@ fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_nam
     let name = expr_name.id.to_string();
     if expr_name.range.end().to_usize() == offset {
         let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-        let symbols = Symbol::get_all_infered_names(session.sync_odoo,& scope, &name, Some(offset as u32));
+        let symbols = Symbol::get_all_inferred_names(&scope, &name, Some(offset as u32));
         for symbol in symbols {
             items.push(CompletionItem {
                 label: symbol.borrow().name().to_string(),
