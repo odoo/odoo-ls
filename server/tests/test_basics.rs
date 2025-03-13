@@ -166,18 +166,25 @@ fn test_sections() {
         })
         .collect::<HashSet<_>>(), values); // Check evaluation values
     };
+    // If statement sections
     assert_get_int_eval_values("a", HashSet::from([5, 6]));
     assert_get_int_eval_values("b", HashSet::from([7]));
     assert_get_int_eval_values("c", HashSet::from([5, 6]));
     assert_get_int_eval_values("d", HashSet::from([4, 5]));
     assert_get_int_eval_values("e", HashSet::from([1, 2 ,3]));
+    // For statement sections
     assert_get_int_eval_values("f", HashSet::from([32, 33, 34, 35]));
     assert_get_int_eval_values("g", HashSet::from([98, 99]));
     assert_get_int_eval_values("h", HashSet::from([98, 5]));
+    // While statement sections
     assert_get_int_eval_values("i", HashSet::from([67, 76]));
     assert_get_int_eval_values("j", HashSet::from([37, 27]));
+    // Try statement sections
     assert_get_int_eval_values("k", HashSet::from([2, 3]));
     assert_get_int_eval_values("m", HashSet::from([80]));
     assert_get_int_eval_values("o", HashSet::from([120]));
     assert_get_int_eval_values("p", HashSet::from([20, 30, 40]));
+    // Match statement sections
+    assert_get_int_eval_values("q", HashSet::from([33, 34, 43]));
+    assert_get_int_eval_values("r", HashSet::from([34, 43]));
 }

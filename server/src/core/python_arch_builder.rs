@@ -619,6 +619,9 @@ impl PythonArchBuilder {
     }
 
     fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
+        let scope = self.sym_stack.last().unwrap().clone();
+        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
             match &case.pattern {
                 ruff_python_ast::Pattern::MatchValue(_) => {},
@@ -628,20 +631,30 @@ impl PythonArchBuilder {
                 ruff_python_ast::Pattern::MatchClass(_) => {}, //TODO we could force x evaluation here, by creating a temporary x?
                 ruff_python_ast::Pattern::MatchStar(pattern_match_star) => {
                     if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
-                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                        scope.borrow_mut().add_new_variable(
                             session, &name.to_string(), &pattern_match_star.range());
                     }
                 },
                 ruff_python_ast::Pattern::MatchAs(pattern_match_as) => {
+                    stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
                     if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
-                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                        scope.borrow_mut().add_new_variable(
                             session, &name.to_string(), &pattern_match_as.range());
                     }
                 },
                 ruff_python_ast::Pattern::MatchOr(_) => {},
             }
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                case.body.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
             self.visit_node(session, &case.body)?;
+            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         }
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            match_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 
