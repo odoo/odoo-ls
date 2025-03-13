@@ -525,14 +525,14 @@ impl PythonArchBuilder {
         for assign in unpacked {
             scope.borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
-        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
             for_stmt.body.first().unwrap().range().start(),
             None
         );
-        let previous_section = SectionIndex::INDEX(body_section.index - 1);
+
         self.visit_node(session, &for_stmt.body)?;
-        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
-        let mut stmt_sections = vec![body_section];
+        let mut stmt_sections = vec![SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())];
 
         if !for_stmt.orelse.is_empty(){
             scope.borrow_mut().as_mut_symbol_mgr().add_section(
@@ -553,14 +553,50 @@ impl PythonArchBuilder {
     }
 
     fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) -> Result<(), Error> {
+        // Try sections:
+        // try block is always executed, so it has the same section as the one preceding it.
+        // Finally is always executed if it exists, so it belongs to the lower section
+        let scope = self.sym_stack.last().unwrap().clone();
         self.visit_node(session, &try_stmt.body)?;
-        self.visit_node(session, &try_stmt.orelse)?;
-        self.visit_node(session, &try_stmt.finalbody)?;
-        for handler in try_stmt.handlers.iter() {
-            match handler {
-                ruff_python_ast::ExceptHandler::ExceptHandler(h) => self.visit_node(session, &h.body)?
+        if !try_stmt.handlers.is_empty(){
+            // Branching around except _T, except, and else act similar to if-elif-else
+            // The direct link (eq. to empty section) to previous scope is always there
+            // Unless both catch-all except and else clauses exist.
+            let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            let mut stmt_sections = vec![previous_section.clone()];
+            let mut catch_all_except_exists = false;
+            for handler in try_stmt.handlers.iter() {
+                match handler {
+                    ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
+                        if !catch_all_except_exists { catch_all_except_exists = h.type_.is_none()};
+                        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                            h.body.first().unwrap().range().start(),
+                            Some(previous_section.clone())
+                        );
+                        self.visit_node(session, &h.body)?;
+                        stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                    }
+                }
             }
+            if !try_stmt.orelse.is_empty(){
+                if catch_all_except_exists{
+                    stmt_sections.remove(0);
+                }
+                scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                    try_stmt.orelse.first().unwrap().range().start(),
+                    Some(previous_section.clone())
+                );
+                self.visit_node(session, &try_stmt.orelse)?;
+                stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            }
+            // Next section is either the start of the finally block, or right after the try block if finally does not exist
+            let next_section_start = try_stmt.finalbody.first().map(|stmt| stmt.range().start()).unwrap_or(try_stmt.range().end() + TextSize::new(1));
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                next_section_start,
+                Some(SectionIndex::OR(stmt_sections))
+            );
         }
+        self.visit_node(session, &try_stmt.finalbody)?;
         Ok(())
     }
 

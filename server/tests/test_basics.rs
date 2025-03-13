@@ -143,15 +143,15 @@ fn test_assigns() {
 }
 
 #[test]
-fn test_if_section_assign() {
+fn test_sections() {
     let mut odoo = setup::setup::setup_server(false);
-    let path = env::current_dir().unwrap().join("tests/data/python/expressions/ifs.py").sanitize();
+    let path = env::current_dir().unwrap().join("tests/data/python/expressions/sections.py").sanitize();
     let session = setup::setup::prepare_custom_entry_point(&mut odoo, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
 
-    let assert_get_int_eval_values = |var_name: &str, length: usize, values: HashSet<i32>|{
+    let assert_get_int_eval_values = |var_name: &str, values: HashSet<i32>|{
         let syms = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!(var_name)]), u32::MAX);
-        assert!(syms.len() == length); // Check Number of symbols
+        assert!(syms.len() == values.len()); // Check Number of symbols
         assert_eq!(syms.iter()
         .map(|sym| {
             let sym = sym.borrow();
@@ -166,14 +166,18 @@ fn test_if_section_assign() {
         })
         .collect::<HashSet<_>>(), values); // Check evaluation values
     };
-    assert_get_int_eval_values("a", 2, HashSet::from([5, 6]));
-    assert_get_int_eval_values("b", 1, HashSet::from([7]));
-    assert_get_int_eval_values("c", 2, HashSet::from([5, 6]));
-    assert_get_int_eval_values("d", 2, HashSet::from([4, 5]));
-    assert_get_int_eval_values("e", 3, HashSet::from([1, 2 ,3]));
-    assert_get_int_eval_values("f", 4, HashSet::from([32, 33, 34, 35]));
-    assert_get_int_eval_values("g", 2, HashSet::from([98, 99]));
-    assert_get_int_eval_values("h", 2, HashSet::from([98, 5]));
-    assert_get_int_eval_values("i", 2, HashSet::from([67, 76]));
-    assert_get_int_eval_values("j", 2, HashSet::from([37, 27]));
+    assert_get_int_eval_values("a", HashSet::from([5, 6]));
+    assert_get_int_eval_values("b", HashSet::from([7]));
+    assert_get_int_eval_values("c", HashSet::from([5, 6]));
+    assert_get_int_eval_values("d", HashSet::from([4, 5]));
+    assert_get_int_eval_values("e", HashSet::from([1, 2 ,3]));
+    assert_get_int_eval_values("f", HashSet::from([32, 33, 34, 35]));
+    assert_get_int_eval_values("g", HashSet::from([98, 99]));
+    assert_get_int_eval_values("h", HashSet::from([98, 5]));
+    assert_get_int_eval_values("i", HashSet::from([67, 76]));
+    assert_get_int_eval_values("j", HashSet::from([37, 27]));
+    assert_get_int_eval_values("k", HashSet::from([2, 3]));
+    assert_get_int_eval_values("m", HashSet::from([80]));
+    assert_get_int_eval_values("o", HashSet::from([120]));
+    assert_get_int_eval_values("p", HashSet::from([20, 30, 40]));
 }
