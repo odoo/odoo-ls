@@ -2057,7 +2057,8 @@ impl Symbol {
                 let _parent = parent.borrow().parent().unwrap().upgrade().unwrap();
                 parent = _parent;
             }
-            return Symbol::infer_name(odoo, &parent, name, position);
+            // A function can reference another name from the full outer scope so no position is needed
+            return Symbol::infer_name(odoo, &parent, name, None);
         }
         if results.is_empty() && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
             let builtins = odoo.get_symbol("", &(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
