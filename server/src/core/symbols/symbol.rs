@@ -2021,27 +2021,33 @@ impl Symbol {
     /*
     Return all the symbols that are available at a given position or in a scope for a given start name
      */
-    pub fn get_all_infered_names(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut results = vec![];
-        //get local symbols
-        on_symbol.borrow().all_symbols().for_each(|sym| {
-            if sym.borrow().name().starts_with(name) {
-                if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
-                    results.push(sym.clone());
-                }
-            }
-        });
-        //get global symbols
-        if let Some(file) = on_symbol.borrow().get_file().clone() {
-            let file = file.upgrade().unwrap();
-            file.borrow().all_symbols().for_each(|sym| {
+    pub fn get_all_inferred_names(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut results: Vec<Rc<RefCell<Symbol>>> = vec![];
+        fn helper(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>, results: &mut Vec<Rc<RefCell<Symbol>>>) {
+            let add_symbols = |results: &mut Vec<Rc<RefCell<Symbol>>>| on_symbol.borrow().all_symbols().for_each(|sym| {
                 if sym.borrow().name().starts_with(name) {
                     if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
                         results.push(sym.clone());
                     }
                 }
             });
+            let step_deeper = |results: &mut Vec<Rc<RefCell<Symbol>>>| {
+                if let Some(parent) = on_symbol.borrow().parent().as_ref().and_then(|parent_weak| parent_weak.upgrade()) {
+                    helper(&parent, name, position, results);
+                }
+
+            };
+            match on_symbol.borrow().typ(){
+                SymType::FILE => add_symbols(results),
+                SymType::CLASS => step_deeper(results),
+                SymType::FUNCTION => {
+                    add_symbols(results);
+                    step_deeper(results)
+                },
+                _ => return
+            };
         }
+        helper(on_symbol, name, position, &mut results);
         results
     }
 
