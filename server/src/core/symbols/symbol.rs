@@ -435,6 +435,16 @@ impl Symbol {
         }
     }
 
+    pub fn as_mut_symbol_mgr(&mut self) -> &mut dyn SymbolMgr {
+        match self {
+            Symbol::File(f) => f,
+            Symbol::Class(c) => c,
+            Symbol::Function(f) => f,
+            Symbol::Package(PackageSymbol::Module(m)) => m,
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a symbol Mgr");}
+        }
+    }
     pub fn typ(&self) -> SymType {
         match self {
             Symbol::Root(_) => SymType::ROOT,

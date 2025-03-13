@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
@@ -23,6 +23,7 @@ use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::symbols::function_symbol::{Argument, ArgumentType};
+use super::symbols::symbol_mgr::SectionIndex;
 
 
 #[derive(Debug)]
@@ -479,33 +480,123 @@ impl PythonArchBuilder {
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
+        let scope = self.sym_stack.last().unwrap().clone();
+        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            if_stmt.body.first().unwrap().range().start(),
+            None
+        );
+        let previous_section = SectionIndex::INDEX(body_section.index - 1);
         self.visit_node(session, &if_stmt.body)?;
-        for else_clause in if_stmt.elif_else_clauses.iter() {
-            self.visit_node(session, &else_clause.body)?;
+
+        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+
+        let mut stmt_sections = vec![body_section];
+        let mut else_clause_exists = false;
+
+        stmt_sections.extend(if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                elif_else_clause.body.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
+            if elif_else_clause.test.is_none(){
+                else_clause_exists = true;
+            }
+            self.visit_node(session, &elif_else_clause.body)?;
+            let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            Ok::<SectionIndex, Error>(clause_section)
+        }).collect::<Result<Vec<_>, _>>()?);
+
+        if !else_clause_exists{
+            // If there is no else clause, the there is an implicit else clause
+            // Which bypasses directly to the previous_section
+            stmt_sections.push(previous_section);
         }
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            if_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
+        // TODO: Handle breaks for sections
+        let scope = self.sym_stack.last().unwrap().clone();
         let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
+            scope.borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
+        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            for_stmt.body.first().unwrap().range().start(),
+            None
+        );
+
         self.visit_node(session, &for_stmt.body)?;
-        //TODO should split evaluations as in if
-        self.visit_node(session, &for_stmt.orelse)?;
+        let mut stmt_sections = vec![SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())];
+
+        if !for_stmt.orelse.is_empty(){
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                for_stmt.orelse.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
+            self.visit_node(session, &for_stmt.orelse)?;
+            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+        } else {
+            stmt_sections.push(previous_section.clone());
+        }
+
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            for_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 
     fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) -> Result<(), Error> {
+        // Try sections:
+        // try block is always executed, so it has the same section as the one preceding it.
+        // Finally is always executed if it exists, so it belongs to the lower section
+        let scope = self.sym_stack.last().unwrap().clone();
         self.visit_node(session, &try_stmt.body)?;
-        self.visit_node(session, &try_stmt.orelse)?;
-        self.visit_node(session, &try_stmt.finalbody)?;
-        for handler in try_stmt.handlers.iter() {
-            match handler {
-                ruff_python_ast::ExceptHandler::ExceptHandler(h) => self.visit_node(session, &h.body)?
+        if !try_stmt.handlers.is_empty(){
+            // Branching around except _T, except, and else act similar to if-elif-else
+            // The direct link (eq. to empty section) to previous scope is always there
+            // Unless both catch-all except and else clauses exist.
+            let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            let mut stmt_sections = vec![previous_section.clone()];
+            let mut catch_all_except_exists = false;
+            for handler in try_stmt.handlers.iter() {
+                match handler {
+                    ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
+                        if !catch_all_except_exists { catch_all_except_exists = h.type_.is_none()};
+                        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                            h.body.first().unwrap().range().start(),
+                            Some(previous_section.clone())
+                        );
+                        self.visit_node(session, &h.body)?;
+                        stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                    }
+                }
             }
+            if !try_stmt.orelse.is_empty(){
+                if catch_all_except_exists{
+                    stmt_sections.remove(0);
+                }
+                scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                    try_stmt.orelse.first().unwrap().range().start(),
+                    Some(previous_section.clone())
+                );
+                self.visit_node(session, &try_stmt.orelse)?;
+                stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            }
+            // Next section is either the start of the finally block, or right after the try block if finally does not exist
+            let next_section_start = try_stmt.finalbody.first().map(|stmt| stmt.range().start()).unwrap_or(try_stmt.range().end() + TextSize::new(1));
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                next_section_start,
+                Some(SectionIndex::OR(stmt_sections))
+            );
         }
+        self.visit_node(session, &try_stmt.finalbody)?;
         Ok(())
     }
 
@@ -528,6 +619,9 @@ impl PythonArchBuilder {
     }
 
     fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
+        let scope = self.sym_stack.last().unwrap().clone();
+        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
             match &case.pattern {
                 ruff_python_ast::Pattern::MatchValue(_) => {},
@@ -537,26 +631,59 @@ impl PythonArchBuilder {
                 ruff_python_ast::Pattern::MatchClass(_) => {}, //TODO we could force x evaluation here, by creating a temporary x?
                 ruff_python_ast::Pattern::MatchStar(pattern_match_star) => {
                     if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
-                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                        scope.borrow_mut().add_new_variable(
                             session, &name.to_string(), &pattern_match_star.range());
                     }
                 },
                 ruff_python_ast::Pattern::MatchAs(pattern_match_as) => {
+                    stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
                     if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
-                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
+                        scope.borrow_mut().add_new_variable(
                             session, &name.to_string(), &pattern_match_as.range());
                     }
                 },
                 ruff_python_ast::Pattern::MatchOr(_) => {},
             }
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                case.body.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
             self.visit_node(session, &case.body)?;
+            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         }
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            match_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        // TODO: Handle breaks for sections
+        let scope = self.sym_stack.last().unwrap().clone();
+        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            while_stmt.body.first().unwrap().range().start(),
+            None
+        );
+        let previous_section = SectionIndex::INDEX(body_section.index - 1);
         self.visit_node(session, &while_stmt.body)?;
-        self.visit_node(session, &while_stmt.orelse)?;
+        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let mut stmt_sections = vec![body_section];
+        if !while_stmt.orelse.is_empty(){
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                while_stmt.orelse.first().unwrap().range().start(),
+                Some(previous_section.clone())
+            );
+            self.visit_node(session, &while_stmt.orelse)?;
+            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+        } else {
+            stmt_sections.push(previous_section.clone());
+        }
+
+        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            while_stmt.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(stmt_sections))
+        );
         Ok(())
     }
 }
