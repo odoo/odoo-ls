@@ -36,7 +36,6 @@ pub struct PythonArchEval {
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
-    ast_indexes: Vec<u16>,
 }
 
 impl PythonArchEval {
@@ -49,7 +48,6 @@ impl PythonArchEval {
             sym_stack: vec![symbol],
             diagnostics: Vec::new(),
             safe_import: vec![false],
-            ast_indexes: vec![],
         }
     }
 
@@ -68,7 +66,6 @@ impl PythonArchEval {
             self.file = file.clone();
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
-            self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
         }
         if DEBUG_STEPS {
             trace!("evaluating {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
@@ -482,23 +479,8 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_sub_stmts(&mut self, session: &mut SessionInfo, stms: &Vec<Stmt>){
-
-        for (index, stmt) in stms.iter().enumerate() {
-            match stmt {
-                Stmt::FunctionDef(func_stmt) => {
-                    self.ast_indexes.push(index as u16);
-                    self.set_function_ast_indexes_annotations(session, func_stmt);
-                    self.ast_indexes.pop();
-                },
-                _ => ()
-            }
-        }
-        for (index, stmt) in stms.iter().enumerate() {
-            self.ast_indexes.push(index as u16);
-            self.visit_stmt(session, stmt);
-            self.ast_indexes.pop();
-        }
+    fn visit_sub_stmts(&mut self, session: &mut SessionInfo, stmts: &Vec<Stmt>){
+        stmts.iter().for_each(|stmt| self.visit_stmt(session, stmt));
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
@@ -506,22 +488,10 @@ impl PythonArchEval {
         if variable.is_none() {
             panic!("Class not found");
         }
-        variable.as_ref().unwrap().borrow_mut().ast_indexes_mut().clear();
-        variable.as_ref().unwrap().borrow_mut().ast_indexes_mut().extend(self.ast_indexes.iter());
         self.load_base_classes(session, variable.as_ref().unwrap(), class_stmt);
         self.sym_stack.push(variable.unwrap().clone());
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
-    }
-
-    /// Set ast_indexes on functions, and add evaluations from api.returns and return type annotation
-    fn set_function_ast_indexes_annotations(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
-        let Some(function_sym) = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&func_stmt.name.to_string(), &func_stmt.range) else {
-            panic!("Function symbol not found");
-        };
-        function_sym.borrow_mut().ast_indexes_mut().clear();
-        function_sym.borrow_mut().ast_indexes_mut().extend(self.ast_indexes.iter());
-        PythonArchEval::handle_function_returns(session, func_stmt.returns.as_ref(), &function_sym, &func_stmt.range.end(), &mut self.diagnostics);
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
@@ -586,15 +556,8 @@ impl PythonArchEval {
 
     fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         //TODO eval test (walrus op)
-        self.ast_indexes.push(0 as u16);//0 for body
         self.visit_sub_stmts(session, &if_stmt.body);
-        self.ast_indexes.pop();
-        for (index, elif_clause) in if_stmt.elif_else_clauses.iter().enumerate() {
-            //TODO eval test of else clauses
-            self.ast_indexes.push((index+1) as u16);//0 for body, so index + 1
-            self.visit_sub_stmts(session, &elif_clause.body);
-            self.ast_indexes.pop();
-        }
+        if_stmt.elif_else_clauses.iter().for_each(|elif_clause| self.visit_sub_stmts(session, &elif_clause.body));
     }
 
     fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
@@ -634,13 +597,9 @@ impl PythonArchEval {
                 }
             }
         }
-        self.ast_indexes.push(0 as u16);
         self.visit_sub_stmts(session, &for_stmt.body);
-        self.ast_indexes.pop();
         //TODO split evaluation
-        self.ast_indexes.push(1 as u16);
         self.visit_sub_stmts(session, &for_stmt.orelse);
-        self.ast_indexes.pop();
     }
 
     fn _visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) {
@@ -654,23 +613,13 @@ impl PythonArchEval {
             }
         }
         self.safe_import.push(safe_import);
-        self.ast_indexes.push(0 as u16);
         self.visit_sub_stmts(session, &try_stmt.body);
-        self.ast_indexes.pop();
         self.safe_import.pop();
-        self.ast_indexes.push(1 as u16);
         self.visit_sub_stmts(session, &try_stmt.orelse);
-        self.ast_indexes.pop();
-        self.ast_indexes.push(2 as u16);
         self.visit_sub_stmts(session, &try_stmt.finalbody);
-        self.ast_indexes.pop();
-        self.ast_indexes.push(3 as u16);
-        for (handler_iter, handler) in try_stmt.handlers.iter().enumerate() {
-            self.ast_indexes.push(handler_iter as u16);
+        for handler in try_stmt.handlers.iter() {
             handler.as_except_handler().map(|h| self.visit_sub_stmts(session, &h.body));
-            self.ast_indexes.pop();
         }
-        self.ast_indexes.pop();
     }
 
     fn _visit_return(&mut self, session: &mut SessionInfo, return_stmt: &StmtReturn) {
@@ -725,21 +674,12 @@ impl PythonArchEval {
     }
 
     fn _visit_match(&mut self, session: &mut SessionInfo<'_>, match_stmt: &ruff_python_ast::StmtMatch) {
-        for (index_case, case) in match_stmt.cases.iter().enumerate() {
-            self.ast_indexes.push(index_case as u16);
-            self.visit_sub_stmts(session, &case.body);
-            self.ast_indexes.pop();
-        }
+        match_stmt.cases.iter().for_each(|case| self.visit_sub_stmts(session, &case.body));
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
-        self.ast_indexes.push(0 as u16); // 0 for body
         self.visit_sub_stmts(session, &while_stmt.body);
-        self.ast_indexes.pop();
-
-        self.ast_indexes.push(1 as u16); // 1 for else
         self.visit_sub_stmts(session, &while_stmt.orelse);
-        self.ast_indexes.pop();
     }
 
     // Handle function return annotation

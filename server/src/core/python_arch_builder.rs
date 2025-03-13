@@ -33,7 +33,8 @@ pub struct PythonArchBuilder {
     current_step: BuildSteps,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
-    diagnostics: Vec<Diagnostic>
+    diagnostics: Vec<Diagnostic>,
+    ast_indexes: Vec<u16>,
 }
 
 impl PythonArchBuilder {
@@ -45,7 +46,8 @@ impl PythonArchBuilder {
             current_step: BuildSteps::ARCH, //dummy, evaluated in load_arch
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
-            diagnostics: vec![]
+            diagnostics: vec![],
+            ast_indexes: vec![],
         }
     }
 
@@ -61,6 +63,7 @@ impl PythonArchBuilder {
             self.file = file.clone();
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
+            self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
         }
         if DEBUG_STEPS {
             trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
@@ -213,7 +216,8 @@ impl PythonArchBuilder {
     }
 
     fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) -> Result<(), Error> {
-        for stmt in nodes.iter() {
+        for (index, stmt) in nodes.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
             match stmt {
                 Stmt::Import(import_stmt) => {
                     self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
@@ -253,6 +257,7 @@ impl PythonArchBuilder {
                 }
                 _ => {}
             }
+            self.ast_indexes.pop();
         }
         Ok(())
     }
@@ -361,6 +366,10 @@ impl PythonArchBuilder {
         let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
+
+        sym_bw.ast_indexes_mut().clear();
+        sym_bw.ast_indexes_mut().extend(self.ast_indexes.iter());
+
         let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() {
@@ -447,9 +456,13 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
-        let mut sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
+        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
             session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
+
+        sym_bw.ast_indexes_mut().clear();
+        sym_bw.ast_indexes_mut().extend(self.ast_indexes.iter());
+
         let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
@@ -478,9 +491,13 @@ impl PythonArchBuilder {
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
+        self.ast_indexes.push(0 as u16); //0 for body
         self.visit_node(session, &if_stmt.body)?;
-        for else_clause in if_stmt.elif_else_clauses.iter() {
+        self.ast_indexes.pop();
+        for (index, else_clause) in if_stmt.elif_else_clauses.iter().enumerate() {
+            self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
             self.visit_node(session, &else_clause.body)?;
+            self.ast_indexes.pop();
         }
         Ok(())
     }
@@ -490,21 +507,35 @@ impl PythonArchBuilder {
         for assign in unpacked {
             self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
+        self.ast_indexes.push(0 as u16);
         self.visit_node(session, &for_stmt.body)?;
+        self.ast_indexes.pop();
         //TODO should split evaluations as in if
+        self.ast_indexes.push(1 as u16);
         self.visit_node(session, &for_stmt.orelse)?;
+        self.ast_indexes.pop();
         Ok(())
     }
 
     fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) -> Result<(), Error> {
+        self.ast_indexes.push(0 as u16);
         self.visit_node(session, &try_stmt.body)?;
+        self.ast_indexes.pop();
+        self.ast_indexes.push(1 as u16);
         self.visit_node(session, &try_stmt.orelse)?;
+        self.ast_indexes.pop();
+        self.ast_indexes.push(2 as u16);
         self.visit_node(session, &try_stmt.finalbody)?;
-        for handler in try_stmt.handlers.iter() {
+        self.ast_indexes.pop();
+        self.ast_indexes.push(3 as u16);
+        for (index, handler) in try_stmt.handlers.iter().enumerate() {
+            self.ast_indexes.push(index as u16);
             match handler {
                 ruff_python_ast::ExceptHandler::ExceptHandler(h) => self.visit_node(session, &h.body)?
             }
+            self.ast_indexes.pop();
         }
+        self.ast_indexes.pop();
         Ok(())
     }
 
@@ -527,7 +558,7 @@ impl PythonArchBuilder {
     }
 
     fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
-        for case in match_stmt.cases.iter() {
+        for (case_ix, case) in match_stmt.cases.iter().enumerate() {
             match &case.pattern {
                 ruff_python_ast::Pattern::MatchValue(_) => {},
                 ruff_python_ast::Pattern::MatchSingleton(_) => {},
@@ -548,14 +579,21 @@ impl PythonArchBuilder {
                 },
                 ruff_python_ast::Pattern::MatchOr(_) => {},
             }
+            self.ast_indexes.push(case_ix as u16);
             self.visit_node(session, &case.body)?;
+            self.ast_indexes.pop();
         }
         Ok(())
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        self.ast_indexes.push(0 as u16); // 0 for body
         self.visit_node(session, &while_stmt.body)?;
+        self.ast_indexes.pop();
+
+        self.ast_indexes.push(1 as u16); // 1 for else
         self.visit_node(session, &while_stmt.orelse)?;
+        self.ast_indexes.pop();
         Ok(())
     }
 }
