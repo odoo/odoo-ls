@@ -2071,27 +2071,23 @@ impl Symbol {
     /*
     Return all the symbols that are available at a given position or in a scope for a given start name
      */
-    pub fn get_all_infered_names(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut results = vec![];
-        //get local symbols
-        on_symbol.borrow().all_symbols().for_each(|sym| {
-            if sym.borrow().name().starts_with(name) {
-                if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
-                    results.push(sym.clone());
+    pub fn get_all_inferred_names(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
+        fn helper(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>, acc: &mut Vec<Rc<RefCell<Symbol>>>) {
+            // Add symbols from files and functions
+            if matches!(on_symbol.borrow().typ(), SymType::FILE | SymType::FUNCTION){
+                acc.extend(on_symbol.borrow().all_symbols().filter(|sym|
+                    sym.borrow().name().starts_with(name) && (position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32())
+                ))
+            };
+            // Traverse upwards if we are under a class or a function
+            if matches!(on_symbol.borrow().typ(), SymType::CLASS | SymType::FUNCTION){
+                if let Some(parent) = on_symbol.borrow().parent().as_ref().and_then(|parent_weak| parent_weak.upgrade()) {
+                    helper(&parent, name, position, acc);
                 }
-            }
-        });
-        //get global symbols
-        if let Some(file) = on_symbol.borrow().get_file().clone() {
-            let file = file.upgrade().unwrap();
-            file.borrow().all_symbols().for_each(|sym| {
-                if sym.borrow().name().starts_with(name) {
-                    if position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32() {
-                        results.push(sym.clone());
-                    }
-                }
-            });
+            };
         }
+        let mut results: Vec<Rc<RefCell<Symbol>>> = vec![];
+        helper(on_symbol, name, position, &mut results);
         results
     }
 
