@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, Expr, ExprNamed, FStringPart, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -251,11 +251,155 @@ impl PythonArchBuilder {
                 },
                 Stmt::While(while_stmt) => {
                     self.visit_while(session, while_stmt)?;
+                },
+                Stmt::Expr(stmt_expression) => {
+                    self.visit_expr(session, &stmt_expression.value);
+                },
+                Stmt::Return(return_stmt) => {
+                    if let Some(value) = return_stmt.value.as_ref() {
+                        self.visit_expr(session, &value);
+                    }
+                },
+                Stmt::Assert(assert_stmt) => {
+                    self.visit_expr(session, &assert_stmt.test);
+                },
+                Stmt::AugAssign(aug_assign_stmt) => {
+                    self.visit_expr(session, &aug_assign_stmt.target);
+                    self.visit_expr(session, &aug_assign_stmt.value);
                 }
-                _ => {}
+                Stmt::Delete(stmt_delete) => {
+                    stmt_delete.targets.iter().for_each(|del_target_expr| self.visit_expr(session, del_target_expr));
+                },
+                Stmt::TypeAlias(stmt_type_alias) => {
+                    self.visit_expr(session, &stmt_type_alias.value);
+                },
+                Stmt::Raise(stmt_raise) => {
+                    stmt_raise.exc.as_ref().map(|stmt_exc| self.visit_expr(session, &stmt_exc));
+                    stmt_raise.cause.as_ref().map(|stmt_cause| self.visit_expr(session, &stmt_cause));
+                },
+                Stmt::Global(_stmt_global) => {},
+                Stmt::Nonlocal(_stmt_nonlocal) => {},
+                Stmt::Break(_) => {},
+                Stmt::Continue(_) => {},
+                Stmt::Pass(_) => {},
+                Stmt::IpyEscapeCommand(_) => {},
             }
         }
         Ok(())
+    }
+
+    fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
+        match expr {
+            Expr::Named(named_expr) =>{
+                self.visit_named_expr(session, &named_expr);
+            },
+            Expr::BoolOp(bool_op_expr) => {
+                for expr in bool_op_expr.values.iter() {
+                    self.visit_expr(session, &expr);
+                }
+            },
+            Expr::BinOp(bin_op_expr) => {
+                self.visit_expr(session, &bin_op_expr.left);
+                self.visit_expr(session, &bin_op_expr.right);
+            },
+            Expr::UnaryOp(unary_op_expr) => {
+                self.visit_expr(session, &unary_op_expr.operand);
+            },
+            Expr::If(_todo_if_expr) => {
+                // TODO:
+                // This needs complex handling of sections
+            },
+            Expr::Dict(dict_expr) => {
+                dict_expr.iter().for_each(
+                    |dict_item| {
+                        dict_item.key.as_ref().map(|dict_key_expr| self.visit_expr(session, dict_key_expr));
+                        self.visit_expr(session, &dict_item.value);
+                    }
+                );
+            },
+            Expr::Set(expr_set) => {
+                expr_set.iter().for_each(
+                    |set_el_expr| {
+                        self.visit_expr(session, set_el_expr);
+                    }
+                );
+            },
+            Expr::ListComp(expr_list_comp) => {
+                self.visit_expr(session, &expr_list_comp.elt);
+            },
+            Expr::SetComp(expr_set_comp) => {
+                self.visit_expr(session, &expr_set_comp.elt);
+            },
+            Expr::DictComp(expr_dict_comp) => {
+                self.visit_expr(session, &expr_dict_comp.key);
+                self.visit_expr(session, &expr_dict_comp.value);
+            },
+            Expr::Await(expr_await) => {
+                self.visit_expr(session, &expr_await.value);
+            },
+            Expr::Yield(expr_yield) => {
+                expr_yield.value.as_ref().map(|yield_value| self.visit_expr(session, &yield_value));
+            },
+            Expr::YieldFrom(expr_yield_from) => {
+                self.visit_expr(session, &expr_yield_from.value);
+            },
+            Expr::Compare(expr_compare) => {
+                expr_compare.comparators.iter().for_each(|comp_expr| self.visit_expr(session, comp_expr));
+            },
+            Expr::Call(expr_call) => {
+                self.visit_expr(session, &expr_call.func);
+                expr_call.arguments.args.iter().for_each(|arg_expr| self.visit_expr(session, arg_expr));
+                expr_call.arguments.keywords.iter().for_each(|keyword| self.visit_expr(session, &keyword.value));
+            },
+            Expr::FString(expr_fstring) => {
+                expr_fstring.value.iter().for_each(|fstring_part|{
+                    match fstring_part{
+                        FStringPart::FString(fstr) => fstr.elements.expressions().for_each(
+                            |fstring_expr| self.visit_expr(session, &fstring_expr.expression)
+                        ),
+                        FStringPart::Literal(_) => {},
+                    }
+                });
+            },
+            Expr::Subscript(expr_subscript) => {
+                self.visit_expr(session, &expr_subscript.value);
+                self.visit_expr(session, &expr_subscript.slice);
+            },
+            Expr::List(expr_list) => {
+                expr_list.elts.iter().for_each(|elt_expr| self.visit_expr(session, elt_expr));
+            },
+            Expr::Tuple(expr_tuple) => {
+                expr_tuple.elts.iter().for_each(|elt_expr| self.visit_expr(session, elt_expr));
+            },
+            Expr::Slice(expr_slice) => {
+                expr_slice.upper.as_ref().map(|upper_expr| self.visit_expr(session, &upper_expr));
+                expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
+            },
+            // Expressions that cannot contained a named expressions are not traversed
+            Expr::Lambda(_todo_lambda_expr) => {
+                // Lambdas can have named expressions, but it is not a common use
+                // Like lambda vals: vals[(x := 0): x + 3]
+                // However x is only in scope in the lambda expression only
+                // It needs adding a new function, ast_indexes, then add the variable inside
+                // I deem it currently unnecessary
+            },
+            Expr::Generator(_todo_expr_generator) => {
+                // generators are lazily evaluated,
+                // thus named expression are only invoked when the generator is iterated
+                // which modifies the variable in it in a custom scope
+                // No method to handle that now, and it is a very niche use that is safe to not handle
+            },
+            Expr::StringLiteral(_expr_string_literal) => {},
+            Expr::BytesLiteral(_expr_bytes_literal) => {},
+            Expr::NumberLiteral(_expr_number_literal) => {},
+            Expr::BooleanLiteral(_expr_boolean_literal) => {},
+            Expr::NoneLiteral(_expr_none_literal) => {},
+            Expr::EllipsisLiteral(_expr_ellipsis_literal) => {},
+            Expr::Attribute(_expr_attribute) => {},
+            Expr::Starred(_expr_starred) => {},
+            Expr::IpyEscapeCommand(_expr_ipy_escape_command) => {},
+            Expr::Name(_expr_name) => {},
+        }
     }
 
     fn extract_all_symbol_eval_values(&self, value: &Option<&EvaluationValue>) -> (Vec<String>, bool) {
@@ -315,6 +459,9 @@ impl PythonArchBuilder {
             None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
+            if let Some(ref expr) = assign.value{
+                self.visit_expr(session, expr);
+            }
             self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
     }
@@ -322,6 +469,9 @@ impl PythonArchBuilder {
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
+            if let Some(ref expr) = assign.value {
+                self.visit_expr(session, expr);
+            }
             let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
             let mut variable = variable.borrow_mut();
             if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
@@ -356,6 +506,11 @@ impl PythonArchBuilder {
                 }
             }
         }
+    }
+
+    fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
+        self.visit_expr(session, &named_expr.value);
+        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &named_expr.target.as_name_expr().unwrap().id.to_string(), &named_expr.target.range());
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
@@ -479,6 +634,7 @@ impl PythonArchBuilder {
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
+        self.visit_expr(session, &if_stmt.test);
         self.visit_node(session, &if_stmt.body)?;
         for else_clause in if_stmt.elif_else_clauses.iter() {
             self.visit_node(session, &else_clause.body)?;
@@ -489,6 +645,9 @@ impl PythonArchBuilder {
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
         let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
+            if let Some(ref expr) = assign.value {
+                self.visit_expr(session, expr);
+            }
             self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &assign.target.id.to_string(), &assign.target.range);
         }
         self.visit_node(session, &for_stmt.body)?;
@@ -555,6 +714,7 @@ impl PythonArchBuilder {
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        self.visit_expr(session, &while_stmt.test);
         self.visit_node(session, &while_stmt.body)?;
         self.visit_node(session, &while_stmt.orelse)?;
         Ok(())
