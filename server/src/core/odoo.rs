@@ -344,6 +344,7 @@ impl SyncOdoo {
             },
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
         }
+        session.sync_odoo.has_odoo_main_entry = true; // set it now has we need it to parse base addons
         if !SyncOdoo::process_rebuilds(session){
             return false;
         }
@@ -353,6 +354,7 @@ impl SyncOdoo {
             let odoo = session.sync_odoo.get_symbol(&odoo_path, &tree(vec!["odoo"], vec![]), u32::MAX);
             if odoo.is_empty() {
                 session.log_message(MessageType::WARNING, "Odoo not found. Switching to non-odoo mode...".to_string());
+                session.sync_odoo.has_odoo_main_entry = false;
                 return false;
             }
             //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
@@ -361,6 +363,7 @@ impl SyncOdoo {
                 addon_symbol = vec![addons];
             } else {
                 session.log_message(MessageType::WARNING, "Not able to find odoo/addons. Please check your configuration. Switching to non-odoo mode...".to_string());
+                session.sync_odoo.has_odoo_main_entry = false;
                 return false;
             }
         }
@@ -390,7 +393,6 @@ impl SyncOdoo {
                         S!("addons")]));
             }
         }
-        session.sync_odoo.has_odoo_main_entry = true;
         return true;
     }
 

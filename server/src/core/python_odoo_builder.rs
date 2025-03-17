@@ -62,7 +62,7 @@ impl PythonOdooBuilder {
     fn _load(&mut self, session: &mut SessionInfo) {
         let symbol = self.symbol.borrow_mut();
         let iterator = symbol.get_sorted_symbols();
-        if session.sync_odoo.has_odoo_main_entry {
+        if !session.sync_odoo.has_odoo_main_entry {
             return;
         }
         drop(symbol);
