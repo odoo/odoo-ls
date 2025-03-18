@@ -24,6 +24,7 @@ class OdooLSSpyApp(QMainWindow):
         self.setWindowTitle("Odoo LS Spy")
         self.setGeometry(100, 100, 1920, 1080)
         self.init_ui()
+        self.right_tab_map = {}
 
         self.connection_mgr.connect()
 
@@ -58,22 +59,32 @@ class OdooLSSpyApp(QMainWindow):
 
         # Left tab bar
         self.left_tab_bar = QTabWidget()
+        self.left_tab_bar.setTabsClosable(True)
+        self.left_tab_bar.tabCloseRequested.connect(self.close_left_tab)
         self.splitter.addWidget(self.left_tab_bar)
 
 
-        self.right_panel = QWidget()
-        self.right_panel_layout = QGridLayout()
-        self.right_panel.setLayout(self.right_panel_layout)
-        self.right_panel.layout().addWidget(QLabel("Waiting for something to display..."), 0, 0)
-
-        self.splitter.addWidget(self.right_panel)
+        self.right_tab_bar = QTabWidget()
+        self.right_tab_bar.setTabsClosable(True)
+        self.right_tab_bar.tabCloseRequested.connect(self.close_right_tab)
+        self.splitter.addWidget(self.right_tab_bar)
 
         # Start monitoring
         #self.monitoring.start()
 
-    def clear_right_window(self):
-        for i in reversed(range(self.right_panel.layout().count())): 
-            self.right_panel.layout().takeAt(i).widget().deleteLater()
+    def close_left_tab(self, index):
+        self.left_tab_bar.removeTab(index)
+
+    def close_right_tab(self, index):
+        self.right_tab_bar.removeTab(index)
+
+    def replace_right_tab(self, tab_name, widget, tab_hash):
+        if self.right_tab_map.get(tab_hash):
+            index = self.right_tab_bar.indexOf(self.right_tab_map.pop(tab_hash))
+            self.right_tab_bar.removeTab(index)
+        self.right_tab_map[tab_hash] = widget
+        self.right_tab_bar.addTab(widget, tab_name)
+        self.right_tab_bar.setCurrentWidget(widget)
 
     def on_connection_established(self):
         print("Connection established!")
