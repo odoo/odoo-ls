@@ -151,11 +151,11 @@ fn test_sections() {
 
     let assert_get_int_eval_values = |var_name: &str, values: HashSet<i32>|{
         let syms = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![S!(var_name)]), u32::MAX);
-        assert!(syms.len() == values.len()); // Check Number of symbols
+        assert_eq!(syms.len(), values.len()); // Check Number of symbols
         assert_eq!(syms.iter()
         .map(|sym| {
             let sym = sym.borrow();
-            assert!(sym.name() == var_name); // Check variable name
+            assert_eq!(sym.name(), var_name); // Check variable name
             let evaluations = sym.evaluations();
             let eval = evaluations.as_ref().unwrap();
             assert_eq!(eval.len(), 1);  // Check that each symbol has one evaluation
@@ -187,4 +187,12 @@ fn test_sections() {
     // Match statement sections
     assert_get_int_eval_values("q", HashSet::from([33, 34, 43]));
     assert_get_int_eval_values("r", HashSet::from([34, 43]));
+    // Named expression
+    assert_get_int_eval_values("s", HashSet::from([2]));
+    assert_get_int_eval_values("t", HashSet::from([3]));
+    // If stmt with walrus
+    assert_get_int_eval_values("u", HashSet::from([91, 92]));
+    assert_get_int_eval_values("v", HashSet::from([72, 73, 74]));
+    assert_get_int_eval_values("w", HashSet::from([71, 72, 74]));
+
 }
