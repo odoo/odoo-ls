@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -14,10 +15,11 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use serde_json::json;
 
-use crate::constants::{PackageType, SymType};
+use crate::constants::{PackageType, SymType, Tree};
 use crate::core::entry_point::{EntryPoint, EntryPointType};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
+use crate::utils::PathSanitizer;
 
 use super::io_threads::ToolAPIIoThreads;
 use super::socket;
@@ -102,6 +104,10 @@ impl ToolAPI {
                 let sync_odoo = sync_odoo.lock().unwrap();
                 response_value = ToolAPI::get_symbol(&sync_odoo, serde_json::from_value(request.params).unwrap());
             },
+            "$/ToolAPI/get_symbol_with_path" => {
+                let sync_odoo = sync_odoo.lock().unwrap();
+                response_value = ToolAPI::get_symbol_with_path(&sync_odoo, serde_json::from_value(request.params).unwrap());
+            },
             "$/ToolAPI/browse_tree" => {
                 let sync_odoo = sync_odoo.lock().unwrap();
                 response_value = ToolAPI::browse_tree(&sync_odoo, serde_json::from_value(request.params).unwrap());
@@ -159,45 +165,65 @@ impl ToolAPI {
             }
         }
         if let Some(entry) = entry {
-            let mut symbols = entry.borrow().root.borrow().get_symbol(&params.tree, u32::MAX);
-            if symbols.len() > 1 {
-                panic!()
+            return ToolAPI::symbol_to_json(entry.clone(), &params.tree)
+        }
+        serde_json::Value::Null
+    }
+
+    fn symbol_to_json(entry: Rc<RefCell<EntryPoint>>, tree: &Tree) -> serde_json::Value {
+        let mut symbols = entry.borrow().root.borrow().get_symbol(tree, u32::MAX);
+        if symbols.len() > 1 {
+            panic!()
+        }
+        if tree.0.is_empty() && tree.1.is_empty() {
+            symbols.push(entry.borrow().root.clone());
+        }
+        let Some(symbol) = symbols.first() else {return serde_json::Value::Null};
+        let typ = symbol.borrow().typ();
+        match typ {
+            SymType::ROOT => {
+                return symbol.borrow().as_root().to_json();
             }
-            if params.tree.0.is_empty() && params.tree.1.is_empty() {
-                symbols.push(entry.borrow().root.clone());
+            SymType::DISK_DIR => {
+                return symbol.borrow().as_disk_dir_sym().to_json();
             }
-            let Some(symbol) = symbols.first() else {return serde_json::Value::Null};
-            let typ = symbol.borrow().typ();
-            match typ {
-                SymType::ROOT => {
-                    return symbol.borrow().as_root().to_json();
-                }
-                SymType::DISK_DIR => {
-                    return symbol.borrow().as_disk_dir_sym().to_json();
-                }
-                SymType::NAMESPACE => {
-                    return symbol.borrow().as_namespace().to_json();
-                },
-                SymType::PACKAGE(PackageType::MODULE) => {
-                    return symbol.borrow().as_module_package().to_json();
-                },
-                SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
-                    return symbol.borrow().as_python_package().to_json();
-                },
-                SymType::FILE => {
-                    return symbol.borrow().as_file().to_json();
-                },
-                SymType::COMPILED => {return symbol.borrow().as_compiled().to_json();},
-                SymType::VARIABLE => {
-                    return symbol.borrow().as_variable().to_json();
-                },
-                SymType::CLASS => {
-                    return symbol.borrow().as_class_sym().to_json();
-                },
-                SymType::FUNCTION => {
-                    return symbol.borrow().as_func().to_json();
-                },
+            SymType::NAMESPACE => {
+                return symbol.borrow().as_namespace().to_json();
+            },
+            SymType::PACKAGE(PackageType::MODULE) => {
+                return symbol.borrow().as_module_package().to_json();
+            },
+            SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
+                return symbol.borrow().as_python_package().to_json();
+            },
+            SymType::FILE => {
+                return symbol.borrow().as_file().to_json();
+            },
+            SymType::COMPILED => {return symbol.borrow().as_compiled().to_json();},
+            SymType::VARIABLE => {
+                return symbol.borrow().as_variable().to_json();
+            },
+            SymType::CLASS => {
+                return symbol.borrow().as_class_sym().to_json();
+            },
+            SymType::FUNCTION => {
+                return symbol.borrow().as_func().to_json();
+            },
+        }
+    }
+
+    fn get_symbol_with_path(sync_odoo: &SyncOdoo, params: GetSymbolWithPathParams) -> serde_json::Value {
+        let mut entry = None;
+        let ep_mgr = sync_odoo.entry_point_mgr.borrow();
+        for e in ep_mgr.iter_all() {
+            if e.borrow().path == params.entry_path {
+                entry = Some(e);
+                break;
             }
+        }
+        let path = PathBuf::from(params.path).to_tree();
+        if let Some(entry) = entry {
+            return ToolAPI::symbol_to_json(entry.clone(), &path)
         }
         serde_json::Value::Null
     }
@@ -251,4 +277,10 @@ pub struct BrowseTreeParams {
 pub struct GetSymbolParams {
     pub entry_path: String,
     pub tree: (Vec<String>, Vec<String>),
+}
+
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+pub struct GetSymbolWithPathParams {
+    pub entry_path: String,
+    pub path: String,
 }

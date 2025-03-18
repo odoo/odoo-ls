@@ -163,9 +163,10 @@ class CollapsibleSection(QWidget):
 
     def go_to_symbol(self, symbol):
         from views.symbols import Symbol
-        self.symbol = Symbol(self.app, symbol[1][-1] if symbol[1] else symbol[0][-1], self.entry_path, symbol)
-        self.app.clear_right_window()
-        self.app.right_panel_layout.addWidget(self.symbol)
+        sym_data = Symbol.prepare_symbol(self.app, symbol[1][-1] if symbol[1] else symbol[0][-1], self.entry_path, symbol)
+        if sym_data:
+            self.symbol = Symbol(sym_data)
+            self.app.replace_right_tab(self.symbol.name, self.symbol, "symbol_tree_" + str(symbol))
 
     def browse_tree(self, app, path, tree):
         from views.tree_browser import TreeBrowser

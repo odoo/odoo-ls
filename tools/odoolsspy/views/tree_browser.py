@@ -68,9 +68,10 @@ class TreeBrowser(QWidget):
             if index.isValid():
                 node = index.internalPointer()
                 from views.symbols import Symbol
-                self.symbol = Symbol(self.app, node.name, self.path, node.tree)
-                self.app.clear_right_window()
-                self.app.right_panel_layout.addWidget(self.symbol)
+                data = Symbol.prepare_symbol(self.app, node.name, self.path, node.tree)
+                if data:
+                    self.symbol = Symbol(data)
+                    self.app.replace_right_tab(self.symbol.name, self.symbol, "symbol_tree_" + str(node.tree))
 
 class Node:
     """Représente un nœud dans la structure personnalisée."""
