@@ -654,8 +654,8 @@ impl PythonArchBuilder {
         let mut stmt_sections = vec![body_section];
         let mut else_clause_exists = false;
 
-        stmt_sections.extend(if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
-            match elif_else_clause.test{
+        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
+            match elif_else_clause.test {
                 Some(ref test_clause) => {
                     last_test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
                         test_clause.range().start(),
@@ -672,7 +672,9 @@ impl PythonArchBuilder {
             self.visit_node(session, &elif_else_clause.body)?;
             let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             Ok::<SectionIndex, Error>(clause_section)
-        }).collect::<Result<Vec<_>, _>>()?);
+        });
+
+        stmt_sections.extend(stmt_clauses_iter.collect::<Result<Vec<_>, _>>()?);
 
         if !else_clause_exists{
             // If there is no else clause, the there is an implicit else clause
