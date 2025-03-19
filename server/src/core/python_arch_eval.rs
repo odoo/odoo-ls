@@ -9,7 +9,6 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range}
 use tracing::{debug, trace, warn};
 
 use crate::constants::*;
-use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
@@ -22,9 +21,9 @@ use super::config::DiagMissingImportsMode;
 use super::entry_point::EntryPoint;
 use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
-use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
 use super::symbols::function_symbol::FunctionSymbol;
+use super::symbols::variable_symbol::{ImportInformation, VariableSymbol};
 
 
 #[derive(Debug, Clone)]
@@ -179,122 +178,25 @@ impl PythonArchEval {
         }
     }
 
-    fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>) -> bool {
-        let import_diag_level = &odoo.config.diag_missing_imports;
-        if *import_diag_level == DiagMissingImportsMode::None {
-            return false
-        }
-        if *import_diag_level == DiagMissingImportsMode::All {
-            return true
-        }
-        if *import_diag_level == DiagMissingImportsMode::OnlyOdoo {
-            let tree = symbol.borrow().get_tree();
-            if tree.0.len() > 0 && tree.0[0] == "odoo" {
-                return true;
-            }
-        }
-        false
-    }
-
-    ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
-    fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<Symbol>>, from_sym: &Rc<RefCell<Symbol>>) -> bool {
-        let sym_ref_cl = sym_ref.clone();
-        let syms_followed = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-            Rc::downgrade(&sym_ref_cl), None, false
-        )), session, &mut None, false, false, None, &mut self.diagnostics);
-        for sym in syms_followed.iter() {
-            let sym = sym.upgrade_weak();
-            if let Some(sym) = sym {
-                if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
-                    let file_sym = sym_ref.borrow().get_file();
-                    if file_sym.is_some() {
-                        let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if rc_file_sym.borrow_mut().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
-                            session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
-                            let mut builder = PythonArchEval::new(self.entry_point.clone(), rc_file_sym);
-                            builder.eval_arch(session);
-                            if self.check_for_loop_evaluation(session, sym_ref.clone(), from_sym) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-                if Rc::ptr_eq(&sym, &from_sym) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
-        let import_results: Vec<ImportResult> = resolve_import_stmt(
-            session,
-            &self.file,
-            from_stmt,
-            name_aliases,
-            level,
-            &mut Some(&mut self.diagnostics));
-
-        for _import_result in import_results.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&_import_result.name, &_import_result.range);
+        for alias in name_aliases {
+            let var_name = alias.asname.as_ref().unwrap_or(&alias.name).to_string().clone();
+            let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&var_name, &alias.range);
             let Some(variable) = variable.clone() else {
                 continue;
             };
-            if _import_result.found {
-                let import_sym_ref = _import_result.symbol.clone();
-                let has_loop = self.check_for_loop_evaluation(session, import_sym_ref, &variable);
-                if !has_loop { //anti-loop. We want to be sure we are not evaluating to the same sym
-                    variable.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(&_import_result.symbol), None)]);
-                    let file_of_import_symbol = _import_result.symbol.borrow().get_file();
-                    if let Some(import_file) = file_of_import_symbol {
-                        let import_file = import_file.upgrade().unwrap();
-                        if !Rc::ptr_eq(&self.file, &import_file) {
-                            self.file.borrow_mut().add_dependency(&mut import_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
-                        }
-                    }
-                } else {
-                    let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
-                    file_tree.extend(_import_result.name.split(".").map(str::to_string));
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
-                        self.diagnostics.push(Diagnostic::new(
-                            Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
-                            Some(DiagnosticSeverity::WARNING),
-                            Some(NumberOrString::String(S!("OLS20004"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Failed to evaluate import {}", file_tree.clone().join(".")),
-                            None,
-                            None,
-                        ));
-                    }
-                }
-
-            } else {
-                let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
-                file_tree.extend(_import_result.name.split(".").map(str::to_string));
-                if BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
-                    continue;
-                }
-                if !self.safe_import.last().unwrap() {
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
-                        self.diagnostics.push(Diagnostic::new(
-                            Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
-                            Some(DiagnosticSeverity::WARNING),
-                            Some(NumberOrString::String(S!("OLS20001"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("{} not found", file_tree.clone().join(".")),
-                            None,
-                            None,
-                        ));
-                    }
-                }
+            variable.borrow_mut().as_variable_mut().import_information = Some(ImportInformation {
+                from: from_stmt.cloned(),
+                level: level,
+                alias: alias.clone(),
+                import_step: self.current_step.clone()
+            });
+            //In workspace we evaluate imports as we want to raise diagnostics if not found. If outside of the workspace, let's keep only information to lazy load them
+            if self.file.borrow().in_workspace() || !self.file.borrow().is_external() {
+                VariableSymbol::load_from_import_information(session, variable, &self.file, &self.entry_point, &mut self.diagnostics);
             }
         }
     }

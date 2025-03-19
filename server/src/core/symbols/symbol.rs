@@ -1716,11 +1716,10 @@ impl Symbol {
     pub fn next_refs(session: &mut SessionInfo, symbol_rc: Rc<RefCell<Symbol>>, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolPtr> {
         //if current symbol is a descriptor, we have to resolve __get__ method before going further
         let mut res = VecDeque::new();
-        let symbol = &*symbol_rc.borrow();
         if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
             let base_attr = base_attr.as_symbol().upgrade();
             if let Some(base_attr) = base_attr {
-                let attribute_type_sym = symbol;
+                let attribute_type_sym = &*symbol_rc.borrow();
                 //TODO shouldn't we set the from_module in the call to get_member_symbol?
                 let get_method = attribute_type_sym.get_member_symbol(session, &S!("__get__"), None, true, false, true, false).0.first().cloned();
                 match get_method {
@@ -1758,7 +1757,16 @@ impl Symbol {
                 }
             }
         }
-        if let Symbol::Variable(v) = symbol {
+        let symbol_type = symbol_rc.borrow().typ().clone();
+        if symbol_type == SymType::VARIABLE {
+            if symbol_rc.borrow().as_variable().is_import_variable.clone() {
+                let file = symbol_rc.borrow().get_file().unwrap().clone();
+                let file = file.upgrade().expect("invalid weak value");
+                let entry_point = file.borrow().get_entry().unwrap();
+                VariableSymbol::load_from_import_information(session, symbol_rc.clone(), &file, &entry_point, diagnostics);
+            }
+        }
+        if let Symbol::Variable(v) = &*symbol_rc.borrow() {
             for eval in v.evaluations.iter() {
                 let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
                 let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
@@ -1816,21 +1824,21 @@ impl Symbol {
                                 continue;
                             }
                             let sym_rc = sym.unwrap();
-                            let sym = sym_rc.borrow();
-                            match *sym {
-                                Symbol::Variable(ref v) => {
-                                    if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !v.is_import_variable {
+                            let sym_type = sym_rc.borrow().typ();
+                            match sym_type {
+                                SymType::VARIABLE => {
+                                    if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !sym_rc.borrow().as_variable().is_import_variable {
                                         continue;
                                     }
-                                    if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
+                                    if stop_on_value && sym_rc.borrow().as_variable().evaluations.len() == 1 && sym_rc.borrow().as_variable().evaluations[0].value.is_some() {
                                         continue;
                                     }
-                                    if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
+                                    if max_scope.is_some() && !sym_rc.borrow().has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
                                         continue;
                                     }
-                                    if v.evaluations.is_empty() && can_eval_external {
+                                    if sym_rc.borrow().as_variable().evaluations.is_empty() && can_eval_external {
                                         //no evaluation? let's check that the file has been evaluated
-                                        let file_symbol = sym.get_file();
+                                        let file_symbol = sym_rc.borrow().get_file();
                                         if let Some(file_symbol) = file_symbol {
                                             if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
                                             session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
@@ -1849,7 +1857,7 @@ impl Symbol {
                                         }
                                     }
                                 },
-                                Symbol::Class(_) => {
+                                SymType::CLASS => {
                                     //On class, follow descriptor declarations
                                     let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     if !next_sym_refs.is_empty() {
@@ -2121,6 +2129,7 @@ impl Symbol {
     pub fn is_field(&self, session: &mut SessionInfo) -> bool {
         match self.typ() {
             SymType::VARIABLE => {
+                //TODO resolve lazy loading
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
@@ -2154,6 +2163,7 @@ impl Symbol {
     pub fn is_specific_field(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
         match self.typ() {
             SymType::VARIABLE => {
+                //TODO resolve lazy loading
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
