@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
+use byteyarn::{yarn, Yarn};
 use lsp_types::notification::ShowMessage;
 use lsp_types::MessageType;
 use ruff_python_ast::Expr;
@@ -12,7 +13,7 @@ use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-use crate::S;
+use crate::{Sy, S};
 
 use super::evaluation::{Evaluation, EvaluationValue};
 
@@ -95,7 +96,7 @@ impl PythonOdooBuilder {
     }
 
     fn _load_class_inherit(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
-        let _inherit = symbol.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
+        let _inherit = symbol.get_symbol(&(vec![], vec![Sy!("_inherit")]), u32::MAX);
         if let Some(_inherit) = _inherit.last() {
             if _inherit.borrow().evaluations().is_none() || _inherit.borrow().evaluations().unwrap().len() == 0 {
                 error!("wrong _inherit structure");
@@ -105,12 +106,12 @@ impl PythonOdooBuilder {
                 if let Some(eval) = eval.as_ref() {
                     match eval {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![S!(s.value.to_str())];
+                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![yarn!("{}", s.value)];
                         },
                         EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
-                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(S!(s.value.to_str()));
+                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(yarn!("{}", s.value));
                                 }
                             }
                         },
@@ -125,17 +126,17 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) -> String {
-        let _name = symbol.get_symbol(&(vec![], vec![S!("_name")]), u32::MAX);
+    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) -> Yarn {
+        let _name = symbol.get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
         if let Some(_name) = _name.last() {
             for eval in _name.borrow().evaluations().unwrap().iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = eval {
-                    return S!(s.value.to_str());
+                    return yarn!("{}", s.value);
                 }
             }
             error!("unable to parse model name");
-            return "".to_string();
+            return Yarn::new("");
         }
         if let Some(inherit_name) = symbol.as_class_sym_mut()._model.as_ref().unwrap().inherit.first() {
             return inherit_name.clone();
@@ -149,13 +150,13 @@ impl PythonOdooBuilder {
             symbol.as_class_sym_mut()._model = None;
             return;
         }
-        if symbol.as_class_sym()._model.as_ref().unwrap().name != S!("base") {
-            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(S!("base"));
+        if symbol.as_class_sym()._model.as_ref().unwrap().name != Sy!("base") {
+            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(Sy!("base"));
         }
     }
 
     fn _load_class_inherits(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
-        let _inherits = symbol.get_symbol(&(vec![], vec![S!("_inherits")]), u32::MAX);
+        let _inherits = symbol.get_symbol(&(vec![], vec![Sy!("_inherits")]), u32::MAX);
         if let Some(_inherits) = _inherits.last() {
             for eval in _inherits.borrow().evaluations().unwrap().iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
@@ -163,7 +164,7 @@ impl PythonOdooBuilder {
                 if let Some(EvaluationValue::DICT(d)) = eval {
                     for (k, v) in d.iter() {
                         if let (Expr::StringLiteral(k), Expr::StringLiteral(v)) = (k,v) {
-                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherits.push((S!(k.value.to_str()), S!(v.value.to_str())));
+                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherits.push((yarn!("{}", k.value), yarn!("{}", v.value)));
                         } else {
                             error!("wrong _inherits value");
                         }
@@ -193,7 +194,7 @@ impl PythonOdooBuilder {
         if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = descr {
             symbol.as_class_sym_mut()._model.as_mut().unwrap().description = S!(s.value.to_str());
         } else {
-            symbol.as_class_sym_mut()._model.as_mut().unwrap().description = symbol.as_class_sym()._model.as_ref().unwrap().name.clone();
+            symbol.as_class_sym_mut()._model.as_mut().unwrap().description = symbol.as_class_sym()._model.as_ref().unwrap().name.to_string();
         }
         let auto = self._get_attribute(session, symbol, &"_auto".to_string());
         if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = auto {
@@ -279,40 +280,40 @@ impl PythonOdooBuilder {
     fn _add_magic_fields(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) {
         //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
         //id
-        let id = symbol.add_new_variable(session, &S!("id"), &symbol.range().clone());
-        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("fields")], vec![S!("Id")]), u32::MAX);
+        let id = symbol.add_new_variable(session, Sy!("id"), &symbol.range().clone());
+        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id")]), u32::MAX);
         if !id_field.is_empty() {
             id.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(id_field.last().unwrap()), Some(true)));
         }
         //display_name
-        let display_name = symbol.add_new_variable(session, &S!("display_name"), &symbol.range().clone());
-        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("fields")], vec![S!("Char")]), u32::MAX);
+        let display_name = symbol.add_new_variable(session, Sy!("display_name"), &symbol.range().clone());
+        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")]), u32::MAX);
         if !char_field.is_empty() {
             display_name.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(char_field.last().unwrap()), Some(true)));
         }
         //if log_access
         if symbol.as_class_sym()._model.as_ref().unwrap().log_access {
             //create_uid
-            let create_uid = symbol.add_new_variable(session, &S!("create_uid"), &symbol.range().clone());
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("fields")], vec![S!("Many2one")]), u32::MAX);
+            let create_uid = symbol.add_new_variable(session, Sy!("create_uid"), &symbol.range().clone());
+            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")]), u32::MAX);
             if !many2one_field.is_empty() {
                 create_uid.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(many2one_field.last().unwrap()), Some(true)));
             }
             //create_date
-            let create_date = symbol.add_new_variable(session, &S!("create_date"), &symbol.range().clone());
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("fields")], vec![S!("Datetime")]), u32::MAX);
+            let create_date = symbol.add_new_variable(session, Sy!("create_date"), &symbol.range().clone());
+            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")]), u32::MAX);
             if !datetime_field.is_empty() {
                 create_date.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(datetime_field.last().unwrap()), Some(true)));
             }
             //write_uid
-            let write_uid = symbol.add_new_variable(session, &S!("write_uid"), &symbol.range().clone());
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("fields")], vec![S!("Many2one")]), u32::MAX);
+            let write_uid = symbol.add_new_variable(session, Sy!("write_uid"), &symbol.range().clone());
+            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")]), u32::MAX);
             if !many2one_field.is_empty() {
                 write_uid.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(many2one_field.last().unwrap()), Some(true)));
             }
             //write_date
-            let write_date = symbol.add_new_variable(session, &S!("write_date"), &symbol.range().clone());
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("fields")], vec![S!("Datetime")]), u32::MAX);
+            let write_date = symbol.add_new_variable(session, Sy!("write_date"), &symbol.range().clone());
+            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")]), u32::MAX);
             if !datetime_field.is_empty() {
                 write_date.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(datetime_field.last().unwrap()), Some(true)));
             }
@@ -328,9 +329,9 @@ impl PythonOdooBuilder {
             //we don't want to compare these classes with themselves
             return false;
         } else {
-            let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("models")], vec![S!("BaseModel")]), u32::MAX);
-            let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("models")], vec![S!("Model")]), u32::MAX);
-            let transient = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![S!("odoo"), S!("models")], vec![S!("TransientModel")]), u32::MAX);
+            let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]), u32::MAX);
+            let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]), u32::MAX);
+            let transient = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]), u32::MAX);
             if base_model.is_empty() || model.is_empty() || transient.is_empty() {
                 session.send_notification(ShowMessage::METHOD, ShowMessageParams{
                     typ: MessageType::ERROR,
@@ -351,7 +352,7 @@ impl PythonOdooBuilder {
             }
         }
         sym.as_class_sym_mut()._model = Some(ModelData::new());
-        let register = sym.get_symbol(&(vec![], vec![S!("_register")]), u32::MAX);
+        let register = sym.get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
         if let Some(register) = register.last() {
             let loc_register = register.borrow();
             let register_evals = &loc_register.evaluations().unwrap();

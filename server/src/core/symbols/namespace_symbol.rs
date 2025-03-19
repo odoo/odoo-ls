@@ -1,3 +1,4 @@
+use byteyarn::Yarn;
 use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
@@ -10,12 +11,12 @@ use super::symbol::Symbol;
 #[derive(Debug)]
 pub struct NamespaceDirectory {
     pub path: String,
-    pub module_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
 }
 
 #[derive(Debug)]
 pub struct NamespaceSymbol {
-    pub name: String,
+    pub name: Yarn,
     pub directories: Vec<NamespaceDirectory>,
     pub is_external: bool,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
@@ -36,7 +37,7 @@ impl NamespaceSymbol {
             })
         }
         Self {
-            name,
+            name: Yarn::from_string(name),
             directories: directories,
             is_external,
             weak_self: None,

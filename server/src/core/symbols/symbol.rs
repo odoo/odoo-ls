@@ -1,8 +1,9 @@
+use byteyarn::{yarn, Yarn};
 use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
-use crate::constants::*;
+use crate::{constants::*, Sy};
 use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::model::Model;
@@ -202,8 +203,8 @@ impl Symbol {
         compiled
     }
 
-    pub fn add_new_variable(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange) -> Rc<RefCell<Self>> {
-        let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name.clone(), range.clone(), self.is_external()))));
+    pub fn add_new_variable(&mut self, _session: &mut SessionInfo, name: Yarn, range: &TextRange) -> Rc<RefCell<Self>> {
+        let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name, range.clone(), self.is_external()))));
         variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));
         variable.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
         match self {
@@ -460,7 +461,7 @@ impl Symbol {
         }
     }
 
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &Yarn {
         match self {
             Symbol::Root(r) => &r.name,
             Symbol::DiskDir(d) => &d.name,
@@ -895,7 +896,7 @@ impl Symbol {
         }
     }
 
-    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> {
+    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> {
         match self {
             Symbol::File(f) => {
                 f.symbols.iter()
@@ -959,8 +960,8 @@ impl Symbol {
         }
     }
 
-    pub fn not_found_paths(&self) -> &Vec<(BuildSteps, Vec<String>)> {
-        static EMPTY_VEC: Vec<(BuildSteps, Vec<String>)> = Vec::new();
+    pub fn not_found_paths(&self) -> &Vec<(BuildSteps, Vec<Yarn>)> {
+        static EMPTY_VEC: Vec<(BuildSteps, Vec<Yarn>)> = Vec::new();
         match self {
             Symbol::File(f) => { &f.not_found_paths },
             Symbol::Root(_) => { &EMPTY_VEC },
@@ -975,7 +976,7 @@ impl Symbol {
         }
     }
 
-    pub fn not_found_paths_mut(&mut self) -> &mut Vec<(BuildSteps, Vec<String>)> {
+    pub fn not_found_paths_mut(&mut self) -> &mut Vec<(BuildSteps, Vec<Yarn>)> {
         match self {
             Symbol::File(f) => { &mut f.not_found_paths },
             Symbol::Root(_) => { panic!("no not_found_path on Root") },
@@ -990,7 +991,7 @@ impl Symbol {
         }
     }
 
-    pub fn get_main_entry_tree(&self, session: &mut SessionInfo) -> (Vec<String>, Vec<String>) {
+    pub fn get_main_entry_tree(&self, session: &mut SessionInfo) -> Tree {
         let mut tree = self.get_tree();
         let len_first_part = tree.0.len();
         let odoo_tree = &session.sync_odoo.main_entry_tree;
@@ -1115,8 +1116,8 @@ impl Symbol {
     }
 
     pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
-        let symbol_tree_files: &Vec<String> = &tree.0;
-        let symbol_tree_content: &Vec<String> = &tree.1;
+        let symbol_tree_files: &Vec<Yarn> = &tree.0;
+        let symbol_tree_content: &Vec<Yarn> = &tree.1;
         let mut iter_sym: Vec<Rc<RefCell<Symbol>>> = vec![];
         if symbol_tree_files.len() != 0 {
             let _mod_iter_sym = self.get_module_symbol(&symbol_tree_files[0]);
@@ -1203,19 +1204,19 @@ impl Symbol {
     pub fn get_content_symbol(&self, name: &str, position: u32) -> ContentSymbols {
         match self {
             Symbol::Class(c) => {
-                c.get_content_symbol(name.to_string(), position)
+                c.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::File(f) => {
-                f.get_content_symbol(name.to_string(), position)
+                f.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                m.get_content_symbol(name.to_string(), position)
+                m.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                p.get_content_symbol(name.to_string(), position)
+                p.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::Function(f) => {
-                f.get_content_symbol(name.to_string(), position)
+                f.get_content_symbol(yarn!("{}", name), position)
             },
             _ => ContentSymbols::default()
         }
@@ -1227,19 +1228,19 @@ impl Symbol {
     pub fn get_sub_symbol(&self, name: &str, position: u32) -> ContentSymbols {
         match self {
             Symbol::Class(c) => {
-                c.get_content_symbol(name.to_string(), position)
+                c.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::File(f) => {
-                f.get_content_symbol(name.to_string(), position)
+                f.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                m.get_content_symbol(name.to_string(), position)
+                m.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                p.get_content_symbol(name.to_string(), position)
+                p.get_content_symbol(yarn!("{}", name), position)
             },
             Symbol::Function(f) => {
-                if let Some(vec) = f.get_ext_symbol(name.to_string()) {
+                if let Some(vec) = f.get_ext_symbol(yarn!("{}", name)) {
                     return ContentSymbols{
                         symbols: vec.clone(),
                         always_defined: true,
@@ -1621,7 +1622,7 @@ impl Symbol {
     }
 
     /// get a Symbol that has the same given range and name
-    pub fn get_positioned_symbol(&self, name: &String, range: &TextRange) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn get_positioned_symbol(&self, name: &Yarn, range: &TextRange) -> Option<Rc<RefCell<Symbol>>> {
         if let Some(symbols) = match self {
             Symbol::Class(c) => { c.symbols.get(name) },
             Symbol::File(f) => {f.symbols.get(name)},
@@ -1930,7 +1931,7 @@ impl Symbol {
 
     //store in result all available members for self: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
+    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>>, with_co_models: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
         if acc.is_none() {
             *acc = Some(HashSet::new());
         }
@@ -2072,7 +2073,7 @@ impl Symbol {
             }
             Symbol::infer_name(odoo, &parent, name, position)
         } else if on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE {
-            let builtins = odoo.get_symbol("", &(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
+            let builtins = odoo.get_symbol("", &(vec![Sy!("builtins")], vec![]), u32::MAX)[0].clone();
             Symbol::infer_name(odoo, &builtins, name, None)
         } else {
             ContentSymbols::default()
@@ -2107,7 +2108,7 @@ impl Symbol {
     fn member_symbol_hook(&self, session: &SessionInfo, name: &String, diagnostics: &mut Vec<Diagnostic>){
         if session.sync_odoo.version_major >= 17 && name == "Form"{
             let tree = self.get_tree();
-            if tree == (vec![S!("odoo"), S!("tests"), S!("common")], vec!()){
+            if tree == (vec![Sy!("odoo"), Sy!("tests"), Sy!("common")], vec!()){
                 diagnostics.push(Diagnostic::new(Range::new(Position::new(0,0),Position::new(0,0)),
                     Some(DiagnosticSeverity::WARNING),
                     Some(NumberOrString::String(S!("OLS20006"))),

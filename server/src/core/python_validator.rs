@@ -1,3 +1,4 @@
+use byteyarn::{yarn, Yarn};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
@@ -5,7 +6,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use crate::constants::*;
+use crate::{constants::*, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::resolve_import_stmt;
@@ -161,7 +162,7 @@ impl PythonValidator {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&f.name.to_string(), &f.range);
+                    let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(f.name.to_string()), &f.range);
                     if let Some(sym) = sym {
                         let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
                         if val_status == BuildStatus::PENDING {
@@ -239,7 +240,7 @@ impl PythonValidator {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
-        let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&c.name.to_string(), &c.range);
+        let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Yarn::from(c.name.to_string()), &c.range);
         if let Some(sym) = sym {
             self._check_model(session, &sym);
             self.sym_stack.push(sym);
@@ -278,7 +279,7 @@ impl PythonValidator {
                 } else {
                     alias.asname.as_ref().unwrap().clone().to_string()
                 };
-                let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&var_name, &alias.range);
+                let variable = self.sym_stack.last().unwrap().borrow_mut().get_positioned_symbol(&Yarn::from(var_name), &alias.range);
                 if let Some(variable) = variable {
                     for evaluation in variable.borrow().evaluations().as_ref().unwrap().iter() {
                         let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol.clone()));
@@ -341,7 +342,7 @@ impl PythonValidator {
             return;
         }
         //Check inherit field
-        let inherit = cl.get_symbol(&(vec![], vec![S!("_inherit")]), u32::MAX);
+        let inherit = cl.get_symbol(&(vec![], vec![Sy!("_inherit")]), u32::MAX);
         if let Some(inherit) = inherit.last() {
             let inherit = inherit.borrow();
             let inherit_evals = &inherit.evaluations().unwrap();
@@ -377,7 +378,7 @@ impl PythonValidator {
 
     fn _check_module_dependency(&mut self, session: &mut SessionInfo, model: &String, range: &TextRange) {
         if let Some(from) = self.current_module.as_ref() {
-            let model = session.sync_odoo.models.get(model);
+            let model = session.sync_odoo.models.get(&yarn!("{}", model));
             if let Some(model) = model {
                 let model = model.clone();
                 let borrowed_model = model.borrow();

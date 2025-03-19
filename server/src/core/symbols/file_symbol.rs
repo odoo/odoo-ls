@@ -1,3 +1,4 @@
+use byteyarn::{yarn, Yarn};
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model};
@@ -7,7 +8,7 @@ use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
 #[derive(Debug)]
 pub struct FileSymbol {
-    pub name: String,
+    pub name: Yarn,
     pub path: String,
     pub is_external: bool,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
@@ -16,7 +17,7 @@ pub struct FileSymbol {
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
-    pub not_found_paths: Vec<(BuildSteps, Vec<String>)>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<Yarn>)>,
     pub in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
@@ -26,16 +27,16 @@ pub struct FileSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<String, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<Yarn, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl FileSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
         let mut res = Self {
-            name,
+            name: yarn!("{}", name),
             path,
             is_external,
             weak_self: None,

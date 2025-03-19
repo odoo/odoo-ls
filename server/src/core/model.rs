@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::rc::Weak;
+use byteyarn::Yarn;
 use lsp_types::MessageType;
 use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
@@ -15,9 +16,9 @@ use super::symbols::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct ModelData {
-    pub name: String,
-    pub inherit: Vec<String>,
-    pub inherits: Vec<(String, String)>,
+    pub name: Yarn,
+    pub inherit: Vec<Yarn>,
+    pub inherits: Vec<(Yarn, Yarn)>,
 
     pub description: String,
     pub auto: bool,
@@ -40,7 +41,7 @@ pub struct ModelData {
 impl ModelData {
     pub fn new() -> Self {
         Self {
-            name: String::new(),
+            name: Yarn::new(""),
             inherit: Vec::new(),
             inherits: Vec::new(),
             description: String::new(),
@@ -65,13 +66,13 @@ impl ModelData {
 
 #[derive(Debug)]
 pub struct Model {
-    name: String,
+    name: Yarn,
     symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
 }
 
 impl Model {
-    pub fn new(name: String, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(name: Yarn, symbol: Rc<RefCell<Symbol>>) -> Self {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
@@ -184,7 +185,7 @@ impl Model {
     /* Return all symbols that build this model.
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
     */
-    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<String>)> {
+    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             if let Some(from_module) = from_module.as_ref() {

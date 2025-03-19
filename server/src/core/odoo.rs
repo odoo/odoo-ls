@@ -11,6 +11,7 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use byteyarn::{yarn, Yarn};
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
@@ -26,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use std::cmp;
 use regex::Regex;
-use crate::constants::*;
+use crate::{constants::*, Sy};
 use super::config::{DiagMissingImportsMode, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
@@ -61,12 +62,12 @@ pub struct SyncOdoo {
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
     pub has_valid_python: bool,
-    pub main_entry_tree: Vec<String>,
+    pub main_entry_tree: Vec<Yarn>,
     pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
     file_mgr: Rc<RefCell<FileMgr>>,
-    pub modules: HashMap<String, Weak<RefCell<Symbol>>>,
-    pub models: HashMap<String, Rc<RefCell<Model>>>,
+    pub modules: HashMap<Yarn, Weak<RefCell<Symbol>>>,
+    pub models: HashMap<Yarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
     pub watched_file_updates: Arc<AtomicU32>,
@@ -375,8 +376,8 @@ impl SyncOdoo {
                 );
                 session.sync_odoo.entry_point_mgr.borrow_mut().add_entry_to_addons(odoo_addon_path.sanitize(),
                     Some(odoo_entry.clone()),
-                    Some(vec![S!("odoo"),
-                        S!("addons")]));
+                    Some(vec![Sy!("odoo"),
+                        Sy!("addons")]));
             }
         } else {
             session.log_message(MessageType::WARNING, format!("Unable to find odoo addons path at {}. You can ignore this message if you use a nightly build or if your community addons are in another addon paths.", odoo_addon_path.sanitize()));
@@ -389,8 +390,8 @@ impl SyncOdoo {
                 );
                 session.sync_odoo.entry_point_mgr.borrow_mut().add_entry_to_addons(addon.clone(),
                     Some(odoo_entry.clone()),
-                    Some(vec![S!("odoo"),
-                        S!("addons")]));
+                    Some(vec![Sy!("odoo"),
+                        Sy!("addons")]));
             }
         }
         return true;
@@ -407,7 +408,7 @@ impl SyncOdoo {
                     for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
                         match item {
                             Ok(item) => {
-                                if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&item.file_name().to_str().unwrap().to_string()) {
+                                if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&yarn!("{}", item.file_name().to_str().unwrap())) {
                                     let module_symbol = Symbol::create_from_path(session, &item.path(), addons_symbol.clone(), true);
                                     if module_symbol.is_some() {
                                         session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
@@ -632,7 +633,7 @@ impl SyncOdoo {
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if DEBUG_THREADS {
-            trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+            trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }
         if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
@@ -647,7 +648,7 @@ impl SyncOdoo {
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if DEBUG_THREADS {
-            trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+            trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }
         if symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
@@ -661,7 +662,7 @@ impl SyncOdoo {
 
     pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if DEBUG_THREADS {
-            trace!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+            trace!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }
         if symbol.borrow().build_status(BuildSteps::ODOO) != BuildStatus::IN_PROGRESS {
             let sym_clone = symbol.clone();
@@ -674,7 +675,7 @@ impl SyncOdoo {
 
     pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if DEBUG_THREADS {
-            trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(symbol.borrow().name()));
+            trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }
         if symbol.borrow().build_status(BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
             symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
@@ -1279,7 +1280,7 @@ impl Odoo {
                 }
             }
             if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_ref().unwrap_or(&"".to_string()).clone() + "/odoo/addons" {
-                let addons_symbol = session.sync_odoo.get_main_entry().borrow().root.clone().borrow().get_symbol(&(vec![S!("odoo"), S!("addons")], vec![]), u32::MAX);
+                let addons_symbol = session.sync_odoo.get_main_entry().borrow().root.clone().borrow().get_symbol(&(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX);
                 if !addons_symbol.is_empty() {
                     let module_symbol = Symbol::create_from_path(session, &PathBuf::from(path), addons_symbol[0].clone(), true);
                     if module_symbol.is_some() {
