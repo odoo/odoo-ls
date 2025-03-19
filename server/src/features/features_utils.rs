@@ -1,3 +1,4 @@
+use byteyarn::yarn;
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -175,7 +176,7 @@ impl FeaturesUtils {
                             return FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset))
                         }
                     }
-                    if let Some(model) = session.sync_odoo.models.get(&str).cloned() {
+                    if let Some(model) = session.sync_odoo.models.get(&yarn!("{}", str)).cloned() {
                         let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
                         for main_class_rc in main_classes.iter() {
                             let main_class = main_class_rc.borrow();
@@ -360,12 +361,12 @@ impl FeaturesUtils {
                 .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent.clone(), &anno_expr.range().start()).0.first().cloned())
                 .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade())
                  else {
-                    return arg_name
+                    return arg_name.to_string()
                 };
                 let type_name = type_symbol.borrow().name().clone();
                 format!("{}: {}", arg_name, type_name)
             },
-            None => arg_name
+            None => arg_name.to_string()
         }
     }
 
@@ -392,7 +393,7 @@ impl FeaturesUtils {
                                                     if typ.typ() == SymType::VARIABLE {
                                                         "Any".to_string()
                                                     } else {
-                                                        typ.name().clone()
+                                                        typ.name().to_string()
                                                     }
                                                 } else {
                                                     "Any".to_string()
@@ -414,7 +415,7 @@ impl FeaturesUtils {
                             SymType::FILE => S!("File"),
                             SymType::PACKAGE(_) => S!("Module"),
                             SymType::NAMESPACE => S!("Namespace"),
-                            SymType::CLASS => if eval_weak.is_super {format!("super[{}]", S!(inferred_type.name()))} else {S!(inferred_type.name())}, // TODO: Maybe do something special if it is a descriptor
+                            SymType::CLASS => if eval_weak.is_super {format!("super[{}]", inferred_type.name().to_string())} else {inferred_type.name().to_string()}, // TODO: Maybe do something special if it is a descriptor
                             _ => S!("Any")
                         }
                     }

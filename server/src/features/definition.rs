@@ -1,3 +1,4 @@
+use byteyarn::yarn;
 use lsp_types::{GotoDefinitionResponse, Location, Range};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
@@ -42,7 +43,7 @@ impl DefinitionFeature {
     fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<Location>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                expr.value.to_string()
+                yarn!("{}", expr.value.to_string())
             } else {
                 return false;
             }

@@ -1,13 +1,14 @@
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use byteyarn::Yarn;
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use crate::constants::*;
+use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -243,7 +244,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("list")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().expect("builtins list not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -259,7 +260,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("tuple")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().expect("builtins list not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -275,7 +276,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("dict")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().expect("builtins list not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -291,7 +292,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("set")]), u32::MAX).last().expect("builtins set not found")),
+                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().expect("builtins set not found")),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -317,23 +318,23 @@ impl Evaluation {
     pub fn new_constant(odoo: &mut SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
         let tree_value = match &values {
             Expr::StringLiteral(_s) => {
-                (vec![S!("builtins")], vec![S!("str")])
+                (vec![Sy!("builtins")], vec![Sy!("str")])
             },
             Expr::BooleanLiteral(_b) => {
-                (vec![S!("builtins")], vec![S!("bool")])
+                (vec![Sy!("builtins")], vec![Sy!("bool")])
             },
             Expr::NumberLiteral(_n) => {
                 match _n.value {
-                    Number::Float(_) => (vec![S!("builtins")], vec![S!("float")]),
-                    Number::Int(_) => (vec![S!("builtins")], vec![S!("int")]),
-                    Number::Complex { .. } => (vec![S!("builtins")], vec![S!("complex")]),
+                    Number::Float(_) => (vec![Sy!("builtins")], vec![Sy!("float")]),
+                    Number::Int(_) => (vec![Sy!("builtins")], vec![Sy!("int")]),
+                    Number::Complex { .. } => (vec![Sy!("builtins")], vec![Sy!("complex")]),
                 }
             },
             Expr::BytesLiteral(_b) => {
-                (vec![S!("builtins")], vec![S!("bytes")])
+                (vec![Sy!("builtins")], vec![Sy!("bytes")])
             },
             Expr::EllipsisLiteral(_e) => {
-                (vec![S!("builtins")], vec![S!("Ellipsis")])
+                (vec![Sy!("builtins")], vec![Sy!("Ellipsis")])
             },
             Expr::NoneLiteral(_n) => {
                 let mut eval = Evaluation::new_none();
@@ -341,7 +342,7 @@ impl Evaluation {
                 eval.value = Some(EvaluationValue::CONSTANT(values));
                 return eval
             }
-            _ => {(vec![S!("builtins")], vec![S!("object")])}
+            _ => {(vec![Sy!("builtins")], vec![Sy!("object")])}
         };
         let symbol;
         if !values.is_none_literal_expr() {
@@ -720,7 +721,7 @@ impl Evaluation {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
                         } else {
-                            if base_sym.borrow().match_tree_from_any_entry(session, &(vec![S!("builtins")], vec![S!("super")])){
+                            if base_sym.borrow().match_tree_from_any_entry(session, &(vec![Sy!("builtins")], vec![Sy!("super")])){
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty(){
                                     let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer);
@@ -1092,7 +1093,7 @@ impl Evaluation {
                         evals.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("bool")]), u32::MAX).last().expect("builtins class not found")),
+                                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().expect("builtins class not found")),
                                     context: HashMap::new(),
                                     instance: Some(true),
                                     is_super: false,
@@ -1137,7 +1138,7 @@ impl Evaluation {
                     Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                weak: Rc::downgrade(&odoo.get_symbol("", &(vec![S!("builtins")], vec![S!("str")]), u32::MAX).last().expect("builtins class not found")),
+                                weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().expect("builtins class not found")),
                                 context: HashMap::new(),
                                 instance: Some(true),
                                 is_super: false,
@@ -1238,7 +1239,7 @@ impl Evaluation {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionnary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
                 for func_arg in function.args.iter().skip(to_skip as usize) {
-                    if func_arg.symbol.upgrade().unwrap().borrow().name() == arg_identifier.id {
+                    if func_arg.symbol.upgrade().unwrap().borrow().name().to_string() == arg_identifier.id {
                         diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone(), from_module.clone()));
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;

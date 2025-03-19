@@ -30,6 +30,7 @@ winapi = { version = "0.3.9", features = ["winbase", "processthreadsapi", "synch
 ctrlc = "3.4.4"
 once_cell = "1.20.1"
 itertools = "0.14.0"
+byteyarn = "0.5.1"
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.29.0", features = ["process"] }
 

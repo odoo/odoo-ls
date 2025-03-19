@@ -1,3 +1,4 @@
+use byteyarn::Yarn;
 use ruff_text_size::{TextRange, TextSize};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -7,7 +8,7 @@ use weak_table::PtrWeakHashSet;
 use crate::constants::SymType;
 use crate::core::model::ModelData;
 use crate::threads::SessionInfo;
-use crate::S;
+use crate::{Sy, S};
 
 use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -15,7 +16,7 @@ use super::symbol_mgr::{SectionRange, SymbolMgr};
 
 #[derive(Debug)]
 pub struct ClassSymbol {
-    pub name: String,
+    pub name: Yarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
     pub bases: Vec<Weak<RefCell<Symbol>>>,
@@ -29,16 +30,16 @@ pub struct ClassSymbol {
     //Trait SymbolMgr
     //--- Body symbols
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<String, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<String, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<Yarn, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl ClassSymbol {
 
     pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
-            name,
+            name: Yarn::from(name),
             is_external,
             weak_self: None,
             parent: None,
@@ -86,7 +87,7 @@ impl ClassSymbol {
     }
 
     pub fn is_descriptor(&self) -> bool {
-        for get_sym in self.get_content_symbol(S!("__get__"), u32::MAX).symbols.iter() {
+        for get_sym in self.get_content_symbol(Sy!("__get__"), u32::MAX).symbols.iter() {
             if get_sym.borrow().typ() == SymType::FUNCTION {
                 return true;
             }

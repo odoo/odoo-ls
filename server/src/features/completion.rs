@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
+use byteyarn::Yarn;
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::Ranged;
@@ -10,7 +11,7 @@ use crate::core::import_resolver;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
-use crate::S;
+use crate::{Sy, S};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::features_utils::FeaturesUtils;
 use crate::core::file_mgr::FileInfo;
@@ -295,7 +296,7 @@ fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, s
             let names = import_resolver::get_all_valid_names(session, file, None, S!(alias.name.id.as_str()), None);
             for name in names {
                 items.push(CompletionItem {
-                    label: name,
+                    label: name.to_string(),
                     kind: Some(lsp_types::CompletionItemKind::MODULE),
                     ..Default::default()
                 });
@@ -315,7 +316,7 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol
             let names = import_resolver::get_all_valid_names(session, file, None, S!(stmt_import.names[0].name.id.as_str()), Some(stmt_import.level));
             for name in names {
                 items.push(CompletionItem {
-                    label: name,
+                    label: name.to_string(),
                     kind: Some(lsp_types::CompletionItemKind::MODULE),
                     ..Default::default()
                 });
@@ -327,7 +328,7 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol
             let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref(), S!(alias.name.id.as_str()), Some(stmt_import.level));
             for name in names {
                 items.push(CompletionItem {
-                    label: name,
+                    label: name.to_string(),
                     kind: Some(lsp_types::CompletionItemKind::MODULE),
                     ..Default::default()
                 });
@@ -553,7 +554,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                                 model_rc.borrow().find_module());
                             let required_modules = modules.filter(|module|
                                 !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name));
-                            let dep_names: Vec<String> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
+                            let dep_names: Vec<Yarn> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
                             if !dep_names.is_empty() {
                                 if !session.sync_odoo.config.ac_filter_model_names{
                                     continue
@@ -565,12 +566,12 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                                         dep_names.join(", ")
                                     ))),
                                 });
-                                sort_text = Some(label.clone());
+                                sort_text = Some(label.to_string());
                             };
                         }
 
                         items.push(CompletionItem {
-                            label,
+                            label: label.to_string(),
                             insert_text,
                             kind: Some(lsp_types::CompletionItemKind::CLASS),
                             label_details,
@@ -636,7 +637,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     }
                     if let Some(object) = &obj {
                         if index == split_expr.len() - 1 {
-                            let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+                            let mut all_symbols: HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>> = HashMap::new();
                             Symbol::all_members(&object, session, &mut all_symbols, true, current_module.clone(), &mut None, false);
                             for (_symbol_name, symbols) in all_symbols {
                                 //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
@@ -710,7 +711,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                 let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, true, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     if let Some(parent_sym) = parent_sym_type.upgrade_weak() {
-                        let mut all_symbols: HashMap<String, Vec<(Rc<RefCell<Symbol>>, Option<String>)>> = HashMap::new();
+                        let mut all_symbols: HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>> = HashMap::new();
                         let from_module = file.borrow().find_module().clone();
                         Symbol::all_members(&parent_sym, session, &mut all_symbols, true, from_module, &mut None, parent_sym_eval.as_weak().is_super);
                         for (_symbol_name, symbols) in all_symbols {
@@ -743,7 +744,7 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
-                    let get_item = borrowed.get_symbol(&(vec![], vec![S!("__getitem__")]), u32::MAX);
+                    let get_item = borrowed.get_symbol(&(vec![], vec![Sy!("__getitem__")]), u32::MAX);
                     if let Some(get_item) = get_item.last() {
                         if get_item.borrow().evaluations().as_ref().unwrap().len() == 1 {
                             let get_item_bw = get_item.borrow();
@@ -768,7 +769,7 @@ fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_nam
         let symbols = Symbol::get_all_infered_names(session.sync_odoo,& scope, &name, Some(offset as u32));
         for symbol in symbols {
             items.push(CompletionItem {
-                label: symbol.borrow().name().clone(),
+                label: symbol.borrow().name().to_string(),
                 kind: Some(lsp_types::CompletionItemKind::VARIABLE),
                 ..Default::default()
             });
@@ -859,7 +860,7 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
     None
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<String>) -> CompletionItem {
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<Yarn>) -> CompletionItem {
     //TODO use dependency to show it? or to filter depending of configuration
     let typ = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
         Rc::downgrade(symbol),
@@ -879,7 +880,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         label_details= match typ[0].upgrade_weak().unwrap().borrow().typ() {
             SymType::CLASS => Some(CompletionItemLabelDetails {
                 detail: None,
-                description: Some(typ[0].upgrade_weak().unwrap().borrow().name().clone()),
+                description: Some(typ[0].upgrade_weak().unwrap().borrow().name().to_string()),
             }),
             SymType::VARIABLE => {
                 let var_upgraded = typ[0].upgrade_weak().unwrap();
@@ -1000,7 +1001,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefC
         };
     }
     CompletionItem {
-        label: symbol.borrow().name().clone(),
+        label: symbol.borrow().name().to_string(),
         label_details: label_details,
         detail: None,
         kind: Some(get_completion_item_kind(symbol)),

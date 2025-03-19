@@ -1,6 +1,8 @@
 #![allow(non_camel_case_types)]
 use core::fmt;
 
+use byteyarn::{yarn, Yarn};
+
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "0.4.1";
 
@@ -9,13 +11,13 @@ pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;
 pub const DEBUG_STEPS: bool = false;
 
-pub type Tree = (Vec<String>, Vec<String>);
+pub type Tree = (Vec<Yarn>, Vec<Yarn>);
 
 pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
-    (a.iter().map(|x| x.to_string()).collect(), b.iter().map(|x| x.to_string()).collect())
+    (a.iter().map(|x| yarn!("{}", *x)).collect(), b.iter().map(|x| yarn!("{}", *x)).collect())
 }
 
-pub fn flatten_tree(tree: &Tree) -> Vec<String> {
+pub fn flatten_tree(tree: &Tree) -> Vec<Yarn> {
     [tree.0.clone(), tree.1.clone()].concat()
 }
 
