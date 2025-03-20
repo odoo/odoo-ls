@@ -295,9 +295,28 @@ impl PythonArchBuilder {
                 self.visit_named_expr(session, &named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
-                for expr in bool_op_expr.values.iter() {
+                // introduce sections here
+                // Due to short circuit behavior
+                // Further conditions can be skipped
+                // Which could have named expressions
+
+                // one section per value
+                // one succeeding section with all the value sections in OR
+                let scope = self.sym_stack.last().unwrap().clone();
+                let mut prev_section = scope.borrow().as_symbol_mgr().get_last_index();
+                let cond_sections = bool_op_expr.values.iter().map(|expr|{
+                    scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                        expr.range().start(),
+                        Some(SectionIndex::INDEX(prev_section))
+                    ).index;
                     self.visit_expr(session, &expr);
-                }
+                    prev_section = scope.borrow().as_symbol_mgr().get_last_index();
+                    SectionIndex::INDEX(prev_section)
+                }).collect::<Vec<_>>();
+                scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                    bool_op_expr.range().end() + TextSize::new(1),
+                    Some(SectionIndex::OR(cond_sections))
+                );
             },
             Expr::BinOp(bin_op_expr) => {
                 self.visit_expr(session, &bin_op_expr.left);
