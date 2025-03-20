@@ -4,6 +4,11 @@ use ruff_text_size::TextSize;
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::Symbol};
 
+#[derive(Debug, Default)]
+pub struct ContentSymbols {
+    pub symbols: Vec<Rc<RefCell<Symbol>>>,
+    pub always_defined: bool
+}
 
 #[derive(Debug, Clone)]
 pub enum SectionIndex {
@@ -25,10 +30,10 @@ pub trait SymbolMgr {
     fn get_last_index(&self) -> u32;
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
-    fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<Symbol>>>;
+    fn get_content_symbol(&self, name: String, position: u32) -> ContentSymbols;
     fn get_ext_symbol(&self, name: String) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
     fn _init_symbol_mgr(&mut self);
-    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> Vec<Rc<RefCell<Symbol>>>;
+    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
 }
 
 
@@ -93,13 +98,13 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///Return all the symbols that are valid as last declaration for the given position
-        fn get_symbol(&self, name: String, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
+        fn get_content_symbol(&self, name: String, position: u32) -> ContentSymbols {
             let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
             if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
                 return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new());
             }
-            vec![]
+            ContentSymbols::default()
         }
 
         fn get_ext_symbol(&self, name: String) -> Option<&Vec<Rc<RefCell<Symbol>>>> {
@@ -107,12 +112,13 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> Vec<Rc<RefCell<Symbol>>> {
-            let mut res = vec![];
+        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+            let mut res = ContentSymbols::default();
             match index {
                 SectionIndex::NONE => { return res; },
                 SectionIndex::INDEX(index) => {
                     if acc.contains(index){
+                        res.always_defined = true;
                         return res;
                     }
                     let section = self.sections.get(*index as usize).unwrap();
@@ -120,20 +126,27 @@ macro_rules! impl_section_mgr_for {
                     if let Some(symbols) = map.get(index) {
                         for loc_sym in symbols.iter().rev() {
                             if loc_sym.borrow().range().start().to_u32() < position {
-                                res.push(loc_sym.clone());
+                                res.symbols.push(loc_sym.clone());
                                 break;
                             }
                         }
                     }
                     acc.insert(*index);
-                    if !res.is_empty() {
+                    if !res.symbols.is_empty() {
+                        res.always_defined = true;
                         return res;
                     }
                     res = self._get_loc_symbol(map, position, &section.previous_indexes, acc);
                 },
                 SectionIndex::OR(indexes) => {
+                    if indexes.is_empty(){
+                        unreachable!("Or indexes should not be empty")
+                    }
+                    res.always_defined = true;
                     for index in indexes.iter() {
-                        res.extend(self._get_loc_symbol(map, position, index, acc));
+                        let sub_result = self._get_loc_symbol(map, position, index, acc);
+                        res.symbols.extend(sub_result.symbols);
+                        res.always_defined = res.always_defined && sub_result.always_defined;
                     }
                 }
             }

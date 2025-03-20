@@ -214,6 +214,7 @@ pub enum EvaluationSymbolPtr {
     ARG(u32),
     DOMAIN,
     NONE,
+    UNBOUND(String),
     #[default]
     ANY
 }
@@ -395,6 +396,16 @@ impl Evaluation {
             range: None
         }
     }
+    pub fn new_unbound(name: String) -> Self {
+        Self {
+            symbol: EvaluationSymbol {
+                sym: EvaluationSymbolPtr::UNBOUND(name),
+                get_symbol_hook: None,
+            },
+            value: None,
+            range: None
+        }
+    }
     //return the evaluation but valid outside of the given function scope
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
         let mut res = vec![];
@@ -416,7 +427,7 @@ impl Evaluation {
                     }
                 }
             },
-            EvaluationSymbolPtr::SELF | EvaluationSymbolPtr::ARG(_) | EvaluationSymbolPtr::NONE | EvaluationSymbolPtr::ANY |EvaluationSymbolPtr::DOMAIN => {
+            _ => {
                 res.push(self.clone());
             },
         }
@@ -469,8 +480,8 @@ impl Evaluation {
     pub fn from_sections(parent: &Symbol, sections: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>) -> Vec<Evaluation> {
         let mut res = vec![];
         let section = parent.as_symbol_mgr().get_section_for(u32::MAX);
-        let syms = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
-        for sym in syms {
+        let content_symbols = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
+        for sym in content_symbols.symbols {
             let mut is_instance = None;
             if matches!(sym.borrow().typ(), SymType::VARIABLE | SymType::FUNCTION) {
                 for eval in sym.borrow().evaluations().unwrap().iter() {
@@ -957,21 +968,27 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Expr(Expr::Named(_)) | ExprOrIdent::Ident(_) | ExprOrIdent::Parameter(_) => {
-                let infered_syms = match ast {
+                let (inferred_syms, name) = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
-                        Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
+                        let name = expr.id.to_string();
+                        (Symbol::infer_name(odoo, & parent, &name, Some( max_infer.to_u32())), name)
                     },
                     ExprOrIdent::Expr(Expr::Named(expr))  => {
                         match *expr.target {
-                            Expr::Name(ref expr) => Symbol::infer_name(odoo, &parent, &expr.id.to_string(), Some(expr.range.end().to_u32())),
-                            _ => panic!("NamedExpr can only have an identifier")
+                            Expr::Name(ref expr) => {
+                                let name = expr.id.to_string();
+                                (Symbol::infer_name(odoo, &parent, &name, Some(expr.range.end().to_u32())), name)
+                            },
+                            _ => unreachable!("NamedExpr can only have an identifier")
                         }
                     },
                     ExprOrIdent::Ident(expr) => {
-                        Symbol::infer_name(odoo, & parent, & expr.id.to_string(), Some( max_infer.to_u32()))
+                        let name = expr.id.to_string();
+                        (Symbol::infer_name(odoo, & parent, &name, Some( max_infer.to_u32())), name)
                     },
                     ExprOrIdent::Parameter(expr) => {
-                        Symbol::infer_name(odoo, & parent, & expr.name.id.to_string(), Some( max_infer.to_u32()))
+                        let name = expr.name.id.to_string();
+                        (Symbol::infer_name(odoo, & parent, &name, Some( max_infer.to_u32())), name)
                     }
                     _ => {
                         unreachable!();
@@ -985,11 +1002,14 @@ impl Evaluation {
                     _ => {}
                 }
 
-                if infered_syms.is_empty() {
+                if inferred_syms.symbols.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                for infered_sym in infered_syms.iter() {
-                    evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(infered_sym), None));
+                for inferred_sym in inferred_syms.symbols.iter() {
+                    evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(inferred_sym), None));
+                }
+                if !inferred_syms.always_defined{
+                    evals.push(Evaluation::new_unbound(name));
                 }
             },
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
@@ -1015,7 +1035,7 @@ impl Evaluation {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                     }
                     let base = base.upgrade_weak().unwrap();
-                    let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX);
+                    let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX).symbols;
                     if get_item.len() == 1 {
                         let get_item = &get_item[0];
                         let get_item = get_item.borrow();
@@ -1488,6 +1508,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ANY => None,
             EvaluationSymbolPtr::ARG(_) => None,
             EvaluationSymbolPtr::NONE => None,
+            EvaluationSymbolPtr::UNBOUND(_) => None,
             EvaluationSymbolPtr::SELF => Some(true),
             EvaluationSymbolPtr::DOMAIN => Some(false), //domain is always used for types
             EvaluationSymbolPtr::WEAK(w) => w.instance
@@ -1518,6 +1539,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ANY => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::ARG(_) => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
+            EvaluationSymbolPtr::UNBOUND(_) => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
             EvaluationSymbolPtr::SELF => {
                 let class = context.as_ref().
@@ -1541,6 +1563,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ANY => eval,
             EvaluationSymbolPtr::ARG(_) => eval,
             EvaluationSymbolPtr::NONE => eval,
+            EvaluationSymbolPtr::UNBOUND(_) => eval,
             EvaluationSymbolPtr::DOMAIN => eval,
             EvaluationSymbolPtr::SELF => {
                 let class = context.as_ref().and_then(|context| context.get(&S!("base_call"))).unwrap_or(&ContextValue::BOOLEAN(false));
