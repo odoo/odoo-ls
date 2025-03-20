@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.6.0 - 2025/24/03
+
+### Key features
+
+- OdooLS is now able to run on any python file, even if this python file is not part of your odoo setup. It will then run
+like a classical LSP and provide you hover, autocompletion, gotodefinition, etc... but without any odoo knowledge.
+- As the core structure should now be in its nearly final form and because of the previous point, OdooLS now has a base test suite to ensure we are keeping every feature stable patch after patch ! These will grow in the future.
+- OdooLS can now handle Walrus operator ⊹╰(⌣ʟ⌣)╯⊹
+- OdooLS now has improved inferencer engine and can parse way more expressions and statements
+- Various cache and algorithm improvements speed up the server by ~30%, but these ~30% are lost with new features and required parsing...
+- Memory usage has been improved by ~7%
+
+### Server
+
+- Introduce EntryPoints. OdooLS will now provide features for a file depending on its entrypoint: It can be the main entryPoints (usually the odoo project, with odoo/__main__.py), or a single-file entrypoint, the current file. Depending on this context, the server
+can act diffently and then work on any python file, even out of the odoo structure. Temporary files are not yet handled however, we
+still rely on the disk path to identify a file (will change in next updates)
+- Improve Evaluations by handling following Expressions and Statements:
+  - Number literals: Float and Complex
+  - If blocks
+  - unary operators
+  - constants (ellipsis and None)
+  - basic FString
+  - typing.Self
+- Make results unique in model name hover
+- Add a cache to import resolver, speeding up the process.
+- Add traceback to error info in crash report
+- Use Yarn instead of String to store small names of symbols to speed up and improve memory usage
+
+### Server Fixs
+
+- A module is now automatically (re)imported if reloaded or created if it is in addons path.
+- Fix TestCursor hook behaviour to show right Cursor class in tests directories
+- Fix BorrowError on FileManager clear method
+- Hover and GotoDefinition features are now working in .pyi files
+
+### Vscode Fixs
+
+- Prevent throwing an error notification when the client is stopping
+- Improve reactivity of the server if an interruption is coming during processing or shutdown event
+
 ## 0.4.1 - 2025/12/02
 
 Small patch that address crashes we got from your reports
