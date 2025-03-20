@@ -1,3 +1,5 @@
+use core::str;
+use std::process::Command;
 use std::{env, fs};
 
 use std::path::PathBuf;
@@ -10,6 +12,17 @@ use odoo_ls_server::S;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::rolling::RollingFileAppender;
 use tracing_subscriber::{fmt, layer::SubscriberExt, FmtSubscriber};
+
+fn get_python_command() -> Option<String> {
+    for cmd in &["python3", "python"] {
+        if let Ok(output) = Command::new(cmd).arg("--version").output() {
+            if output.status.success() {
+                return Some(S!(*cmd));
+            }
+        }
+    }
+    None
+}
 
 pub fn setup_server(with_odoo: bool) -> SyncOdoo {
 
@@ -28,7 +41,7 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
         .with_writer(file_writer)
         .finish();
     let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
-    tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber)).expect("Unable to set default tracing subscriber");
+    let _ = tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber));
 
 
     let community_path = if with_odoo {
@@ -46,7 +59,10 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
     let mut config = Config::new();
     config.addons = vec![test_addons_path.sanitize()];
     config.odoo_path = community_path.map(|x| PathBuf::from(x).sanitize());
-    config.python_path = S!("python");
+    let Some(python_cmd) = get_python_command() else {
+        panic!("Python not found")
+    };
+    config.python_path = python_cmd;
     config.refresh_mode = odoo_ls_server::core::config::RefreshMode::Off;
     config.diag_missing_imports = DiagMissingImportsMode::All;
     config.no_typeshed = false;
