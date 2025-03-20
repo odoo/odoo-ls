@@ -2,10 +2,11 @@ use byteyarn::{yarn, Yarn};
 use ruff_text_size::TextRange;
 
 use crate::{constants::flatten_tree, core::evaluation::Evaluation, threads::SessionInfo};
-use std::{cell::RefCell, rc::{Rc, Weak}};
+use core::fmt;
+use std::{cell::RefCell, f32::consts::E, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
-
+ 
 #[derive(Debug)]
 pub struct VariableSymbol {
     pub name: Yarn,
@@ -41,6 +42,23 @@ impl VariableSymbol {
         //TODO it does not use get_symbol call, and only evaluate "sym" from EvaluationSymbol
         return self.evaluations.len() >= 1 && self.evaluations.iter().all(|x| !x.symbol.is_instance().unwrap_or(true)) && !self.is_import_variable;
     }
+
+    // pub fn full_size_of(self) -> serde_json::Value {
+    //     let name_to_add = if self.name.len() > 15 {
+    //         self.name.len()
+    //     } else {
+    //         0
+    //     };
+    //     let mut evals = 0;
+    //     for eval in self.evaluations.iter() {
+    //         evals += eval.full_size_of();
+    //     }
+    //     size_of::<Self>() +
+    //     name_to_add +
+    //     self.doc_string.map(|x| x.capacity()).unwrap_or(0) +
+    //     self.ast_indexes.capacity() +
+    //     evals
+    // }
 
     /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
     pub fn get_relational_model(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
