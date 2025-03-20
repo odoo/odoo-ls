@@ -2,6 +2,7 @@ use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
+use crate::core::symbols::function_symbol::Argument;
 use crate::utils::PathSanitizer;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -151,6 +152,10 @@ impl FeaturesUtils {
             }
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let Some(symbol) = eval_symbol.upgrade_weak() else {
+                // Check if it is UNBOUND
+                if let EvaluationSymbolPtr::UNBOUND(name) = eval_symbol{
+                    value += format!("```python  \n(variable) {name}: Unbound```").as_str();
+                }
                 continue;
             };
             //search for a constant evaluation like a model name or domain field
@@ -209,27 +214,25 @@ impl FeaturesUtils {
                     continue;
                 }
             }
-            // BLOCK 1: (type) **name** -> infered_type
+            // BLOCK 1: (type) **name** -> inferred_type
             let mut context = Some(eval_symbol.as_weak().context.clone());
             let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, true, false, None, &mut vec![]);
             value += FeaturesUtils::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
             // BLOCK 2: useful links
             for typ in type_refs.iter() {
-                if let Some(typ) = typ.upgrade_weak() {
-                    let paths = &typ.borrow().paths();
-                    if paths.len() == 1 { //we won't put a link to a namespace
-                        let mut base_path = paths.first().unwrap().clone();
-                        if matches!(typ.borrow().typ(), SymType::PACKAGE(_)) {
-                            base_path = PathBuf::from(base_path).join(format!("__init__.py{}", typ.borrow().as_package().i_ext())).sanitize();
-                        }
-                        let path = FileMgr::pathname2uri(&base_path);
-                        value += "  \n***  \n";
-                        let mut range = 0;
-                        if typ.borrow().is_file_content() {
-                            range = typ.borrow().range().start().to_u32();
-                        }
-                        value += format!("See also: [{}]({}#{})  \n", typ.borrow().name().as_str(), path.as_str(), range).as_str();
-                    }
+                let Some(typ) = typ.upgrade_weak() else {
+                    continue;
+                };
+                let paths = &typ.borrow().paths();
+                if paths.len() == 1 { //we won't put a link to a namespace
+                    let type_ref = typ.borrow();
+                    let base_path = match type_ref.typ() {
+                        SymType::PACKAGE(_) => PathBuf::from(paths.first().unwrap().clone()).join(format!("__init__.py{}", type_ref.as_package().i_ext())).sanitize(),
+                        _ => paths.first().unwrap().clone()
+                    };
+                    let path = FileMgr::pathname2uri(&base_path);
+                    let range = if type_ref.is_file_content() { type_ref.range().start().to_u32() } else { 0 };
+                    value += format!("  \n***  \nSee also: [{}]({}#{})  \n", type_ref.name().as_str(), path.as_str(), range).as_str();
                 }
             }
             // BLOCK 3: documentation
@@ -269,53 +272,35 @@ impl FeaturesUtils {
 
     /*
     Build the first block of the hover. It contains the name of the variable as well as the type.
-    parameters:   (type_sym)  symbol: infered_types
+    parameters:   (type_sym)  symbol: inferred_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, infered_types: &Vec<EvaluationSymbolPtr>, context: &mut Option<Context>) -> String {
+    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, inferred_types: &Vec<EvaluationSymbolPtr>, context: &mut Option<Context>) -> String {
         let symbol = rc_symbol.borrow();
         //python code balise
         let mut value = S!("```python  \n");
         //type name
-        let mut type_sym = symbol.typ().to_string().to_lowercase();
-        if symbol.typ() == SymType::VARIABLE && symbol.as_variable().is_import_variable {
-            type_sym = S!("import");
-        }
-        if symbol.typ() == SymType::VARIABLE && symbol.as_variable().is_parameter {
-            type_sym = S!("parameter");
-        }
-        else if symbol.typ() == SymType::FUNCTION {
-            if symbol.as_func().is_property {
-                type_sym = S!("property");
-            }
-            else if symbol.parent().unwrap().upgrade().unwrap().borrow().typ() == SymType::CLASS {
-                type_sym = S!("method");
-            }
-        }
+        let type_sym = match symbol.typ(){
+            SymType::VARIABLE if symbol.as_variable().is_import_variable => S!("import"),
+            SymType::VARIABLE if symbol.as_variable().is_parameter => S!("parameter"),
+            SymType::FUNCTION if symbol.as_func().is_property => S!("property"),
+            SymType::FUNCTION if symbol.parent().unwrap().upgrade().unwrap().borrow().typ() == SymType::CLASS => S!("method"),
+            type_ => type_.to_string().to_lowercase()
+        };
         value += &format!("({}) ", type_sym);
         //variable name
         let mut single_func_eval = false;
-        let mut infered_types = infered_types.clone();
-        if infered_types.len() == 1 && infered_types[0].is_weak() && infered_types[0].upgrade_weak().unwrap().borrow().typ() == SymType::FUNCTION && !infered_types[0].upgrade_weak().unwrap().borrow().as_func().is_property {
+        let mut inferred_types = inferred_types.clone();
+        if inferred_types.len() == 1 && inferred_types[0].is_weak() && inferred_types[0].upgrade_weak().unwrap().borrow().typ() == SymType::FUNCTION && !inferred_types[0].upgrade_weak().unwrap().borrow().as_func().is_property {
             //display 'def' only if there is only a single evaluation to a function
             single_func_eval = true;
-            value += "def ";
-            value += symbol.name();
-            //display args
-            let sym_eval_weak = infered_types[0].as_weak();
+            let sym_eval_weak = inferred_types[0].as_weak();
             let sym_rc = sym_eval_weak.weak.upgrade().unwrap();
             let sym_ref = sym_rc.borrow();
             let function_sym = sym_ref.as_func();
-            value += "(";
-            let max_index = function_sym.args.len() as i32 - 1;
-            for (index, arg) in function_sym.args.iter().enumerate() {
-                value += arg.symbol.upgrade().unwrap().borrow().name();
-                //TODO add parameter type
-                if index != max_index as usize {
-                    value += ", ";
-                }
-            }
-            value += ") -> ";
+            let argument_names = function_sym.args.iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
+            value += &format!("def {}({}) -> ", symbol.name(), argument_names);
+
             let call_parent = match sym_eval_weak.context.get(&S!("base_attr")){
                 Some(ContextValue::SYMBOL(s)) => s.clone(),
                 _ => {
@@ -329,10 +314,10 @@ impl FeaturesUtils {
             };
             // Set base_call to get correct function return type for syms with EvaluationSymbolPtr::SELF type
             context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
-            infered_types = function_sym.evaluations.iter().map(|x| x.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None)).collect();
+            inferred_types = function_sym.evaluations.iter().map(|x| x.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None)).collect();
             context.as_mut().unwrap().remove(&S!("base_call"));
         } else {
-            if symbol.typ() == SymType::CLASS && infered_types.len() == 1 && infered_types[0].is_weak() && infered_types[0].as_weak().is_super{
+            if symbol.typ() == SymType::CLASS && inferred_types.len() == 1 && inferred_types[0].is_weak() && inferred_types[0].as_weak().is_super {
                 value += &format!("(super[{}]) ", symbol.name());
             } else {
                 value += symbol.name();
@@ -341,139 +326,106 @@ impl FeaturesUtils {
                 value += ": ";
             }
         }
-        let mut values = vec![];
-        for infered_type in infered_types.iter() {
-            for v in FeaturesUtils::get_infered_types(session, rc_symbol, infered_type, context, single_func_eval).iter() {
-                if !values.contains(v) {
-                    values.push(v.clone());
-                }
-            }
-        }
-        value += FeaturesUtils::print_return_types(&values).as_str();
+        let values: Vec<String> = inferred_types.iter().map(|inferred_type| {
+            FeaturesUtils::get_inferred_types(session, rc_symbol, inferred_type, context, single_func_eval)
+        }).unique().collect();
+
+        value += &(FeaturesUtils::print_return_types(values) + "  \n```");
         //end block
-        value += "  \n```";
         value
     }
 
-    fn print_return_types(values: &Vec<String>) -> String {
-        let mut result = S!("");
-        if values.len() > 1 {
-            result += "(";
-        }
-        let mut found_any = false;
-        for (index, value) in values.iter().enumerate() {
-            if value == "Any" {
-                found_any = true;
-                continue;
-            }
-            result += value;
-            if index != values.len() -1 {
-                result += ", ";
-            }
-        }
+    fn print_return_types(values: Vec<String>) -> String {
+        let len = values.len();
+        let mut filtered_values: Vec<String> = values.into_iter().filter(|v| *v != "Any").collect();
+        let found_any = filtered_values.len() != len;
         if found_any {
-            if values.len() > 1 {
-                result += ", ";
-            }
-            result += "Any";
+            filtered_values.push(S!("Any"));
         }
-        if values.len() > 1 {
-            result += ")";
+        let result = filtered_values.iter().join(" | ");
+        if len > 1 {
+            format!("({})", result)
+        } else {
+            result
         }
-        result
     }
 
-    pub fn get_infered_types(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, single_func_eval: bool) -> Vec<String> {
-        let mut values = vec![];
+    fn argument_presentation(session: &mut SessionInfo, arg: &Argument) -> String {
+        let arg_name = arg.symbol.upgrade().unwrap().borrow().name().clone();
+        match arg.annotation.as_ref() {
+            Some(anno_expr) => {
+                let Some(type_symbol) = arg.symbol.upgrade()
+                .and_then(|arg_symbol| arg_symbol.borrow().parent())
+                .and_then(|weak_parent| weak_parent.upgrade())
+                .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent.clone(), &anno_expr.range().start()).0.first().cloned())
+                .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade())
+                 else {
+                    return arg_name
+                };
+                let type_name = type_symbol.borrow().name().clone();
+                format!("{}: {}", arg_name, type_name)
+            },
+            None => arg_name
+        }
+    }
+
+    pub fn get_inferred_types(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, single_func_eval: bool) -> String {
         match eval {
             EvaluationSymbolPtr::WEAK(eval_weak) => {
-                if let Some(infered_type) = eval.upgrade_weak() {
-                    if Rc::ptr_eq(symbol, &infered_type) && infered_type.borrow().typ() != SymType::FUNCTION {
-                        if infered_type.borrow().typ() != SymType::CLASS {
-                            values.push(S!("Any"));
-                        }
+                if let Some(inferred_type) = eval.upgrade_weak() {
+                    if Rc::ptr_eq(symbol, &inferred_type) && inferred_type.borrow().typ() != SymType::FUNCTION && inferred_type.borrow().typ() != SymType::CLASS {
+                        S!("Any")
                     } else {
-                        let infered_type = infered_type.borrow();
-                        if infered_type.typ() == SymType::FUNCTION && !infered_type.as_func().is_property {
-                            let func_eval = infered_type.evaluations();
-                            let mut func_return_type = S!("");
-                            if let Some(func_eval) = func_eval {
-                                let mut type_names = HashSet::new();
-                                for eval in func_eval.iter() {
-                                    let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
-                                    if !eval_symbol.is_expired_if_weak(){ //TODO improve
-                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
-                                        for weak_eval_symbol in weak_eval_symbols.iter() {
-                                            if let Some(s_type) = weak_eval_symbol.upgrade_weak() {
-                                                let typ = s_type.borrow();
-                                                if typ.typ() == SymType::VARIABLE {
+                        let inferred_type = inferred_type.borrow();
+                        match inferred_type.typ() {
+                            SymType::FUNCTION if !inferred_type.as_func().is_property => {
+                                let return_type = match inferred_type.evaluations() {
+                                    Some(func_eval) => {
+                                        let mut type_names = HashSet::new();
+                                        for eval in func_eval.iter() {
+                                            let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
+                                            let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
+                                            for weak_eval_symbol in weak_eval_symbols.iter() {
+                                                let type_name = if let Some(s_type) = weak_eval_symbol.upgrade_weak() {
+                                                    let typ = s_type.borrow();
                                                     //if fct is a variable, it means that evaluation is None.
-                                                    type_names.insert("Any".to_string());
+                                                    if typ.typ() == SymType::VARIABLE {
+                                                        "Any".to_string()
+                                                    } else {
+                                                        typ.name().clone()
+                                                    }
                                                 } else {
-                                                    type_names.insert(typ.name().clone());
-                                                }
-                                            } else {
-                                                type_names.insert("Any".to_string());
+                                                    "Any".to_string()
+                                                };
+                                                type_names.insert(type_name);
                                             }
                                         }
-                                    } else {
-                                        type_names.insert("None".to_string());
-                                    }
+                                        if !type_names.is_empty() {type_names.iter().join(" | ")} else {S!("None")}
+                                    },
+                                    None => S!("Any"),
+                                };
+                                if !single_func_eval {
+                                    let argument_names = inferred_type.as_func().args.iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
+                                    format!("({}) -> {})", argument_names, return_type)
+                                } else {
+                                    return_type
                                 }
-                                let max_eval: i32 = type_names.len() as i32 -1;
-                                for (index, type_name) in type_names.iter().enumerate() {
-                                    func_return_type += type_name.as_str();
-                                    if index != max_eval as usize {
-                                        func_return_type += " | ";
-                                    }
-                                }
-                                if type_names.is_empty() {
-                                    func_return_type += "None";
-                                }
-                            }
-                            if single_func_eval {
-                                values.push(func_return_type);
-                            } else {
-                                //TODO add args
-                                values.push(format!("() -> {}", func_return_type));
-                            }
-                        } else if infered_type.typ() == SymType::FILE {
-                            values.push(S!("File"));
-                        } else if matches!(infered_type.typ(), SymType::PACKAGE(_)) {
-                            values.push(S!("Module"));
-                        } else if infered_type.typ() == SymType::NAMESPACE {
-                            values.push(S!("Namespace"));
-                        } else if infered_type.typ() == SymType::CLASS {
-                            let mut class_type= if infered_type.as_class_sym().is_descriptor() {
-                                //TODO actually the same than if not a descriptor. But we could choose to do something else if there is no base_attr
-                                S!(infered_type.name())
-                            } else {
-                                S!(infered_type.name())
-                            };
-                            if eval_weak.is_super{
-                                class_type = format!("super[{}]", class_type);
-                            }
-                            values.push(class_type);
-                        } else {
-                            values.push(S!("Any"));
+                            },
+                            SymType::FILE => S!("File"),
+                            SymType::PACKAGE(_) => S!("Module"),
+                            SymType::NAMESPACE => S!("Namespace"),
+                            SymType::CLASS => if eval_weak.is_super {format!("super[{}]", S!(inferred_type.name()))} else {S!(inferred_type.name())}, // TODO: Maybe do something special if it is a descriptor
+                            _ => S!("Any")
                         }
                     }
                 } else {
-                    values.push(S!("Any"));
+                    S!("Any")
                 }
             }
-            EvaluationSymbolPtr::ANY => {
-                values.push(S!("Any"));
-            }
-            EvaluationSymbolPtr::NONE => {
-                values.push(S!("None"));
-            }
-            _ => {
-                values.push(S!("Any"));
-            }
+            EvaluationSymbolPtr::ANY => S!("Any"),
+            EvaluationSymbolPtr::NONE => S!("None"),
+            _ => S!("Any"),
         }
-
-        values
     }
 
 
