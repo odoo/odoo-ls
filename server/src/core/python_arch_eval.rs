@@ -1118,13 +1118,15 @@ impl PythonArchEval {
             for decorator_eval in dec_evals.iter(){
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None)  else {continue};
                 let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
-                let dec_sym_tree = dec_sym.borrow().get_main_entry_tree(session);
-                if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("returns")]){
+                let dec_sym_tree = dec_sym.borrow().get_tree();
+                if !dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")]){
+                    continue;
+                }
+                if dec_sym_tree.1 == vec![Sy!("returns")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
                     self.handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
-                } else if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]) ||
-                        dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]){
+                } else if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
                     self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
-                } else if dec_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")]){
+                } else if dec_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
                     self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
                 }
             }

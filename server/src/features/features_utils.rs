@@ -3,6 +3,7 @@ use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
+use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
 use crate::utils::PathSanitizer;
 use std::collections::{HashMap, HashSet};
@@ -44,7 +45,7 @@ impl FeaturesUtils {
             for callable_eval in callable_evals.iter() {
                 let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
                 let Some(callable_sym) = callable.weak.upgrade() else {
-                     continue
+                    continue
                 };
                 if !callable_sym.borrow().is_field_class(session){
                     continue;
@@ -165,7 +166,7 @@ impl FeaturesUtils {
         for callable_eval in callable_evals.iter() {
             let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
             let Some(callable_sym) = callable.weak.upgrade() else {
-                    continue
+                continue
             };
             if callable_sym.borrow().typ() != SymType::FUNCTION {
                 continue;
@@ -173,18 +174,19 @@ impl FeaturesUtils {
             let func = callable_sym.borrow();
 
             // Check if we are in api.onchange/constrains/depends
-            let func_sym_tree = func.get_main_entry_tree(session);
-            if func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]) ||
-                func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]){
+            let func_sym_tree = func.get_tree();
+            if func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")]){
+                if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                 arg_symbols.extend(
                     FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
                 );
                 continue;
-            }  else if func_sym_tree == (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")]){
+            } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                 arg_symbols.extend(
                     FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
                 );
                 continue;
+            }
             }
 
             let func_arg = func.as_func().get_indexed_arg_in_call(
@@ -227,7 +229,7 @@ impl FeaturesUtils {
         for callable_eval in callable_evals.iter() {
             let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
             let Some(callable_sym) = callable.weak.upgrade() else {
-                    continue
+                continue
             };
             if !callable_sym.borrow().is_field_class(session) {
                 continue;
