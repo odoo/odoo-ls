@@ -396,7 +396,7 @@ impl PythonValidator {
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30326"))),
                                 Some(EXTENSION_NAME.to_string()),
-                                format!("Related field not same type"),
+                                format!("Related field is not of the same type"),
                                 None,
                                 None,
                             ));

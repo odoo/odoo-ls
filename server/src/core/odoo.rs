@@ -813,6 +813,10 @@ impl SyncOdoo {
         false
     }
 
+    pub fn is_in_main_entry(session: &mut SessionInfo, path: &Vec<Yarn>) -> bool{
+        path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
+    }
+
     pub fn refresh_evaluations(session: &mut SessionInfo) {
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
