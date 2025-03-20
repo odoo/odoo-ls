@@ -431,7 +431,7 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::ODOO_READY;
     }
 
-    //search for a symbol with a tree local to an unkown entrypoint
+    //search for a symbol with a tree local to an unknown entrypoint
     pub fn get_symbol(&self, from_path: &str, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
         //find which entrypoint to use
         for entry in self.entry_point_mgr.borrow().iter_all() {

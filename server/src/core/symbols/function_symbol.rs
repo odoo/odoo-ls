@@ -24,6 +24,7 @@ pub struct Argument {
     //other informations about arg
     pub default_value: Option<Evaluation>,
     pub arg_type: ArgumentType,
+    pub annotation: Option<Box<Expr>>,
 }
 
 #[derive(Debug)]
@@ -137,7 +138,7 @@ impl FunctionSymbol {
         }
         if let Some(parent) = &self.parent {
             if let Some(parent) = parent.upgrade() {
-                let previous_defs = parent.borrow().get_content_symbol(&self.name, self.range.start().to_u32());
+                let previous_defs = parent.borrow().get_content_symbol(&self.name, self.range.start().to_u32()).symbols;
                 if previous_defs.len() > 1 && previous_defs.last().unwrap().borrow().typ() == SymType::FUNCTION {
                     return previous_defs.last().unwrap().borrow().as_func().is_overloaded;
                 }

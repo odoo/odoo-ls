@@ -86,7 +86,7 @@ impl ClassSymbol {
     }
 
     pub fn is_descriptor(&self) -> bool {
-        for get_sym in self.get_symbol(S!("__get__"), u32::MAX).iter() {
+        for get_sym in self.get_content_symbol(S!("__get__"), u32::MAX).symbols.iter() {
             if get_sym.borrow().typ() == SymType::FUNCTION {
                 return true;
             }

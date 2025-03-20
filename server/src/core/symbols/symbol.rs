@@ -30,7 +30,7 @@ use super::disk_dir_symbol::DiskDirSymbol;
 use super::file_symbol::FileSymbol;
 use super::namespace_symbol::{NamespaceDirectory, NamespaceSymbol};
 use super::package_symbol::{PackageSymbol, PythonPackageSymbol};
-use super::symbol_mgr::SymbolMgr;
+use super::symbol_mgr::{ContentSymbols, SymbolMgr};
 use super::variable_symbol::VariableSymbol;
 
 #[derive(Debug)]
@@ -1139,7 +1139,7 @@ impl Symbol {
                         trace!("TODO: explore all implementation possibilities");
                     }
                     let _iter_sym = iter_sym[0].borrow_mut().get_sub_symbol(fk, position);
-                    iter_sym = _iter_sym;
+                    iter_sym = _iter_sym.symbols;
                     if iter_sym.is_empty() {
                         return vec![];
                     }
@@ -1149,7 +1149,7 @@ impl Symbol {
             if symbol_tree_content.len() == 0 {
                 return vec![];
             }
-            iter_sym = self.get_sub_symbol(&symbol_tree_content[0], position);
+            iter_sym = self.get_sub_symbol(&symbol_tree_content[0], position).symbols;
             if iter_sym.is_empty() {
                 return vec![];
             }
@@ -1159,7 +1159,7 @@ impl Symbol {
                 }
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
                     let _iter_sym = iter_sym[0].borrow_mut().get_sub_symbol(fk, position);
-                    iter_sym = _iter_sym;
+                    iter_sym = _iter_sym.symbols;
                     return iter_sym.clone();
                 }
             }
@@ -1200,51 +1200,54 @@ impl Symbol {
     /**
      * Return all symbol before the given position that match the name in the body of the symbol
      */
-    pub fn get_content_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_content_symbol(&self, name: &str, position: u32) -> ContentSymbols {
         match self {
             Symbol::Class(c) => {
-                c.get_symbol(name.to_string(), position)
+                c.get_content_symbol(name.to_string(), position)
             },
             Symbol::File(f) => {
-                f.get_symbol(name.to_string(), position)
+                f.get_content_symbol(name.to_string(), position)
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                m.get_symbol(name.to_string(), position)
+                m.get_content_symbol(name.to_string(), position)
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                p.get_symbol(name.to_string(), position)
+                p.get_content_symbol(name.to_string(), position)
             },
             Symbol::Function(f) => {
-                f.get_symbol(name.to_string(), position)
+                f.get_content_symbol(name.to_string(), position)
             },
-            _ => {vec![]}
+            _ => ContentSymbols::default()
         }
     }
 
     /**
      * Return a symbol that can be called from outside of the body of the symbol
      */
-    pub fn get_sub_symbol(&self, name: &str, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_sub_symbol(&self, name: &str, position: u32) -> ContentSymbols {
         match self {
             Symbol::Class(c) => {
-                c.get_symbol(name.to_string(), position)
+                c.get_content_symbol(name.to_string(), position)
             },
             Symbol::File(f) => {
-                f.get_symbol(name.to_string(), position)
+                f.get_content_symbol(name.to_string(), position)
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                m.get_symbol(name.to_string(), position)
+                m.get_content_symbol(name.to_string(), position)
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                p.get_symbol(name.to_string(), position)
+                p.get_content_symbol(name.to_string(), position)
             },
             Symbol::Function(f) => {
                 if let Some(vec) = f.get_ext_symbol(name.to_string()) {
-                    return vec.clone();
+                    return ContentSymbols{
+                        symbols: vec.clone(),
+                        always_defined: true,
+                    };
                 }
-                vec![]
+                ContentSymbols::default()
             },
-            _ => {vec![]}
+            _ => {ContentSymbols::default()}
         }
     }
 
@@ -2056,24 +2059,24 @@ impl Symbol {
     }
 
     //infer a name, given a position
-    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut results: Vec<Rc<RefCell<Symbol>>> = vec![];
-        //TODO implement 'super' behaviour in hooks
+    pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> ContentSymbols {
         let on_symbol = on_symbol.borrow();
-        results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
-        if results.is_empty() && !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
+        let results = on_symbol.get_content_symbol(name, position.unwrap_or(u32::MAX));
+        if !results.symbols.is_empty(){
+            results
+        } else if !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
             let mut parent = on_symbol.parent().as_ref().unwrap().upgrade().unwrap();
             while parent.borrow().typ() == SymType::CLASS {
                 let _parent = parent.borrow().parent().unwrap().upgrade().unwrap();
                 parent = _parent;
             }
-            return Symbol::infer_name(odoo, &parent, name, position);
-        }
-        if results.is_empty() && (on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE) {
+            Symbol::infer_name(odoo, &parent, name, position)
+        } else if on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE {
             let builtins = odoo.get_symbol("", &(vec![S!("builtins")], vec![]), u32::MAX)[0].clone();
-            return Symbol::infer_name(odoo, &builtins, name, None);
+            Symbol::infer_name(odoo, &builtins, name, None)
+        } else {
+            ContentSymbols::default()
         }
-        results
     }
 
     pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> {
@@ -2226,7 +2229,7 @@ impl Symbol {
             }
         }
         if !is_super{
-            let mut content_syms = self.get_sub_symbol(name, u32::MAX);
+            let mut content_syms = self.get_sub_symbol(name, u32::MAX).symbols;
             if only_fields {
                 content_syms = content_syms.iter().filter(|x| x.borrow().is_field(session)).cloned().collect();
             }

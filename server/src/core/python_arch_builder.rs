@@ -138,7 +138,7 @@ impl PythonArchBuilder {
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<String> = vec![];
-                if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).get(0) {
+                if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first() {
                     let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                         Rc::downgrade(all), None, false
                     )), session, &mut None, false, true, None, &mut self.diagnostics);
@@ -568,7 +568,8 @@ impl PythonArchBuilder {
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: None,
-                arg_type: ArgumentType::POS_ONLY
+                arg_type: ArgumentType::POS_ONLY,
+                annotation: arg.parameter.annotation.clone(),
             });
         }
         for arg in func_def.parameters.args.iter() {
@@ -581,7 +582,8 @@ impl PythonArchBuilder {
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: default,
-                arg_type: ArgumentType::ARG
+                arg_type: ArgumentType::ARG,
+                annotation: arg.parameter.annotation.clone(),
             });
         }
         if let Some(arg) = &func_def.parameters.vararg {
@@ -590,7 +592,8 @@ impl PythonArchBuilder {
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: None,
-                arg_type: ArgumentType::VARARG
+                arg_type: ArgumentType::VARARG,
+                annotation: arg.annotation.clone(),
             });
         }
         for arg in func_def.parameters.kwonlyargs.iter() {
@@ -599,7 +602,8 @@ impl PythonArchBuilder {
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: None,
-                arg_type: ArgumentType::KWORD_ONLY
+                arg_type: ArgumentType::KWORD_ONLY,
+                annotation: arg.parameter.annotation.clone(),
             });
         }
         if let Some(arg) = &func_def.parameters.kwarg {
@@ -608,7 +612,8 @@ impl PythonArchBuilder {
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
                 default_value: None,
-                arg_type: ArgumentType::KWARG
+                arg_type: ArgumentType::KWARG,
+                annotation: arg.annotation.clone(),
             });
         }
         //visit body
@@ -646,7 +651,7 @@ impl PythonArchBuilder {
 
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
-            if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).is_empty() {
+            if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).symbols.is_empty() {
                 let all_var = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, &symbol_name, &range);
             }
         }
