@@ -75,7 +75,7 @@ def build_package(session: nox.Session) -> None:
         session.run("cp", "../server/target/release/odoo_ls_server.exe", "win_odoo_ls_server.exe", external=True)
     if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/mac_odoo_ls_server").is_file():
         session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
-    session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
+    session.run("cp", "../changelog.md", "changelog.md", external=True)
     session.run("vsce", "package", external=True)
     if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux_odoo_ls_server").is_file():
         session.run("rm", "-r", "linux_odoo_ls_server", external=True)
@@ -85,7 +85,7 @@ def build_package(session: nox.Session) -> None:
         session.run("rm", "-r", "macos_odoo_ls_server", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
-    session.run("rm", "CHANGELOG.md", external=True)
+    session.run("rm", "changelog.md", external=True)
 
 @nox.session()
 def build_package_prerelease(session: nox.Session) -> None:
@@ -100,7 +100,7 @@ def build_package_prerelease(session: nox.Session) -> None:
         session.run("cp", "../server/target/release/odoo_ls_server.exe", "win_odoo_ls_server.exe", external=True)
     if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/mac_odoo_ls_server").is_file():
         session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
-    session.run("cp", "../CHANGELOG.md", "CHANGELOG.md", external=True)
+    session.run("cp", "../changelog.md", "changelog.md", external=True)
     session.run("vsce", "package", "--pre-release", external=True)
     if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux_odoo_ls_server").is_file():
         session.run("rm", "-r", "linux_odoo_ls_server", external=True)
@@ -110,7 +110,7 @@ def build_package_prerelease(session: nox.Session) -> None:
         session.run("rm", "-r", "macos_odoo_ls_server", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
-    session.run("rm", "CHANGELOG.md", external=True)
+    session.run("rm", "changelog.md", external=True)
 
 @nox.session()
 def update_packages(session: nox.Session) -> None:
