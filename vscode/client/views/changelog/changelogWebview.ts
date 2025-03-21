@@ -103,7 +103,7 @@ export class ChangelogWebview {
      */
     private _getWebviewContent(webview: Webview, extensionUri: Uri) {
       // HTML Rendering is done here
-      const changelogUri = Uri.joinPath(extensionUri, "CHANGELOG.md");
+      const changelogUri = Uri.joinPath(extensionUri, "changelog.md");
       let changelogContent: string = readFileSync(changelogUri.fsPath, 'utf8');
       if (changelogContent === undefined) {
          const changelogUri = Uri.joinPath(extensionUri, "changelog.md");
