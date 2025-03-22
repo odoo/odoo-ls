@@ -470,15 +470,20 @@ impl SyncOdoo {
                 current_count = 0;
                 let file = sym.borrow().get_file().unwrap().upgrade().unwrap();
                 let file = file.borrow();
-                for (index, dep_set) in file.get_all_dependencies(step).iter().enumerate() {
-                    let index_set =  match index {
-                        x if x == BuildSteps::ARCH as usize => &self.rebuild_arch,
-                        x if x == BuildSteps::ARCH_EVAL as usize => &self.rebuild_arch_eval,
-                        x if x == BuildSteps::VALIDATION as usize => &self.rebuild_validation,
-                        _ => continue,
-                    };
-                    current_count +=
-                        dep_set.iter().filter(|dep| index_set.contains(dep)).count() as u32;
+                let all_dep = file.get_all_dependencies(step);
+                if let Some(all_dep) = all_dep {
+                    for (index, dep_set) in all_dep.iter().enumerate() {
+                        if let Some(dep_set) = dep_set {
+                            let index_set =  match index {
+                                x if x == BuildSteps::ARCH as usize => &self.rebuild_arch,
+                                x if x == BuildSteps::ARCH_EVAL as usize => &self.rebuild_arch_eval,
+                                x if x == BuildSteps::VALIDATION as usize => &self.rebuild_validation,
+                                _ => continue,
+                            };
+                            current_count +=
+                                dep_set.iter().filter(|dep| index_set.contains(dep)).count() as u32;
+                        }
+                    }
                 }
                 if current_count < selected_count {
                     selected_sym = Some(sym.clone());

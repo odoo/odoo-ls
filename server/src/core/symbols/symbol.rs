@@ -701,52 +701,52 @@ impl Symbol {
         }
     }
 
-    pub fn dependencies(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4] {
+    pub fn dependencies(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
-            Symbol::Namespace(n) => &n.dependencies,
+            Symbol::Namespace(n) => &n.dependencies(),
             Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies(),
-            Symbol::File(f) => &f.dependencies,
+            Symbol::File(f) => &f.dependencies(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
-    pub fn dependencies_mut(&mut self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 4] {
+    pub fn dependencies_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
-            Symbol::Namespace(n) => &mut n.dependencies,
+            Symbol::Namespace(n) => n.dependencies_mut(),
             Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies_as_mut(),
-            Symbol::File(f) => &mut f.dependencies,
+            Symbol::File(f) => f.dependencies_mut(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
-    pub fn dependents(&self) -> &[Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3] {
+    pub fn dependents(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
-            Symbol::Namespace(n) => &n.dependents,
+            Symbol::Namespace(n) => n.dependents(),
             Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents(),
-            Symbol::File(f) => &f.dependents,
+            Symbol::File(f) => f.dependents(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
         }
     }
-    pub fn dependents_as_mut(&mut self) -> &mut [Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>>; 3] {
+    pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
-            Symbol::Namespace(n) => &mut n.dependents,
+            Symbol::Namespace(n) => n.dependents_mut(),
             Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents_as_mut(),
-            Symbol::File(f) => &mut f.dependents,
+            Symbol::File(f) => f.dependents_mut(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
@@ -778,11 +778,11 @@ impl Symbol {
     pub fn in_workspace(&self) -> bool {
         match self {
             Symbol::Root(_) => false,
-            Symbol::Namespace(n) => n.in_workspace,
+            Symbol::Namespace(n) => n.is_in_workspace(),
             Symbol::DiskDir(d) => d.in_workspace,
             Symbol::Package(PackageSymbol::Module(m)) => m.in_workspace,
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace,
-            Symbol::File(f) => f.in_workspace,
+            Symbol::File(f) => f.is_in_workspace(),
             Symbol::Compiled(_) => panic!(),
             Symbol::Class(_) => panic!(),
             Symbol::Function(_) => panic!(),
@@ -792,11 +792,11 @@ impl Symbol {
     pub fn set_in_workspace(&mut self, in_workspace: bool) {
         match self {
             Symbol::Root(_) => panic!(),
-            Symbol::Namespace(n) => n.in_workspace = in_workspace,
+            Symbol::Namespace(n) => n.set_in_workspace(in_workspace),
             Symbol::DiskDir(d) => d.in_workspace = in_workspace,
-            Symbol::Package(PackageSymbol::Module(m)) => m.in_workspace = in_workspace,
-            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace = in_workspace,
-            Symbol::File(f) => f.in_workspace = in_workspace,
+            Symbol::Package(PackageSymbol::Module(m)) => m.set_in_workspace(in_workspace),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.set_in_workspace(in_workspace),
+            Symbol::File(f) => f.set_in_workspace(in_workspace),
             Symbol::Compiled(_) => panic!(),
             Symbol::Class(_) => panic!(),
             Symbol::Function(_) => panic!(),
@@ -1253,7 +1253,7 @@ impl Symbol {
     }
 
     //Return a HashSet of all symbols (constructed until 'level') that are dependencies for the 'step' of this symbol
-    pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> &PtrWeakHashSet<Weak<RefCell<Symbol>>> {
+    pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
         if step == BuildSteps::SYNTAX || level == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
@@ -1267,10 +1267,11 @@ impl Symbol {
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
-            Symbol::Namespace(n) => &n.dependencies[step as usize][level as usize],
+            Symbol::Namespace(n) => n.get_dependencies(step as usize, level as usize),
             Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
-            Symbol::Package(p) => &p.dependencies()[step as usize][level as usize],
-            Symbol::File(f) => &f.dependencies[step as usize][level as usize],
+            Symbol::Package(PackageSymbol::Module(m)) => m.get_dependencies(step as usize, level as usize),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.get_dependencies(step as usize, level as usize),
+            Symbol::File(f) => f.get_dependencies(step as usize, level as usize),
             Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
             Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
             Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
@@ -1278,16 +1279,17 @@ impl Symbol {
         }
     }
 
-    pub fn get_all_dependencies(&self, step: BuildSteps) -> &Vec<PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
+    pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
-            Symbol::Namespace(n) => &n.dependencies[step as usize],
+            Symbol::Namespace(n) => n.get_all_dependencies(step as usize),
             Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
-            Symbol::Package(p) => &p.dependencies()[step as usize],
-            Symbol::File(f) => &f.dependencies[step as usize],
+            Symbol::Package(PackageSymbol::Module(m)) => m.get_all_dependencies(step as usize),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.get_all_dependencies(step as usize),
+            Symbol::File(f) => f.get_all_dependencies(step as usize),
             Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
             Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
             Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
@@ -1296,7 +1298,7 @@ impl Symbol {
     }
 
     //Return a HashSet of all 'step' of symbols that require that this symbol is built until 'level';
-    pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> &PtrWeakHashSet<Weak<RefCell<Symbol>>> {
+    pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
         if level == BuildSteps::SYNTAX || step == BuildSteps::SYNTAX {
             panic!("Can't get dependents for syntax step")
         }
@@ -1310,10 +1312,11 @@ impl Symbol {
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
-            Symbol::Namespace(n) => &n.dependents[level as usize][step as usize],
+            Symbol::Namespace(n) => n.get_dependents(level as usize, step as usize),
             Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
-            Symbol::Package(p) => &p.dependents()[level as usize][step as usize],
-            Symbol::File(f) => &f.dependents[level as usize][step as usize],
+            Symbol::Package(PackageSymbol::Module(m)) => m.get_dependents(level as usize, step as usize),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.get_dependents(level as usize, step as usize),
+            Symbol::File(f) => f.get_dependents(level as usize, step as usize),
             Symbol::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
             Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
             Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
@@ -1327,6 +1330,9 @@ impl Symbol {
         if step == BuildSteps::SYNTAX || dep_level == BuildSteps::SYNTAX {
             panic!("Can't add dependency for syntax step")
         }
+        if !self.in_workspace() || !symbol.in_workspace() {
+            return;
+        }
         if dep_level > BuildSteps::ARCH {
             if step < BuildSteps::ODOO {
                 panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
@@ -1337,8 +1343,19 @@ impl Symbol {
         }
         let step_i = step as usize;
         let level_i = dep_level as usize;
-        self.dependencies_mut()[step_i][level_i].insert(symbol.get_rc().unwrap());
-        symbol.dependents_as_mut()[level_i][step_i].insert(self.get_rc().unwrap());
+        let mut set = &mut self.dependencies_mut()[step_i][level_i];
+        if set.is_none() {
+            self.dependencies_mut()[step_i][level_i] = Some(PtrWeakHashSet::new());
+            set = &mut self.dependencies_mut()[step_i][level_i];
+        }
+        set.as_mut().unwrap().insert(symbol.get_rc().unwrap());
+        let mut set = &mut symbol.dependents_as_mut()[level_i][step_i];
+        let to_add = self.get_rc().unwrap().clone();
+        if set.is_none() {
+            self.dependencies_mut()[step_i][level_i] = Some(PtrWeakHashSet::new());
+            set = &mut self.dependencies_mut()[step_i][level_i];
+        }
+        set.as_mut().unwrap().insert(to_add);
     }
 
     pub fn add_model_dependencies(&mut self, model: &Rc<RefCell<Model>>) {
@@ -1372,17 +1389,19 @@ impl Symbol {
             if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_)) {
                 if *step == BuildSteps::ARCH {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH as usize].iter().enumerate() {
-                        for sym in hashset {
-                            if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
-                                if index == BuildSteps::ARCH as usize {
-                                    session.sync_odoo.add_to_rebuild_arch(sym.clone());
-                                } else if index == BuildSteps::ARCH_EVAL as usize {
-                                    session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                } else if index == BuildSteps::ODOO as usize {
-                                    session.sync_odoo.add_to_init_odoo(sym.clone());
-                                } else if index == BuildSteps::VALIDATION as usize {
-                                    sym.borrow_mut().invalidate_sub_functions(session);
-                                    session.sync_odoo.add_to_validations(sym.clone());
+                        if let Some(hashset) = hashset {
+                            for sym in hashset {
+                                if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
+                                    if index == BuildSteps::ARCH as usize {
+                                        session.sync_odoo.add_to_rebuild_arch(sym.clone());
+                                    } else if index == BuildSteps::ARCH_EVAL as usize {
+                                        session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
+                                    } else if index == BuildSteps::ODOO as usize {
+                                        session.sync_odoo.add_to_init_odoo(sym.clone());
+                                    } else if index == BuildSteps::VALIDATION as usize {
+                                        sym.borrow_mut().invalidate_sub_functions(session);
+                                        session.sync_odoo.add_to_validations(sym.clone());
+                                    }
                                 }
                             }
                         }
@@ -1390,15 +1409,17 @@ impl Symbol {
                 }
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
-                        for sym in hashset {
-                            if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
-                                if index == BuildSteps::ARCH_EVAL as usize {
-                                    session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                } else if index == BuildSteps::ODOO as usize {
-                                    session.sync_odoo.add_to_init_odoo(sym.clone());
-                                } else if index == BuildSteps::VALIDATION as usize {
-                                    sym.borrow_mut().invalidate_sub_functions(session);
-                                    session.sync_odoo.add_to_validations(sym.clone());
+                        if let Some(hashset) = hashset {
+                            for sym in hashset {
+                                if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
+                                    if index == BuildSteps::ARCH_EVAL as usize {
+                                        session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
+                                    } else if index == BuildSteps::ODOO as usize {
+                                        session.sync_odoo.add_to_init_odoo(sym.clone());
+                                    } else if index == BuildSteps::VALIDATION as usize {
+                                        sym.borrow_mut().invalidate_sub_functions(session);
+                                        session.sync_odoo.add_to_validations(sym.clone());
+                                    }
                                 }
                             }
                         }
@@ -1406,13 +1427,15 @@ impl Symbol {
                 }
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO].contains(step) {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ODOO as usize].iter().enumerate() {
-                        for sym in hashset {
-                            if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
-                                if index == BuildSteps::ODOO as usize {
-                                    session.sync_odoo.add_to_init_odoo(sym.clone());
-                                } else if index == BuildSteps::VALIDATION as usize {
-                                    sym.borrow_mut().invalidate_sub_functions(session);
-                                    session.sync_odoo.add_to_validations(sym.clone());
+                        if let Some(hashset) = hashset {
+                            for sym in hashset {
+                                if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
+                                    if index == BuildSteps::ODOO as usize {
+                                        session.sync_odoo.add_to_init_odoo(sym.clone());
+                                    } else if index == BuildSteps::VALIDATION as usize {
+                                        sym.borrow_mut().invalidate_sub_functions(session);
+                                        session.sync_odoo.add_to_validations(sym.clone());
+                                    }
                                 }
                             }
                         }
@@ -2434,7 +2457,7 @@ impl Symbol {
     }
 
     pub fn print_dependencies(&self) {
-        println!("------- Output dependencies of {} -------", self.name());
+        /*println!("------- Output dependencies of {} -------", self.name());
         println!("--- ARCH");
         println!("--- on ARCH");
         for sym in self.dependencies()[0][0].iter() {
@@ -2470,7 +2493,7 @@ impl Symbol {
         println!("--- on ODOO");
         for sym in self.dependencies()[3][2].iter() {
             println!("{:?}", sym.borrow().paths());
-        }
+        }*/
     }
 
     pub fn get_base_distance(&self, base_name: &String, level: i32) -> i32 {
