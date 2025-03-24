@@ -5,7 +5,7 @@ use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
 use crate::utils::PathSanitizer;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
@@ -17,6 +17,22 @@ use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::{oyarn, Sy, S};
 
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+struct CallableSignature {
+    arguments: String,
+    return_types: String,
+}
+#[derive(Clone, Eq, PartialEq, Hash)]
+enum TypeInfo {
+    CALLABLE(CallableSignature),
+    VALUE(String),
+}
+#[derive(Clone)]
+struct InferredType {
+    eval_ptr: EvaluationSymbolPtr,
+    eval_info: TypeInfo,
+}
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
@@ -279,220 +295,133 @@ impl FeaturesUtils {
     }
 
     pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>, call_expr: &Option<ExprCall>, offset: Option<usize>) -> String {
-        let mut value = S!("");
-
-        let mut name_counts = HashMap::new();
-        for eval in evals.iter() {
-            let Some(symbol) = eval.symbol.get_symbol(session, &mut None, &mut vec![], None).upgrade_weak() else {
-                continue;
-            };
-            *name_counts.entry(symbol.borrow().name().clone()).or_insert(0) += 1;
+        #[derive(Debug, Eq, PartialEq, Hash)]
+        struct SymbolKey {
+            name: OYarn,
+            type_: SymType,
+        }
+        struct SymbolInfo {
+            sym_type_tag: String,
+            from_module: Option<Rc<RefCell<Symbol>>>,
+            inferred_types: Vec<InferredType>,
         }
 
+        let mut blocks = vec![];
+        let mut aggregator: HashMap<SymbolKey, Vec<SymbolInfo>> = HashMap::new();
         for (index, eval) in evals.iter().enumerate() {
-            if index != 0 {
-                value += "  \n***  \n";
+            //search for a constant evaluation like a model name or domain field
+            if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(expr))) = eval.value.as_ref() {
+                let mut block = S!("");
+                let str = expr.value.to_string();
+                let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
+                if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
+                    let special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
+                    if special_string_syms.len() >= 1{
+                        // restart with replacing current index evaluation with field evaluations
+                        let string_domain_fields_evals: Vec<Evaluation> = special_string_syms.iter()
+                            .map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true)))
+                            .chain(evals.iter().take(index).cloned())
+                            .chain(evals.iter().skip(index + 1).cloned())
+                            .collect();
+                        return FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset))
+                    }
+                }
+                if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
+                    let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
+                    for main_class_rc in main_classes.iter() {
+                        let main_class = main_class_rc.borrow();
+                        if let Some(main_class_module) = main_class.find_module() {
+                            block += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
+                            if main_class.doc_string().is_some() {
+                                block = block + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
+                            }
+                            block += "  \n***  \n";
+                            block += &model.borrow().all_symbols(session, from_module.clone()).into_iter()
+                                .filter_map(|(sym, needed_module)| {
+                                    if Rc::ptr_eq(&sym, main_class_rc) {
+                                        None // Skip main_class
+                                    } else {
+                                        Some((sym.borrow().find_module().unwrap().borrow().name().clone(), needed_module))
+                                    }
+                                }).unique_by(|(name, _)| name.clone())
+                                .sorted_by(|x, y| {
+                                    if x.1.is_none() && y.1.is_some() {
+                                        std::cmp::Ordering::Less
+                                    } else if x.1.is_some() && y.1.is_none() {
+                                        std::cmp::Ordering::Greater
+                                    } else {
+                                        x.0.cmp(&y.0)
+                                    }
+                                })
+                                .map(|(mod_name, needed_module)| {
+                                    match needed_module {
+                                        Some(module) => format!("inherited in {} (require {})  \n", mod_name, module),
+                                        None => format!("inherited in {}  \n", mod_name)
+                                    }
+                                }).collect::<String>();
+                        }
+                    }
+                }
+                blocks.push(block);
+                continue;
             }
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let Some(symbol) = eval_symbol.upgrade_weak() else {
-                // Check if it is UNBOUND
-                if let EvaluationSymbolPtr::UNBOUND(name) = eval_symbol{
-                    value += format!("```python  \n(variable) {name}: Unbound```").as_str();
+                if let EvaluationSymbolPtr::UNBOUND(name) = eval_symbol {
+                    aggregator.entry(SymbolKey { name: name.clone(), type_: SymType::VARIABLE }).or_insert_with(Vec::new).push(
+                        SymbolInfo {
+                            sym_type_tag: S!("variable"), from_module: None, inferred_types: vec![InferredType{ eval_ptr: EvaluationSymbolPtr::UNBOUND(name.clone()), eval_info: TypeInfo::VALUE(S!("Unbound"))}]
+                        }
+                    );
                 }
                 continue;
             };
-            //search for a constant evaluation like a model name or domain field
-            if let Some(eval_value) = eval.value.as_ref() {
-                if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                    let str = expr.value.to_string();
-                    let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
-                    if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
-                        let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
-                        for main_class_rc in main_classes.iter() {
-                            let main_class = main_class_rc.borrow();
-                            if let Some(main_class_module) = main_class.find_module() {
-                                value += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
-                                if main_class.doc_string().is_some() {
-                                    value = value + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
-                                }
-                                value += "  \n***  \n";
-                                value += &model.borrow().all_symbols(session, from_module.clone()).into_iter()
-                                    .filter_map(|(sym, needed_module)| {
-                                        if Rc::ptr_eq(&sym, main_class_rc) {
-                                            None // Skip main_class
-                                        } else {
-                                            Some((sym.borrow().find_module().unwrap().borrow().name().clone(), needed_module))
-                                        }
-                                    }).unique_by(|(name, _)| name.clone())
-                                    .sorted_by(|x, y| {
-                                        if x.1.is_none() && y.1.is_some() {
-                                            std::cmp::Ordering::Less
-                                        } else if x.1.is_some() && y.1.is_none() {
-                                            std::cmp::Ordering::Greater
-                                        } else {
-                                            x.0.cmp(&y.0)
-                                        }
-                                    })
-                                    .map(|(mod_name, needed_module)| {
-                                        match needed_module {
-                                            Some(module) => format!("inherited in {} (require {})  \n", mod_name, module),
-                                            None => format!("inherited in {}  \n", mod_name)
-                                        }
-                                    }).collect::<String>();
-                            }
-                        }
-                        continue;
-                    }
-                    if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
-                        let special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
-                        if special_string_syms.len() >= 1{
-                            // restart with replacing current index evaluation with field evaluations
-                            let string_domain_fields_evals: Vec<Evaluation> = special_string_syms.iter()
-                                .map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true)))
-                                .chain(evals.iter().take(index).cloned())
-                                .chain(evals.iter().skip(index + 1).cloned())
-                                .collect();
-                            return FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset))
-                        }
-                    }
-                }
-            }
-            // BLOCK 1: (type) **name** -> inferred_type
             let mut context = Some(eval_symbol.as_weak().context.clone());
-            let type_refs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None, &mut vec![]);
-            value += FeaturesUtils::build_block_1(session, &symbol, &type_refs, &mut context).as_str();
-            // BLOCK 2: useful links
-            for typ in type_refs.iter() {
-                let Some(typ) = typ.upgrade_weak() else {
-                    continue;
-                };
-                let paths = &typ.borrow().paths();
-                if paths.len() == 1 { //we won't put a link to a namespace
-                    let type_ref = typ.borrow();
-                    let base_path = match type_ref.typ() {
-                        SymType::PACKAGE(_) => PathBuf::from(paths.first().unwrap().clone()).join(format!("__init__.py{}", type_ref.as_package().i_ext())).sanitize(),
-                        _ => paths.first().unwrap().clone()
-                    };
-                    let path = FileMgr::pathname2uri(&base_path);
-                    let range = if type_ref.is_file_content() { type_ref.range().start().to_u32() } else { 0 };
-                    value += format!("  \n***  \nSee also: [{}]({}#{})  \n", type_ref.name().as_str(), path.as_str(), range).as_str();
-                }
-            }
-            // BLOCK 3: documentation
-            let mut documentation_block = None;
-            if *name_counts.get(symbol.borrow().name()).unwrap_or(&0) > 1 {
-                if let Some(symbol_module) = symbol.borrow().find_module() {
-                    let module_name = symbol_module.borrow().name().clone();
-                    documentation_block = Some(format!("From module `{}`", module_name));
-                }
-            }
-            for typ in type_refs.iter() {
-                if let Some(typ) = typ.upgrade_weak() {
-                    if typ.borrow().doc_string().is_some() {
-                        // Replace leading spaces with nbsps to avoid it being parsed as a Markdown Codeblock
-                        let ds = typ.borrow().doc_string().as_ref().unwrap()
-                        .lines()
-                        .map(|line| {
-                            let leading_spaces = line.chars().take_while(|&ch| ch == ' ').count();
-                            let nbsp_replacement = "&nbsp;".repeat(leading_spaces);
-                            format!("{}{}", nbsp_replacement, &line[leading_spaces..])
-                        })
-                        .collect::<Vec<String>>()
-                        .join("  \n");
-                        documentation_block = match documentation_block {
-                            Some(from_module_str) => Some(from_module_str + "  \n" + &ds),
-                            None => Some(ds)
-                        };
-                    }
-                }
-            }
-            if let Some(documentation_block) = documentation_block{
-                value = value + "  \n***  \n" + &documentation_block;
-            }
+            let evaluation_ptrs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None, &mut vec![]);
+
+            let symbol_type = symbol.borrow().typ();
+            let symbol_name = symbol.borrow().name().clone();
+            let from_module = symbol.borrow().find_module();
+            let sym_type_tag = FeaturesUtils::get_type_symbol_tag(&symbol);
+            let return_types: Vec<TypeInfo> = evaluation_ptrs.iter().map(|eval| FeaturesUtils::get_inferred_types(session, eval, &mut context, &symbol_type)).unique().collect();
+            let inferred_types = evaluation_ptrs.into_iter().zip(return_types.into_iter()).map(|(eval_ptr, eval_info)| InferredType{eval_ptr, eval_info}).collect();
+
+            aggregator.entry(SymbolKey { name: symbol_name.clone(), type_: symbol_type.clone() }).or_insert_with(Vec::new).push(
+                SymbolInfo { sym_type_tag, from_module, inferred_types}
+            );
         }
-        value
+        for (id, info_pieces) in aggregator.iter(){
+            let mut block = S!("");
+            let sym_type_tag = info_pieces.iter().map(|info| info.sym_type_tag.clone()).unique().collect::<Vec<_>>();
+            let inferred_types = info_pieces.iter().flat_map(|info| info.inferred_types.clone()).collect::<Vec<_>>();
+            let from_modules = info_pieces.iter().filter_map(|info| info.from_module.clone().map(|module_rc| module_rc.borrow().name().clone())).unique().collect::<Vec<_>>();
+            // BLOCK 1: (type) **name** -> inferred_type
+            block += FeaturesUtils::build_block_1(id.type_, &id.name, sym_type_tag, &inferred_types).as_str();
+            // BLOCK 2: useful links
+            block += inferred_types.iter().map(|typ| FeaturesUtils::get_useful_link(&typ.eval_ptr)).collect::<String>().as_str();
+            // BLOCK 3: documentation
+            if let Some(documentation_block) = FeaturesUtils::get_documentation_block(&from_modules, &inferred_types){
+                block = block + "  \n***  \n" + &documentation_block;
+            }
+            blocks.push(block);
+        }
+        blocks.iter().join("  \n***  \n")
     }
 
-    /*
-    Build the first block of the hover. It contains the name of the variable as well as the type.
-    parameters:   (type_sym)  symbol: inferred_types
-    For example: "(parameter) self: type[Self@ResPartner]"
-     */
-    fn build_block_1(session: &mut SessionInfo, rc_symbol: &Rc<RefCell<Symbol>>, inferred_types: &Vec<EvaluationSymbolPtr>, context: &mut Option<Context>) -> String {
+    fn get_type_symbol_tag(rc_symbol: &Rc<RefCell<Symbol>>) -> String{
         let symbol = rc_symbol.borrow();
-        //python code balise
-        let mut value = S!("```python  \n");
-        //type name
-        let type_sym = match symbol.typ(){
+        match symbol.typ(){
             SymType::VARIABLE if symbol.as_variable().is_import_variable => S!("import"),
             SymType::VARIABLE if symbol.as_variable().is_parameter => S!("parameter"),
             SymType::FUNCTION if symbol.as_func().is_property => S!("property"),
             SymType::FUNCTION if symbol.parent().unwrap().upgrade().unwrap().borrow().typ() == SymType::CLASS => S!("method"),
             type_ => type_.to_string().to_lowercase()
-        };
-        value += &format!("({}) ", type_sym);
-        //variable name
-        let mut single_func_eval = false;
-        let mut inferred_types = inferred_types.clone();
-        if inferred_types.len() == 1 && inferred_types[0].is_weak() && inferred_types[0].upgrade_weak().unwrap().borrow().typ() == SymType::FUNCTION && !inferred_types[0].upgrade_weak().unwrap().borrow().as_func().is_property {
-            //display 'def' only if there is only a single evaluation to a function
-            single_func_eval = true;
-            let sym_eval_weak = inferred_types[0].as_weak();
-            let sym_rc = sym_eval_weak.weak.upgrade().unwrap();
-            let sym_ref = sym_rc.borrow();
-            let function_sym = sym_ref.as_func();
-            let argument_names = function_sym.args.iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
-            value += &format!("def {}({}) -> ", symbol.name(), argument_names);
-
-            let call_parent = match sym_eval_weak.context.get(&S!("base_attr")){
-                Some(ContextValue::SYMBOL(s)) => s.clone(),
-                _ => {
-                    let parent = sym_ref.parent().and_then(|parent_weak| parent_weak.upgrade());
-                    if parent.is_some() && parent.as_ref().unwrap().borrow().typ() == SymType::CLASS {
-                        Rc::downgrade(&parent.unwrap())
-                    } else {
-                        Weak::new()
-                    }
-                }
-            };
-            // Set base_call to get correct function return type for syms with EvaluationSymbolPtr::SELF type
-            context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
-            inferred_types = function_sym.evaluations.iter().map(|x| x.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None)).collect();
-            context.as_mut().unwrap().remove(&S!("base_call"));
-        } else {
-            if symbol.typ() == SymType::CLASS && inferred_types.len() == 1 && inferred_types[0].is_weak() && inferred_types[0].as_weak().is_super {
-                value += &format!("(super[{}]) ", symbol.name());
-            } else {
-                value += symbol.name();
-            }
-            if symbol.typ() != SymType::CLASS {
-                value += ": ";
-            }
-        }
-        let values: Vec<String> = inferred_types.iter().map(|inferred_type| {
-            FeaturesUtils::get_inferred_types(session, rc_symbol, inferred_type, context, single_func_eval)
-        }).unique().collect();
-
-        value += &(FeaturesUtils::print_return_types(values) + "  \n```");
-        //end block
-        value
-    }
-
-    fn print_return_types(values: Vec<String>) -> String {
-        let len = values.len();
-        let mut filtered_values: Vec<String> = values.into_iter().filter(|v| *v != "Any").collect();
-        let found_any = filtered_values.len() != len;
-        if found_any {
-            filtered_values.push(S!("Any"));
-        }
-        let result = filtered_values.iter().join(" | ");
-        if len > 1 {
-            format!("({})", result)
-        } else {
-            result
         }
     }
 
+    /// Given an Argument return its String representation
+    /// Attempts to fetch the type hint to return `_arg: _arg_type`
+    /// Otherwise just returns the argument name
     fn argument_presentation(session: &mut SessionInfo, arg: &Argument) -> String {
         let arg_name = arg.symbol.upgrade().unwrap().borrow().name().clone();
         match arg.annotation.as_ref() {
@@ -512,64 +441,180 @@ impl FeaturesUtils {
         }
     }
 
-    pub fn get_inferred_types(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, single_func_eval: bool) -> String {
+    /// Return return type representation of evaluation
+    /// for a function evaluation it is typically (_arg: _arg_type, ...) -> (_result_type)
+    /// for variable it just shows the type, or Any if it fails to find it
+    fn get_inferred_types(session: &mut SessionInfo, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, symbol_type: &SymType) -> TypeInfo {
+        if *symbol_type == SymType::CLASS{
+            return TypeInfo::VALUE(S!(""));
+        }
         match eval {
             EvaluationSymbolPtr::WEAK(eval_weak) => {
                 if let Some(inferred_type) = eval.upgrade_weak() {
-                    if Rc::ptr_eq(symbol, &inferred_type) && inferred_type.borrow().typ() != SymType::FUNCTION && inferred_type.borrow().typ() != SymType::CLASS {
-                        S!("Any")
-                    } else {
-                        let inferred_type = inferred_type.borrow();
-                        match inferred_type.typ() {
-                            SymType::FUNCTION if !inferred_type.as_func().is_property => {
-                                let return_type = match inferred_type.evaluations() {
-                                    Some(func_eval) => {
-                                        let mut type_names = HashSet::new();
-                                        for eval in func_eval.iter() {
-                                            let eval_symbol = eval.symbol.get_symbol(session, context, &mut vec![], None);
-                                            let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, false, false, None, &mut vec![]);
-                                            for weak_eval_symbol in weak_eval_symbols.iter() {
-                                                let type_name = if let Some(s_type) = weak_eval_symbol.upgrade_weak() {
-                                                    let typ = s_type.borrow();
-                                                    //if fct is a variable, it means that evaluation is None.
-                                                    if typ.typ() == SymType::VARIABLE {
-                                                        "Any".to_string()
-                                                    } else {
-                                                        typ.name().to_string()
-                                                    }
-                                                } else {
-                                                    "Any".to_string()
-                                                };
-                                                type_names.insert(type_name);
-                                            }
-                                        }
-                                        if !type_names.is_empty() {type_names.iter().join(" | ")} else {S!("None")}
-                                    },
-                                    None => S!("Any"),
-                                };
-                                if !single_func_eval {
-                                    let argument_names = inferred_type.as_func().args.iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
-                                    format!("({}) -> {})", argument_names, return_type)
-                                } else {
-                                    return_type
+                    let inferred_type = inferred_type.borrow();
+                    match inferred_type.typ() {
+                        SymType::FUNCTION if !inferred_type.as_func().is_property => {
+                            let call_parent = match eval.as_weak().context.get(&S!("base_attr")){
+                                Some(ContextValue::SYMBOL(s)) => s.clone(),
+                                _ => {
+                                    let parent = inferred_type.parent().and_then(|parent_weak| parent_weak.upgrade());
+                                    if parent.is_some() && parent.as_ref().unwrap().borrow().typ() == SymType::CLASS {
+                                        Rc::downgrade(&parent.unwrap())
+                                    } else {
+                                        Weak::new()
+                                    }
                                 }
-                            },
-                            SymType::FILE => S!("File"),
-                            SymType::PACKAGE(_) => S!("Module"),
-                            SymType::NAMESPACE => S!("Namespace"),
-                            SymType::CLASS => if eval_weak.is_super {format!("super[{}]", inferred_type.name().to_string())} else {inferred_type.name().to_string()}, // TODO: Maybe do something special if it is a descriptor
-                            _ => S!("Any")
-                        }
+                            };
+                            context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
+                            let return_type = match inferred_type.evaluations() {
+                                Some(func_eval) => {
+                                    let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
+                                        let eval_symbol = eval.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None);
+                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
+                                        weak_eval_symbols.iter().map(|weak_eval_symbol| match weak_eval_symbol.upgrade_weak(){
+                                            //if fct is a variable, it means that evaluation is None.
+                                            Some(s_type) if s_type.borrow().typ() != SymType::VARIABLE => s_type.borrow().name().to_string(),
+                                            _ => "Any".to_string()
+                                        }).collect::<Vec<_>>()
+                                    }).unique().collect();
+                                    if !type_names.is_empty() {FeaturesUtils::represent_return_types(type_names)} else {S!("None")}
+                                },
+                                None => S!("None"),
+                            };
+                            context.as_mut().unwrap().remove(&S!("base_call"));
+                            let argument_names = inferred_type.as_func().args.iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
+                            TypeInfo::CALLABLE(CallableSignature { arguments: argument_names, return_types: return_type })
+                        },
+                        SymType::FILE => TypeInfo::VALUE(S!("File")),
+                        SymType::PACKAGE(_) => TypeInfo::VALUE(S!("Module")),
+                        SymType::NAMESPACE => TypeInfo::VALUE(S!("Namespace")),
+                        SymType::CLASS => TypeInfo::VALUE(if eval_weak.is_super {format!("super[{}]", inferred_type.name())} else {inferred_type.name().to_string()}), // TODO: Maybe do something special if it is a descriptor
+                        _ => TypeInfo::VALUE(S!("Any"))
                     }
                 } else {
-                    S!("Any")
+                    TypeInfo::VALUE(S!("Any"))
                 }
             }
-            EvaluationSymbolPtr::ANY => S!("Any"),
-            EvaluationSymbolPtr::NONE => S!("None"),
-            _ => S!("Any"),
+            EvaluationSymbolPtr::ANY => TypeInfo::VALUE(S!("Any")),
+            EvaluationSymbolPtr::NONE => TypeInfo::VALUE(S!("None")),
+            _ => TypeInfo::VALUE(S!("Any")),
         }
     }
 
+    /*
+    Build the first block of the hover. It contains the name of the variable as well as the type.
+    parameters:   (type_sym)  symbol: inferred_types
+    For example: "(parameter) self: type[Self@ResPartner]"
+     */
+    fn build_block_1(symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &Vec<InferredType>) -> String {
+        //python code balise
+        let mut value = S!("```python  \n");
+        //type name
+        value += &format!("({}) ", type_sym.iter().join(" | "));
+        let mut single_func_eval = false;
+        //variable name
+        if inferred_types.len() == 1
+        && inferred_types[0].eval_ptr.is_weak()
+        && inferred_types[0].eval_ptr.upgrade_weak().unwrap().borrow().typ() == SymType::FUNCTION
+        && !inferred_types[0].eval_ptr.upgrade_weak().unwrap().borrow().as_func().is_property {
+            //display 'def' only if there is only a single evaluation to a function
+            single_func_eval = true;
+            let TypeInfo::CALLABLE(CallableSignature { arguments, return_types: _ }) = &inferred_types[0].eval_info else {
+                unreachable!("Information of a Function evaluation should be a Callable not a Value");
+            };
+            value += &format!("def {}({}) -> ", symbol_name, arguments);
+        } else {
+            if symbol_type == SymType::CLASS && inferred_types.len() == 1 && inferred_types[0].eval_ptr.is_weak() && inferred_types[0].eval_ptr.as_weak().is_super {
+                value += &format!("(super[{}]) ", symbol_name);
+            } else {
+                value += symbol_name;
+            }
+            if symbol_type != SymType::CLASS {
+                value += ": ";
+            }
+        }
+        let return_types_string = inferred_types.iter().map(|rt| match &rt.eval_info {
+            TypeInfo::CALLABLE(CallableSignature { arguments, return_types }) => {
+                if single_func_eval {return_types.clone()} else {format!("({}) -> {})", arguments, return_types)}
+            },
+            TypeInfo::VALUE(value) => value.clone(),
+        }).unique().collect::<Vec<_>>();
+        value += &format!("{}  \n```", FeaturesUtils::represent_return_types(return_types_string));
+        //end block
+        value
+    }
 
+    /// Given a list of return types from evaluations
+    /// Combine them into one string, surround with parenthesis
+    ///   if there is more than one type.
+    /// Always puts the Any type at the end. e.g. `(int | dict | Any)``
+    fn represent_return_types(return_types: Vec<String>) -> String {
+        let mut return_types = return_types.clone();
+        if let Some(pos) = return_types.iter().position(|n| *n == S!("Any")) {
+            let last_index = return_types.len() - 1;
+            return_types.swap(pos, last_index);
+        }
+        let return_types_string = return_types.iter().join(" | ");
+        if return_types.len() > 1 {
+            format!("({})", return_types_string)
+        } else {
+            return_types_string
+        }
+
+    }
+
+    /// Finds and returns useful links for an evaluation
+    fn get_useful_link(typ: &EvaluationSymbolPtr) -> String {
+        // Possibly add more links in the future
+        let Some(typ) = typ.upgrade_weak() else {
+            return S!("")
+        };
+        let paths = &typ.borrow().paths();
+        if paths.len() == 1 { //we won't put a link to a namespace
+            let type_ref = typ.borrow();
+            let base_path = match type_ref.typ() {
+                SymType::PACKAGE(_) => PathBuf::from(paths.first().unwrap().clone()).join(format!("__init__.py{}", type_ref.as_package().i_ext())).sanitize(),
+                _ => paths.first().unwrap().clone()
+            };
+            let path = FileMgr::pathname2uri(&base_path);
+            let range = if type_ref.is_file_content() { type_ref.range().start().to_u32() } else { 0 };
+            format!("  \n***  \nSee also: [{}]({}#{})  \n", type_ref.name().as_str(), path.as_str(), range)
+        } else {
+            S!("")
+        }
+    }
+
+    /// Documentation block that includes the source module(s) and docstrings if found
+    fn get_documentation_block(from_modules: &Vec<OYarn>, type_refs: &Vec<InferredType>) -> Option<String> {
+        let mut documentation_block = None;
+        if !from_modules.is_empty(){
+            documentation_block = Some(
+                format!(
+                    "From module{} `{}`",
+                    if from_modules.len() > 1 {"s"} else {""},
+                    from_modules.iter().join(", "))
+            );
+        }
+        for typ in type_refs.iter() {
+            if let Some(typ) = typ.eval_ptr.upgrade_weak() {
+                if typ.borrow().doc_string().is_some() {
+                    // Replace leading spaces with nbsps to avoid it being parsed as a Markdown Codeblock
+                    let ds = typ.borrow().doc_string().as_ref().unwrap()
+                    .lines()
+                    .map(|line| {
+                        let leading_spaces = line.chars().take_while(|&ch| ch == ' ').count();
+                        let nbsp_replacement = "&nbsp;".repeat(leading_spaces);
+                        format!("{}{}", nbsp_replacement, &line[leading_spaces..])
+                    })
+                    .collect::<Vec<String>>()
+                    .join("  \n");
+                    documentation_block = match documentation_block {
+                        Some(from_module_str) => Some(from_module_str + "  \n" + &ds),
+                        None => Some(ds)
+                    };
+                }
+            }
+        }
+        documentation_block
+    }
 }
