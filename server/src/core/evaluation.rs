@@ -1,7 +1,6 @@
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use byteyarn::Yarn;
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
@@ -215,7 +214,7 @@ pub enum EvaluationSymbolPtr {
     ARG(u32),
     DOMAIN,
     NONE,
-    UNBOUND(String),
+    UNBOUND(OYarn),
     #[default]
     ANY
 }
@@ -400,7 +399,7 @@ impl Evaluation {
     pub fn new_unbound(name: String) -> Self {
         Self {
             symbol: EvaluationSymbol {
-                sym: EvaluationSymbolPtr::UNBOUND(name),
+                sym: EvaluationSymbolPtr::UNBOUND(Sy!(name)),
                 get_symbol_hook: None,
             },
             value: None,
