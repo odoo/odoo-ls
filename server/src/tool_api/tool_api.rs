@@ -9,6 +9,7 @@ use std::io::{prelude::*, ErrorKind};
 use std::net::TcpStream;
 use std::time::Duration;
 
+use byteyarn::Yarn;
 use crossbeam_channel::Select;
 use lsp_server::{Connection, Message, Request, RequestId, Response};
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,8 @@ use crate::constants::{PackageType, SymType, Tree};
 use crate::core::entry_point::{EntryPoint, EntryPointType};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
-use crate::utils::PathSanitizer;
+use crate::utils::{tree_yarn_to_string, PathSanitizer};
+use crate::Sy;
 
 use super::io_threads::ToolAPIIoThreads;
 use super::socket;
@@ -128,11 +130,11 @@ impl ToolAPI {
     fn entry_to_json(entry: &EntryPoint) -> serde_json::Value {
         let mut not_found = vec![];
         for symbol in entry.not_found_symbols.iter() {
-            not_found.push(json!(symbol.borrow().get_tree()));
+            not_found.push(json!(tree_yarn_to_string(&symbol.borrow().get_tree())));
         }
         json!({
             "path": entry.path,
-            "tree": entry.tree,
+            "tree": entry.tree.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
             "type": match entry.typ.clone() {
                 EntryPointType::MAIN => "main",
                 EntryPointType::ADDON => "addon",
@@ -142,7 +144,7 @@ impl ToolAPI {
                 _ => {"unknown"}
             },
             "addon_to_odoo_path": entry.addon_to_odoo_path,
-            "addon_to_odoo_tree": entry.addon_to_odoo_tree,
+            "addon_to_odoo_tree": entry.addon_to_odoo_tree.as_ref().map(|x| x.iter().map(|x| x.to_string()).collect::<Vec<String>>()),
             "not_found_symbols": not_found,
         })
     }
@@ -165,9 +167,13 @@ impl ToolAPI {
             }
         }
         if let Some(entry) = entry {
-            return ToolAPI::symbol_to_json(entry.clone(), &params.tree)
+            return ToolAPI::symbol_to_json(entry.clone(), &ToolAPI::vec_tree_to_yarn_tree(&params.tree))
         }
         serde_json::Value::Null
+    }
+
+    pub fn vec_tree_to_yarn_tree(str_tree: &(Vec<String>, Vec<String>)) -> Tree {
+        (str_tree.0.iter().map(|x| Sy!(x.clone())).collect::<Vec<Yarn>>(), str_tree.1.iter().map(|x| Sy!(x.clone())).collect::<Vec<Yarn>>())
     }
 
     fn symbol_to_json(entry: Rc<RefCell<EntryPoint>>, tree: &Tree) -> serde_json::Value {
@@ -238,7 +244,7 @@ impl ToolAPI {
             }
         }
         if let Some(entry) = entry {
-            let mut symbols = entry.borrow().root.borrow().get_symbol(&params.tree, u32::MAX);
+            let mut symbols = entry.borrow().root.borrow().get_symbol(&ToolAPI::vec_tree_to_yarn_tree(&params.tree), u32::MAX);
             if symbols.len() > 1 {
                 panic!()
             }
@@ -254,7 +260,7 @@ impl ToolAPI {
                 };
                 let module_sym: Vec<serde_json::Value> = module_sym.iter().map(|sym| {
                     json!({
-                        "name": sym.borrow().name().clone(),
+                        "name": sym.borrow().name().to_string(),
                         "type": sym.borrow().typ().to_string(),
                     })
                 }).collect();

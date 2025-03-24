@@ -154,7 +154,7 @@ impl NamespaceSymbol {
         for directory in self.directories.iter() {
             let module_sym: Vec<serde_json::Value> = directory.module_symbols.values().map(|sym| {
                 json!({
-                    "name": sym.borrow().name().clone(),
+                    "name": sym.borrow().name().to_string(),
                     "type": sym.borrow().typ().to_string(),
                 })
             }).collect();

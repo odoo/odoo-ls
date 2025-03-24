@@ -37,7 +37,7 @@ impl CompiledSymbol {
     pub fn to_json(&self) -> serde_json::Value {
         let module_sym: Vec<serde_json::Value> = self.module_symbols.values().map(|sym| {
             json!({
-                "name": sym.borrow().name().clone(),
+                "name": sym.borrow().name().to_string(),
                 "type": sym.borrow().typ().to_string(),
             })
         }).collect();

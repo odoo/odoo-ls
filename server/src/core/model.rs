@@ -84,7 +84,7 @@ impl Model {
     }
 
     pub fn get_name(&self) -> String {
-        self.name.clone()
+        self.name.to_string()
     }
 
     pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {

@@ -1,7 +1,7 @@
 use byteyarn::{yarn, Yarn};
 use serde_json::json;
 
-use crate::{constants::BuildSteps, core::entry_point::EntryPoint, threads::SessionInfo, S};
+use crate::{constants::{BuildSteps, SymType}, core::entry_point::EntryPoint, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
@@ -37,7 +37,7 @@ impl RootSymbol {
     pub fn to_json(&self) -> serde_json::Value {
         let module_sym: Vec<serde_json::Value> = self.module_symbols.values().map(|sym| {
             json!({
-                "name": sym.borrow().name().clone(),
+                "name": sym.borrow().name().to_string(),
                 "type": sym.borrow().typ().to_string(),
             })
         }).collect();

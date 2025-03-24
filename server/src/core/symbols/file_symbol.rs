@@ -158,7 +158,7 @@ impl FileSymbol {
             "not_found_paths": self.not_found_paths.iter().map(|(step, paths)| {
                 json!({
                     "step": step.to_string(),
-                    "paths": paths,
+                    "paths": paths.into_iter().map(|x| x.to_string()).collect::<Vec<String>>(),
                 })
             }).collect::<Vec<serde_json::Value>>(),
             "self_import": self.self_import,
@@ -175,19 +175,19 @@ impl FileSymbol {
             }).collect::<Vec<serde_json::Value>>(),
             "symbols": self.symbols.iter().map(|(name, sections)| {
                 json!({
-                    "name": name,
+                    "name": name.to_string(),
                     "sections": sections.iter().map(|(section, symbols)| {
                         json!({
                             "section": section,
-                            "symbols": symbols.iter().map(|sym| json!(sym.borrow().name())).collect::<Vec<serde_json::Value>>(),
+                            "symbols": symbols.iter().map(|sym| json!(sym.borrow().name().to_string())).collect::<Vec<serde_json::Value>>(),
                         })
                     }).collect::<Vec<serde_json::Value>>(),
                 })
             }).collect::<Vec<serde_json::Value>>(),
             "ext_symbols": self.ext_symbols.iter().map(|(name, symbols)| {
                 json!({
-                    "name": name,
-                    "symbols": symbols.iter().map(|sym| json!(sym.borrow().name())).collect::<Vec<serde_json::Value>>(),
+                    "name": name.to_string(),
+                    "symbols": symbols.iter().map(|sym| json!(sym.borrow().name().to_string())).collect::<Vec<serde_json::Value>>(),
                 })
             }).collect::<Vec<serde_json::Value>>(),
         })
