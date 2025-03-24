@@ -150,6 +150,9 @@ impl Symbol {
             },
             Symbol::Root(r) => {
                 r.add_file(&namespace);
+            },
+            Symbol::DiskDir(d) => {
+                d.add_file(&namespace);
             }
             _ => { panic!("Impossible to add a namespace to a {}", self.typ()); }
         }
