@@ -1,25 +1,23 @@
-use byteyarn::{yarn, Yarn};
-
-use crate::{constants::BuildSteps, core::entry_point::EntryPoint, threads::SessionInfo, S};
+use crate::{constants::{BuildSteps, OYarn}, core::entry_point::EntryPoint, oyarn, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct RootSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub entry_point: Option<Rc<RefCell<EntryPoint>>>,
     pub paths: Vec<String>,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
-    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
 }
 
 impl RootSymbol {
 
     pub fn new() -> Self {
         Self {
-            name: yarn!("Root"),
+            name: oyarn!("Root"),
             paths: vec![],
             weak_self: None,
             entry_point: None,

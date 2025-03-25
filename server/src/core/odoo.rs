@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use std::cmp;
 use regex::Regex;
-use crate::{constants::*, Sy};
+use crate::{constants::*, oyarn, Sy};
 use super::config::{DiagMissingImportsMode, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
@@ -62,12 +62,12 @@ pub struct SyncOdoo {
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
     pub has_valid_python: bool,
-    pub main_entry_tree: Vec<Yarn>,
+    pub main_entry_tree: Vec<OYarn>,
     pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
     file_mgr: Rc<RefCell<FileMgr>>,
-    pub modules: HashMap<Yarn, Weak<RefCell<Symbol>>>,
-    pub models: HashMap<Yarn, Rc<RefCell<Model>>>,
+    pub modules: HashMap<OYarn, Weak<RefCell<Symbol>>>,
+    pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
     pub watched_file_updates: Arc<AtomicU32>,
@@ -408,7 +408,7 @@ impl SyncOdoo {
                     for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
                         match item {
                             Ok(item) => {
-                                if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&yarn!("{}", item.file_name().to_str().unwrap())) {
+                                if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&oyarn!("{}", item.file_name().to_str().unwrap())) {
                                     let module_symbol = Symbol::create_from_path(session, &item.path(), addons_symbol.clone(), true);
                                     if module_symbol.is_some() {
                                         session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
@@ -818,7 +818,7 @@ impl SyncOdoo {
         false
     }
 
-    pub fn is_in_main_entry(session: &mut SessionInfo, path: &Vec<Yarn>) -> bool{
+    pub fn is_in_main_entry(session: &mut SessionInfo, path: &Vec<OYarn>) -> bool{
         path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
     }
 

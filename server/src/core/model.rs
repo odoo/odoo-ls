@@ -2,13 +2,13 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::rc::Weak;
-use byteyarn::Yarn;
 use lsp_types::MessageType;
 use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
 use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
+use crate::constants::OYarn;
 use crate::constants::SymType;
 use crate::threads::SessionInfo;
 
@@ -17,9 +17,9 @@ use super::symbols::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct ModelData {
-    pub name: Yarn,
-    pub inherit: Vec<Yarn>,
-    pub inherits: Vec<(Yarn, Yarn)>,
+    pub name: OYarn,
+    pub inherit: Vec<OYarn>,
+    pub inherits: Vec<(OYarn, OYarn)>,
 
     pub description: String,
     pub auto: bool,
@@ -42,7 +42,7 @@ pub struct ModelData {
 impl ModelData {
     pub fn new() -> Self {
         Self {
-            name: Yarn::new(""),
+            name: OYarn::from(""),
             inherit: Vec::new(),
             inherits: Vec::new(),
             description: String::new(),
@@ -67,13 +67,13 @@ impl ModelData {
 
 #[derive(Debug)]
 pub struct Model {
-    name: Yarn,
+    name: OYarn,
     symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
 }
 
 impl Model {
-    pub fn new(name: Yarn, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(name: OYarn, symbol: Rc<RefCell<Symbol>>) -> Self {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
@@ -182,7 +182,7 @@ impl Model {
     /* Return all symbols that build this model.
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
     */
-    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)> {
+    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
         let mut symbol = Vec::new();
         for s in self.symbols.iter() {
             if let Some(from_module) = from_module.as_ref() {

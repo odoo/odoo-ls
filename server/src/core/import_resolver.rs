@@ -1,4 +1,3 @@
-use byteyarn::{yarn, Yarn};
 use glob::glob;
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use tracing::{error, info};
@@ -9,7 +8,7 @@ use std::path::Path;
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Identifier};
-use crate::{constants::*, Sy, S};
+use crate::{constants::*, oyarn, Sy, S};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
 
@@ -18,7 +17,7 @@ use super::odoo::SyncOdoo;
 use super::symbols::symbol::Symbol;
 
 pub struct ImportResult {
-    pub name: Yarn,
+    pub name: OYarn,
     pub found: bool,
     pub symbol: Rc<RefCell<Symbol>>,
     pub file_tree: Tree,
@@ -29,8 +28,8 @@ pub struct ImportResult {
 //It means of course than a modification during the build will not be taken into account, but it should be ok because reloaded after the build
 #[derive(Debug)]
 pub struct ImportCache {
-    pub modules: HashMap<Yarn, Option<Rc<RefCell<Symbol>>>>,
-    pub main_modules: HashMap<Yarn, Option<Rc<RefCell<Symbol>>>>,
+    pub modules: HashMap<OYarn, Option<Rc<RefCell<Symbol>>>>,
+    pub main_modules: HashMap<OYarn, Option<Rc<RefCell<Symbol>>>>,
 }
 
 fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbol>>>, session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
@@ -84,7 +83,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     let mut result = vec![];
     for alias in name_aliases {
         result.push(ImportResult{
-            name: Yarn::from(alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
+            name: OYarn::from(alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
             found: false,
             symbol: fallback_sym.as_ref().unwrap_or(&source_root).clone(),
             file_tree: (file_tree.clone(), vec![]),
@@ -97,7 +96,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
 
     let mut name_index: i32 = -1;
     for alias in name_aliases.iter() {
-        let name = yarn!("{}", alias.name);
+        let name = oyarn!("{}", alias.name);
         name_index += 1;
         if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbol, session, source_file_symbol, from_stmt, level,  diagnostics){
             result[name_index as usize] = hook_result;
@@ -119,7 +118,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
                 &entry,
                 source_path.as_str(),
                 from_symbol.clone(),
-                &vec![name.split(".").map(|s| yarn!("{}", s)).next().unwrap()],
+                &vec![name.split(".").map(|s| oyarn!("{}", s)).next().unwrap()],
                 None,
             None);
             if name_symbol.is_none() {
@@ -133,14 +132,14 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
                     continue;
                 }
             }
-            result[name_index as usize].name = name.split(".").map(|s| yarn!("{}", s)).next().unwrap();
+            result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
             result[name_index as usize].found = true;
             result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
             continue;
         }
-        let name_split: Vec<Yarn> = name.split(".").map(|s| yarn!("{}", s)).collect();
-        let name_first_part: Vec<Yarn> = Vec::from_iter(name_split[0..name_split.len()-1].iter().cloned());
-        let name_last_name: Vec<Yarn> = vec![name_split.last().unwrap().clone()];
+        let name_split: Vec<OYarn> = name.split(".").map(|s| oyarn!("{}", s)).collect();
+        let name_first_part: Vec<OYarn> = Vec::from_iter(name_split[0..name_split.len()-1].iter().cloned());
+        let name_last_name: Vec<OYarn> = vec![name_split.last().unwrap().clone()];
 
         // get the full file_tree, including the first part of the name import stmt. (os in import os.path)
         let (next_symbol, fallback_sym) = _get_or_create_symbol(
@@ -182,7 +181,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     return result;
 }
 
-pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &Yarn) -> Option<Rc<RefCell<Symbol>>> {
+pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &OYarn) -> Option<Rc<RefCell<Symbol>>> {
     let paths = (*odoo_addons).borrow().paths().clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name.as_str());
@@ -208,8 +207,8 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
     None
 }
 
-fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<u32>, from_stmt: Option<&Identifier>) -> Vec<Yarn> {
-    let mut first_part_tree: Vec<Yarn> = vec![];
+fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<u32>, from_stmt: Option<&Identifier>) -> Vec<OYarn> {
+    let mut first_part_tree: Vec<OYarn> = vec![];
     if level.is_some() && level.unwrap() > 0 {
         let mut lvl = level.unwrap();
         if lvl > Path::new(file_path).components().count() as u32 {
@@ -234,7 +233,7 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
         Some(from_stmt_inner) => {
             let split = from_stmt_inner.as_str().split(".");
             for i in split {
-                first_part_tree.push(yarn!("{}", i));
+                first_part_tree.push(oyarn!("{}", i));
             }
         },
         None => ()
@@ -242,7 +241,7 @@ fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymTy
     first_part_tree
 }
 
-fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Rc<RefCell<Symbol>>>, names: &Vec<Yarn>, asname: Option<String>, level: Option<u32>) -> (Option<Rc<RefCell<Symbol>>>, Option<Rc<RefCell<Symbol>>>) {
+fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Rc<RefCell<Symbol>>>, names: &Vec<OYarn>, asname: Option<String>, level: Option<u32>) -> (Option<Rc<RefCell<Symbol>>>, Option<Rc<RefCell<Symbol>>>) {
     let mut sym: Option<Rc<RefCell<Symbol>>> = symbol.clone();
     let mut last_symbol = symbol.clone();
     for branch in names.iter() {
@@ -339,7 +338,7 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
     return (sym, last_symbol)
 }
 
-fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &Yarn, asname: Option<String>) -> Result<Rc<RefCell<Symbol>>, String> {
+fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &OYarn, asname: Option<String>) -> Result<Rc<RefCell<Symbol>>, String> {
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
         None => name.to_string()
@@ -411,7 +410,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
     return Err("Symbol not found".to_string())
 }
 
-pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, base_name: String, level: Option<u32>) -> HashSet<Yarn> {
+pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, base_name: String, level: Option<u32>) -> HashSet<OYarn> {
     //A: search base of different imports
     let source_root = source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap();
     let entry = source_root.borrow().get_entry().unwrap();
@@ -443,7 +442,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     let from_symbol = from_symbol.unwrap();
 
     let mut sym: Option<Rc<RefCell<Symbol>>> = Some(from_symbol.clone());
-    let mut names = vec![base_name.split(".").map(|s| yarn!("{}", s)).next().unwrap()];
+    let mut names = vec![base_name.split(".").map(|s| oyarn!("{}", s)).next().unwrap()];
     if base_name.ends_with(".") {
         names.push(Sy!(""));
     }

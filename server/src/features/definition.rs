@@ -1,4 +1,3 @@
-use byteyarn::yarn;
 use lsp_types::{GotoDefinitionResponse, Location, Range};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
@@ -11,6 +10,7 @@ use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
+use crate::oyarn;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 
@@ -45,7 +45,7 @@ impl DefinitionFeature {
     fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<Location>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                yarn!("{}", expr.value.to_string())
+                oyarn!("{}", expr.value.to_string())
             } else {
                 return false;
             }

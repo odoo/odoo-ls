@@ -3,6 +3,8 @@ use byteyarn::Yarn;
 
 use ruff_text_size::TextSize;
 
+use crate::constants::OYarn;
+
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::Symbol};
 
 #[derive(Debug, Default)]
@@ -31,8 +33,8 @@ pub trait SymbolMgr {
     fn get_last_index(&self) -> u32;
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
-    fn get_content_symbol(&self, name: Yarn, position: u32) -> ContentSymbols;
-    fn get_ext_symbol(&self, name: Yarn) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
+    fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols;
+    fn get_ext_symbol(&self, name: OYarn) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
     fn _init_symbol_mgr(&mut self);
     fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
 }
@@ -99,7 +101,7 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///Return all the symbols that are valid as last declaration for the given position
-        fn get_content_symbol(&self, name: Yarn, position: u32) -> ContentSymbols {
+        fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols {
             let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
             if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
@@ -108,7 +110,7 @@ macro_rules! impl_section_mgr_for {
             ContentSymbols::default()
         }
 
-        fn get_ext_symbol(&self, name: Yarn) -> Option<&Vec<Rc<RefCell<Symbol>>>> {
+        fn get_ext_symbol(&self, name: OYarn) -> Option<&Vec<Rc<RefCell<Symbol>>>> {
             self.ext_symbols.get(&name)
         }
 

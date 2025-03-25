@@ -1,9 +1,8 @@
-use byteyarn::{yarn, Yarn};
 use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use crate::{threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::OYarn, oyarn, threads::SessionInfo, utils::PathSanitizer};
 
 use super::symbol::Symbol;
 
@@ -12,9 +11,9 @@ DiskDir symbol represent a directory on disk we didn't parse yet. So it can eith
 */
 #[derive(Debug)]
 pub struct DiskDirSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub path: String,
-    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub is_external: bool,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
@@ -25,7 +24,7 @@ impl DiskDirSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
         Self {
-            name: yarn!("{}", name),
+            name: oyarn!("{}", name),
             path: PathBuf::from(path).sanitize(),
             is_external,
             weak_self: None,

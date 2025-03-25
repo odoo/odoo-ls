@@ -2,14 +2,13 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
-use byteyarn::{yarn, Yarn};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, Expr, ExprNamed, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
 
-use crate::constants::{BuildStatus, BuildSteps, SymType, DEBUG_STEPS};
+use crate::constants::{BuildStatus, BuildSteps, OYarn, SymType, DEBUG_STEPS};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
@@ -17,7 +16,7 @@ use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
-use crate::S;
+use crate::{oyarn, S};
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -138,7 +137,7 @@ impl PythonArchBuilder {
                     continue;
                 }
                 let mut all_name_allowed = true;
-                let mut name_filter: Vec<Yarn> = vec![];
+                let mut name_filter: Vec<OYarn> = vec![];
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first() {
                     let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                         Rc::downgrade(all), None, false
@@ -179,7 +178,7 @@ impl PythonArchBuilder {
                 if symbol.typ() != SymType::COMPILED {
                     for (name, loc_syms) in symbol.iter_symbols() {
                         if all_name_allowed || name_filter.contains(&name) {
-                            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, Yarn::from(name.clone()), &import_result.range);
+                            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
                             let mut loc = variable.borrow_mut();
                             loc.as_variable_mut().is_import_variable = true;
                             loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
@@ -208,7 +207,7 @@ impl PythonArchBuilder {
                 } else {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
-                let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, Yarn::from(var_name), &import_name.range);
+                let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(var_name), &import_name.range);
                 variable.borrow_mut().as_variable_mut().is_import_variable = true;
             }
         }
@@ -423,9 +422,9 @@ impl PythonArchBuilder {
         }
     }
 
-    fn extract_all_symbol_eval_values(&self, value: &Option<&EvaluationValue>) -> (Vec<Yarn>, bool) {
+    fn extract_all_symbol_eval_values(&self, value: &Option<&EvaluationValue>) -> (Vec<OYarn>, bool) {
         let mut parse_error = false;
-        let vec: Vec<Yarn> = match value {
+        let vec: Vec<OYarn> = match value {
             Some(eval) => {
                 match eval {
                     EvaluationValue::ANY() => {
@@ -435,7 +434,7 @@ impl PythonArchBuilder {
                     EvaluationValue::CONSTANT(c) => {
                         match c {
                             Expr::StringLiteral(s) => {
-                                vec![yarn!("{}", s.value)]
+                                vec![oyarn!("{}", s.value)]
                             },
                             _ => {parse_error = true; vec![]}
                         }
@@ -448,7 +447,7 @@ impl PythonArchBuilder {
                         for v in l.iter() {
                             match v {
                                 Expr::StringLiteral(s) => {
-                                    res.push(yarn!("{}", s.value));
+                                    res.push(oyarn!("{}", s.value));
                                 }
                                 _ => {parse_error = true; }
                             }
@@ -460,7 +459,7 @@ impl PythonArchBuilder {
                         for v in t.iter() {
                             match v {
                                 Expr::StringLiteral(s) => {
-                                    res.push(yarn!("{}", s.value));
+                                    res.push(oyarn!("{}", s.value));
                                 }
                                 _ => {parse_error = true; }
                             }
@@ -483,7 +482,7 @@ impl PythonArchBuilder {
             if let Some(ref expr) = assign.value{
                 self.visit_expr(session, expr);
             }
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, yarn!("{}", assign.target.id), &assign.target.range);
+            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", assign.target.id), &assign.target.range);
         }
     }
 
@@ -493,7 +492,7 @@ impl PythonArchBuilder {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, yarn!("{}", assign.target.id), &assign.target.range);
+            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", assign.target.id), &assign.target.range);
             let mut variable = variable.borrow_mut();
             if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
                 let parent = variable.parent().as_ref().unwrap().upgrade();
@@ -531,7 +530,7 @@ impl PythonArchBuilder {
 
     fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
         self.visit_expr(session, &named_expr.value);
-        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, yarn!("{}", named_expr.target.as_name_expr().unwrap().id), &named_expr.target.range());
+        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", named_expr.target.as_name_expr().unwrap().id), &named_expr.target.range());
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
@@ -564,7 +563,7 @@ impl PythonArchBuilder {
         drop(sym_bw);
         //add params
         for arg in func_def.parameters.posonlyargs.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, yarn!("{}", arg.parameter.name.id), &arg.range);
+            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
@@ -574,7 +573,7 @@ impl PythonArchBuilder {
             });
         }
         for arg in func_def.parameters.args.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, yarn!("{}", arg.parameter.name.id), &arg.range);
+            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
@@ -588,7 +587,7 @@ impl PythonArchBuilder {
             });
         }
         if let Some(arg) = &func_def.parameters.vararg {
-            let param = sym.borrow_mut().add_new_variable(session, yarn!("{}", arg.name.id), &arg.range);
+            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
@@ -598,7 +597,7 @@ impl PythonArchBuilder {
             });
         }
         for arg in func_def.parameters.kwonlyargs.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, yarn!("{}", arg.parameter.name.id), &arg.range);
+            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
@@ -608,7 +607,7 @@ impl PythonArchBuilder {
             });
         }
         if let Some(arg) = &func_def.parameters.kwarg {
-            let param = sym.borrow_mut().add_new_variable(session, yarn!("{}", arg.name.id), &arg.range);
+            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
@@ -653,7 +652,7 @@ impl PythonArchBuilder {
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
             if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).symbols.is_empty() {
-                let all_var = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, yarn!("{}", symbol_name), &range);
+                let all_var = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", symbol_name), &range);
             }
         }
     }
@@ -721,7 +720,7 @@ impl PythonArchBuilder {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            scope.borrow_mut().add_new_variable(session, yarn!("{}", assign.target.id), &assign.target.range);
+            scope.borrow_mut().add_new_variable(session, oyarn!("{}", assign.target.id), &assign.target.range);
         }
         let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
         scope.borrow_mut().as_mut_symbol_mgr().add_section(
@@ -805,7 +804,7 @@ impl PythonArchBuilder {
                 match &**var {
                     Expr::Name(expr_name) => {
                         self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
-                            session, yarn!("{}", expr_name.id), &var.range());
+                            session, oyarn!("{}", expr_name.id), &var.range());
                     },
                     Expr::Tuple(_) => {continue;},
                     Expr::List(_) => {continue;},
@@ -834,13 +833,13 @@ impl PythonArchBuilder {
                 Pattern::MatchStar(pattern_match_star) => {
                     if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
                         scope.borrow_mut().add_new_variable(
-                            session, yarn!("{}", name), &pattern_match_star.range());
+                            session, oyarn!("{}", name), &pattern_match_star.range());
                     }
                 },
                 Pattern::MatchAs(pattern_match_as) => {
                     if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
                         scope.borrow_mut().add_new_variable(
-                            session, yarn!("{}", name), &pattern_match_as.range());
+                            session, oyarn!("{}", name), &pattern_match_as.range());
                     }
                 },
                 Pattern::MatchOr(match_or) => {

@@ -3,7 +3,7 @@ use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use crate::constants::BuildSteps;
+use crate::constants::{BuildSteps, OYarn};
 
 use super::symbol::Symbol;
 
@@ -11,12 +11,12 @@ use super::symbol::Symbol;
 #[derive(Debug)]
 pub struct NamespaceDirectory {
     pub path: String,
-    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
 }
 
 #[derive(Debug)]
 pub struct NamespaceSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub directories: Vec<NamespaceDirectory>,
     pub is_external: bool,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
@@ -37,7 +37,7 @@ impl NamespaceSymbol {
             })
         }
         Self {
-            name: Yarn::from_string(name),
+            name: OYarn::from(name),
             directories: directories,
             is_external,
             weak_self: None,

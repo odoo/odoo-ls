@@ -1,4 +1,3 @@
-use byteyarn::{yarn, Yarn};
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
@@ -6,7 +5,7 @@ use tracing::info;
 use weak_table::PtrWeakHashSet;
 use std::collections::{HashMap, HashSet};
 
-use crate::{constants::*, Sy};
+use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver::find_module;
 use crate::core::model::Model;
@@ -26,25 +25,25 @@ use super::symbol_mgr::SectionRange;
 
 #[derive(Debug)]
 pub struct ModuleSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub path: String,
     pub i_ext: String,
     pub is_external: bool,
     root_path: String,
     loaded: bool,
-    module_name: Yarn,
-    pub dir_name: Yarn,
-    depends: Vec<Yarn>,
-    all_depends: HashSet<Yarn>, //computed all depends to avoid too many recomputations
+    module_name: OYarn,
+    pub dir_name: OYarn,
+    depends: Vec<OYarn>,
+    all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<String>, // TODO
-    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
-    pub not_found_paths: Vec<(BuildSteps, Vec<Yarn>)>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub in_workspace: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
@@ -53,16 +52,16 @@ pub struct ModuleSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<Yarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl ModuleSymbol {
 
     pub fn new(session: &mut SessionInfo, name: String, dir_path: &PathBuf, is_external: bool) -> Option<Self> {
         let mut module = ModuleSymbol {
-            name: yarn!("{}", name),
+            name: oyarn!("{}", name),
             path: dir_path.sanitize(),
             i_ext: S!(""),
             is_external,
@@ -70,9 +69,9 @@ impl ModuleSymbol {
             in_workspace: false,
             root_path: dir_path.sanitize(),
             loaded: false,
-            module_name: Yarn::new(""),
-            dir_name: Yarn::new(""),
-            depends: vec!(Yarn::new("base")),
+            module_name: OYarn::from(""),
+            dir_name: OYarn::from(""),
+            depends: vec!(OYarn::from("base")),
             all_depends: HashSet::new(),
             data: Vec::new(),
             weak_self: None,
@@ -95,7 +94,7 @@ impl ModuleSymbol {
         if dir_path.components().last().unwrap().as_os_str().to_str().unwrap() == "base" {
             module.depends.clear();
         }
-        module.dir_name = yarn!("{}", dir_path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap());
+        module.dir_name = oyarn!("{}", dir_path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap());
         let manifest_path = dir_path.join("__manifest__.py");
         if !manifest_path.exists() {
             return None
@@ -122,7 +121,7 @@ impl ModuleSymbol {
         section_vec.push(content.clone());
     }
 
-    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<Yarn> {
+    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<OYarn> {
         {
             let _symbol = symbol.borrow();
             if _symbol.as_module_package().loaded {
@@ -187,7 +186,7 @@ impl ModuleSymbol {
                                 if !value.is_string_literal_expr() {
                                     res.push(self._create_diagnostic_for_manifest_key("The name of the module should be a string", S!("OLS30203"), &key_literal.range));
                                 } else {
-                                    self.module_name = yarn!("{}", value.as_string_literal_expr().unwrap().value);
+                                    self.module_name = oyarn!("{}", value.as_string_literal_expr().unwrap().value);
                                 }
                             } else if key_str == "depends" {
                                 if !value.is_list_expr() {
@@ -197,7 +196,7 @@ impl ModuleSymbol {
                                         if !depend.is_string_literal_expr() {
                                             res.push(self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", S!("OLS30205"), &depend.range()));
                                         } else {
-                                            let depend_value = yarn!("{}", depend.as_string_literal_expr().unwrap().value);
+                                            let depend_value = oyarn!("{}", depend.as_string_literal_expr().unwrap().value);
                                             if depend_value == self.dir_name {
                                                 res.push(self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range()));
                                             } else {
@@ -268,12 +267,12 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<Yarn>) {
+    fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
         symbol.as_module_package_mut().all_depends.clear();
         let all_depends = symbol.as_module_package().depends.clone();
         symbol.as_module_package_mut().all_depends.extend(all_depends);
         let mut diagnostics: Vec<Diagnostic> = vec![];
-        let mut loaded: Vec<Yarn> = vec![];
+        let mut loaded: Vec<OYarn> = vec![];
         for depend in symbol.as_module_package().depends.clone().iter() {
             //TODO: raise an error on dependency cycle
             if !session.sync_odoo.modules.contains_key(depend) {
@@ -324,7 +323,7 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &Yarn) -> bool {
+    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &OYarn) -> bool {
         symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().all_depends.contains(dir_name)
     }
 

@@ -1,19 +1,18 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
-use byteyarn::{yarn, Yarn};
 use lsp_types::notification::ShowMessage;
 use lsp_types::MessageType;
 use ruff_python_ast::Expr;
 use lsp_types::{Diagnostic, ShowMessageParams, notification::Notification};
 use tracing::{error, info};
 
-use crate::constants::{BuildStatus, BuildSteps, SymType, DEBUG_ODOO_BUILDER};
+use crate::constants::{BuildStatus, BuildSteps, OYarn, SymType, DEBUG_ODOO_BUILDER};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-use crate::{Sy, S};
+use crate::{oyarn, Sy, S};
 
 use super::evaluation::{Evaluation, EvaluationValue};
 
@@ -106,12 +105,12 @@ impl PythonOdooBuilder {
                 if let Some(eval) = eval.as_ref() {
                     match eval {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![yarn!("{}", s.value)];
+                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![oyarn!("{}", s.value)];
                         },
                         EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
-                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(yarn!("{}", s.value));
+                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(oyarn!("{}", s.value));
                                 }
                             }
                         },
@@ -126,17 +125,17 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) -> Yarn {
+    fn _evaluate_name(&mut self, session: &mut SessionInfo, symbol: &mut Symbol) -> OYarn {
         let _name = symbol.get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
         if let Some(_name) = _name.last() {
             for eval in _name.borrow().evaluations().unwrap().iter() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics);
                 if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = eval {
-                    return yarn!("{}", s.value);
+                    return oyarn!("{}", s.value);
                 }
             }
             error!("unable to parse model name");
-            return Yarn::new("");
+            return OYarn::from("");
         }
         if let Some(inherit_name) = symbol.as_class_sym_mut()._model.as_ref().unwrap().inherit.first() {
             return inherit_name.clone();
@@ -164,7 +163,7 @@ impl PythonOdooBuilder {
                 if let Some(EvaluationValue::DICT(d)) = eval {
                     for (k, v) in d.iter() {
                         if let (Expr::StringLiteral(k), Expr::StringLiteral(v)) = (k,v) {
-                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherits.push((yarn!("{}", k.value), yarn!("{}", v.value)));
+                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherits.push((oyarn!("{}", k.value), oyarn!("{}", v.value)));
                         } else {
                             error!("wrong _inherits value");
                         }

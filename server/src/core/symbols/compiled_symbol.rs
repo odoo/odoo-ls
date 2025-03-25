@@ -1,24 +1,24 @@
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use byteyarn::{yarn, Yarn};
+use crate::constants::OYarn;
 
 use super::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct CompiledSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub is_external: bool,
     pub path: String,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
-    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
 }
 
 impl CompiledSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
         Self {
-            name: Yarn::from_string(name),
+            name: OYarn::from(name),
             is_external,
             weak_self:None,
             path,

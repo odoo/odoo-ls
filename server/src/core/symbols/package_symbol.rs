@@ -1,7 +1,6 @@
-use byteyarn::{yarn, Yarn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps}, core::model::Model, threads::SessionInfo, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::model::Model, oyarn, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -23,7 +22,7 @@ impl PackageSymbol {
             None
         }
     }
-    pub fn name(&self) -> &Yarn {
+    pub fn name(&self) -> &OYarn {
         match self {
             PackageSymbol::PythonPackage(p) => &p.name,
             PackageSymbol::Module(m) => &m.name,
@@ -99,7 +98,7 @@ impl PackageSymbol {
 
 #[derive(Debug)]
 pub struct PythonPackageSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub path: String,
     pub i_ext: String,
     pub is_external: bool,
@@ -109,10 +108,10 @@ pub struct PythonPackageSymbol {
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
-    pub not_found_paths: Vec<(BuildSteps, Vec<Yarn>)>,
+    pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub in_workspace: bool,
     pub self_import: bool,
-    pub module_symbols: HashMap<Yarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
     pub dependents: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
@@ -120,16 +119,16 @@ pub struct PythonPackageSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<Yarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl PythonPackageSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
         let mut res = Self {
-            name: yarn!("{}", name),
+            name: oyarn!("{}", name),
             path,
             is_external,
             i_ext: S!(""),

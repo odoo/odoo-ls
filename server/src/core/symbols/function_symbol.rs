@@ -1,12 +1,11 @@
 use std::{cell::RefCell, cmp::min, collections::HashMap, rc::{Rc, Weak}};
 
-use byteyarn::{yarn, Yarn};
 use lsp_types::Diagnostic;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, SymType}, core::{evaluation::{Context, Evaluation}, model::Model}, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, model::Model}, oyarn, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -30,7 +29,7 @@ pub struct Argument {
 
 #[derive(Debug)]
 pub struct FunctionSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub is_external: bool,
     pub is_static: bool,
     pub is_property: bool,
@@ -54,9 +53,9 @@ pub struct FunctionSymbol {
     //Trait SymbolMgr
     //--- Body content
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<Yarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
 
 }
 
@@ -64,7 +63,7 @@ impl FunctionSymbol {
 
     pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
-            name: yarn!("{}", name),
+            name: oyarn!("{}", name),
             is_external,
             weak_self: None,
             parent: None,

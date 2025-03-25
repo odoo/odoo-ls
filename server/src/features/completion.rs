@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
-use byteyarn::{yarn, Yarn};
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::constants::SymType;
+use crate::constants::{OYarn, SymType};
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
-use crate::{Sy, S};
+use crate::{oyarn, Sy, S};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::features_utils::FeaturesUtils;
 use crate::core::file_mgr::FileInfo;
@@ -29,7 +28,7 @@ pub enum ExpectedType {
     DOMAIN_COMPARATOR,
     CLASS(Rc<RefCell<Symbol>>),
     SIMPLE_FIELD,
-    NESTED_FIELD(Option<Yarn>),
+    NESTED_FIELD(Option<OYarn>),
 }
 
 pub struct CompletionFeature;
@@ -599,7 +598,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
             }
             let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
                 match kw_arg_id.id.as_str() {
-                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(yarn!("{}", callable_sym.borrow().name())))]),
+                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(oyarn!("{}", callable_sym.borrow().name())))]),
                     "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
                             Some(vec![ExpectedType::MODEL_NAME])
                         } else {
@@ -643,7 +642,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                                 model_rc.borrow().find_module());
                             let required_modules = modules.filter(|module|
                                 !ModuleSymbol::is_in_deps(session, &current_module, &module.borrow().as_module_package().dir_name));
-                            let dep_names: Vec<Yarn> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
+                            let dep_names: Vec<OYarn> = required_modules.map(|module| module.borrow().as_module_package().dir_name.clone()).collect();
                             if !dep_names.is_empty() {
                                 if !session.sync_odoo.config.ac_filter_model_names{
                                     continue
@@ -893,7 +892,7 @@ fn add_nested_field_names(
     field_prefix: &str,
     parent: Rc<RefCell<Symbol>>,
     add_date_completions: bool,
-    specific_field_type: &Option<Yarn>,
+    specific_field_type: &Option<OYarn>,
 ){
     let split_expr: Vec<String> = field_prefix.split(".").map(|x| x.to_string()).collect();
     let mut obj = Some(parent.clone());
@@ -923,7 +922,7 @@ fn add_nested_field_names(
         }
         if let Some(object) = &obj {
             if index == split_expr.len() - 1 {
-                let mut all_symbols: HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>> = HashMap::new();
+                let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
                 Symbol::all_members(&object, session, &mut all_symbols, true, true, from_module.clone(), &mut None, false);
                 for (_symbol_name, symbols) in all_symbols {
                     //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
@@ -981,7 +980,7 @@ fn add_model_attributes(
     only_fields: bool,
     attribute_name: &str
 ){
-    let mut all_symbols: HashMap<Yarn, Vec<(Rc<RefCell<Symbol>>, Option<Yarn>)>> = HashMap::new();
+    let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
     Symbol::all_members(&parent_sym, session, &mut all_symbols, true, only_fields, from_module.clone(), &mut None, is_super);
     for (_symbol_name, symbols) in all_symbols {
         //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
@@ -994,7 +993,7 @@ fn add_model_attributes(
     }
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<Yarn>) -> CompletionItem {
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<OYarn>) -> CompletionItem {
     //TODO use dependency to show it? or to filter depending of configuration
     let typ = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
         Rc::downgrade(symbol),

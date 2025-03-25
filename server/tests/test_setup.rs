@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-use byteyarn::Yarn;
+use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::{Sy, S};
 
 mod setup;

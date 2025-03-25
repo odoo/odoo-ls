@@ -1,9 +1,8 @@
 use std::{fs, path::{Path, PathBuf}, str::FromStr};
-use byteyarn::yarn;
 use path_slash::{PathBufExt, PathExt};
 use ruff_text_size::TextSize;
 
-use crate::constants::Tree;
+use crate::{constants::Tree, oyarn};
 
 #[macro_export]
 macro_rules! S {
@@ -15,7 +14,7 @@ macro_rules! S {
 #[macro_export]
 macro_rules! Sy {
     ($x: expr) => {
-        Yarn::from($x)
+        OYarn::from($x)
     };
 }
 
@@ -133,7 +132,7 @@ impl PathSanitizer for PathBuf {
     fn to_tree(&self) -> Tree {
         let mut tree = (vec![], vec![]);
         self.components().for_each(|c| {
-            tree.0.push(yarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
+            tree.0.push(oyarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
         });
         if matches!(tree.0.last().unwrap().as_str(), "__init__" | "__manifest__") {
             tree.0.pop();
@@ -162,7 +161,7 @@ impl PathSanitizer for Path {
     fn to_tree(&self) -> Tree {
         let mut tree = (vec![], vec![]);
         self.components().for_each(|c| {
-            tree.0.push(yarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
+            tree.0.push(oyarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
         });
         if matches!(tree.0.last().unwrap().as_str(), "__init__" | "__manifest__") {
             tree.0.pop();

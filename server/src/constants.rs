@@ -11,13 +11,35 @@ pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;
 pub const DEBUG_STEPS: bool = false;
 
-pub type Tree = (Vec<Yarn>, Vec<Yarn>);
+pub type Tree = (Vec<OYarn>, Vec<OYarn>);
 
-pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
-    (a.iter().map(|x| yarn!("{}", *x)).collect(), b.iter().map(|x| yarn!("{}", *x)).collect())
+//type DebugYarn = String;
+
+#[macro_export]
+#[cfg(not(all(feature="debug_yarn", debug_assertions)))]
+macro_rules! oyarn {
+    ($($args:tt)*) => {
+        byteyarn::yarn!($($args)*)
+    };
+}
+#[macro_export]
+#[cfg(all(feature="debug_yarn", debug_assertions))]
+macro_rules! oyarn {
+    ($($args:tt)*) => {
+        format!($($args)*)
+    };
 }
 
-pub fn flatten_tree(tree: &Tree) -> Vec<Yarn> {
+#[cfg(all(feature="debug_yarn", debug_assertions))]
+pub type OYarn = String;
+#[cfg(not(all(feature="debug_yarn", debug_assertions)))]
+pub type OYarn = Yarn;
+
+pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
+    (a.iter().map(|x| oyarn!("{}", *x)).collect(), b.iter().map(|x| oyarn!("{}", *x)).collect())
+}
+
+pub fn flatten_tree(tree: &Tree) -> Vec<OYarn> {
     [tree.0.clone(), tree.1.clone()].concat()
 }
 

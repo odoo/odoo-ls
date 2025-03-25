@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
 use tracing::warn;
-use byteyarn::Yarn;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
+use crate::constants::OYarn;
 
 use super::odoo::SyncOdoo;
 

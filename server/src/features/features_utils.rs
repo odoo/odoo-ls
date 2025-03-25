@@ -1,4 +1,3 @@
-use byteyarn::{yarn, Yarn};
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -12,10 +11,11 @@ use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
+use crate::constants::OYarn;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
-use crate::{S, Sy};
+use crate::{oyarn, Sy, S};
 
 pub struct FeaturesUtils {}
 
@@ -305,7 +305,7 @@ impl FeaturesUtils {
                 if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                     let str = expr.value.to_string();
                     let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
-                    if let Some(model) = session.sync_odoo.models.get(&yarn!("{}", str)).cloned() {
+                    if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
                         let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
                         for main_class_rc in main_classes.iter() {
                             let main_class = main_class_rc.borrow();

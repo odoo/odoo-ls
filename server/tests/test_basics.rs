@@ -2,8 +2,8 @@
 
 use std::collections::HashSet;
 use std::env;
-use byteyarn::{yarn, Yarn};
-use odoo_ls_server::core::evaluation::EvaluationValue;
+use odoo_ls_server::{core::evaluation::EvaluationValue, oyarn};
+use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
 
@@ -151,7 +151,7 @@ fn test_sections() {
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
 
     let assert_get_int_eval_values = |var_name: &str, values: HashSet<i32>|{
-        let syms = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![yarn!("{}", var_name)]), u32::MAX);
+        let syms = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![oyarn!("{}", var_name)]), u32::MAX);
         assert_eq!(syms.len(), values.len()); // Check Number of symbols
         assert_eq!(syms.iter()
         .map(|sym| {
