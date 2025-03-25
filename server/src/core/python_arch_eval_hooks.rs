@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::cell::RefCell;
-use byteyarn::yarn;
-use byteyarn::Yarn;
 use lsp_types::Diagnostic;
 use lsp_types::DiagnosticSeverity;
 use lsp_types::NumberOrString;
@@ -16,6 +14,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
+use crate::oyarn;
 use crate::threads::SessionInfo;
 use crate::Sy;
 use crate::S;
@@ -30,8 +29,8 @@ type PythonArchEvalHookFile = fn (odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryP
 
 pub struct PythonArchEvalFileHook {
     pub odoo_entry: bool,
-    pub file_tree: Vec<Yarn>,
-    pub content_tree: Vec<Yarn>, //if set, will provide symbol in file content instead of the file symbol to func
+    pub file_tree: Vec<OYarn>,
+    pub content_tree: Vec<OYarn>, //if set, will provide symbol in file content instead of the file symbol to func
     pub if_exist_only: bool,
     pub func: PythonArchEvalHookFile
 }
@@ -433,7 +432,7 @@ impl PythonArchEvalHooks {
             if let Some(arg) = arg {
                 match arg {
                     ContextValue::STRING(s) => {
-                        let model = session.sync_odoo.models.get(&yarn!("{}", s));
+                        let model = session.sync_odoo.models.get(&oyarn!("{}", s));
                         if let Some(model) = model {
                             let module = context.get(&S!("module"));
                             let from_module;
@@ -476,7 +475,7 @@ impl PythonArchEvalHooks {
                                         );
                                     } else {
                                         let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                        let valid_modules: Vec<Yarn> = symbols.iter().map(|s| match s.borrow().find_module() {
+                                        let valid_modules: Vec<OYarn> = symbols.iter().map(|s| match s.borrow().find_module() {
                                             Some(sym) => sym.borrow().name().clone(),
                                             None => Sy!("Unknown").clone()
                                         }).collect();
@@ -609,7 +608,7 @@ impl PythonArchEvalHooks {
     }
 
     fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
-        let comodel = yarn!("{}", comodel.as_string());
+        let comodel = oyarn!("{}", comodel.as_string());
         let comodel_sym = session.sync_odoo.models.get(&comodel).cloned();
         if let Some(comodel_sym) = comodel_sym {
             let module = context.get(&S!("module"));

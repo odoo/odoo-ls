@@ -4,7 +4,7 @@ use byteyarn::Yarn;
 use tracing::{error, info};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, PackageType, SymType, Tree}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, threads::SessionInfo, utils::PathSanitizer};
 
 use super::{odoo::SyncOdoo, symbols::symbol::Symbol};
 
@@ -102,7 +102,7 @@ impl EntryPointMgr {
     /* Create a new entry to public.
     return the disk_dir symbol of the last FOLDER of the path
      */
-    pub fn add_entry_to_addons(&mut self, path: String, related: Option<Rc<RefCell<EntryPoint>>>, related_addition: Option<Vec<Yarn>>) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn add_entry_to_addons(&mut self, path: String, related: Option<Rc<RefCell<EntryPoint>>>, related_addition: Option<Vec<OYarn>>) -> Option<Rc<RefCell<Symbol>>> {
         info!("Adding new addon entry point: {}", path);
         let entry_point_tree = PathBuf::from(&path).to_tree();
         let mut addon_to_odoo_path = None;
@@ -316,16 +316,16 @@ pub enum EntryPointType {
 #[derive(Debug, Clone)]
 pub struct EntryPoint {
     pub path: String,
-    pub tree: Vec<Yarn>,
+    pub tree: Vec<OYarn>,
     pub typ: EntryPointType,
     pub addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
-    pub addon_to_odoo_tree: Option<Vec<Yarn>>, //contains the odoo tree if this is an addon entry point
+    pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
     pub root: Rc<RefCell<Symbol>>,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
 }
 impl EntryPoint {
-    pub fn new(path: String, tree: Vec<Yarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<Yarn>>) -> Rc<RefCell<Self>> {
+    pub fn new(path: String, tree: Vec<OYarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
         let root = Symbol::new_root();
         root.borrow_mut().as_root_mut().weak_self = Some(Rc::downgrade(&root)); // manually set weakself for root symbols
         let res = Rc::new(RefCell::new(Self { path,

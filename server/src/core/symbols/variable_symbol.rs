@@ -1,14 +1,13 @@
-use byteyarn::{yarn, Yarn};
 use ruff_text_size::TextRange;
 
-use crate::{constants::SymType, core::evaluation::Evaluation, threads::SessionInfo};
+use crate::{constants::{OYarn, SymType}, core::evaluation::Evaluation, oyarn, threads::SessionInfo};
 use std::{cell::RefCell, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct VariableSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
     pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
@@ -22,7 +21,7 @@ pub struct VariableSymbol {
 
 impl VariableSymbol {
 
-    pub fn new(name: Yarn, range: TextRange, is_external: bool) -> Self {
+    pub fn new(name: OYarn, range: TextRange, is_external: bool) -> Self {
         Self {
             name,
             is_external,
@@ -70,7 +69,7 @@ impl VariableSymbol {
                         let Some(comodel) = eval_weak.as_weak().context.get("comodel") else {
                             continue;
                         };
-                        let Some(model) = session.sync_odoo.models.get(&yarn!("{}", &comodel.as_string())).cloned() else {
+                        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", &comodel.as_string())).cloned() else {
                             continue;
                         };
                         return model.borrow().get_main_symbols(session, from_module);

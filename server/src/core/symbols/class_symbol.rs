@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
-use crate::constants::SymType;
+use crate::constants::{OYarn, SymType};
 use crate::core::model::ModelData;
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
@@ -16,7 +16,7 @@ use super::symbol_mgr::{SectionRange, SymbolMgr};
 
 #[derive(Debug)]
 pub struct ClassSymbol {
-    pub name: Yarn,
+    pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
     pub bases: Vec<Weak<RefCell<Symbol>>>,
@@ -30,16 +30,16 @@ pub struct ClassSymbol {
     //Trait SymbolMgr
     //--- Body symbols
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<Yarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<Yarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl ClassSymbol {
 
     pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
-            name: Yarn::from(name),
+            name: OYarn::from(name),
             is_external,
             weak_self: None,
             parent: None,

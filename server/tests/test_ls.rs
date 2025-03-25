@@ -2,17 +2,11 @@
 
 use std::path::PathBuf;
 use std::{env, rc::Rc};
-use std::cell::RefCell;
-use std::fs::File;
-use std::io::BufReader;
-use byteyarn::Yarn;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::Sy;
-use serde_json::Value;
+use odoo_ls_server::constants::OYarn;
 
-use odoo_ls_server::{S, core::symbols::symbol::Symbol, constants::SymType};
-use tracing::error;
 use weak_table::traits::WeakElement;
 
 mod setup;
