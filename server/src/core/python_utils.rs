@@ -1,9 +1,15 @@
-use ruff_python_ast::{Expr, ExprName};
+use ruff_python_ast::{Expr, ExprAttribute, ExprName};
 use tracing::error;
 
 #[derive(Debug, Clone)]
+pub enum AssignTargetType {
+    Name(ExprName),
+    Attribute(ExprAttribute),
+}
+
+#[derive(Debug, Clone)]
 pub struct Assign {
-    pub target: ExprName,
+    pub target: AssignTargetType,
     pub value: Option<Expr>,
     pub annotation: Option<Expr>,
     pub index: Option<usize>, //If index is set, it means that value is not unpackable, and that the target should be associated to the 'index' element of value
@@ -21,7 +27,7 @@ fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
             Expr::Subscript(_) => {},
             Expr::Name(expr) => {
                 res.push(Assign {
-                    target: expr.clone(),
+                    target: AssignTargetType::Name(expr.clone()),
                     annotation: None,
                     value: Some(values.get(index).unwrap().clone()),
                     index: None,
@@ -40,7 +46,7 @@ fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
                         match target {
                             Expr::Name(tar) => {
                                 res.push(Assign {
-                                    target: tar.clone(),
+                                    target: AssignTargetType::Name(tar.clone()),
                                     annotation: None,
                                     value: Some(value.clone()),
                                     index: Some(index),
@@ -64,7 +70,7 @@ fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
                         match target {
                             Expr::Name(tar) => {
                                 res.push(Assign {
-                                    target: tar.clone(),
+                                    target: AssignTargetType::Name(tar.clone()),
                                     annotation: None,
                                     value: Some(value.clone()),
                                     index: Some(index),
@@ -95,13 +101,11 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
 
     for target in targets.iter() {
         match target {
-            Expr::Attribute(_) => {},
-            Expr::Subscript(_) => {},
-            Expr::Name(expr) => {
+            Expr::Attribute(expr) => {
                 match value {
                     Some(value) => {
                         res.push(Assign {
-                            target: expr.clone(),
+                            target: AssignTargetType::Attribute(expr.clone()),
                             annotation: annotation.cloned(),
                             value: Some(value.clone()),
                             index: None,
@@ -109,7 +113,28 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
                     },
                     None => {
                         res.push(Assign {
-                            target: expr.clone(),
+                            target: AssignTargetType::Attribute(expr.clone()),
+                            annotation: annotation.cloned(),
+                            value: None,
+                            index: None,
+                        });
+                    }
+                }
+            },
+            Expr::Subscript(_) => {},
+            Expr::Name(expr) => {
+                match value {
+                    Some(value) => {
+                        res.push(Assign {
+                            target: AssignTargetType::Name(expr.clone()),
+                            annotation: annotation.cloned(),
+                            value: Some(value.clone()),
+                            index: None,
+                        });
+                    },
+                    None => {
+                        res.push(Assign {
+                            target: AssignTargetType::Name(expr.clone()),
                             annotation: annotation.cloned(),
                             value: None,
                             index: None,
@@ -134,7 +159,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
                         match target {
                             Expr::Name(tar) => {
                                 res.push(Assign {
-                                    target: tar.clone(),
+                                    target: AssignTargetType::Name(tar.clone()),
                                     annotation: None,
                                     value: Some(value.clone()),
                                     index: Some(index),
@@ -161,7 +186,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
                         match target {
                             Expr::Name(tar) => {
                                 res.push(Assign {
-                                    target: tar.clone(),
+                                    target: AssignTargetType::Name(tar.clone()),
                                     annotation: None,
                                     value: Some(value.clone()),
                                     index: Some(index),

@@ -25,7 +25,7 @@ use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak}
 use super::file_mgr::{add_diagnostic, FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
-use super::python_utils::Assign;
+use super::python_utils::{Assign, AssignTargetType};
 use super::symbols::function_symbol::FunctionSymbol;
 
 
@@ -440,54 +440,61 @@ impl PythonArchEval {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(assign.target.id.to_string()), &assign.target.range);
-            if let Some(variable_rc) = variable {
-                let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = if let Some(ref annotation) = assign.annotation {
-                    Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start())
-                } else if let Some(ref value) = assign.value {
-                    Evaluation::eval_from_ast(session, value, parent.clone(), &range.start())
-                } else {
-                    panic!("either value or annotation should exists");
-                };
-                variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
-                self.diagnostics.extend(diags);
-                let mut dep_to_add = vec![];
-                let mut v_mut = variable_rc.borrow_mut();
-                let var_name = v_mut.name().clone();
-                let evaluations = v_mut.evaluations_mut().unwrap();
-                let mut ix = 0;
-                while ix < evaluations.len(){
-                    let evaluation =  &evaluations[ix];
-                    if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
-                        if Rc::ptr_eq(&sym, &variable_rc){
-                            // TODO: investigate deps, and fix cyclic evals
-                            let file_path = parent.borrow().get_file().and_then(|file| file.upgrade()).and_then(|file| file.borrow().paths().first().cloned());
-                            warn!("Found cyclic evaluation symbol: {}, parent: {}, file: {}", var_name, parent.borrow().name(), file_path.unwrap_or(S!("N/A")));
-                            evaluations.remove(ix);
-                            continue;
-                        }
-                        if let Some(file) = sym.borrow().get_file().clone() {
-                            let sym_file = file.upgrade().unwrap().clone();
-                            if !Rc::ptr_eq(&self.file, &sym_file) {
-                                match Rc::ptr_eq(&variable_rc, &sym_file) {
-                                    true => {
-                                        dep_to_add.push(variable_rc.clone());
-                                    },
-                                    false => {
-                                        dep_to_add.push(sym_file);
+            match assign.target {
+                AssignTargetType::Name(ref name_expr) => {
+                    let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(name_expr.id.to_string()), &name_expr.range);
+                    if let Some(variable_rc) = variable {
+                        let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
+                        let (eval, diags) = if let Some(ref annotation) = assign.annotation {
+                            Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start())
+                        } else if let Some(ref value) = assign.value {
+                            Evaluation::eval_from_ast(session, value, parent.clone(), &range.start())
+                        } else {
+                            panic!("either value or annotation should exists");
+                        };
+                        variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
+                        self.diagnostics.extend(diags);
+                        let mut dep_to_add = vec![];
+                        let mut v_mut = variable_rc.borrow_mut();
+                        let var_name = v_mut.name().clone();
+                        let evaluations = v_mut.evaluations_mut().unwrap();
+                        let mut ix = 0;
+                        while ix < evaluations.len(){
+                            let evaluation =  &evaluations[ix];
+                            if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade() {
+                                if Rc::ptr_eq(&sym, &variable_rc){
+                                    // TODO: investigate deps, and fix cyclic evals
+                                    let file_path = parent.borrow().get_file().and_then(|file| file.upgrade()).and_then(|file| file.borrow().paths().first().cloned());
+                                    warn!("Found cyclic evaluation symbol: {}, parent: {}, file: {}", var_name, parent.borrow().name(), file_path.unwrap_or(S!("N/A")));
+                                    evaluations.remove(ix);
+                                    continue;
+                                }
+                                if let Some(file) = sym.borrow().get_file().clone() {
+                                    let sym_file = file.upgrade().unwrap().clone();
+                                    if !Rc::ptr_eq(&self.file, &sym_file) {
+                                        match Rc::ptr_eq(&variable_rc, &sym_file) {
+                                            true => {
+                                                dep_to_add.push(variable_rc.clone());
+                                            },
+                                            false => {
+                                                dep_to_add.push(sym_file);
+                                            }
+                                        };
                                     }
-                                };
+                                }
                             }
+                            ix += 1
                         }
+                        for dep in dep_to_add {
+                            self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                        }
+                    } else {
+                        debug!("Symbol not found");
                     }
-                    ix += 1
+                },
+                AssignTargetType::Attribute(ref attr_expr) => {
+                    //TODO
                 }
-                for dep in dep_to_add {
-                    self.file.borrow_mut().add_dependency(&mut dep.borrow_mut(), self.current_step, BuildSteps::ARCH);
-                }
-            } else {
-                debug!("Symbol not found");
             }
         }
     }
