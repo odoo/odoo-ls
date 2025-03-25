@@ -1353,12 +1353,11 @@ impl Symbol {
         }
         set.as_mut().unwrap().insert(symbol.get_rc().unwrap());
         let mut set = &mut symbol.dependents_as_mut()[level_i][step_i];
-        let to_add = self.get_rc().unwrap().clone();
         if set.is_none() {
-            self.dependencies_mut()[step_i][level_i] = Some(PtrWeakHashSet::new());
-            set = &mut self.dependencies_mut()[step_i][level_i];
+            symbol.dependents_as_mut()[level_i][step_i] = Some(PtrWeakHashSet::new());
+            set = &mut symbol.dependents_as_mut()[level_i][step_i];
         }
-        set.as_mut().unwrap().insert(to_add);
+        set.as_mut().unwrap().insert(self.get_rc().unwrap().clone());
     }
 
     pub fn add_model_dependencies(&mut self, model: &Rc<RefCell<Model>>) {
