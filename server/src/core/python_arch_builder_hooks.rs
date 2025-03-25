@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use tracing::warn;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
-use crate::{Sy, S};
+use crate::{oyarn, Sy, S};
 use crate::constants::OYarn;
 
 use super::odoo::SyncOdoo;
@@ -89,6 +89,13 @@ impl PythonArchBuilderHooks {
                 if maj != session.sync_odoo.version_major || min != session.sync_odoo.version_minor || mic != session.sync_odoo.version_micro {
                     session.sync_odoo.need_rebuild = true;
                 }
+            }
+        } else if session.sync_odoo.full_version > S!("18.0.0") && name == "init" {
+            if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
+                symbol.borrow_mut().parent().unwrap().upgrade().unwrap().borrow_mut().add_new_variable(session, oyarn!("SUPERUSER_ID"), &symbol.borrow().range());
+                symbol.borrow_mut().parent().unwrap().upgrade().unwrap().borrow_mut().add_new_variable(session, oyarn!("_"), &symbol.borrow().range());
+                symbol.borrow_mut().parent().unwrap().upgrade().unwrap().borrow_mut().add_new_variable(session, oyarn!("_lt"), &symbol.borrow().range());
+                symbol.borrow_mut().parent().unwrap().upgrade().unwrap().borrow_mut().add_new_variable(session, oyarn!("Command"), &symbol.borrow().range());
             }
         }
     }
