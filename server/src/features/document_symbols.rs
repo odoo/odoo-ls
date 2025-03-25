@@ -4,7 +4,7 @@ use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind};
 use ruff_python_ast::{Expr, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtGlobal, StmtIf, StmtImport, StmtImportFrom, StmtMatch, StmtNonlocal, StmtTry, StmtTypeAlias, StmtWhile, StmtWith};
 use ruff_text_size::Ranged;
 
-use crate::{constants::SymType, core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign}, symbols::symbol::Symbol}, threads::SessionInfo};
+use crate::{constants::SymType, core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign, AssignTargetType}, symbols::symbol::Symbol}, threads::SessionInfo};
 
 
 pub struct DocumentSymbolFeature;
@@ -131,22 +131,29 @@ impl DocumentSymbolFeature {
 
     fn build_assign_results(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, assigns: Vec<Assign>) {
         for assign in assigns.iter() {
-            results.push(DocumentSymbol{
-                name: assign.target.id.to_string(),
-                detail: None,
-                kind: SymbolKind::VARIABLE,
-                tags: None,
-                deprecated: None,
-                range: Range{
-                    start: file_info.borrow().offset_to_position(assign.target.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(assign.target.range.end().to_usize()),
+            match assign.target {
+                AssignTargetType::Name(ref target_name) => {
+                    results.push(DocumentSymbol{
+                        name: target_name.id.to_string(),
+                        detail: None,
+                        kind: SymbolKind::VARIABLE,
+                        tags: None,
+                        deprecated: None,
+                        range: Range{
+                            start: file_info.borrow().offset_to_position(target_name.range.start().to_usize()),
+                            end: file_info.borrow().offset_to_position(target_name.range.end().to_usize()),
+                        },
+                        selection_range: Range{
+                            start: file_info.borrow().offset_to_position(target_name.range.start().to_usize()),
+                            end: file_info.borrow().offset_to_position(target_name.range.end().to_usize()),
+                        },
+                        children: None,
+                    });
                 },
-                selection_range: Range{
-                    start: file_info.borrow().offset_to_position(assign.target.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(assign.target.range.end().to_usize()),
-                },
-                children: None,
-            });
+                AssignTargetType::Attribute(ref attr_target) => {
+
+                }
+            }
         }
     }
 
