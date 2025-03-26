@@ -48,6 +48,11 @@ pub enum Symbol {
 }
 
 impl Symbol {
+    /// Checks if weak references of symbol are equal
+    /// Attempts to upgrade both (false upon failure) and does pointer equality
+    pub fn weak_ptr_eq(me: &Weak<RefCell<Symbol>>, them: &Weak<RefCell<Symbol>>) -> bool{
+        me.upgrade().and_then(|me_rc| them.upgrade().map(|them_rc| Rc::ptr_eq(&me_rc, &them_rc))).unwrap_or(false)
+    }
     pub fn new_root() -> Rc<RefCell<Self>> {
         let root = Rc::new(RefCell::new(Symbol::Root(RootSymbol::new())));
         root.borrow_mut().set_weak_self(Rc::downgrade(&root));
