@@ -108,14 +108,7 @@ impl FunctionSymbol {
         for new_eval in evals {
             let out_scope = new_eval.get_eval_out_of_function_scope(session, &function);
             for new_eval in out_scope {
-                let mut found = false;
-                for old_eval in function.borrow().as_func().evaluations.iter() {
-                    if old_eval.eq_type(&new_eval) {
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
+                if !function.borrow().as_func().evaluations.contains(&new_eval) {
                     function.borrow_mut().as_func_mut().evaluations.push(new_eval);
                 }
             }

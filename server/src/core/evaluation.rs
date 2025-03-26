@@ -19,7 +19,7 @@ use super::symbols::symbol::Symbol;
 use super::symbols::symbol_mgr::SectionIndex;
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EvaluationValue {
     ANY(), //we don't know what it is, so it can be everything !
     CONSTANT(ruff_python_ast::Expr), //expr is a literal
@@ -65,7 +65,7 @@ impl EvaluationValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Evaluation {
     //symbol lead to type evaluation, and value/range hold the evaluated value in case of a 'constant' value, like in "variable = 5".
     pub symbol: EvaluationSymbol,
@@ -120,6 +120,20 @@ pub enum ContextValue {
     SYMBOL(Weak<RefCell<Symbol>>),
     ARGUMENTS(Arguments),
     RANGE(TextRange)
+}
+
+impl PartialEq for ContextValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ContextValue::MODULE(me), ContextValue::MODULE(them)) => Symbol::weak_ptr_eq(me, them),
+            (ContextValue::SYMBOL(me), ContextValue::SYMBOL(them)) => Symbol::weak_ptr_eq(me, them),
+            (ContextValue::BOOLEAN(me), ContextValue::BOOLEAN(them)) => me == them,
+            (ContextValue::STRING(me), ContextValue::STRING(them)) => me == them,
+            (ContextValue::ARGUMENTS(me), ContextValue::ARGUMENTS(them)) => me == them,
+            (ContextValue::RANGE(me), ContextValue::RANGE(them)) => me == them,
+            _ => false,
+        }
+    }
 }
 
 impl ContextValue {
@@ -192,6 +206,16 @@ pub struct EvaluationSymbolWeak {
     pub is_super: bool,
 }
 
+impl PartialEq for EvaluationSymbolWeak {
+    fn eq(&self, other: &Self) -> bool {
+        self.context == other.context
+        && self.context == other.context
+        && self.instance == other.instance
+        && self.is_super == other.is_super
+        && Symbol::weak_ptr_eq(&self.weak, &other.weak)
+    }
+}
+
 impl EvaluationSymbolWeak {
     pub fn new(weak: Weak<RefCell<Symbol>>, instance: Option<bool>, is_super: bool) -> Self {
         EvaluationSymbolWeak {
@@ -207,7 +231,7 @@ impl EvaluationSymbolWeak {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub enum EvaluationSymbolPtr {
     WEAK(EvaluationSymbolWeak),
     SELF,
@@ -219,7 +243,7 @@ pub enum EvaluationSymbolPtr {
     ANY
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct EvaluationSymbol {
     sym: EvaluationSymbolPtr,
     pub get_symbol_hook: Option<GetSymbolHook>,
@@ -463,11 +487,6 @@ impl Evaluation {
             }
             None
         }
-    }
-
-    //return true if both evalution lead to the same final type
-    pub fn eq_type(&self, other_eval: &Evaluation) -> bool {
-        false //TODO
     }
 
     ///Return a list of evaluations of the symbol that hold these sections.
