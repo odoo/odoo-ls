@@ -18,20 +18,23 @@ This extension integrates the Odoo Language Server, that will help you in the de
 ## Features
 
 - Autocompletion
+  - Simple Autocompletion
+  ![Autocompletion picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocomplete.png "Autocompletion")
+  - Model fields Completion
+  ![Autocompletion in a loop](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocompletion2.png "Autocompletion 2")
+  - Smart String completion
+  ![Autocompletion in a decorator](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocompletion2.png "Autocompletion 3")
+  ![Autocompletion in self.env](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocompletion3.png "Autocompletion 4")
+  ![Autocompletion in inverse kwarg](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocompletion4.png "Autocompletion 5")
 
-![Autocompletion picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/autocomplete.png "Autocompletion")
-
-- Show definition on hover
-
-![hover picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/hover.png "Hover")
-
-- Go to definition
-
-![gotodefinition picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/goto.gif "Go to definition")
+- Advanced Hover and GoToDefinition
+  Even on String values!
+  ![Advanced Hover and GoToDefinition](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/advanced_hover_def.gif "Autocompletion 5")
 
 - Diagnostics
 
 ![diagnostics picture](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/diagnostics.png "Diagnostics")
+![diagnostics picture 2](https://raw.githubusercontent.com/odoo/odoo-ls/master/vscode/images/diagnostics2.png "Diagnostics2")
 
 ## Installation
 
