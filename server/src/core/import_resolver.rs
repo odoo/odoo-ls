@@ -97,6 +97,9 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     let mut name_index: i32 = -1;
     for alias in name_aliases.iter() {
         let name = oyarn!("{}", alias.name);
+        if name == "odoo.init" {
+            println!("here");
+        }
         name_index += 1;
         if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbol, session, source_file_symbol, from_stmt, level,  diagnostics){
             result[name_index as usize] = hook_result;
@@ -135,6 +138,19 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
             result[name_index as usize].found = true;
             result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
+            //we found name_symbol and will return it. But in the case of "import A.B.C", even if we will return A, we need to effectively import B then
+            //C as it can have effects on the codebase
+            let name_split: Vec<OYarn> = name.split(".").map(|s| oyarn!("{}", s)).collect();
+            if name_split.len() > 1 {
+                _get_or_create_symbol(
+                    session,
+                    &entry,
+                    source_path.as_str(),
+                    Some(name_symbol.as_ref().unwrap().clone()),
+                    &Vec::from_iter(name_split[1..name_split.len()].iter().cloned()),
+                    None,
+                None);
+            }
             continue;
         }
         let name_split: Vec<OYarn> = name.split(".").map(|s| oyarn!("{}", s)).collect();
@@ -367,6 +383,9 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
             let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("py"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
+                if full_path.ends_with("init.py") {
+                    println!("here");
+                }
                 SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
                 return Ok(_arc_symbol);
             }

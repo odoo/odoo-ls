@@ -42,5 +42,5 @@ harness = false
 iai-callgrind = "0.14.0"
 
 [features]
-default = []
+default = ["debug_yarn"]
 debug_yarn = []  # use a readable structure instead of Yarn for debug purpose

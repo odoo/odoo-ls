@@ -324,10 +324,10 @@ impl SyncOdoo {
             panic!("Odoo root symbol not found")
         };
         odoo_sym.borrow_mut().set_is_external(false);
-        let odoo_odoo = Symbol::create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym.clone(), false);
-        if odoo_odoo.is_none() {
-            panic!("Not able to find odoo with given path. Aborting...");
-        }
+        //let odoo_odoo = Symbol::create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym.clone(), false);
+        //Force the creation of "odoo" to be a package, even if it is a namespace
+        let path_str = config_odoo_path.join("odoo").sanitize();
+        let odoo_odoo = Some(odoo_sym.borrow_mut().add_new_python_package(session, &S!("odoo"), &path_str));
         let odoo_typ = odoo_odoo.as_ref().unwrap().borrow().typ().clone();
         match odoo_typ {
             SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {

@@ -6,10 +6,10 @@ use byteyarn::{yarn, Yarn};
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "0.4.1";
 
-pub const DEBUG_ODOO_BUILDER: bool = false;
+pub const DEBUG_ODOO_BUILDER: bool = true;
 pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;
-pub const DEBUG_STEPS: bool = false;
+pub const DEBUG_STEPS: bool = true;
 
 pub type Tree = (Vec<OYarn>, Vec<OYarn>);
 
