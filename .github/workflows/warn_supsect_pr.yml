@@ -52,6 +52,3 @@ jobs:
               repo: context.repo.repo,
               body: body
             });
-              body: "⚠️ The file 'path/to/specific_file.txt' has been modified in this PR. Please review the changes carefully."
-            });
-
