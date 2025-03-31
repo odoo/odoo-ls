@@ -22,6 +22,7 @@ use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
+use super::python_utils::AssignTargetType;
 use super::symbols::function_symbol::{Argument, ArgumentType};
 use super::symbols::symbol_mgr::SectionIndex;
 
@@ -487,7 +488,13 @@ impl PythonArchBuilder {
             if let Some(ref expr) = assign.value{
                 self.visit_expr(session, expr);
             }
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", assign.target.id), &assign.target.range);
+            match assign.target {
+                AssignTargetType::Name(ref name_expr) => {
+                    self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                },
+                AssignTargetType::Attribute(ref attr_expr) => {
+                }
+            }
         }
     }
 
@@ -497,37 +504,43 @@ impl PythonArchBuilder {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", assign.target.id), &assign.target.range);
-            let mut variable = variable.borrow_mut();
-            if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
-                let parent = variable.parent().as_ref().unwrap().upgrade();
-                if parent.is_some() {
-                    let parent = parent.unwrap();
-                    let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
-                    variable.as_variable_mut().evaluations = eval.0;
-                    self.diagnostics.extend(eval.1);
-                    if !variable.as_variable().evaluations.is_empty() {
-                        if (*self.sym_stack.last().unwrap()).borrow().is_external() {
-                            // external packages often import symbols from compiled files
-                            // or with meta programmation like globals["var"] = __get_func().
-                            // we don't want to handle that, so just declare __all__ content
-                            // as symbols to not raise any error.
-                            let evaluation = variable.as_variable_mut().evaluations.get(0).unwrap();
-                            match &evaluation.value {
-                                Some(EvaluationValue::LIST(list)) => {
-                                    for item in list.iter() {
-                                        match item {
-                                            Expr::StringLiteral(s) => {
-                                                self.__all_symbols_to_add.push((s.value.to_string(), evaluation.range.unwrap()));
-                                            },
-                                            _ => {}
-                                        }
+            match assign.target {
+                AssignTargetType::Name(ref name_expr) => {
+                    let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                    let mut variable = variable.borrow_mut();
+                    if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
+                        let parent = variable.parent().as_ref().unwrap().upgrade();
+                        if parent.is_some() {
+                            let parent = parent.unwrap();
+                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
+                            variable.as_variable_mut().evaluations = eval.0;
+                            self.diagnostics.extend(eval.1);
+                            if !variable.as_variable().evaluations.is_empty() {
+                                if (*self.sym_stack.last().unwrap()).borrow().is_external() {
+                                    // external packages often import symbols from compiled files
+                                    // or with meta programmation like globals["var"] = __get_func().
+                                    // we don't want to handle that, so just declare __all__ content
+                                    // as symbols to not raise any error.
+                                    let evaluation = variable.as_variable_mut().evaluations.get(0).unwrap();
+                                    match &evaluation.value {
+                                        Some(EvaluationValue::LIST(list)) => {
+                                            for item in list.iter() {
+                                                match item {
+                                                    Expr::StringLiteral(s) => {
+                                                        self.__all_symbols_to_add.push((s.value.to_string(), evaluation.range.unwrap()));
+                                                    },
+                                                    _ => {}
+                                                }
+                                            }
+                                        },
+                                        _ => {}
                                     }
-                                },
-                                _ => {}
+                                }
                             }
                         }
                     }
+                },
+                AssignTargetType::Attribute(ref attr_expr) => {
                 }
             }
         }
@@ -737,7 +750,13 @@ impl PythonArchBuilder {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            scope.borrow_mut().add_new_variable(session, oyarn!("{}", assign.target.id), &assign.target.range);
+            match assign.target{
+                AssignTargetType::Name(ref name_expr) => {
+                    scope.borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                },
+                AssignTargetType::Attribute(ref attr_expr) => {
+                }
+            }
         }
         let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
         scope.borrow_mut().as_mut_symbol_mgr().add_section(
