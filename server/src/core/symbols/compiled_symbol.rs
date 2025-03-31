@@ -28,6 +28,7 @@ impl CompiledSymbol {
     }
 
     pub fn add_compiled(&mut self, compiled: &Rc<RefCell<Symbol>>) {
+        println!("test");
         self.module_symbols.insert(compiled.borrow().name().clone(), compiled.clone());
     }
 
