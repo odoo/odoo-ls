@@ -1834,11 +1834,11 @@ impl Symbol {
                     }
                 }
                 //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-                //TODO there is no loop detection
                 let mut results = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);
                 if results.is_empty() {
                     return vec![evaluation.clone()];
                 }
+                let mut acc: PtrWeakHashSet<Weak<RefCell<Symbol>>>  = PtrWeakHashSet::new();
                 let can_eval_external = !symbol.borrow().is_external();
                 let mut index = 0;
                 while index < results.len() {
@@ -1852,6 +1852,12 @@ impl Symbol {
                                 continue;
                             }
                             let sym_rc = sym.unwrap();
+                            if acc.contains(&sym_rc) {
+                                index -= 1;
+                                results.remove(index);
+                                continue;
+                            }
+                            acc.insert(sym_rc.clone());
                             let sym = sym_rc.borrow();
                             match *sym {
                                 Symbol::Variable(ref v) => {
