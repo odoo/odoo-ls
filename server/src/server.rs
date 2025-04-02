@@ -468,6 +468,7 @@ impl Server {
                         if DEBUG_THREADS {
                             info!("Sending notification to main thread : {}", n.method);
                         }
+                        self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         self.sender_s_to_main.send(Message::Notification(n)).unwrap();
                     }
                     _ => {
