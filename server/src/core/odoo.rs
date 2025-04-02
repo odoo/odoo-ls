@@ -979,6 +979,10 @@ impl Odoo {
                 session.log_message(MessageType::ERROR, String::from("pythonPath must be defined, using 'python' as pythonPath"));
                 config.python_path = S!("python");
             }
+            if let Some(additional_stubs) = odoo_conf.get("additional_stubs"){
+                config.additional_stubs = additional_stubs.as_array().expect("additional_stubs must be an Array")
+                .into_iter().map(|v| v.as_str().expect("additional_stubs values must be strings").to_string()).collect();
+            }
         } else {
             config.addons = vec![];
             config.odoo_path = None;
