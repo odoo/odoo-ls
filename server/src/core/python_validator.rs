@@ -17,7 +17,7 @@ use crate::S;
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
-use super::file_mgr::{FileInfo, FileMgr};
+use super::file_mgr::{add_diagnostic, FileInfo, FileMgr};
 use super::python_arch_builder::PythonArchBuilder;
 use super::python_arch_eval::PythonArchEval;
 
@@ -28,7 +28,8 @@ pub struct PythonValidator {
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
-    current_module: Option<Rc<RefCell<Symbol>>>
+    current_module: Option<Rc<RefCell<Symbol>>>,
+    file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on symbol containing code (file and functions only. Not class, variable, namespace).
@@ -43,6 +44,7 @@ impl PythonValidator {
             diagnostics: vec![],
             safe_imports: vec![false],
             current_module: None,
+            file_info: None,
         }
     }
 
@@ -67,6 +69,7 @@ impl PythonValidator {
         let sym_type = symbol.typ().clone();
         drop(symbol);
         let file_info_rc = self.get_file_info(session.sync_odoo).clone();
+        self.file_info = Some(file_info_rc.clone());
         match sym_type {
             SymType::FILE | SymType::PACKAGE(_) => {
                 if self.sym_stack[0].borrow().build_status(BuildSteps::ODOO) != BuildStatus::DONE {
@@ -83,7 +86,10 @@ impl PythonValidator {
                     return;
                 }
                 if file_info.ast.is_some() && file_info.valid {
+                    let old_noqa = session.current_noqa.clone();
+                    session.current_noqa = self.sym_stack[0].borrow().get_noqas();
                     self.validate_body(session, file_info.ast.as_ref().unwrap());
+                    session.current_noqa = old_noqa;
                 }
                 drop(file_info);
                 let mut file_info = file_info_rc.borrow_mut();
@@ -127,7 +133,10 @@ impl PythonValidator {
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
                     };
+                    let old_noqa = session.current_noqa.clone();
+                    session.current_noqa = self.sym_stack[0].borrow().get_noqas();
                     self.validate_body(session, body);
+                    session.current_noqa = old_noqa;
                     match stmt {
                         Stmt::FunctionDef(_) => {
                             self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
@@ -242,9 +251,12 @@ impl PythonValidator {
         let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(c.name.to_string()), &c.range);
         if let Some(sym) = sym {
             self._check_model(session, &sym);
+            let old_noqa = session.current_noqa.clone();
+            session.current_noqa = sym.borrow().get_noqas().clone();
             self.sym_stack.push(sym);
             self.validate_body(session, &c.body);
             self.sym_stack.pop();
+            session.current_noqa = old_noqa;
         } else {
             //TODO panic!("symbol not found.");
         }
@@ -288,7 +300,7 @@ impl PythonValidator {
                                     let module = symbol.borrow().find_module();
                                     if let Some(module) = module {
                                         if !ModuleSymbol::is_in_deps(session, self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) && !self.safe_imports.last().unwrap() {
-                                            self.diagnostics.push(Diagnostic::new(
+                                            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                                 Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
                                                 Some(DiagnosticSeverity::ERROR),
                                                 Some(NumberOrString::String(S!("OLS30103"))),
@@ -296,7 +308,7 @@ impl PythonValidator {
                                                 format!("{} is not in the dependencies of the module", module.borrow().as_module_package().dir_name),
                                                 None,
                                                 None,
-                                            ))
+                                            ), &session.current_noqa)
                                         }
                                     }
                                 }
@@ -364,7 +376,7 @@ impl PythonValidator {
                         };
                         let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
                         if syms.is_empty(){
-                            self.diagnostics.push(Diagnostic::new(
+                            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                 Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30323"))),
@@ -372,7 +384,7 @@ impl PythonValidator {
                                 format!("Field {related_field_name} does not exist on model {}", model_data.name),
                                 None,
                                 None,
-                            ));
+                            ), &session.current_noqa);
                             continue;
                         }
                         let field_type = symbol.borrow().name().clone();
@@ -391,7 +403,7 @@ impl PythonValidator {
                             })
                         });
                         if !found_same_type_match{
-                            self.diagnostics.push(Diagnostic::new(
+                            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                 Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30326"))),
@@ -399,7 +411,7 @@ impl PythonValidator {
                                 format!("Related field is not of the same type"),
                                 None,
                                 None,
-                            ));
+                            ), &session.current_noqa);
 
                         }
                     } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel")).map(|ctx_val| ctx_val.as_string()) {
@@ -413,7 +425,7 @@ impl PythonValidator {
                             if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", comodel_field_name)){
                                 let Some(ref from_module) = maybe_from_module else {continue};
                                 if !model.clone().borrow().model_in_deps(session, from_module) {
-                                    self.diagnostics.push(Diagnostic::new(
+                                    add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                         Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         Some(DiagnosticSeverity::ERROR),
                                         Some(NumberOrString::String(S!("OLS30324"))),
@@ -421,10 +433,10 @@ impl PythonValidator {
                                         format!("Field comodel_name ({comodel_field_name}) is not in module dependencies"),
                                         None,
                                         None,
-                                    ));
+                                    ), &session.current_noqa);
                                 }
                             } else {
-                                self.diagnostics.push(Diagnostic::new(
+                                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                     Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                     Some(DiagnosticSeverity::ERROR),
                                     Some(NumberOrString::String(S!("OLS30325"))),
@@ -432,7 +444,7 @@ impl PythonValidator {
                                     format!("Field comodel_name ({comodel_field_name}) does not exist"),
                                     None,
                                     None,
-                                ));
+                                ), &session.current_noqa);
                             }
                         }
                     }
@@ -456,7 +468,7 @@ impl PythonValidator {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
-                            self.diagnostics.push(Diagnostic::new(
+                            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                 Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30327"))),
@@ -464,7 +476,7 @@ impl PythonValidator {
                                 format!("Method {method_name} not found on current model"),
                                 None,
                                 None,
-                            ));
+                            ), &session.current_noqa);
 
                         }
                     }
@@ -527,7 +539,7 @@ impl PythonValidator {
                 }
                 if !found_one {
                     if !main_modules.is_empty() {
-                        self.diagnostics.push(Diagnostic::new(
+                        add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30104"))),
@@ -535,9 +547,9 @@ impl PythonValidator {
                             S!("Model is inheriting from a model not declared in the dependencies of the module. Check the manifest."),
                             None,
                             None)
-                        )
+                        , &session.current_noqa)
                     } else {
-                        self.diagnostics.push(Diagnostic::new(
+                        add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30102"))),
@@ -545,11 +557,11 @@ impl PythonValidator {
                             S!("Unknown model. Check your addons path"),
                             None,
                             None)
-                        )
+                        , &session.current_noqa)
                     }
                 }
             } else {
-                self.diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                     Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30102"))),
@@ -557,7 +569,7 @@ impl PythonValidator {
                     S!("Unknown model. Check your addons path"),
                     None,
                     None)
-                )
+                , &session.current_noqa)
             }
         } else {
             //TODO do we want to raise something?

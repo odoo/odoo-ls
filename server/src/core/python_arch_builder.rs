@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
@@ -20,6 +21,7 @@ use crate::{oyarn, S};
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
+use super::file_mgr::{combine_noqa_info, FileInfo, NoqaInfo};
 use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::symbols::function_symbol::{Argument, ArgumentType};
@@ -36,6 +38,7 @@ pub struct PythonArchBuilder {
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>,
     ast_indexes: Vec<u16>,
+    file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
 impl PythonArchBuilder {
@@ -49,6 +52,7 @@ impl PythonArchBuilder {
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],
             ast_indexes: vec![],
+            file_info: None,
         }
     }
 
@@ -85,6 +89,7 @@ impl PythonArchBuilder {
                 },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
+        self.file_info = Some(file_info_rc.clone());
         if !file_info_rc.borrow().valid {
             symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
             return
@@ -97,15 +102,34 @@ impl PythonArchBuilder {
         let file_info = file_info_rc.borrow();
         if file_info.ast.is_some() {
             let ast = match self.file_mode {
-                true => {file_info.ast.as_ref().unwrap()},
+                true => {
+                    file_info.ast.as_ref().unwrap()
+                },
                 false => {
                     &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
-            if self.file_mode {
+            let old_stack_noqa = session.noqas_stack.clone();
+            session.noqas_stack.clear();
+            let old_noqa = if self.file_mode {
+                let file_noqa = file_info.noqas_blocs.get(&0);
+                if let Some(file_noqa) = file_noqa {
+                    session.noqas_stack.push(file_noqa.clone());
+                }
+                symbol.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack)); //only set for file, functions are set in visit_func_def
+                let old = session.current_noqa.clone();
+                session.current_noqa = symbol.borrow().get_noqas().clone();
                 symbol.borrow_mut().set_processed_text_hash(file_info.text_hash);
-            }
+                old
+            } else {
+                session.noqas_stack.push(symbol.borrow().get_noqas().clone());
+                let old = session.current_noqa.clone();
+                session.current_noqa = symbol.borrow().get_noqas().clone();
+                old
+            };
             self.visit_node(session, &ast);
+            session.current_noqa = old_noqa;
+            session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
             if self.file_mode {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
@@ -625,6 +649,13 @@ impl PythonArchBuilder {
                 annotation: arg.annotation.clone(),
             });
         }
+        let mut add_noqa = false;
+        if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&func_def.range.start().to_u32()) {
+            session.noqas_stack.push(noqa_bloc.clone());
+            add_noqa = true;
+        }
+        sym.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack));
+        session.current_noqa = sym.borrow().get_noqas().clone();
         //visit body
         if !self.file_mode || sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             sym.borrow_mut().as_func_mut().arch_status = BuildStatus::IN_PROGRESS;
@@ -632,6 +663,9 @@ impl PythonArchBuilder {
             self.visit_node(session, &func_def.body)?;
             self.sym_stack.pop();
             sym.borrow_mut().as_func_mut().arch_status = BuildStatus::DONE;
+        }
+        if add_noqa {
+            session.noqas_stack.pop();
         }
         Ok(())
     }
@@ -655,9 +689,19 @@ impl PythonArchBuilder {
             }
         }
         drop(sym_bw);
+        let mut add_noqa = false;
+        if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&class_def.range.start().to_u32()) {
+            session.noqas_stack.push(noqa_bloc.clone());
+            add_noqa = true;
+        }
+        sym.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack));
+        session.current_noqa = sym.borrow().get_noqas().clone();
         self.sym_stack.push(sym.clone());
         self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
+        if add_noqa {
+            session.noqas_stack.pop();
+        }
         PythonArchBuilderHooks::on_class_def(session, sym);
         Ok(())
     }

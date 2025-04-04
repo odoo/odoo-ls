@@ -3,6 +3,7 @@ use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
+use crate::core::file_mgr::{add_diagnostic, NoqaInfo};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -1612,6 +1613,36 @@ impl Symbol {
         }
     }
 
+    pub fn set_noqas(&mut self, noqa: NoqaInfo) {
+        match self {
+            Symbol::File(f) => f.noqas = noqa,
+            Symbol::DiskDir(_) => panic!("set_noqas called on DiskDir"),
+            Symbol::Package(PackageSymbol::Module(m)) => m.noqas = noqa,
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.noqas = noqa,
+            Symbol::Function(f) => f.noqas = noqa,
+            Symbol::Root(_) => panic!("set_noqas called on Root"),
+            Symbol::Namespace(_) => panic!("set_noqas called on Namespace"),
+            Symbol::Compiled(_) => panic!("set_noqas called on Compiled"),
+            Symbol::Class(c) => c.noqas = noqa,
+            Symbol::Variable(_) => panic!("set_noqas called on Variable"),
+        }
+    }
+
+    pub fn get_noqas(&self) -> NoqaInfo {
+        match self {
+            Symbol::File(f) => f.noqas.clone(),
+            Symbol::Package(PackageSymbol::Module(m)) => m.noqas.clone(),
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => p.noqas.clone(),
+            Symbol::DiskDir(_) => panic!("get_noqas called on DiskDir"),
+            Symbol::Function(f) => f.noqas.clone(),
+            Symbol::Root(_) => panic!("get_noqas called on Root"),
+            Symbol::Namespace(_) => panic!("get_noqas called on Namespace"),
+            Symbol::Compiled(_) => panic!("get_noqas called on Compiled"),
+            Symbol::Class(c) => c.noqas.clone(),
+            Symbol::Variable(_) => panic!("get_noqas called on Variable"),
+        }
+    }
+
     pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<RefCell<Symbol>>> {
         if sym_types.contains(&self.typ()) {
             return self.weak_self().clone();
@@ -2159,15 +2190,15 @@ impl Symbol {
         if session.sync_odoo.version_major >= 17 && name == "Form"{
             let tree = self.get_tree();
             if tree == (vec![Sy!("odoo"), Sy!("tests"), Sy!("common")], vec!()){
-                diagnostics.push(Diagnostic::new(Range::new(Position::new(0,0),Position::new(0,0)),
+                add_diagnostic(diagnostics, Diagnostic::new(Range::new(Position::new(0,0),Position::new(0,0)),
                     Some(DiagnosticSeverity::WARNING),
                     Some(NumberOrString::String(S!("OLS20006"))),
                     Some(EXTENSION_NAME.to_string()),
                     S!("Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
                     None,
                     Some(vec![DiagnosticTag::DEPRECATED]),
-                )
-                );
+                ),
+                &session.current_noqa);
             }
         }
     }

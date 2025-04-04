@@ -5,7 +5,7 @@ use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, model::Model}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model}, oyarn, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -49,6 +49,7 @@ pub struct FunctionSymbol {
     pub args: Vec<Argument>,
     pub is_overloaded: bool, //used for @overload decorator. Only indicates if the decorator is present. Use is_overloaded() to know if this function is overloaded
     pub is_class_method: bool, //used for @classmethod decorator
+    pub noqas: NoqaInfo,
 
     //Trait SymbolMgr
     //--- Body content
@@ -86,6 +87,7 @@ impl FunctionSymbol {
             args: vec![],
             is_overloaded: false,
             is_class_method: false,
+            noqas: NoqaInfo::None,
         };
         res._init_symbol_mgr();
         res

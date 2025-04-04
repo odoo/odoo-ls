@@ -12,7 +12,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use crate::S;
 
-use super::file_mgr::FileMgr;
+use super::file_mgr::{add_diagnostic, FileMgr, NoqaInfo};
 use super::python_validator::PythonValidator;
 use super::symbols::function_symbol::{Argument, ArgumentType, FunctionSymbol};
 use super::symbols::symbol::Symbol;
@@ -757,7 +757,7 @@ impl Evaluation {
                                         }
                                         let class_sym_weak_eval = class_sym_weak_eval.as_weak();
                                         if class_sym_weak_eval.instance.unwrap_or(false) {
-                                            diagnostics.push(Diagnostic::new(
+                                            add_diagnostic(&mut diagnostics, Diagnostic::new(
                                                 Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
                                                 Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
                                                 Some(DiagnosticSeverity::ERROR),
@@ -767,7 +767,7 @@ impl Evaluation {
                                                 None,
                                                 None
                                                 )
-                                            );
+                                            , &session.current_noqa);
                                             None
                                         } else {
                                             let mut is_instance = None;
@@ -793,7 +793,7 @@ impl Evaluation {
                                 } else {
                                     match parent.borrow().get_in_parents(&vec![SymType::CLASS], true){
                                         None => {
-                                            diagnostics.push(Diagnostic::new(
+                                            add_diagnostic(&mut diagnostics, Diagnostic::new(
                                                 Range::new(Position::new(expr.range().start().to_u32(), 0),
                                                 Position::new(expr.range().end().to_u32(), 0)),
                                                 Some(DiagnosticSeverity::ERROR),
@@ -803,7 +803,7 @@ impl Evaluation {
                                                 None,
                                                 None
                                                 )
-                                            );
+                                            , &session.current_noqa);
                                             None
                                         },
                                         Some(parent_class) => Some((parent_class.clone(), Some(true)))
@@ -929,7 +929,8 @@ impl Evaluation {
                                     expr,
                                     call_parent.clone(),
                                     module.clone(),
-                                    on_instance));
+                                    on_instance,
+                                    ));
                             }
                             context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
@@ -1213,7 +1214,7 @@ impl Evaluation {
                 }
             }
             if !pos_arg {
-                diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut diagnostics, Diagnostic::new(
                     Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30315"))),
@@ -1221,7 +1222,7 @@ impl Evaluation {
                     format!("{} takes 0 positional arguments, but at least 1 is given", function.name),
                     None,
                     None,
-                ));
+                ), &session.current_noqa);
                 return diagnostics;
             }
             arg_index += 1;
@@ -1234,7 +1235,7 @@ impl Evaluation {
             //match arg with argument from function
             let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
             if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
-                diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut diagnostics, Diagnostic::new(
                     Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30315"))),
@@ -1242,7 +1243,7 @@ impl Evaluation {
                     format!("{} takes {} positional arguments, but at least {} is given", function.name, number_pos_arg, arg_index + 1),
                     None,
                     None,
-                ));
+                ), &session.current_noqa);
                 return diagnostics;
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
@@ -1268,7 +1269,7 @@ impl Evaluation {
                     }
                 }
                 if !found_one && kwarg_index == i32::MAX {
-                    diagnostics.push(Diagnostic::new(
+                    add_diagnostic(&mut diagnostics, Diagnostic::new(
                         Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                         Some(DiagnosticSeverity::ERROR),
                         Some(NumberOrString::String(S!("OLS30316"))),
@@ -1276,7 +1277,7 @@ impl Evaluation {
                         format!("{} got an unexpected keyword argument '{}'", function.name, arg_identifier.id),
                         None,
                         None,
-                    ))
+                    ), &session.current_noqa)
                 }
             } else {
                 // if arg is None, it means that it is a **arg
@@ -1284,7 +1285,7 @@ impl Evaluation {
             }
         }
         if found_pos_arg_with_kw + 1 < number_pos_arg {
-            diagnostics.push(Diagnostic::new(
+            add_diagnostic(&mut diagnostics, Diagnostic::new(
                 Range::new(Position::new(exprCall.range().start().to_u32(), 0), Position::new(exprCall.range().end().to_u32(), 0)),
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30315"))),
@@ -1292,7 +1293,7 @@ impl Evaluation {
                 format!("{} takes {} positional arguments, but only {} is given", function.name, number_pos_arg, arg_index),
                 None,
                 None,
-            ));
+            ), &session.current_noqa);
             return diagnostics;
         }
         diagnostics
@@ -1312,7 +1313,7 @@ impl Evaluation {
                 Expr::Tuple(t) => {
                     need_tuple = max(need_tuple - 1, 0);
                     if t.elts.len() != 3 {
-                        diagnostics.push(Diagnostic::new(
+                        add_diagnostic(&mut diagnostics, Diagnostic::new(
                             Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30314"))),
@@ -1320,7 +1321,7 @@ impl Evaluation {
                             format!("Domain tuple should have 3 elements"),
                             None,
                             None,
-                        ));
+                        ), &session.current_noqa);
                     } else {
                         Evaluation::validate_tuple_search_domain(session, on_object.clone(), from_module.clone(), &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
@@ -1328,7 +1329,7 @@ impl Evaluation {
                 Expr::List(l) => {
                     need_tuple = max(need_tuple - 1, 0);
                     if l.elts.len() != 3 {
-                        diagnostics.push(Diagnostic::new(
+                        add_diagnostic(&mut diagnostics, Diagnostic::new(
                             Range::new(Position::new(l.range().start().to_u32(), 0), Position::new(l.range().end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30314"))),
@@ -1336,7 +1337,7 @@ impl Evaluation {
                             format!("Domain tuple should have 3 elements"),
                             None,
                             None,
-                        ));
+                        ), &session.current_noqa);
                     } else {
                         Evaluation::validate_tuple_search_domain(session, on_object.clone(), from_module.clone(), &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
                     }
@@ -1356,7 +1357,7 @@ impl Evaluation {
                             }
                         }
                         _ => {
-                            diagnostics.push(Diagnostic::new(
+                            add_diagnostic(&mut diagnostics, Diagnostic::new(
                                 Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30317"))),
@@ -1364,7 +1365,7 @@ impl Evaluation {
                                 format!("A String value in tuple should contains '&', '|' or '!'"),
                                 None,
                                 None,
-                            ));
+                            ), &session.current_noqa);
                         }
                     }
                 },
@@ -1373,7 +1374,7 @@ impl Evaluation {
             }
         }
         if need_tuple > 0 {
-            diagnostics.push(Diagnostic::new(
+            add_diagnostic(&mut diagnostics, Diagnostic::new(
                 Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30319"))),
@@ -1381,7 +1382,7 @@ impl Evaluation {
                 format!("Missing tuple after a search domain operator"),
                 None,
                 None,
-            ));
+            ), &session.current_noqa);
         }
         diagnostics
     }
@@ -1398,7 +1399,7 @@ impl Evaluation {
                     'split_name: for name in split_expr {
                         if date_mode {
                             if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
-                                diagnostics.push(Diagnostic::new(
+                                add_diagnostic(diagnostics, Diagnostic::new(
                                     Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                     Some(DiagnosticSeverity::ERROR),
                                     Some(NumberOrString::String(S!("OLS30321"))),
@@ -1406,13 +1407,13 @@ impl Evaluation {
                                     format!("Invalid search domain field: Unknown granularity for date field. Use either \"year_number\", \"quarter_number\", \"month_number\", \"iso_week_number\", \"day_of_week\", \"day_of_month\", \"day_of_year\", \"hour_number\", \"minute_number\" or \"second_number\""),
                                     None,
                                     None,
-                                ));
+                                ), &session.current_noqa);
                             }
                             date_mode = false;
                             continue;
                         }
                         if obj.is_none() {
-                            diagnostics.push(Diagnostic::new(
+                            add_diagnostic(diagnostics, Diagnostic::new(
                                 Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30322"))),
@@ -1422,7 +1423,7 @@ In a search domain, when using a dot separator, it should be used either on a Da
 If you used a relational field and get this error, check that the comodel of this field is valid."),
                                 None,
                                 None,
-                            ));
+                            ), &session.current_noqa);
                             break;
                         }
                         if let Some(object) = &obj {
@@ -1434,7 +1435,7 @@ If you used a relational field and get this error, check that the comodel of thi
                                 false,
                                 false);
                             if symbols.is_empty() {
-                                diagnostics.push(Diagnostic::new(
+                                add_diagnostic(diagnostics, Diagnostic::new(
                                     Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                     Some(DiagnosticSeverity::ERROR),
                                     Some(NumberOrString::String(S!("OLS30320"))),
@@ -1442,7 +1443,7 @@ If you used a relational field and get this error, check that the comodel of thi
                                     format!("Invalid search domain field: {} is not a member of {}", name, object.borrow().name()),
                                     None,
                                     None,
-                                ));
+                                ), &session.current_noqa);
                                 break;
                             }
                             obj = None;
@@ -1478,7 +1479,7 @@ If you used a relational field and get this error, check that the comodel of thi
                     "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
                     "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
                     _ => {
-                        diagnostics.push(Diagnostic::new(
+                        add_diagnostic(diagnostics, Diagnostic::new(
                             Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                             Some(DiagnosticSeverity::ERROR),
                             Some(NumberOrString::String(S!("OLS30318"))),
@@ -1486,7 +1487,7 @@ If you used a relational field and get this error, check that the comodel of thi
                             format!("Invalid comparison operator"),
                             None,
                             None,
-                        ));
+                        ), &session.current_noqa);
                     }
                 }
             },

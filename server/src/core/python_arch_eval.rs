@@ -22,7 +22,7 @@ use crate::S;
 use super::config::DiagMissingImportsMode;
 use super::entry_point::EntryPoint;
 use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
-use super::file_mgr::FileMgr;
+use super::file_mgr::{add_diagnostic, FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
 use super::python_utils::Assign;
@@ -80,6 +80,8 @@ impl PythonArchEval {
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
         let file_info = (*file_info_rc).borrow();
         if file_info.ast.is_some() {
+            let old_noqa = session.current_noqa.clone();
+            session.current_noqa = symbol.borrow().get_noqas();
             let (ast, maybe_func_stmt) = match self.file_mode {
                 true => {
                     if file_info.text_hash != symbol.borrow().get_processed_text_hash(){
@@ -99,6 +101,7 @@ impl PythonArchEval {
                 PythonArchEval::handle_function_returns(session, maybe_func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
                 PythonArchEval::handle_func_evaluations(ast, &self.sym_stack[0]);
             }
+            session.current_noqa = old_noqa;
         }
         drop(file_info);
         if self.file_mode {
@@ -395,7 +398,7 @@ impl PythonArchEval {
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
-                        self.diagnostics.push(Diagnostic::new(
+                        add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
                             Some(NumberOrString::String(S!("OLS20004"))),
@@ -403,7 +406,7 @@ impl PythonArchEval {
                             format!("Failed to evaluate import {}", file_tree.clone().join(".")),
                             None,
                             None,
-                        ));
+                        ), &session.current_noqa);
                     }
                 }
 
@@ -417,7 +420,7 @@ impl PythonArchEval {
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
-                        self.diagnostics.push(Diagnostic::new(
+                        add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                             Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                             Some(DiagnosticSeverity::WARNING),
                             Some(NumberOrString::String(S!("OLS20001"))),
@@ -425,7 +428,7 @@ impl PythonArchEval {
                             format!("{} not found", file_tree.clone().join(".")),
                             None,
                             None,
-                        ));
+                        ), &session.current_noqa);
                     }
                 }
             }
@@ -511,7 +514,7 @@ impl PythonArchEval {
         let tree = flatten_tree(tree_not_found);
         file.not_found_paths_mut().push((BuildSteps::ARCH_EVAL, tree.clone()));
         self.entry_point.borrow_mut().not_found_symbols.insert(file.get_rc().unwrap());
-        self.diagnostics.push(Diagnostic::new(
+        add_diagnostic(&mut self.diagnostics, Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
             Some(DiagnosticSeverity::WARNING),
             Some(NumberOrString::String(S!("OLS20002"))),
@@ -519,7 +522,7 @@ impl PythonArchEval {
             format!("{} not found", tree.join(".")),
             None,
             None,
-        ));
+        ), &session.current_noqa);
     }
 
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
@@ -535,7 +538,7 @@ impl PythonArchEval {
                 continue;
             }
             if eval_base.len() > 1 {
-                self.diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                     Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                     Some(DiagnosticSeverity::WARNING),
                     Some(NumberOrString::String(S!("OLS20005"))),
@@ -543,14 +546,14 @@ impl PythonArchEval {
                     format!("Multiple definition found for base class {}", AstUtils::flatten_expr(base)),
                     None,
                     None,
-                ));
+                ), &session.current_noqa);
                 continue;
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
             if ref_sym.len() > 1 {
-                self.diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                     Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                     Some(DiagnosticSeverity::WARNING),
                     Some(NumberOrString::String(S!("OLS20005"))),
@@ -558,7 +561,7 @@ impl PythonArchEval {
                     format!("Multiple definition found for base class {}", AstUtils::flatten_expr(base)),
                     None,
                     None,
-                ));
+                ), &session.current_noqa);
                 continue;
             }
             let symbol = &ref_sym[0].upgrade_weak();
@@ -566,7 +569,7 @@ impl PythonArchEval {
                 if symbol.borrow().typ() != SymType::COMPILED {
                     if symbol.borrow().typ() != SymType::CLASS {
                         if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
-                            self.diagnostics.push(Diagnostic::new(
+                            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                                 Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
                                 Some(DiagnosticSeverity::WARNING),
                                 Some(NumberOrString::String(S!("OLS20003"))),
@@ -574,7 +577,7 @@ impl PythonArchEval {
                                 format!("Base class {} is not a class", AstUtils::flatten_expr(base)),
                                 None,
                                 None,
-                            ));
+                            ), &session.current_noqa);
                         }
                     } else {
                         let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
@@ -598,9 +601,12 @@ impl PythonArchEval {
             panic!("Class not found");
         }
         self.load_base_classes(session, variable.as_ref().unwrap(), class_stmt);
+        let old_noqa = session.current_noqa.clone();
+        session.current_noqa = variable.as_ref().unwrap().borrow().get_noqas();
         self.sym_stack.push(variable.unwrap().clone());
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
+        session.current_noqa = old_noqa;
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
@@ -642,7 +648,7 @@ impl PythonArchEval {
                     }
                 }
             } else if !function_sym.borrow_mut().as_func_mut().is_static{
-                self.diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                     FileMgr::textRange_to_temporary_Range(&func_stmt.range),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30002"))),
@@ -650,14 +656,17 @@ impl PythonArchEval {
                     S!("Non-static method should have at least one parameter"),
                     None,
                     None
-                ))
+                ), &session.current_noqa)
             }
         }
         if !self.file_mode || function_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
             function_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
+            let old_noqa = session.current_noqa.clone();
+            session.current_noqa = function_sym.borrow().get_noqas();
             self.sym_stack.push(function_sym.clone());
             self.visit_sub_stmts(session, &func_stmt.body);
             self.sym_stack.pop();
+            session.current_noqa = old_noqa;
             PythonArchEval::handle_function_returns(session, Some(func_stmt), &function_sym, &func_stmt.range.end(), &mut self.diagnostics);
             PythonArchEval::handle_func_evaluations(&func_stmt.body, &function_sym);
             function_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
@@ -872,7 +881,7 @@ impl PythonArchEval {
             return;
         }
         let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", returns_str)).cloned() else {
-            self.diagnostics.push(Diagnostic::new(
+            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                 FileMgr::textRange_to_temporary_Range(&expr.range()),
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30102"))),
@@ -880,11 +889,11 @@ impl PythonArchEval {
                 S!("Unknown model. Check your addons path"),
                 None,
                 None,
-            ));
+            ), &session.current_noqa);
             return;
         };
         let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
-            self.diagnostics.push(Diagnostic::new(
+            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                 FileMgr::textRange_to_temporary_Range(&expr.range()),
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30101"))),
@@ -892,7 +901,7 @@ impl PythonArchEval {
                 S!("This model is not in the dependencies of your module."),
                 None,
                 None,
-            ));
+            ), &session.current_noqa);
             return
         };
         func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
@@ -917,7 +926,7 @@ impl PythonArchEval {
             let field_name = expr.value.to_string();
             let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
             if syms.is_empty(){
-                self.diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                     FileMgr::textRange_to_temporary_Range(&expr.range()),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30323"))),
@@ -925,7 +934,7 @@ impl PythonArchEval {
                     format!("Field {field_name} does not exist on model {model_name}"),
                     None,
                     None,
-                ));
+                ), &session.current_noqa);
             }
         }
     }
@@ -990,7 +999,7 @@ impl PythonArchEval {
             let field_name = expr.value.to_string();
             let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
             if syms.is_empty(){
-                self.diagnostics.push(Diagnostic::new(
+                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
                     FileMgr::textRange_to_temporary_Range(&expr.range()),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30323"))),
@@ -998,7 +1007,7 @@ impl PythonArchEval {
                     format!("Field {field_name} does not exist on model {model_name}"),
                     None,
                     None,
-                ));
+                ), &session.current_noqa);
             }
         }
     }
