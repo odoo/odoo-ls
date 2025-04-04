@@ -15,7 +15,7 @@ use byteyarn::{yarn, Yarn};
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
-use ruff_python_parser::Mode;
+use ruff_python_parser::{Mode, ParseOptions};
 use tracing::{debug, error, warn, info, trace};
 
 use std::collections::HashSet;
@@ -1405,7 +1405,7 @@ impl Odoo {
         };
         let content = text_rope.slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
-        let ast = ruff_python_parser::parse_unchecked(source.as_str(), Mode::Module);
+        let ast = ruff_python_parser::parse_unchecked(source.as_str(), ParseOptions::from(Mode::Module));
         if ast.errors().is_empty() {
             Odoo::update_file_index(session, path,true, false, false);
         }
