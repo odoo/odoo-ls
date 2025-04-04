@@ -21,6 +21,7 @@ use crate::S;
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
+use super::file_mgr::add_diagnostic;
 use super::file_mgr::FileMgr;
 use super::python_arch_eval::PythonArchEval;
 use super::symbols::module_symbol::ModuleSymbol;
@@ -464,7 +465,7 @@ impl PythonArchEvalHooks {
                                     let symbols = model.get_main_symbols(session, None);
                                     if symbols.is_empty() {
                                         let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                        diagnostics.push(Diagnostic::new(range,
+                                        add_diagnostic(diagnostics, Diagnostic::new(range,
                                             Some(DiagnosticSeverity::ERROR),
                                             Some(NumberOrString::String(S!("OLS30105"))),
                                             Some(EXTENSION_NAME.to_string()),
@@ -472,14 +473,14 @@ impl PythonArchEvalHooks {
                                             None,
                                             None
                                             )
-                                        );
+                                        , &session.current_noqa);
                                     } else {
                                         let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                                         let valid_modules: Vec<OYarn> = symbols.iter().map(|s| match s.borrow().find_module() {
                                             Some(sym) => sym.borrow().name().clone(),
                                             None => Sy!("Unknown").clone()
                                         }).collect();
-                                        diagnostics.push(Diagnostic::new(range,
+                                        add_diagnostic(diagnostics, Diagnostic::new(range,
                                             Some(DiagnosticSeverity::ERROR),
                                             Some(NumberOrString::String(S!("OLS30101"))),
                                             Some(EXTENSION_NAME.to_string()),
@@ -487,30 +488,30 @@ impl PythonArchEvalHooks {
                                             None,
                                             None
                                             )
-                                        );
+                                        , &session.current_noqa);
                                     }
                                 } else {
                                     let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                    diagnostics.push(Diagnostic::new(range,
+                                    add_diagnostic(diagnostics, Diagnostic::new(range,
                                         Some(DiagnosticSeverity::ERROR),
                                         Some(NumberOrString::String(S!("OLS30102"))),
                                         Some(EXTENSION_NAME.to_string()),
                                         S!("Unknown model. Check your addons path"),
                                         None,
                                         None
-                                    ));
+                                    ), &session.current_noqa);
                                 }
                             }
                         } else {
                             let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                            diagnostics.push(Diagnostic::new(range,
+                            add_diagnostic(diagnostics, Diagnostic::new(range,
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30102"))),
                                 None,
                                 S!("Unknown model. Check your addons path"),
                                 None,
                                 None
-                            ));
+                            ), &session.current_noqa);
                         }
                     }
                     _ => {

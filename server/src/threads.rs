@@ -9,13 +9,15 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
 
-use crate::{core::{config::RefreshMode, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
+use crate::{core::{config::RefreshMode, file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
 pub struct SessionInfo<'a> {
     sender: Sender<Message>,
     receiver: Receiver<Message>,
     pub sync_odoo: &'a mut SyncOdoo,
-    delayed_process_sender: Option<Sender<DelayedProcessingMessage>>
+    delayed_process_sender: Option<Sender<DelayedProcessingMessage>>,
+    pub noqas_stack: Vec<NoqaInfo>,
+    pub current_noqa: NoqaInfo,
 }
 
 impl <'a> SessionInfo<'a> {
@@ -118,7 +120,9 @@ impl <'a> SessionInfo<'a> {
             sender,
             receiver,
             sync_odoo,
-            delayed_process_sender: None
+            delayed_process_sender: None,
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
         }
     }
 }
@@ -169,7 +173,9 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     sender: sender_session.clone(),
                     receiver: receiver_session.clone(),
                     sync_odoo: &mut sync_odoo.lock().unwrap(),
-                    delayed_process_sender: Some(delayed_process_sender.clone())
+                    delayed_process_sender: Some(delayed_process_sender.clone()),
+                    noqas_stack: vec![],
+                    current_noqa: NoqaInfo::None,
                 };
                 let config = session.sync_odoo.config.clone();
                 session.send_notification(ShowMessage::METHOD, ShowMessageParams{
@@ -257,7 +263,9 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                         sender: sender_session.clone(),
                         receiver: receiver_session.clone(),
                         sync_odoo: &mut sync_odoo.lock().unwrap(),
-                        delayed_process_sender: Some(delayed_process_sender.clone())
+                        delayed_process_sender: Some(delayed_process_sender.clone()),
+                        noqas_stack: vec![],
+                        current_noqa: NoqaInfo::None,
                     };
                     if rebuild {
                         let config = session.sync_odoo.config.clone();
@@ -290,7 +298,9 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             sender: sender.clone(),
             receiver: receiver.clone(),
             sync_odoo: &mut sync_odoo.lock().unwrap(),
-            delayed_process_sender: Some(delayed_process_sender.clone())
+            delayed_process_sender: Some(delayed_process_sender.clone()),
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
         };
         match msg {
             Message::Request(r) => {
@@ -345,6 +355,8 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             receiver: receiver.clone(),
             sync_odoo: &mut sync_odoo.lock().unwrap(), //TODO work on read access
             delayed_process_sender: Some(delayed_process_sender.clone()),
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
         };
         match msg {
             Message::Request(r) => {

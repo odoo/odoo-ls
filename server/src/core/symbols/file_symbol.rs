@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::model::Model, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -23,6 +23,7 @@ pub struct FileSymbol {
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
     pub dependents: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
     pub processed_text_hash: u64,
+    pub noqas: NoqaInfo,
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
@@ -54,6 +55,7 @@ impl FileSymbol {
             dependencies: vec![],
             dependents: vec![],
             processed_text_hash: 0,
+            noqas: NoqaInfo::None,
         };
         res._init_symbol_mgr();
         res

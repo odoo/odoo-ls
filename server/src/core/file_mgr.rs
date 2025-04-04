@@ -1,10 +1,11 @@
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
 use ruff_python_ast::Mod;
-use ruff_python_parser::Mode;
+use ruff_python_parser::{Mode, Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -15,9 +16,32 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::S;
 use crate::constants::*;
-use ruff_text_size::TextRange;
+use ruff_text_size::{Ranged, TextRange};
 
 use super::odoo::SyncOdoo;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum NoqaInfo {
+    None,
+    All,
+    Codes(Vec<String>),
+}
+
+pub fn combine_noqa_info(noqas: &Vec<NoqaInfo>) -> NoqaInfo {
+    let mut codes = HashSet::new();
+    for noqa in noqas.iter() {
+        match noqa {
+            NoqaInfo::None => {},
+            NoqaInfo::All => {
+                return NoqaInfo::All;
+            }
+            NoqaInfo::Codes(c) => {
+                codes.extend(c.iter().cloned());
+            }
+        }
+    }
+    NoqaInfo::Codes(codes.iter().cloned().collect())
+}
 
 #[derive(Debug)]
 pub struct FileInfo {
@@ -30,6 +54,8 @@ pub struct FileInfo {
     need_push: bool,
     text_rope: Option<ropey::Rope>,
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
+    pub noqas_blocs: HashMap<u32, NoqaInfo>,
+    noqas_lines: HashMap<u32, NoqaInfo>,
 }
 
 impl FileInfo {
@@ -44,9 +70,11 @@ impl FileInfo {
             text_rope: None,
             text_hash: 0,
             diagnostics: HashMap::new(),
+            noqas_blocs: HashMap::new(),
+            noqas_lines: HashMap::new(),
         }
     }
-    pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> bool {
+    pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, in_workspace: bool, force: bool) -> bool {
         // update the file info with the given information.
         // uri: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -90,15 +118,20 @@ impl FileInfo {
         if old_hash == self.text_hash {
             return false;
         }
-        self._build_ast();
+        self._build_ast(in_workspace);
         true
     }
 
-    pub fn _build_ast(&mut self) {
+    pub fn _build_ast(&mut self, in_workspace: bool) {
         let mut diagnostics = vec![];
         let content = &self.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
         let ast = ruff_python_parser::parse_unchecked(source.as_str(), Mode::Module);
+        if in_workspace {
+            self.noqas_blocs.clear();
+            self.noqas_lines.clear();
+            self.extract_tokens(&ast, &source);
+        }
         self.valid = true;
         for error in ast.errors().iter() {
             self.valid = false;
@@ -122,6 +155,70 @@ impl FileInfo {
             }
         }
         self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+    }
+
+    pub fn extract_tokens(&mut self, ast: &Parsed<Mod>, source: &String) {
+        let mut is_first_expr: bool = true;
+        let mut noqa_to_add = None;
+        let mut previous_token: Option<&Token> = None;
+        for token in ast.tokens().iter() {
+            match token.kind() {
+                TokenKind::Comment => {
+                    let text = &source[token.range()];
+                    if text.starts_with("#noqa") || text.starts_with("# noqa") || text.starts_with("# odools: noqa") {
+                        let after_noqa = text.split("noqa").skip(1).next();
+                        if let Some(after_noqa) = after_noqa {
+                            let mut codes = vec![];
+                            for code in after_noqa.split(|c: char| c == ',' || c.is_whitespace() || c == ':') {
+                                let code = code.trim();
+                                if code.len() > 0 {
+                                    codes.push(code.to_string());
+                                }
+                            }
+                            if codes.len() > 0 {
+                                noqa_to_add = Some(NoqaInfo::Codes(codes));
+                            } else {
+                                noqa_to_add = Some(NoqaInfo::All);
+                            }
+                            let char = self.text_rope.as_ref().unwrap().try_byte_to_char(token.start().to_usize()).expect("unable to get char from bytes");
+                            let line = self.text_rope.as_ref().unwrap().try_char_to_line(char).ok().expect("unable to get line from char");
+                            if let Some(previous_token) = previous_token {
+                                let previous_token_char = self.text_rope.as_ref().unwrap().try_byte_to_char(previous_token.start().to_usize()).expect("unable to get char from bytes");
+                                let previous_token_line = self.text_rope.as_ref().unwrap().try_char_to_line(previous_token_char).ok().expect("unable to get line from char");
+                                if previous_token_line == line {
+                                    self.noqas_lines.insert(line as u32, noqa_to_add.unwrap());
+                                    noqa_to_add = None;
+                                    continue;
+                                }
+                            }
+                            if is_first_expr {
+                                self.add_noqa_bloc(0, noqa_to_add.unwrap());
+                                noqa_to_add = None;
+                            }
+                        }
+                    }
+                },
+                TokenKind::Class | TokenKind::Def => {
+                    if noqa_to_add.is_some() {
+                        self.add_noqa_bloc(token.range().start().to_u32(), noqa_to_add.unwrap());
+                        noqa_to_add = None;
+                    }
+                }
+                TokenKind::NonLogicalNewline => {}
+                _ => {
+                    is_first_expr = false
+                }
+            }
+            previous_token = Some(token);
+        }
+    }
+
+    fn add_noqa_bloc(&mut self, index: u32, noqa_to_add: NoqaInfo) {
+        if let Some(noqa_bloc) = self.noqas_blocs.remove(&index) {
+            self.noqas_blocs.insert(index, combine_noqa_info(&vec![noqa_bloc, noqa_to_add]));
+        } else {
+            self.noqas_blocs.insert(index, noqa_to_add.clone());
+        }
     }
 
     pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
@@ -148,7 +245,33 @@ impl FileInfo {
 
             for diagnostics in self.diagnostics.values() {
                 for d in diagnostics.iter() {
-                    all_diagnostics.push(self.update_range(d.clone()));
+                    //check noqa lines
+                    let updated = self.update_range(d.clone());
+                    let updated_line = updated.range.start.line;
+                    if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
+                        match noqa_line {
+                            NoqaInfo::None => {},
+                            NoqaInfo::All => {
+                                continue;
+                            }
+                            NoqaInfo::Codes(codes) => {
+                                match &updated.code {
+                                    None => {continue;},
+                                    Some(NumberOrString::Number(n)) => {
+                                        if codes.contains(&n.to_string()) {
+                                            continue;
+                                        }
+                                    },
+                                    Some(NumberOrString::String(s)) => {
+                                        if codes.contains(&s) {
+                                            continue;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    all_diagnostics.push(updated);
                 }
             }
             session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
@@ -255,7 +378,7 @@ impl FileMgr {
         let mut updated: bool = false;
         if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened {
             let mut file_info_mut = (*return_info).borrow_mut();
-            updated = file_info_mut.update(session, uri, content, version, force);
+            updated = file_info_mut.update(session, uri, content, version, self.is_in_workspace(uri), force);
             drop(file_info_mut);
         }
         (updated, return_info)
@@ -350,4 +473,29 @@ impl FileMgr {
         error!("Unable to extract path from uri: {s}");
         S!(s)
     }
+}
+
+pub fn add_diagnostic(diagnostic_vec: &mut Vec<Diagnostic>, new_diagnostic: Diagnostic, noqa: &NoqaInfo){
+    match noqa {
+        NoqaInfo::None => {},
+        NoqaInfo::All => {
+            return;
+        }
+        NoqaInfo::Codes(codes) => {
+            match &new_diagnostic.code {
+                None => {}
+                Some(NumberOrString::Number(n)) => {
+                    if codes.contains(&n.to_string()) {
+                        return;
+                    }
+                }
+                Some(NumberOrString::String(s)) => {
+                    if codes.contains(&s) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    diagnostic_vec.push(new_diagnostic);
 }

@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
 use crate::constants::{OYarn, SymType};
+use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
@@ -26,6 +27,7 @@ pub struct ClassSymbol {
     pub range: TextRange,
     pub body_range: TextRange,
     pub _model: Option<ModelData>,
+    pub noqas: NoqaInfo,
 
     //Trait SymbolMgr
     //--- Body symbols
@@ -52,6 +54,7 @@ impl ClassSymbol {
             ext_symbols: HashMap::new(),
             bases: vec![],
             _model: None,
+            noqas: NoqaInfo::None,
         };
         res._init_symbol_mgr();
         res
