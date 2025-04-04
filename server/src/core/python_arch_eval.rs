@@ -21,10 +21,11 @@ use crate::S;
 
 use super::config::DiagMissingImportsMode;
 use super::entry_point::EntryPoint;
-use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
+use super::evaluation::{self, ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::file_mgr::{add_diagnostic, FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
+use super::python_odoo_builder::PythonOdooBuilder;
 use super::python_utils::Assign;
 use super::symbols::function_symbol::FunctionSymbol;
 
@@ -54,7 +55,7 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
-        let symbol = self.sym_stack.first().unwrap().clone();
+        let symbol = self.sym_stack[0].clone();
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to evaluate
         }
@@ -106,13 +107,13 @@ impl PythonArchEval {
         drop(file_info);
         if self.file_mode {
             file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.sym_stack.first().unwrap().clone());
+            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, symbol.clone());
         } else {
             //then Symbol must be a function
             symbol.borrow_mut().as_func_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, self.sym_stack.first().unwrap().clone());
+            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, symbol.clone());
         }
-        let mut symbol = self.sym_stack.first().unwrap().borrow_mut();
+        let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if symbol.is_external() {
             for sym in symbol.all_symbols() {
@@ -126,7 +127,7 @@ impl PythonArchEval {
         } else {
             drop(symbol);
             if self.file_mode {
-                session.sync_odoo.add_to_init_odoo(self.sym_stack.first().unwrap().clone());
+                session.sync_odoo.add_to_validations(self.sym_stack[0].clone());
             }
         }
     }
@@ -443,13 +444,27 @@ impl PythonArchEval {
             let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(assign.target.id.to_string()), &assign.target.range);
             if let Some(variable_rc) = variable {
                 let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
-                let (eval, diags) = if let Some(ref annotation) = assign.annotation {
-                    Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start())
-                } else if let Some(ref value) = assign.value {
-                    Evaluation::eval_from_ast(session, value, parent.clone(), &range.start())
-                } else {
+                if assign.annotation.is_none() && assign.value.is_none(){
                     panic!("either value or annotation should exists");
-                };
+                }
+                let ann_evaluations = assign.annotation.as_ref().map(|annotation| Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start()));
+                let value_evaluations = assign.value.as_ref().map(|value| Evaluation::eval_from_ast(session, value, parent.clone(), &range.start()));
+                let mut take_value = false;
+                if let Some((ref val_eval, ref _diags)) = value_evaluations{
+                    if val_eval.len() == 1 {
+                        let evaluation = &val_eval[0];
+                        let sym_weak = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], Some(parent.clone()));
+                        if let Some(sym_rc) = sym_weak.weak.upgrade(){
+                            if sym_rc.borrow().is_field_class(session){
+                                take_value = true;
+                            }
+                        }
+                    }
+                    if !take_value{
+                        take_value = !ann_evaluations.is_some();
+                    }
+                }
+                let (eval, diags) = if take_value {value_evaluations.unwrap()} else {ann_evaluations.unwrap()};
                 variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
                 self.diagnostics.extend(diags);
                 let mut dep_to_add = vec![];
@@ -596,16 +611,19 @@ impl PythonArchEval {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
-        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(class_stmt.name.to_string()), &class_stmt.range);
-        if variable.is_none() {
+        let Some(class_sym_rc) = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(class_stmt.name.to_string()), &class_stmt.range) else {
             panic!("Class not found");
-        }
-        self.load_base_classes(session, variable.as_ref().unwrap(), class_stmt);
+        };
+        self.load_base_classes(session, &class_sym_rc, class_stmt);
         let old_noqa = session.current_noqa.clone();
-        session.current_noqa = variable.as_ref().unwrap().borrow().get_noqas();
-        self.sym_stack.push(variable.unwrap().clone());
+        session.current_noqa = class_sym_rc.borrow().get_noqas();
+        self.sym_stack.push(class_sym_rc.clone());
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
+        if !self.sym_stack[0].borrow().is_external() {
+            let odoo_builder_diags = PythonOdooBuilder::new(class_sym_rc).load(session);
+            self.diagnostics.extend(odoo_builder_diags);
+        }
         session.current_noqa = old_noqa;
     }
 

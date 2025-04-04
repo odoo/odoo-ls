@@ -822,7 +822,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => m.arch_status,
                     BuildSteps::ARCH_EVAL => m.arch_eval_status,
-                    BuildSteps::ODOO => m.odoo_status,
                     BuildSteps::VALIDATION => m.validation_status,
                 }
             },
@@ -831,7 +830,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => p.arch_status,
                     BuildSteps::ARCH_EVAL => p.arch_eval_status,
-                    BuildSteps::ODOO => p.odoo_status,
                     BuildSteps::VALIDATION => p.validation_status,
                 }
             }
@@ -840,7 +838,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status,
-                    BuildSteps::ODOO => f.odoo_status,
                     BuildSteps::VALIDATION => f.validation_status,
                 }
             },
@@ -851,7 +848,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status,
-                    BuildSteps::ODOO => f.odoo_status,
                     BuildSteps::VALIDATION => f.validation_status,
                 }
             },
@@ -868,7 +864,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => m.arch_status = status,
                     BuildSteps::ARCH_EVAL => m.arch_eval_status = status,
-                    BuildSteps::ODOO => m.odoo_status = status,
                     BuildSteps::VALIDATION => m.validation_status = status,
                 }
             },
@@ -877,7 +872,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => p.arch_status = status,
                     BuildSteps::ARCH_EVAL => p.arch_eval_status = status,
-                    BuildSteps::ODOO => p.odoo_status = status,
                     BuildSteps::VALIDATION => p.validation_status = status,
                 }
             }
@@ -886,7 +880,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status = status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status = status,
-                    BuildSteps::ODOO => f.odoo_status = status,
                     BuildSteps::VALIDATION => f.validation_status = status,
                 }
             },
@@ -897,7 +890,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status = status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status = status,
-                    BuildSteps::ODOO => f.odoo_status = status,
                     BuildSteps::VALIDATION => f.validation_status = status,
                 }
             },
@@ -1267,7 +1259,7 @@ impl Symbol {
             panic!("Can't get dependencies for syntax step")
         }
         if level > BuildSteps::ARCH {
-            if step < BuildSteps::ODOO {
+            if step <= BuildSteps::ARCH_EVAL {
                 panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
             }
             if level == BuildSteps::VALIDATION {
@@ -1315,7 +1307,7 @@ impl Symbol {
             panic!("Can't get dependents for level {:?}", level)
         }
         if level > BuildSteps::ARCH {
-            if step < BuildSteps::ODOO {
+            if step <= BuildSteps::ARCH_EVAL {
                 panic!("Can't get dependents for step {:?} and level {:?}", step, level)
             }
         }
@@ -1343,7 +1335,7 @@ impl Symbol {
             return;
         }
         if dep_level > BuildSteps::ARCH {
-            if step < BuildSteps::ODOO {
+            if step <= BuildSteps::ARCH_EVAL {
                 panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
             }
             if dep_level == BuildSteps::VALIDATION {
@@ -1404,8 +1396,6 @@ impl Symbol {
                                         session.sync_odoo.add_to_rebuild_arch(sym.clone());
                                     } else if index == BuildSteps::ARCH_EVAL as usize {
                                         session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                    } else if index == BuildSteps::ODOO as usize {
-                                        session.sync_odoo.add_to_init_odoo(sym.clone());
                                     } else if index == BuildSteps::VALIDATION as usize {
                                         sym.borrow_mut().invalidate_sub_functions(session);
                                         session.sync_odoo.add_to_validations(sym.clone());
@@ -1422,24 +1412,6 @@ impl Symbol {
                                 if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
                                     if index == BuildSteps::ARCH_EVAL as usize {
                                         session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                    } else if index == BuildSteps::ODOO as usize {
-                                        session.sync_odoo.add_to_init_odoo(sym.clone());
-                                    } else if index == BuildSteps::VALIDATION as usize {
-                                        sym.borrow_mut().invalidate_sub_functions(session);
-                                        session.sync_odoo.add_to_validations(sym.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO].contains(step) {
-                    for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ODOO as usize].iter().enumerate() {
-                        if let Some(hashset) = hashset {
-                            for sym in hashset {
-                                if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
-                                    if index == BuildSteps::ODOO as usize {
-                                        session.sync_odoo.add_to_init_odoo(sym.clone());
                                     } else if index == BuildSteps::VALIDATION as usize {
                                         sym.borrow_mut().invalidate_sub_functions(session);
                                         session.sync_odoo.add_to_validations(sym.clone());

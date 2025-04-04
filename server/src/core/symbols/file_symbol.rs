@@ -108,28 +108,18 @@ impl FileSymbol {
                 vec![
                     None, // ARCH
                     None, //ARCH_EVAL
-                    None  //ODOO
-                ],
-                vec![
-                    None, // ARCH
-                    None, //ARCH_EVAL
-                    None  //ODOO
-                ]];
+                ]
+            ];
             self.dependents = vec![
                 vec![ //ARCH
                     None, //ARCH
                     None, //ARCH_EVAL
-                    None, //ODOO
                     None, //VALIDATION
                 ],
                 vec![ //ARCH_EVAL
-                    None, //ODOO
                     None //VALIDATION
                 ],
-                vec![ //ODOO
-                    None, //ODOO
-                    None  //VALIDATION
-                ]];
+            ];
         }
     }
 
