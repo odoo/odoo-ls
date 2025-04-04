@@ -1425,15 +1425,7 @@ impl Odoo {
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
         if path.extension().is_some() && path.extension().unwrap() == "py" {
-            if !force_delay && (is_open || (is_save && session.sync_odoo.config.refresh_mode == RefreshMode::OnSave)) {
-                let _ = SyncOdoo::_unload_path(session, &path, false);
-                Odoo::search_symbols_to_rebuild(session, &path.sanitize());
-                SyncOdoo::process_rebuilds(session);
-            } else {
-                if force_delay || session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive {
-                    SessionInfo::request_update_file_index(session, &path, force_delay);
-                }
-            }
+            SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
         }
     }
 
