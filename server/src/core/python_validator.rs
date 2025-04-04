@@ -72,7 +72,7 @@ impl PythonValidator {
         self.file_info = Some(file_info_rc.clone());
         match sym_type {
             SymType::FILE | SymType::PACKAGE(_) => {
-                if self.sym_stack[0].borrow().build_status(BuildSteps::ODOO) != BuildStatus::DONE {
+                if self.sym_stack[0].borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
                     return;
                 }
                 if DEBUG_STEPS {
