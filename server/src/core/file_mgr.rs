@@ -1,7 +1,7 @@
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
 use ruff_python_ast::Mod;
-use ruff_python_parser::{Mode, Parsed, Token, TokenKind};
+use ruff_python_parser::{Mode, ParseOptions, Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
@@ -126,7 +126,7 @@ impl FileInfo {
         let mut diagnostics = vec![];
         let content = &self.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
-        let ast = ruff_python_parser::parse_unchecked(source.as_str(), Mode::Module);
+        let ast = ruff_python_parser::parse_unchecked(source.as_str(), ParseOptions::from(Mode::Module));
         if in_workspace {
             self.noqas_blocs.clear();
             self.noqas_lines.clear();
