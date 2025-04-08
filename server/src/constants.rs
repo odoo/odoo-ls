@@ -10,6 +10,7 @@ pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;
 pub const DEBUG_STEPS: bool = false;
+pub const DEBUG_REBUILD_NOW: bool = false;
 
 pub type Tree = (Vec<OYarn>, Vec<OYarn>);
 
@@ -75,6 +76,18 @@ pub enum BuildSteps {
     ARCH       = 0,
     ARCH_EVAL  = 1,
     VALIDATION = 2,
+}
+
+impl From<i32> for BuildSteps {
+    fn from(value: i32) -> Self {
+        match value {
+            -1 => BuildSteps::SYNTAX,
+            0 => BuildSteps::ARCH,
+            1 => BuildSteps::ARCH_EVAL,
+            2 => BuildSteps::VALIDATION,
+            _ => panic!("Invalid value for BuildSteps: {}", value),
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
