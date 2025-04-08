@@ -346,10 +346,7 @@ impl PythonArchEval {
                     let file_sym = sym_ref.borrow().get_file();
                     if file_sym.is_some() {
                         let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if rc_file_sym.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&rc_file_sym, BuildSteps::ARCH_EVAL) {
-                            session.sync_odoo.remove_from_rebuild_arch_eval(&rc_file_sym);
-                            let mut builder = PythonArchEval::new(self.entry_point.clone(), rc_file_sym);
-                            builder.eval_arch(session);
+                        if SyncOdoo::build_now(session, &rc_file_sym, BuildSteps::ARCH_EVAL) {
                             if self.check_for_loop_evaluation(session, sym_ref.clone(), from_sym) {
                                 return true;
                             }
@@ -604,11 +601,7 @@ impl PythonArchEval {
                     } else {
                         let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
                         if !Rc::ptr_eq(&self.file, &file_symbol) {
-                            if file_symbol.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING && session.sync_odoo.is_in_rebuild(&file_symbol, BuildSteps::ARCH_EVAL) {
-                                session.sync_odoo.remove_from_rebuild_arch_eval(&file_symbol);
-                                let mut builder = PythonArchEval::new(self.entry_point.clone(), file_symbol.clone());
-                                builder.eval_arch(session);
-                            }
+                            SyncOdoo::build_now(session, &file_symbol, BuildSteps::ARCH_EVAL);
                             self.file.borrow_mut().add_dependency(&mut file_symbol.borrow_mut(), self.current_step, BuildSteps::ARCH);
                         }
                         loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));

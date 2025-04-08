@@ -112,12 +112,10 @@ impl PythonValidator {
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-                    let mut builder = PythonArchBuilder::new(self.entry_point.clone(), func.clone());
-                    builder.load_arch(session);
+                    SyncOdoo::build_now(session, &func, BuildSteps::ARCH);
                 }
                 if func.borrow().as_func().arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
-                    let mut builder = PythonArchEval::new(self.entry_point.clone(), func.clone());
-                    builder.eval_arch(session);
+                    SyncOdoo::build_now(session, &func, BuildSteps::ARCH_EVAL);
                 }
                 if func.borrow().as_func().arch_eval_status != BuildStatus::DONE {
                     return;

@@ -564,7 +564,6 @@ impl SyncOdoo {
                     continue;
                 }
                 already_arch_rebuilt.insert(tree);
-                //TODO should delete previous first
                 let mut builder = PythonArchBuilder::new(entry.unwrap(), sym_rc);
                 builder.load_arch(session);
                 continue;
@@ -577,7 +576,6 @@ impl SyncOdoo {
                     continue;
                 }
                 already_arch_eval_rebuilt.insert(tree);
-                //TODO should delete previous first
                 let mut builder = PythonArchEval::new(entry.unwrap(), sym_rc);
                 builder.eval_arch(session);
                 continue;
@@ -609,12 +607,6 @@ impl SyncOdoo {
         session.sync_odoo.import_cache = None;
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
-    }
-
-    pub fn rebuild_arch_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
-        session.sync_odoo.rebuild_arch.remove(symbol);
-        let mut builder = PythonArchBuilder::new(symbol.borrow().get_entry().unwrap(), symbol.clone());
-        builder.load_arch(session);
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
@@ -651,6 +643,92 @@ impl SyncOdoo {
         if symbol.borrow().build_status(BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
             symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_validation.insert(symbol);
+        }
+    }
+
+    /* Ask for an immediate rebuild of the given symbol if possible.
+    return true if a rebuild has been done
+     */
+    pub fn build_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
+        match symbol.borrow().typ() {
+            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE => return false,
+            _ => {}
+        }
+        if DEBUG_REBUILD_NOW {
+            if symbol.borrow().build_status(step) == BuildStatus::INVALID {
+                panic!("Trying to build an invalid symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            }
+            if symbol.borrow().build_status(step) == BuildStatus::IN_PROGRESS && !session.sync_odoo.is_in_rebuild(&symbol, step) {
+                error!("Trying to build a symbol that is NOT in the queue: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            }
+        }
+        if symbol.borrow().build_status(step) == BuildStatus::PENDING && (step == BuildSteps::ARCH || session.sync_odoo.is_in_rebuild(&symbol, step)) {
+            SyncOdoo::build_now_dependencies(session, symbol, step);
+            let entry_point = symbol.borrow().get_entry().unwrap();
+            session.sync_odoo.remove_from_rebuild(&symbol, step);
+            if step == BuildSteps::ARCH {
+                let mut builder = PythonArchBuilder::new(entry_point, symbol.clone());
+                builder.load_arch(session);
+                return true;
+            } else if step == BuildSteps::ARCH_EVAL {
+                if DEBUG_REBUILD_NOW {
+                    if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE {
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+                    }
+                }
+                let mut builder = PythonArchEval::new(entry_point, symbol.clone());
+                builder.eval_arch(session);
+                return true;
+            } else if step == BuildSteps::VALIDATION {
+                if DEBUG_REBUILD_NOW {
+                    if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE || symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+                    }
+                }
+                let mut validator = PythonValidator::new(entry_point, symbol.clone());
+                validator.validate(session);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn build_now_dependencies(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
+        let symbol = symbol.borrow();
+        match symbol.typ() {
+            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE | SymType::FUNCTION => return,
+            _ => {}
+        }
+        for step_to_build in 0..2 {
+            let step_to_build = BuildSteps::from(step_to_build);
+            let all_dep = symbol.get_all_dependencies(step_to_build);
+            if let Some(all_dep) = all_dep {
+                for (index, dep_set) in all_dep.iter().enumerate() {
+                    let dep_step = match index {
+                        0 => BuildSteps::ARCH,
+                        1 => BuildSteps::ARCH_EVAL,
+                        _ => panic!("Unexpected step index"),
+                    };
+                    if let Some(dep_set) = dep_set {
+                        for dep in dep_set.iter() {
+                            SyncOdoo::build_now(session, &dep, dep_step);
+                        }
+                    }
+                }
+            }
+            if step_to_build == step {
+                break;
+            }
+        }
+    }
+
+    pub fn remove_from_rebuild(&mut self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
+        if step == BuildSteps::ARCH {
+            self.rebuild_arch.remove(symbol);
+        } else if step == BuildSteps::ARCH_EVAL {
+            self.rebuild_arch_eval.remove(symbol);
+        } else if step == BuildSteps::VALIDATION {
+            self.rebuild_validation.remove(symbol);
         }
     }
 

@@ -1861,27 +1861,28 @@ impl Symbol {
                                 continue;
                             }
                             acc.insert(sym_rc.clone());
-                            let sym = sym_rc.borrow();
-                            match *sym {
-                                Symbol::Variable(ref v) => {
-                                    if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !v.is_import_variable {
-                                        continue;
+                            let sym_type = sym_rc.borrow().typ();
+                            match sym_type {
+                                SymType::VARIABLE => {
+                                    {
+                                        let sym = sym_rc.borrow();
+                                        let var = sym.as_variable();
+                                        if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable {
+                                            continue;
+                                        }
+                                        if stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some() {
+                                            continue;
+                                        }
+                                        if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
+                                            continue;
+                                        }
                                     }
-                                    if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
-                                        continue;
-                                    }
-                                    if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
-                                        continue;
-                                    }
-                                    if v.evaluations.is_empty() && can_eval_external {
+                                    if sym_rc.borrow().as_variable().evaluations.is_empty() && can_eval_external {
                                         //no evaluation? let's check that the file has been evaluated
-                                        let file_symbol = sym.get_file();
+                                        let file_symbol = sym_rc.borrow().get_file();
                                         if let Some(file_symbol) = file_symbol {
-                                            if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
-                                            session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                                                let file_entry = file_symbol.upgrade().unwrap().borrow().get_entry().unwrap();
-                                                let mut builder = PythonArchEval::new(file_entry, file_symbol.upgrade().unwrap());
-                                                builder.eval_arch(session);
+                                            if let Some(file) = file_symbol.upgrade() {
+                                                SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
                                             }
                                         }
                                     }
@@ -1894,7 +1895,7 @@ impl Symbol {
                                         }
                                     }
                                 },
-                                Symbol::Class(_) => {
+                                SymType::CLASS => {
                                     //On class, follow descriptor declarations
                                     let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     if !next_sym_refs.is_empty() {
