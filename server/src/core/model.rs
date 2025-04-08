@@ -216,7 +216,6 @@ impl Model {
                 match typ {
                     SymType::FUNCTION => {
                         dep.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                        dep.borrow_mut().set_build_status(BuildSteps::ODOO, BuildStatus::PENDING);
                         session.sync_odoo.add_to_validations(dep.clone());
                     },
                     _ => {
