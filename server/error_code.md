@@ -99,6 +99,34 @@ The extension found some classes inheriting this model, but didn't find any clas
 "A manifest should only contains one dictionary".
 A \_\_manifest\_\_.py file should be evaluated with a literal_eval to a single dictionary. Do not store any other information in it.
 
+### OLS30202
+"A manifest should not have duplicate keys".
+A \_\_manifest\_\_.py dictionary should have at most one definition per key
+
+### OLS30203
+"The name of the module should be a string"
+The name key on the \_\_manifest\_\_.py should be a string
+
+### OLS30204
+"The depends value should be a list"
+"depends" value in module manifest should be a list
+
+### OLS30205
+"The depends key should be a list of strings"
+Values in the manifest's "depends" list should be strings
+
+### OLS30206
+"A module cannot depends on itself"
+A module cannot have its own name as a dependency in its manifest
+
+### OLS30207
+"The data value should be a list"
+"data" value in module manifest should be a list
+
+### OLS30208
+"The data key should be a list of strings"
+Values in the manifest's "data" list should be strings
+
 ### OLS30302
 
 "Do not use dict unpacking to build your manifest".

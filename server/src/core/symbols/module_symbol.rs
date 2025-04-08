@@ -176,6 +176,7 @@ impl ModuleSymbol {
             ), &session.current_noqa);
             return res;
         }
+        let mut visited_keys = HashSet::new();
         let dict = &ast[0].as_expr_stmt().unwrap().value.clone().dict_expr().unwrap();
         for (index, key) in dict.iter_keys().enumerate() {
             match key {
@@ -184,23 +185,27 @@ impl ModuleSymbol {
                     match key {
                         Expr::StringLiteral(key_literal) => {
                             let key_str = key_literal.value.to_string();
+                            if visited_keys.contains(&key_str){
+                                add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("A manifest should not have duplicate keys", S!("OLS30202"), &key_literal.range, Some(DiagnosticSeverity::WARNING)), &session.current_noqa);
+                            }
+                            visited_keys.insert(key_str.clone());
                             if key_str == "name" {
                                 if !value.is_string_literal_expr() {
-                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The name of the module should be a string", S!("OLS30203"), &key_literal.range), &session.current_noqa);
+                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The name of the module should be a string", S!("OLS30203"), &key_literal.range, Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                 } else {
                                     self.module_name = oyarn!("{}", value.as_string_literal_expr().unwrap().value);
                                 }
                             } else if key_str == "depends" {
                                 if !value.is_list_expr() {
-                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The depends value should be a list", S!("OLS30204"), &key_literal.range), &session.current_noqa);
+                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The depends value should be a list", S!("OLS30204"), &key_literal.range, Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                 } else {
                                     for depend in value.as_list_expr().unwrap().elts.iter() {
                                         if !depend.is_string_literal_expr() {
-                                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", S!("OLS30205"), &depend.range()), &session.current_noqa);
+                                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", S!("OLS30205"), &depend.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                         } else {
                                             let depend_value = oyarn!("{}", depend.as_string_literal_expr().unwrap().value);
                                             if depend_value == self.dir_name {
-                                                add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range()), &session.current_noqa);
+                                                add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                             } else {
                                                 self.depends.push(depend_value);
                                             }
@@ -209,11 +214,11 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "data" {
                                 if !value.is_list_expr() {
-                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data value should be a list", S!("OLS30207"), &key_literal.range), &session.current_noqa);
+                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data value should be a list", S!("OLS30207"), &key_literal.range, Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
                                         if !data.is_literal_expr() {
-                                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data key should be a list of strings", S!("OLS30208"), &data.range()), &session.current_noqa);
+                                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data key should be a list of strings", S!("OLS30208"), &data.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                         } else {
                                             self.data.push(data.as_string_literal_expr().unwrap().value.to_string());
                                         }
@@ -229,12 +234,10 @@ impl ModuleSymbol {
                                     None,
                                     Some(vec![DiagnosticTag::DEPRECATED]),
                                 ), &session.current_noqa)
-                            } else {
-                                //res.push(self._create_diagnostic_for_manifest_key("Manifest keys should be strings", &key.range()));
                             }
                         }
                         _ => {
-                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("Manifest keys should be strings", S!("OLS30209"), &key.range()), &session.current_noqa);
+                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("Manifest keys should be strings", S!("OLS30209"), &key.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                         }
                     }
                 },
@@ -255,10 +258,10 @@ impl ModuleSymbol {
         res
     }
 
-    fn _create_diagnostic_for_manifest_key(&self, text: &str, code: String, range: &TextRange) -> Diagnostic {
+    fn _create_diagnostic_for_manifest_key(&self, text: &str, code: String, range: &TextRange, severity: Option<DiagnosticSeverity>) -> Diagnostic {
         Diagnostic::new(
             Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-            Some(DiagnosticSeverity::ERROR),
+            severity,
             Some(NumberOrString::String(code)),
             Some(EXTENSION_NAME.to_string()),
             text.to_string(),
