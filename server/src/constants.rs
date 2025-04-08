@@ -74,8 +74,7 @@ pub enum BuildSteps {
     SYNTAX     = -1, //can't be 0, because others should be able to be used as vec index
     ARCH       = 0,
     ARCH_EVAL  = 1,
-    ODOO       = 2,
-    VALIDATION = 3,
+    VALIDATION = 2,
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
