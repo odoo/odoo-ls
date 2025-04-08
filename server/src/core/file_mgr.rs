@@ -392,7 +392,6 @@ impl FileMgr {
                 to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
                 to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
                 to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
                 to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
                 to_del.publish_diagnostics(session)
             }
@@ -421,7 +420,6 @@ impl FileMgr {
             to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
             to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
             to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ODOO, vec![]);
             to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
             to_del.publish_diagnostics(session)
         }

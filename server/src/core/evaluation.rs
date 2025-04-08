@@ -893,14 +893,15 @@ impl Evaluation {
                         //  - function body inference (VALIDATION step)
                         // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
                         // We don't want to launch validation step while Arch evaluating the code.
-                        if base_sym.borrow().evaluations().is_some() && base_sym.borrow().evaluations().unwrap().len() == 0 {
-                            if base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ODOO) == BuildStatus::DONE &&
-                            base_sym.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-                            && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-                            && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
-                                let mut v = PythonValidator::new(base_sym.borrow().get_entry().unwrap(), base_sym.clone());
+                        if base_sym.borrow().evaluations().is_some()
+                        && base_sym.borrow().evaluations().unwrap().len() == 0
+                        && !base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().is_external()
+                        && base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+                        && base_sym.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
+                        && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
+                        && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
+                            let mut v = PythonValidator::new(base_sym.borrow().get_entry().unwrap(), base_sym.clone());
                                 v.validate(session);
-                            }
                         }
                         if base_sym.borrow().evaluations().is_some() {
                             let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
