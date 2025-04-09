@@ -387,7 +387,19 @@ impl PythonValidator {
                             ), &session.current_noqa);
                             continue;
                         }
-                        let field_type = symbol.borrow().name().clone();
+                        let Some(field_type) = symbol
+                            .borrow()
+                            .get_member_symbol(session, &S!("type"), None, false, false, false, false)
+                            .0.first()
+                            .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
+                            .and_then(|evals| evals.first().cloned())
+                            .and_then(|eval| eval.value.clone())
+                            .and_then(|value| match value {
+                                EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => Some(s.value.to_string()),
+                                _ => None,
+                            }) else {
+                            continue;
+                        };
                         let found_same_type_match = syms.iter().any(|sym|{
                             let related_eval_weaks = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                 Rc::downgrade(&sym),
@@ -398,8 +410,16 @@ impl PythonValidator {
                                 let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
                                     return false
                                 };
-                                let same_field = related_field_class_sym.borrow().is_specific_field_class(session, &[field_type.as_str()]);
-                                same_field
+                                let found = related_field_class_sym
+                                    .borrow()
+                                    .get_member_symbol(session, &S!("type"), None, false, false, false, false)
+                                    .0.first()
+                                    .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
+                                    .and_then(|evals| evals.first().cloned())
+                                    .and_then(|eval| eval.value.clone())
+                                    .map(|value| matches!(value, EvaluationValue::CONSTANT(Expr::StringLiteral(s)) if s.value.to_string() == field_type))
+                                    .unwrap_or(false);
+                                found
                             })
                         });
                         if !found_same_type_match{
