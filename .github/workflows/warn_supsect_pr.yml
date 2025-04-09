@@ -18,7 +18,7 @@ jobs:
       - name: Check for file changes
         id: check_changes
         run: |
-          if git diff --name-only HEAD^ HEAD | grep 'server/Cargo.toml|server/src/constants.rs'; then
+          if git diff --name-only HEAD^ HEAD | grep -E 'server/Cargo.toml|server/src/constants.rs'; then
             echo "file_changed=true" >> $GITHUB_ENV
           else
             echo "file_changed=false" >> $GITHUB_ENV
