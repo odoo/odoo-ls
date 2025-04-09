@@ -8,6 +8,7 @@ use lsp_types::NumberOrString;
 use once_cell::sync::Lazy;
 use ruff_python_ast::Arguments;
 use ruff_python_ast::Expr;
+use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use crate::core::odoo::SyncOdoo;
@@ -36,6 +37,7 @@ pub struct PythonArchEvalFileHook {
     pub func: PythonArchEvalHookFile
 }
 
+#[allow(non_upper_case_globals)]
 static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {vec![
     PythonArchEvalFileHook {odoo_entry: true,
                         file_tree: vec![Sy!("odoo"), Sy!("models")],
@@ -263,6 +265,7 @@ pub struct PythonArchEvalFunctionHook {
     pub func: PythonArchEvalHookFunc
 }
 
+#[allow(non_upper_case_globals)]
 static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::new(|| {vec![
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("__getitem__")]),
@@ -388,6 +391,33 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
     }},
 ]});
 
+
+type PythonArchEvalHookDecorator = fn (session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>;
+
+pub struct PythonArchEvalDecoratorHook {
+    pub tree: Tree,
+    pub func: PythonArchEvalHookDecorator
+}
+
+#[allow(non_upper_case_globals)]
+static arch_eval_decorator_hooks: Lazy<Vec<PythonArchEvalDecoratorHook>> = Lazy::new(|| {vec![
+    PythonArchEvalDecoratorHook {tree: (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("returns")]),
+                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                            PythonArchEvalHooks::handle_api_returns_decorator(session, func_sym, arguments)
+    }},
+    PythonArchEvalDecoratorHook {tree: (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")]),
+                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                            PythonArchEvalHooks::handle_api_simple_field_decorator(session, func_sym, arguments)
+    }},
+    PythonArchEvalDecoratorHook {tree: (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")]),
+                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                            PythonArchEvalHooks::handle_api_simple_field_decorator(session, func_sym, arguments)
+    }},
+    PythonArchEvalDecoratorHook {tree: (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")]),
+                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                            PythonArchEvalHooks::handle_api_nested_field_decorator(session, func_sym, arguments)
+    }},
+]});
 pub struct PythonArchEvalHooks {
 }
 
@@ -398,15 +428,14 @@ impl PythonArchEvalHooks {
         let odoo_tree = symbol.borrow().get_main_entry_tree(session);
         let name = symbol.borrow().name().clone();
         for hook in arch_eval_file_hooks.iter() {
-            if name.eq(hook.file_tree.last().unwrap()) {
-                if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree.0 == hook.file_tree) || (!hook.odoo_entry && tree.0 == hook.file_tree) {
-                    if hook.content_tree.is_empty() {
-                        (hook.func)(session.sync_odoo, entry_point, symbol.clone(), symbol.clone());
-                    } else {
-                        let sub_symbol = symbol.borrow().get_symbol(&(vec![], hook.content_tree.clone()), u32::MAX);
-                        if !sub_symbol.is_empty() {
-                            (hook.func)(session.sync_odoo, entry_point, symbol.clone(), sub_symbol.last().unwrap().clone());
-                        }
+            if name.eq(hook.file_tree.last().unwrap()) &&
+            ((hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree.0 == hook.file_tree) || (!hook.odoo_entry && tree.0 == hook.file_tree)) {
+                if hook.content_tree.is_empty() {
+                    (hook.func)(session.sync_odoo, entry_point, symbol.clone(), symbol.clone());
+                } else {
+                    let sub_symbol = symbol.borrow().get_symbol(&(vec![], hook.content_tree.clone()), u32::MAX);
+                    if !sub_symbol.is_empty() {
+                        (hook.func)(session.sync_odoo, entry_point, symbol.clone(), sub_symbol.last().unwrap().clone());
                     }
                 }
             }
@@ -424,6 +453,49 @@ impl PythonArchEvalHooks {
                 }
             }
         }
+    }
+
+    /// Read function decorators and set evaluations where applicable
+    /// - api.returns -> self -> Self, string -> model name if exists + validate
+    /// - validates api.depends/onchange/constrains
+    pub fn handle_func_decorators(
+        session: &mut SessionInfo,
+        func_stmt: &StmtFunctionDef,
+        func_sym: Rc<RefCell<Symbol>>,
+        file: Rc<RefCell<Symbol>>,
+        current_step: BuildSteps,
+    ) -> Vec<Diagnostic>{
+        let mut diagnostics = vec![];
+        for decorator in func_stmt.decorator_list.iter(){
+            let (decorator_base, decorator_args) = match &decorator.expression {
+                Expr::Call(call_expr) => {
+                    (&call_expr.func, &call_expr.arguments)
+                },
+                _ => {continue;}
+            };
+            if decorator_args.args.is_empty(){
+                continue; // All the decorators we handle have at least one arg for now
+            }
+            let Some(parent) = func_sym.borrow().parent().and_then(|weak_parent| weak_parent.upgrade()).clone() else {
+                return diagnostics // failed to find parent
+            };
+            let mut deps = vec![vec![], vec![], vec![]];
+            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(),&mut deps);
+            Symbol::insert_dependencies(&file, &mut deps, current_step);
+            diagnostics.extend(diags);
+            for decorator_eval in dec_evals.iter(){
+                let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut diagnostics, None)  else {continue};
+                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
+                let dec_sym_tree = dec_sym.borrow().get_tree();
+                for hook in arch_eval_decorator_hooks.iter() {
+                    if !dec_sym_tree.0.ends_with(&hook.tree.0) || !dec_sym_tree.1.ends_with(&hook.tree.1) || !SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
+                        continue;
+                    }
+                    diagnostics.extend((hook.func)(session, func_sym.clone(), decorator_args));
+                }
+            }
+        }
+        diagnostics
     }
 
     pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
@@ -782,4 +854,114 @@ impl PythonArchEvalHooks {
             range: None,
         }]);
     }
+
+    /// For @api.returns decorator, which can take a string or self
+    /// - self: self
+    /// - string: model name if exists + validate
+    /// Adds evaluation to the function symbol
+    /// Returns a vector of diagnostics if the model is not found or not in the dependencies of the module
+    fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>{
+        let mut diagnostics = vec![];
+        let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return diagnostics};
+        let returns_str = expr.value.to_string();
+        if returns_str == S!("self"){
+            func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+            return diagnostics;
+        }
+        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", returns_str)).cloned() else {
+            add_diagnostic(&mut diagnostics, Diagnostic::new(
+                FileMgr::textRange_to_temporary_Range(&expr.range()),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30102"))),
+                Some(EXTENSION_NAME.to_string()),
+                S!("Unknown model. Check your addons path"),
+                None,
+                None,
+            ), &session.current_noqa);
+            return diagnostics;
+        };
+        let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
+            add_diagnostic(&mut diagnostics, Diagnostic::new(
+                FileMgr::textRange_to_temporary_Range(&expr.range()),
+                Some(DiagnosticSeverity::ERROR),
+                Some(NumberOrString::String(S!("OLS30101"))),
+                Some(EXTENSION_NAME.to_string()),
+                S!("This model is not in the dependencies of your module."),
+                None,
+                None,
+            ), &session.current_noqa);
+            return diagnostics
+        };
+        func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
+        diagnostics
+    }
+
+    /// For @api.constrains and @api.onchange, both can only take a simple field name
+    fn handle_api_simple_field_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>{
+        let mut diagnostics = vec![];
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return diagnostics;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return diagnostics;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return diagnostics};
+            let field_name = expr.value.to_string();
+            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
+            if syms.is_empty(){
+                add_diagnostic(&mut diagnostics, Diagnostic::new(
+                    FileMgr::textRange_to_temporary_Range(&expr.range()),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ), &session.current_noqa);
+            }
+        }
+        diagnostics
+    }
+
+    /// For @api.depends, which can take a nested simple field name
+    fn handle_api_nested_field_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>{
+        let mut diagnostics = vec![];
+        let from_module = func_sym.borrow().find_module();
+
+        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
+            |class_sym_weak| class_sym_weak.upgrade()
+        ) else {
+            return diagnostics;
+        };
+
+        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+            return diagnostics;
+        };
+
+        for arg in arguments.args.iter() {
+            let Expr::StringLiteral(expr) = arg else {return diagnostics};
+            let field_name = expr.value.to_string();
+            let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
+            if syms.is_empty(){
+                add_diagnostic(&mut diagnostics, Diagnostic::new(
+                    FileMgr::textRange_to_temporary_Range(&expr.range()),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30323"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field {field_name} does not exist on model {model_name}"),
+                    None,
+                    None,
+                ), &session.current_noqa);
+            }
+        }
+        diagnostics
+    }
+
 }
