@@ -98,8 +98,11 @@ impl PythonArchEval {
             };
             self.visit_sub_stmts(session, &ast);
             if !self.file_mode {
-                self.handle_func_decorators(session, maybe_func_stmt, self.sym_stack[0].clone());
-                PythonArchEval::handle_function_returns(session, maybe_func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
+                let func_stmt = maybe_func_stmt.unwrap();
+                self.diagnostics.extend(
+                    PythonArchEvalHooks::handle_func_decorators(session, func_stmt, self.sym_stack[0].clone(), self.file.clone(), self.current_step)
+                );
+                PythonArchEval::handle_function_returns(session, func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
                 PythonArchEval::handle_func_evaluations(ast, &self.sym_stack[0]);
             }
             session.current_noqa = old_noqa;
@@ -766,7 +769,7 @@ impl PythonArchEval {
             self.visit_sub_stmts(session, &func_stmt.body);
             self.sym_stack.pop();
             session.current_noqa = old_noqa;
-            PythonArchEval::handle_function_returns(session, Some(func_stmt), &function_sym, &func_stmt.range.end(), &mut self.diagnostics);
+            PythonArchEval::handle_function_returns(session, func_stmt, &function_sym, &func_stmt.range.end(), &mut self.diagnostics);
             PythonArchEval::handle_func_evaluations(&func_stmt.body, &function_sym);
             function_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
         }
@@ -934,12 +937,12 @@ impl PythonArchEval {
     // Evaluate return annotation and add it to function evaluations
     fn handle_function_returns(
         session: &mut SessionInfo,
-        func_stmt: Option<&StmtFunctionDef>,
+        func_stmt: &StmtFunctionDef,
         func_sym: &Rc<RefCell<Symbol>>,
         max_infer: &TextSize,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        if let Some(returns_ann) = func_stmt.and_then(|func_stmt| func_stmt.returns.as_ref()) {
+        if let Some(returns_ann) = func_stmt.returns.as_ref() {
             let file_sym = func_sym.borrow().get_file().and_then(|file_weak| file_weak.upgrade());
             let mut deps = vec![vec![], vec![]];
             let (evaluations, diags) = Evaluation::eval_from_ast(
@@ -971,7 +974,7 @@ impl PythonArchEval {
 
     // Handle function evaluation if traversing the body did not get any evaluations
     // First we check if it is a function signature with no body ( like in stubs ) like def func():...
-    // If so we give it an Any evaluation because it is undetermined, otherwise we give it None, becauset that means
+    // If so we give it an Any evaluation because it is undetermined, otherwise we give it None, because that means
     // we have a body but no return statement, which defaults to return None at the end
     fn handle_func_evaluations(
         func_body: &Vec<Stmt>,
@@ -989,72 +992,6 @@ impl PythonArchEval {
                     Evaluation::new_any()
                 }
             ];
-        }
-    }
-
-    fn handle_api_returns_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
-        let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return};
-        let returns_str = expr.value.to_string();
-        if returns_str == S!("self"){
-            func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
-            return;
-        }
-        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", returns_str)).cloned() else {
-            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
-                FileMgr::textRange_to_temporary_Range(&expr.range()),
-                Some(DiagnosticSeverity::ERROR),
-                Some(NumberOrString::String(S!("OLS30102"))),
-                Some(EXTENSION_NAME.to_string()),
-                S!("Unknown model. Check your addons path"),
-                None,
-                None,
-            ), &session.current_noqa);
-            return;
-        };
-        let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
-            add_diagnostic(&mut self.diagnostics, Diagnostic::new(
-                FileMgr::textRange_to_temporary_Range(&expr.range()),
-                Some(DiagnosticSeverity::ERROR),
-                Some(NumberOrString::String(S!("OLS30101"))),
-                Some(EXTENSION_NAME.to_string()),
-                S!("This model is not in the dependencies of your module."),
-                None,
-                None,
-            ), &session.current_noqa);
-            return
-        };
-        func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
-    }
-
-    /// For @api.constrains and @api.onchange, both can only take a simple field name
-    fn handle_api_simple_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
-        let from_module = func_sym.borrow().find_module();
-
-        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
-            |class_sym_weak| class_sym_weak.upgrade()
-        ) else {
-            return;
-        };
-
-        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
-            return;
-        };
-
-        for arg in arguments.args.iter() {
-            let Expr::StringLiteral(expr) = arg else {return};
-            let field_name = expr.value.to_string();
-            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
-            if syms.is_empty(){
-                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&expr.range()),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30323"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Field {field_name} does not exist on model {model_name}"),
-                    None,
-                    None,
-                ), &session.current_noqa);
-            }
         }
     }
 
@@ -1098,82 +1035,4 @@ impl PythonArchEval {
         }
         syms
     }
-
-    /// For @api.depends, which can take a nested simple field name
-    fn handle_api_nested_field_decorator(&mut self, session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments){
-        let from_module = func_sym.borrow().find_module();
-
-        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
-            |class_sym_weak| class_sym_weak.upgrade()
-        ) else {
-            return;
-        };
-
-        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
-            return;
-        };
-
-        for arg in arguments.args.iter() {
-            let Expr::StringLiteral(expr) = arg else {return};
-            let field_name = expr.value.to_string();
-            let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
-            if syms.is_empty(){
-                add_diagnostic(&mut self.diagnostics, Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&expr.range()),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30323"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Field {field_name} does not exist on model {model_name}"),
-                    None,
-                    None,
-                ), &session.current_noqa);
-            }
-        }
-    }
-
-    /// Read function decorators and set evaluations where applicable
-    /// - api.returns -> self -> Self, string -> model name if exists + validate
-    /// - validates api.depends/onchange/constrains
-    fn handle_func_decorators(
-        &mut self,
-        session: &mut SessionInfo,
-        maybe_func_stmt: Option<&StmtFunctionDef>,
-        func_sym: Rc<RefCell<Symbol>>,
-    ){
-        let Some(func_stmt) = maybe_func_stmt else {return};
-        for decorator in func_stmt.decorator_list.iter(){
-            let (decorator_base, decorator_args) = match &decorator.expression {
-                Expr::Call(call_expr) => {
-                    (&call_expr.func, &call_expr.arguments)
-                },
-                _ => {continue;}
-            };
-            if decorator_args.args.is_empty(){
-                continue; // All the decorators we handle have at least one arg for now
-            }
-            let mut deps = vec![vec![], vec![]];
-            if !self.file_mode {
-                deps.push(vec![]);
-            }
-            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, self.sym_stack.last().unwrap().clone(), &func_stmt.range.start(), &mut deps);
-            Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
-            self.diagnostics.extend(diags);
-            for decorator_eval in dec_evals.iter(){
-                let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut self.diagnostics, None)  else {continue};
-                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
-                let dec_sym_tree = dec_sym.borrow().get_tree();
-                if !dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")]){
-                    continue;
-                }
-                if dec_sym_tree.1 == vec![Sy!("returns")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
-                    self.handle_api_returns_decorator(session, func_sym.clone(), decorator_args);
-                } else if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
-                    self.handle_api_simple_field_decorator(session, func_sym.clone(), decorator_args);
-                } else if dec_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
-                    self.handle_api_nested_field_decorator(session, func_sym.clone(), decorator_args);
-                }
-            }
-        }
-    }
-
 }
