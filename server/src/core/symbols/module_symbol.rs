@@ -358,11 +358,13 @@ impl ModuleSymbol {
                     None //ARCH
                 ],
                 vec![ //ARCH_EVAL
-                    None //ARCH
+                    None, //ARCH,
+                    None, //ARCH_EVAL
                 ],
                 vec![
                     None, // ARCH
                     None, //ARCH_EVAL
+                    None, //VALIDATIOn
                 ]
             ];
             self.dependents = vec![
@@ -372,8 +374,12 @@ impl ModuleSymbol {
                     None, //VALIDATION
                 ],
                 vec![ //ARCH_EVAL
+                    None, //ARCH_EVAL
                     None //VALIDATION
                 ],
+                vec![ //VALIDATION
+                    None //VALIDATION
+                ]
             ];
         }
     }

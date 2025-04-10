@@ -536,7 +536,9 @@ impl PythonArchBuilder {
                         let parent = variable.parent().as_ref().unwrap().upgrade();
                         if parent.is_some() {
                             let parent = parent.unwrap();
-                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start());
+                            let mut deps = vec![vec![]]; //only arch level
+                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start(), &mut deps);
+                            Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::ARCH);
                             variable.as_variable_mut().evaluations = eval.0;
                             self.diagnostics.extend(eval.1);
                             if !variable.as_variable().evaluations.is_empty() {
