@@ -980,7 +980,7 @@ impl Evaluation {
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                for base_eval in base_evals.iter(){
+                for base_eval in base_evals.iter() {
                     let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
                     if base_ref.is_expired_if_weak() {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -989,6 +989,18 @@ impl Evaluation {
                     for ibase in bases.iter() {
                         let base_loc = ibase.upgrade_weak();
                         if let Some(base_loc) = base_loc {
+                            let file = base_loc.borrow().get_file().clone();
+                            if let Some(base_loc_file) = file {
+                                let base_loc_file = base_loc_file.upgrade().unwrap();
+                                SyncOdoo::build_now(session, &base_loc_file, BuildSteps::ARCH_EVAL);
+                                if base_loc_file.borrow().in_workspace() {
+                                    if required_dependencies.len() == 2 {
+                                        required_dependencies[1].push(base_loc_file.clone());
+                                    } else if required_dependencies.len() == 3 {
+                                        required_dependencies[2].push(base_loc_file.clone());
+                                    }
+                                }
+                            }
                             let is_super = ibase.is_weak() && ibase.as_weak().is_super;
                             let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
                             for diagnostic in attributes_diagnostics.iter_mut(){

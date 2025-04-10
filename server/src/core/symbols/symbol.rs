@@ -1507,6 +1507,18 @@ impl Symbol {
         }
     }
 
+    pub fn previous_step_done(&self, step: BuildSteps) -> bool {
+        if step == BuildSteps::SYNTAX {
+            panic!("Can't check previous step for syntax step")
+        }
+        for i in 0 .. step as usize {
+            if self.build_status(BuildSteps::from(i as i32)) != BuildStatus::DONE {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn get_rc(&self) -> Option<Rc<RefCell<Symbol>>> {
         if self.weak_self().is_none() {
             return None;

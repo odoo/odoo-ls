@@ -662,7 +662,7 @@ impl SyncOdoo {
                 error!("Trying to build a symbol that is NOT in the queue: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
             }
         }
-        if symbol.borrow().build_status(step) == BuildStatus::PENDING && (step == BuildSteps::ARCH || session.sync_odoo.is_in_rebuild(&symbol, step)) {
+        if symbol.borrow().build_status(step) == BuildStatus::PENDING && symbol.borrow().previous_step_done(step) {
             SyncOdoo::build_now_dependencies(session, symbol, step);
             let entry_point = symbol.borrow().get_entry().unwrap();
             session.sync_odoo.remove_from_rebuild(&symbol, step);
