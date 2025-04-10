@@ -558,7 +558,11 @@ impl Evaluation {
     //For example: a = "5"
     // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
     //The result is a list, because some ast can give various possible results. For example: a = func()
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+    //required_dependencies will be filled with dependencies required to build the value, step by step.
+    //You have to provide a vector with the length matching the available steps. For example, in arch_eval, required_dependencies
+    //should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
+    //not build but required during the eval_from_ast, it will NOT be built
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -569,7 +573,7 @@ impl Evaluation {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
-        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context);
+        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, required_dependencies);
         return (analyze_result.evaluations, analyze_result.diagnostics)
     }
 
@@ -585,7 +589,7 @@ impl Evaluation {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context);
+        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, &mut vec![]);
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -630,7 +634,7 @@ impl Evaluation {
         context: {}
         diagnostics: vec![]
      */
-    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, context: &mut Option<Context>) -> AnalyzeAstResult {
+    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, context: &mut Option<Context>, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> AnalyzeAstResult {
         let odoo = &mut session.sync_odoo;
         let mut evals = vec![];
         let mut diagnostics = vec![];
@@ -701,7 +705,7 @@ impl Evaluation {
                 evals.push(Evaluation::new_dict(odoo, values, expr.range));
             },
             ExprOrIdent::Expr(Expr::Call(expr)) => {
-                let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent.clone(), max_infer);
+                let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
                 //TODO actually we only evaluate if there is only one function behind the evaluation.
                 // we could evaluate the result of each function and filter results by signature matching.
@@ -742,7 +746,7 @@ impl Evaluation {
                             if base_sym.borrow().match_tree_from_any_entry(session, &(vec![Sy!("builtins")], vec![Sy!("super")])){
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty(){
-                                    let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer);
+                                    let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer, required_dependencies);
                                     diagnostics.extend(diags);
                                     if class_eval.len() != 1 {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -772,7 +776,7 @@ impl Evaluation {
                                         } else {
                                             let mut is_instance = None;
                                             if expr.arguments.args.len() >= 2 {
-                                                let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent.clone(), max_infer);
+                                                let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent.clone(), max_infer, required_dependencies);
                                                 diagnostics.extend(diags);
                                                 if object_or_type_eval.len() != 1 {
                                                     return Some((class_sym_weak_eval.weak.clone(), is_instance))
@@ -825,7 +829,14 @@ impl Evaluation {
                                     });
                                 }
                             } else {
-
+                                //let be sure that the class file has been loaded, and add dependency to it
+                                if required_dependencies.len() >= 2 {
+                                    let class_file = base_sym.borrow().get_file().unwrap().upgrade().unwrap();
+                                    SyncOdoo::build_now(session, &class_file, BuildSteps::ARCH_EVAL);
+                                    if !class_file.borrow().is_external() {
+                                        required_dependencies[1].push(class_file.clone());
+                                    }
+                                }
                                 //1: find __init__ method
                                 let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module.clone(), true, false, false, false);
                                 let mut found_hook = false;
@@ -887,6 +898,14 @@ impl Evaluation {
                             }
                         }
                     } else if base_sym.borrow().typ() == SymType::FUNCTION {
+                        let base_sym_file = base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().clone();
+                        SyncOdoo::build_now(session, &base_sym_file, BuildSteps::ARCH_EVAL);
+                        let in_class = base_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some();
+                        if required_dependencies.len() >= 2 {
+                            if !in_class {
+                                required_dependencies[1].push(base_sym_file.clone());
+                            }
+                        }
                         //function return evaluation can come from:
                         //  - type annotation parsing (ARCH_EVAL step)
                         //  - documentation parsing (Arch_eval and VALIDATION step)
@@ -895,13 +914,18 @@ impl Evaluation {
                         // We don't want to launch validation step while Arch evaluating the code.
                         if base_sym.borrow().evaluations().is_some()
                         && base_sym.borrow().evaluations().unwrap().len() == 0
-                        && !base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().is_external()
-                        && base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+                        && !base_sym_file.borrow().is_external()
+                        && base_sym_file.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
                         && base_sym.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
                         && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
                         && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
                             let mut v = PythonValidator::new(base_sym.borrow().get_entry().unwrap(), base_sym.clone());
-                                v.validate(session);
+                            v.validate(session);
+                        }
+                        if required_dependencies.len() >= 3 {
+                            if in_class {
+                                required_dependencies[2].push(base_sym_file.clone());
+                            }
                         }
                         if base_sym.borrow().evaluations().is_some() {
                             let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
@@ -951,7 +975,7 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
-                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
+                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -1018,7 +1042,7 @@ impl Evaluation {
                 };
                 match ast {
                     ExprOrIdent::Expr(Expr::Named(expr))  => {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer);
+                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, required_dependencies);
                         diagnostics.extend(diags.clone());
                     }
                     _ => {}
@@ -1035,7 +1059,7 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
-                let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer);
+                let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
                 // TODO handle multiple eval_left
                 if eval_left.is_empty() {
@@ -1096,11 +1120,11 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::If(if_expr)) => {
-                let (_, diags) = Evaluation::eval_from_ast(session, &if_expr.test, parent.clone(), max_infer);
+                let (_, diags) = Evaluation::eval_from_ast(session, &if_expr.test, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
-                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent.clone(), max_infer);
+                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
-                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent.clone(), max_infer);
+                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
                 evals.extend(body_evals.into_iter().chain(orelse_evals.into_iter()));
             },
@@ -1127,7 +1151,7 @@ impl Evaluation {
                         break 'u_op_block
                     },
                 };
-                let (bases, diags) = Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer);
+                let (bases, diags) = Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
                 for base in bases.into_iter(){
                     let base_sym_weak_eval= base.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
