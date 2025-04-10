@@ -1008,6 +1008,17 @@ impl Symbol {
         tree
     }
 
+    /* Helper to merge dependencies eval_from_ast will fill when called. To be called on a file/package... */
+    pub fn insert_dependencies(file: &Rc<RefCell<Symbol>>, deps: &mut Vec<Vec<Rc<RefCell<Symbol>>>>, current_step: BuildSteps) {
+        for (step, dep) in deps.iter().enumerate() {
+            for file_to_add in dep.iter() {
+                if !Rc::ptr_eq(&file, &file_to_add) {
+                    file.borrow_mut().add_dependency(&mut file_to_add.borrow_mut(), current_step, BuildSteps::from(step as i32));
+                }
+            }
+        }
+    }
+
     ///Given a path, create the appropriated symbol and attach it to the given parent
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
@@ -1258,13 +1269,8 @@ impl Symbol {
         if step == BuildSteps::SYNTAX || level == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
-        if level > BuildSteps::ARCH {
-            if step <= BuildSteps::ARCH_EVAL {
-                panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
-            }
-            if level == BuildSteps::VALIDATION {
-                panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
-            }
+        if level > step {
+            panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
@@ -1303,13 +1309,8 @@ impl Symbol {
         if level == BuildSteps::SYNTAX || step == BuildSteps::SYNTAX {
             panic!("Can't get dependents for syntax step")
         }
-        if level == BuildSteps::VALIDATION {
-            panic!("Can't get dependents for level {:?}", level)
-        }
-        if level > BuildSteps::ARCH {
-            if step <= BuildSteps::ARCH_EVAL {
-                panic!("Can't get dependents for step {:?} and level {:?}", step, level)
-            }
+        if level < step {
+            panic!("Can't get dependents for step {:?} and level {:?}", step, level)
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
@@ -1334,13 +1335,8 @@ impl Symbol {
         if !self.in_workspace() || !symbol.in_workspace() {
             return;
         }
-        if dep_level > BuildSteps::ARCH {
-            if step <= BuildSteps::ARCH_EVAL {
-                panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
-            }
-            if dep_level == BuildSteps::VALIDATION {
-                panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
-            }
+        if dep_level > step {
+            panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
         }
         let step_i = step as usize;
         let level_i = dep_level as usize;
@@ -1350,10 +1346,10 @@ impl Symbol {
             set = &mut self.dependencies_mut()[step_i][level_i];
         }
         set.as_mut().unwrap().insert(symbol.get_rc().unwrap());
-        let mut set = &mut symbol.dependents_as_mut()[level_i][step_i];
+        let mut set = &mut symbol.dependents_as_mut()[level_i][step_i - level_i];
         if set.is_none() {
-            symbol.dependents_as_mut()[level_i][step_i] = Some(PtrWeakHashSet::new());
-            set = &mut symbol.dependents_as_mut()[level_i][step_i];
+            symbol.dependents_as_mut()[level_i][step_i - level_i] = Some(PtrWeakHashSet::new());
+            set = &mut symbol.dependents_as_mut()[level_i][step_i - level_i];
         }
         set.as_mut().unwrap().insert(self.get_rc().unwrap().clone());
     }

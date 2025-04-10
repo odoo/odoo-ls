@@ -24,6 +24,7 @@ use super::python_arch_eval::PythonArchEval;
 #[derive(Debug)]
 pub struct PythonValidator {
     entry_point: Rc<RefCell<EntryPoint>>,
+    file: Rc<RefCell<Symbol>>,
     file_mode: bool,
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
@@ -39,6 +40,7 @@ impl PythonValidator {
     pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> Self {
         Self {
             entry_point,
+            file: symbol.clone(), //dummy, not valid
             file_mode: true,
             sym_stack: vec![symbol],
             diagnostics: vec![],
@@ -49,8 +51,7 @@ impl PythonValidator {
     }
 
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
-        let file_symbol = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
-        let file_symbol = file_symbol.borrow();
+        let file_symbol = self.file.borrow();
         let mut path = file_symbol.paths()[0].clone();
         if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
             path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
@@ -61,6 +62,7 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
+        self.file = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
         let symbol = self.sym_stack[0].borrow();
         self.current_module = symbol.find_module();
         if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
@@ -575,7 +577,9 @@ impl PythonValidator {
     }
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
-        let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer);
+        let mut deps = vec![vec![], vec![], vec![]];
+        let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer, &mut deps);
+        Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::VALIDATION);
         self.diagnostics.extend(diags);
     }
 
