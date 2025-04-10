@@ -360,21 +360,21 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
             let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
             if _rc_symbol.is_some() {
                 let _arc_symbol = _rc_symbol.unwrap();
-                SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
+                SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").sanitize()) {
             let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("py"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
+                SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("pyi").sanitize()) {
             let _arc_symbol = Symbol::create_from_path(session, &full_path.with_extension("pyi"), parent.clone(), false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
-                SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
+                SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
         } else if !matches!(parent.borrow().typ(), SymType::ROOT) {
@@ -402,7 +402,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
             let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
             if _rc_symbol.is_some() {
                 let _arc_symbol = _rc_symbol.unwrap();
-                SyncOdoo::rebuild_arch_now(session, &_arc_symbol);
+                SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
         }

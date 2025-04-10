@@ -40,7 +40,7 @@ impl AstUtils {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(expr.range()))
         ]));
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context);
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context, &mut vec![]);
         (analyse_ast_result, Some(expr.range()), call_expr)
 
     }

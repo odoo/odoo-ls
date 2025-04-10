@@ -73,7 +73,6 @@ pub struct SyncOdoo {
     pub watched_file_updates: Arc<AtomicU32>,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    rebuild_odoo: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub state_init: InitState,
     pub must_reload_paths: Vec<(Weak<RefCell<Symbol>>, String)>,
@@ -111,7 +110,6 @@ impl SyncOdoo {
             watched_file_updates: Arc::new(AtomicU32::new(0)),
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
-            rebuild_odoo: PtrWeakHashSet::new(),
             rebuild_validation: PtrWeakHashSet::new(),
             state_init: InitState::NOT_READY,
             must_reload_paths: vec![],
@@ -140,7 +138,6 @@ impl SyncOdoo {
         session.sync_odoo.models = HashMap::new();
         session.sync_odoo.rebuild_arch = PtrWeakHashSet::new();
         session.sync_odoo.rebuild_arch_eval = PtrWeakHashSet::new();
-        session.sync_odoo.rebuild_odoo = PtrWeakHashSet::new();
         session.sync_odoo.rebuild_validation = PtrWeakHashSet::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
@@ -459,14 +456,13 @@ impl SyncOdoo {
         {
             let set =  match step {
                 BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
-                BuildSteps::ODOO => &self.rebuild_odoo,
                 BuildSteps::VALIDATION => &self.rebuild_validation,
                 _ => &self.rebuild_arch
             };
             let mut selected_sym: Option<Rc<RefCell<Symbol>>> = None;
             let mut selected_count: u32 = 999999999;
             let mut current_count: u32;
-            for sym in &*set {
+            for sym in set {
                 current_count = 0;
                 let file = sym.borrow().get_file().unwrap().upgrade().unwrap();
                 let file = file.borrow();
@@ -500,7 +496,6 @@ impl SyncOdoo {
         {
             let set =  match step {
                 BuildSteps::ARCH_EVAL => &mut self.rebuild_arch_eval,
-                BuildSteps::ODOO => &mut self.rebuild_odoo,
                 BuildSteps::VALIDATION => &mut self.rebuild_validation,
                 _ => &mut self.rebuild_arch
             };
@@ -551,12 +546,11 @@ impl SyncOdoo {
         session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
-        let mut already_odoo_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
-        trace!("Starting rebuild: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_odoo.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
+        trace!("Starting rebuild: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
+        while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
             if DEBUG_THREADS {
-                trace!("remains: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+                trace!("remains: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
             }
             if session.sync_odoo.terminate_rebuild.load(Ordering::SeqCst){
                 info!("Terminating rebuilds due to server shutdown");
@@ -570,7 +564,6 @@ impl SyncOdoo {
                     continue;
                 }
                 already_arch_rebuilt.insert(tree);
-                //TODO should delete previous first
                 let mut builder = PythonArchBuilder::new(entry.unwrap(), sym_rc);
                 builder.load_arch(session);
                 continue;
@@ -583,22 +576,8 @@ impl SyncOdoo {
                     continue;
                 }
                 already_arch_eval_rebuilt.insert(tree);
-                //TODO should delete previous first
                 let mut builder = PythonArchEval::new(entry.unwrap(), sym_rc);
                 builder.eval_arch(session);
-                continue;
-            }
-            let sym = session.sync_odoo.pop_item(BuildSteps::ODOO);
-            if let Some(sym_rc) = sym {
-                let tree = sym_rc.borrow().get_tree();
-                if already_odoo_rebuilt.contains(&tree) {
-                    info!("Already odoo rebuilt, skipping");
-                    continue;
-                }
-                already_odoo_rebuilt.insert(tree);
-                //TODO should delete previous first
-                let mut builder = PythonOdooBuilder::new(sym_rc);
-                builder.load_odoo_content(session);
                 continue;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::VALIDATION);
@@ -626,14 +605,8 @@ impl SyncOdoo {
             SessionInfo::request_reload(session);
         }
         session.sync_odoo.import_cache = None;
-        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_odoo.len(), session.sync_odoo.rebuild_validation.len());
+        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
-    }
-
-    pub fn rebuild_arch_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
-        session.sync_odoo.rebuild_arch.remove(symbol);
-        let mut builder = PythonArchBuilder::new(symbol.borrow().get_entry().unwrap(), symbol.clone());
-        builder.load_arch(session);
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
@@ -645,7 +618,6 @@ impl SyncOdoo {
             let mut sym_borrowed = sym_clone.borrow_mut();
             sym_borrowed.set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
             sym_borrowed.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            sym_borrowed.set_build_status(BuildSteps::ODOO, BuildStatus::PENDING);
             sym_borrowed.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_arch.insert(symbol);
         }
@@ -659,22 +631,8 @@ impl SyncOdoo {
             let sym_clone = symbol.clone();
             let mut sym_borrowed = sym_clone.borrow_mut();
             sym_borrowed.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            sym_borrowed.set_build_status(BuildSteps::ODOO, BuildStatus::PENDING);
             sym_borrowed.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_arch_eval.insert(symbol);
-        }
-    }
-
-    pub fn add_to_init_odoo(&mut self, symbol: Rc<RefCell<Symbol>>) {
-        if DEBUG_THREADS {
-            trace!("ADDED TO ODOO - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
-        }
-        if symbol.borrow().build_status(BuildSteps::ODOO) != BuildStatus::IN_PROGRESS {
-            let sym_clone = symbol.clone();
-            let mut sym_borrowed = sym_clone.borrow_mut();
-            sym_borrowed.set_build_status(BuildSteps::ODOO, BuildStatus::PENDING);
-            sym_borrowed.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-            self.rebuild_odoo.insert(symbol);
         }
     }
 
@@ -688,16 +646,98 @@ impl SyncOdoo {
         }
     }
 
+    /* Ask for an immediate rebuild of the given symbol if possible.
+    return true if a rebuild has been done
+     */
+    pub fn build_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
+        match symbol.borrow().typ() {
+            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE => return false,
+            _ => {}
+        }
+        if DEBUG_REBUILD_NOW {
+            if symbol.borrow().build_status(step) == BuildStatus::INVALID {
+                panic!("Trying to build an invalid symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            }
+            if symbol.borrow().build_status(step) == BuildStatus::IN_PROGRESS && !session.sync_odoo.is_in_rebuild(&symbol, step) {
+                error!("Trying to build a symbol that is NOT in the queue: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            }
+        }
+        if symbol.borrow().build_status(step) == BuildStatus::PENDING && symbol.borrow().previous_step_done(step) {
+            SyncOdoo::build_now_dependencies(session, symbol, step);
+            let entry_point = symbol.borrow().get_entry().unwrap();
+            session.sync_odoo.remove_from_rebuild(&symbol, step);
+            if step == BuildSteps::ARCH {
+                let mut builder = PythonArchBuilder::new(entry_point, symbol.clone());
+                builder.load_arch(session);
+                return true;
+            } else if step == BuildSteps::ARCH_EVAL {
+                if DEBUG_REBUILD_NOW {
+                    if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE {
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+                    }
+                }
+                let mut builder = PythonArchEval::new(entry_point, symbol.clone());
+                builder.eval_arch(session);
+                return true;
+            } else if step == BuildSteps::VALIDATION {
+                if DEBUG_REBUILD_NOW {
+                    if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE || symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+                    }
+                }
+                let mut validator = PythonValidator::new(entry_point, symbol.clone());
+                validator.validate(session);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn build_now_dependencies(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
+        let symbol = symbol.borrow();
+        match symbol.typ() {
+            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE | SymType::FUNCTION => return,
+            _ => {}
+        }
+        for step_to_build in 0..2 {
+            let step_to_build = BuildSteps::from(step_to_build);
+            let all_dep = symbol.get_all_dependencies(step_to_build);
+            if let Some(all_dep) = all_dep {
+                for (index, dep_set) in all_dep.iter().enumerate() {
+                    let dep_step = match index {
+                        0 => BuildSteps::ARCH,
+                        1 => BuildSteps::ARCH_EVAL,
+                        _ => panic!("Unexpected step index"),
+                    };
+                    if let Some(dep_set) = dep_set {
+                        for dep in dep_set.iter() {
+                            SyncOdoo::build_now(session, &dep, dep_step);
+                        }
+                    }
+                }
+            }
+            if step_to_build == step {
+                break;
+            }
+        }
+    }
+
+    pub fn remove_from_rebuild(&mut self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
+        if step == BuildSteps::ARCH {
+            self.rebuild_arch.remove(symbol);
+        } else if step == BuildSteps::ARCH_EVAL {
+            self.rebuild_arch_eval.remove(symbol);
+        } else if step == BuildSteps::VALIDATION {
+            self.rebuild_validation.remove(symbol);
+        }
+    }
+
     pub fn remove_from_rebuild_arch(&mut self, symbol: &Rc<RefCell<Symbol>>) {
         self.rebuild_arch.remove(symbol);
     }
 
     pub fn remove_from_rebuild_arch_eval(&mut self, symbol: &Rc<RefCell<Symbol>>) {
         self.rebuild_arch_eval.remove(symbol);
-    }
-
-    pub fn remove_from_rebuild_odoo(&mut self, symbol: &Rc<RefCell<Symbol>>) {
-        self.rebuild_odoo.remove(symbol);
     }
 
     pub fn remove_from_rebuild_validation(&mut self, symbol: &Rc<RefCell<Symbol>>) {
@@ -710,9 +750,6 @@ impl SyncOdoo {
         }
         if step == BuildSteps::ARCH_EVAL {
             return self.rebuild_arch_eval.contains(symbol);
-        }
-        if step == BuildSteps::ODOO {
-            return self.rebuild_odoo.contains(symbol);
         }
         if step == BuildSteps::VALIDATION {
             return self.rebuild_validation.contains(symbol);
@@ -840,7 +877,7 @@ impl SyncOdoo {
     }
 
     pub fn get_rebuild_queue_size(&self) -> usize {
-        return self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_odoo.len() + self.rebuild_validation.len()
+        return self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_validation.len()
     }
 
     pub fn load_capabilities(&mut self, capabilities: &lsp_types::ClientCapabilities) {

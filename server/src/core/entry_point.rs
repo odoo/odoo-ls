@@ -383,18 +383,9 @@ impl EntryPoint {
                 if flat_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] == not_found_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] {
                     need_rebuild = true;
                     match step {
-                        BuildSteps::ARCH => {
-                            to_add[0].push(s.clone());
-                        },
-                        BuildSteps::ARCH_EVAL => {
-                            to_add[1].push(s.clone());
-                        },
-                        BuildSteps::ODOO => {
-                            to_add[2].push(s.clone());
-                        },
-                        BuildSteps::VALIDATION => {
-                            to_add[3].push(s.clone());
-                        },
+                        BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
+                            to_add[step as usize].push(s.clone());
+                        }
                         _ => {}
                     }
                     s.borrow_mut().not_found_paths_mut().remove(index as usize);
@@ -406,16 +397,13 @@ impl EntryPoint {
                 found_sym.insert(s.clone());
             }
         }
-        for s in to_add[0].iter() {
+        for s in to_add[BuildSteps::ARCH as usize].iter() {
             session.sync_odoo.add_to_rebuild_arch(s.clone());
         }
-        for s in to_add[1].iter() {
+        for s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
             session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
         }
-        for s in to_add[2].iter() {
-            session.sync_odoo.add_to_init_odoo(s.clone());
-        }
-        for s in to_add[3].iter() {
+        for s in to_add[BuildSteps::VALIDATION as usize].iter() {
             s.borrow_mut().invalidate_sub_functions(session);
             session.sync_odoo.add_to_validations(s.clone());
         }

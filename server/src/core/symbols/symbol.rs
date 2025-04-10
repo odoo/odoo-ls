@@ -822,7 +822,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => m.arch_status,
                     BuildSteps::ARCH_EVAL => m.arch_eval_status,
-                    BuildSteps::ODOO => m.odoo_status,
                     BuildSteps::VALIDATION => m.validation_status,
                 }
             },
@@ -831,7 +830,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => p.arch_status,
                     BuildSteps::ARCH_EVAL => p.arch_eval_status,
-                    BuildSteps::ODOO => p.odoo_status,
                     BuildSteps::VALIDATION => p.validation_status,
                 }
             }
@@ -840,7 +838,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status,
-                    BuildSteps::ODOO => f.odoo_status,
                     BuildSteps::VALIDATION => f.validation_status,
                 }
             },
@@ -851,7 +848,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status,
-                    BuildSteps::ODOO => f.odoo_status,
                     BuildSteps::VALIDATION => f.validation_status,
                 }
             },
@@ -868,7 +864,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => m.arch_status = status,
                     BuildSteps::ARCH_EVAL => m.arch_eval_status = status,
-                    BuildSteps::ODOO => m.odoo_status = status,
                     BuildSteps::VALIDATION => m.validation_status = status,
                 }
             },
@@ -877,7 +872,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => p.arch_status = status,
                     BuildSteps::ARCH_EVAL => p.arch_eval_status = status,
-                    BuildSteps::ODOO => p.odoo_status = status,
                     BuildSteps::VALIDATION => p.validation_status = status,
                 }
             }
@@ -886,7 +880,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status = status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status = status,
-                    BuildSteps::ODOO => f.odoo_status = status,
                     BuildSteps::VALIDATION => f.validation_status = status,
                 }
             },
@@ -897,7 +890,6 @@ impl Symbol {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => f.arch_status = status,
                     BuildSteps::ARCH_EVAL => f.arch_eval_status = status,
-                    BuildSteps::ODOO => f.odoo_status = status,
                     BuildSteps::VALIDATION => f.validation_status = status,
                 }
             },
@@ -1014,6 +1006,17 @@ impl Symbol {
             }
         }
         tree
+    }
+
+    /* Helper to merge dependencies eval_from_ast will fill when called. To be called on a file/package... */
+    pub fn insert_dependencies(file: &Rc<RefCell<Symbol>>, deps: &mut Vec<Vec<Rc<RefCell<Symbol>>>>, current_step: BuildSteps) {
+        for (step, dep) in deps.iter().enumerate() {
+            for file_to_add in dep.iter() {
+                if !Rc::ptr_eq(&file, &file_to_add) {
+                    file.borrow_mut().add_dependency(&mut file_to_add.borrow_mut(), current_step, BuildSteps::from(step as i32));
+                }
+            }
+        }
     }
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
@@ -1266,13 +1269,8 @@ impl Symbol {
         if step == BuildSteps::SYNTAX || level == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
-        if level > BuildSteps::ARCH {
-            if step < BuildSteps::ODOO {
-                panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
-            }
-            if level == BuildSteps::VALIDATION {
-                panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
-            }
+        if level > step {
+            panic!("Can't get dependencies for step {:?} and level {:?}", step, level)
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
@@ -1311,13 +1309,8 @@ impl Symbol {
         if level == BuildSteps::SYNTAX || step == BuildSteps::SYNTAX {
             panic!("Can't get dependents for syntax step")
         }
-        if level == BuildSteps::VALIDATION {
-            panic!("Can't get dependents for level {:?}", level)
-        }
-        if level > BuildSteps::ARCH {
-            if step < BuildSteps::ODOO {
-                panic!("Can't get dependents for step {:?} and level {:?}", step, level)
-            }
+        if level < step {
+            panic!("Can't get dependents for step {:?} and level {:?}", step, level)
         }
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
@@ -1342,13 +1335,8 @@ impl Symbol {
         if !self.in_workspace() || !symbol.in_workspace() {
             return;
         }
-        if dep_level > BuildSteps::ARCH {
-            if step < BuildSteps::ODOO {
-                panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
-            }
-            if dep_level == BuildSteps::VALIDATION {
-                panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
-            }
+        if dep_level > step {
+            panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
         }
         let step_i = step as usize;
         let level_i = dep_level as usize;
@@ -1358,10 +1346,10 @@ impl Symbol {
             set = &mut self.dependencies_mut()[step_i][level_i];
         }
         set.as_mut().unwrap().insert(symbol.get_rc().unwrap());
-        let mut set = &mut symbol.dependents_as_mut()[level_i][step_i];
+        let mut set = &mut symbol.dependents_as_mut()[level_i][step_i - level_i];
         if set.is_none() {
-            symbol.dependents_as_mut()[level_i][step_i] = Some(PtrWeakHashSet::new());
-            set = &mut symbol.dependents_as_mut()[level_i][step_i];
+            symbol.dependents_as_mut()[level_i][step_i - level_i] = Some(PtrWeakHashSet::new());
+            set = &mut symbol.dependents_as_mut()[level_i][step_i - level_i];
         }
         set.as_mut().unwrap().insert(self.get_rc().unwrap().clone());
     }
@@ -1404,8 +1392,6 @@ impl Symbol {
                                         session.sync_odoo.add_to_rebuild_arch(sym.clone());
                                     } else if index == BuildSteps::ARCH_EVAL as usize {
                                         session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                    } else if index == BuildSteps::ODOO as usize {
-                                        session.sync_odoo.add_to_init_odoo(sym.clone());
                                     } else if index == BuildSteps::VALIDATION as usize {
                                         sym.borrow_mut().invalidate_sub_functions(session);
                                         session.sync_odoo.add_to_validations(sym.clone());
@@ -1422,24 +1408,6 @@ impl Symbol {
                                 if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
                                     if index == BuildSteps::ARCH_EVAL as usize {
                                         session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                    } else if index == BuildSteps::ODOO as usize {
-                                        session.sync_odoo.add_to_init_odoo(sym.clone());
-                                    } else if index == BuildSteps::VALIDATION as usize {
-                                        sym.borrow_mut().invalidate_sub_functions(session);
-                                        session.sync_odoo.add_to_validations(sym.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO].contains(step) {
-                    for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ODOO as usize].iter().enumerate() {
-                        if let Some(hashset) = hashset {
-                            for sym in hashset {
-                                if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
-                                    if index == BuildSteps::ODOO as usize {
-                                        session.sync_odoo.add_to_init_odoo(sym.clone());
                                     } else if index == BuildSteps::VALIDATION as usize {
                                         sym.borrow_mut().invalidate_sub_functions(session);
                                         session.sync_odoo.add_to_validations(sym.clone());
@@ -1537,6 +1505,18 @@ impl Symbol {
             }
             drop(ref_to_unload);
         }
+    }
+
+    pub fn previous_step_done(&self, step: BuildSteps) -> bool {
+        if step == BuildSteps::SYNTAX {
+            panic!("Can't check previous step for syntax step")
+        }
+        for i in 0 .. step as usize {
+            if self.build_status(BuildSteps::from(i as i32)) != BuildStatus::DONE {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn get_rc(&self) -> Option<Rc<RefCell<Symbol>>> {
@@ -1889,27 +1869,28 @@ impl Symbol {
                                 continue;
                             }
                             acc.insert(sym_rc.clone());
-                            let sym = sym_rc.borrow();
-                            match *sym {
-                                Symbol::Variable(ref v) => {
-                                    if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !v.is_import_variable {
-                                        continue;
+                            let sym_type = sym_rc.borrow().typ();
+                            match sym_type {
+                                SymType::VARIABLE => {
+                                    {
+                                        let sym = sym_rc.borrow();
+                                        let var = sym.as_variable();
+                                        if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable {
+                                            continue;
+                                        }
+                                        if stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some() {
+                                            continue;
+                                        }
+                                        if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
+                                            continue;
+                                        }
                                     }
-                                    if stop_on_value && v.evaluations.len() == 1 && v.evaluations[0].value.is_some() {
-                                        continue;
-                                    }
-                                    if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
-                                        continue;
-                                    }
-                                    if v.evaluations.is_empty() && can_eval_external {
+                                    if sym_rc.borrow().as_variable().evaluations.is_empty() && can_eval_external {
                                         //no evaluation? let's check that the file has been evaluated
-                                        let file_symbol = sym.get_file();
+                                        let file_symbol = sym_rc.borrow().get_file();
                                         if let Some(file_symbol) = file_symbol {
-                                            if file_symbol.upgrade().expect("invalid weak value").borrow().build_status(BuildSteps::ARCH) == BuildStatus::PENDING &&
-                                            session.sync_odoo.is_in_rebuild(&file_symbol.upgrade().unwrap(), BuildSteps::ARCH_EVAL) { //TODO check ARCH ?
-                                                let file_entry = file_symbol.upgrade().unwrap().borrow().get_entry().unwrap();
-                                                let mut builder = PythonArchEval::new(file_entry, file_symbol.upgrade().unwrap());
-                                                builder.eval_arch(session);
+                                            if let Some(file) = file_symbol.upgrade() {
+                                                SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
                                             }
                                         }
                                     }
@@ -1922,7 +1903,7 @@ impl Symbol {
                                         }
                                     }
                                 },
-                                Symbol::Class(_) => {
+                                SymType::CLASS => {
                                     //On class, follow descriptor declarations
                                     let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     if !next_sym_refs.is_empty() {
