@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::cell::RefCell;
 use lsp_types::notification::ShowMessage;
@@ -12,7 +13,7 @@ use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
 use crate::{oyarn, Sy, S};
 
-use super::evaluation::{Evaluation, EvaluationValue};
+use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
 
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
@@ -51,6 +52,7 @@ impl PythonOdooBuilder {
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
+        self.process_fields(session, sym);
         diagnostics
     }
 
@@ -339,5 +341,34 @@ impl PythonOdooBuilder {
             return true;
         }
         true
+    }
+
+    fn process_fields(&self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+        let members: Vec<_> = symbol.borrow().all_symbols().collect();
+        for field in members{
+            let field_borrow = field.borrow();
+            let Some(evals) = field_borrow.evaluations() else {
+                continue;
+            };
+            for eval in evals.iter() {
+                let eval_sym_ptr = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, &mut vec![]);
+                for eval_ptr in eval_ptrs.iter() {
+                    let eval_weak = match &eval_ptr {
+                        EvaluationSymbolPtr::WEAK(w) => w,
+                        _ => continue
+                    };
+                    let Some(member_symbol) = eval_weak.weak.upgrade() else {
+                        continue;
+                    };
+                    if !member_symbol.borrow().is_field_class(session){
+                        continue;
+                    }
+                    if let Some(ContextValue::STRING(compute_ctx_val)) = eval_weak.context.get("compute"){
+                        symbol.borrow_mut().as_class_sym_mut()._model.as_mut().unwrap().computes.entry(oyarn!("{}", compute_ctx_val)).or_insert_with(HashSet::new).insert(oyarn!("{}", field_borrow.name().clone()));
+                    }
+                }
+            }
+        }
     }
 }
