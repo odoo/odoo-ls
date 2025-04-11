@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::rc::Weak;
@@ -37,6 +38,8 @@ pub struct ModelData {
     pub parent_store: bool,
     pub data_name: String,
     pub fold_name: String,
+    /// Key: compute function name, Value: field names that are computed by this function
+    pub computes: HashMap<OYarn, HashSet<OYarn>>,
 }
 
 impl ModelData {
@@ -61,6 +64,7 @@ impl ModelData {
             parent_store: false,
             data_name: String::from("date"),
             fold_name: String::from("fold"),
+            computes: HashMap::new(),
         }
     }
 }
