@@ -371,7 +371,7 @@ impl PythonValidator {
                         continue;
                     }
                     if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) {
-                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                             continue;
                         };
                         let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
@@ -414,12 +414,12 @@ impl PythonValidator {
                             ), &session.current_noqa);
 
                         }
-                    } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel")).map(|ctx_val| ctx_val.as_string()) {
+                    } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) {
                         let Some(module) = class_ref.find_module() else {
                             continue;
                         };
                         if !ModuleSymbol::is_in_deps(session, &module, &oyarn!("{}", comodel_field_name)){
-                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("special_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
                             if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", comodel_field_name)){
