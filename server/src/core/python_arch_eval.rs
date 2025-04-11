@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::{u32, vec};
@@ -515,7 +515,66 @@ impl PythonArchEval {
                     }
                 },
                 AssignTargetType::Attribute(ref attr_expr) => {
-                    //TODO
+                    // Validation for compute methods, only in function mode
+                    if self.file_mode {
+                        continue;
+                    }
+                    // Checks if we are in a class method, and if the attribute is a field of the model
+                    let Some(parent_class_rc) = self.sym_stack[0].borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|w| w.upgrade()) else {
+                        continue;
+                    };
+
+                    let parent_class = parent_class_rc.borrow();
+                    let Some(model_data) = parent_class.as_class_sym()._model.as_ref() else {
+                        continue;
+                    };
+                    let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
+                        continue;
+                    };
+                    let model_classes = model.borrow().all_symbols(session, parent_class.find_module());
+                    let fn_name = self.sym_stack[0].borrow().name().clone();
+                    let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)| sym.borrow().as_class_sym()._model.as_ref().unwrap().computes.get(&fn_name).cloned()).flatten().collect();
+                    if allowed_fields.is_empty() {
+                        continue;
+                    }
+
+                    let mut expr = Expr::Attribute(attr_expr.clone());
+                    let mut invalid_field = false;
+                    let mut valid_field = false;
+                    // Check the  whole attribute chain, to see if we are in a field of the model that is valid
+                    // so for z.a.b.c, checks, z.a, z.a.b, z.a.b.c, if one of them is valid it is okay
+                    'while_block: while matches!(expr, Expr::Attribute(_)){
+                        let assignee = Evaluation::eval_from_ast(session, &expr, self.sym_stack.last().unwrap().clone(), &attr_expr.range.start(), &mut vec![]);
+                        for evaluation in assignee.0{
+                            let evaluation_symbol_ptr = evaluation.symbol.get_symbol_weak_transformed(session, &mut None, &mut vec![], None);
+                            let Some(sym_rc) = evaluation_symbol_ptr.upgrade_weak() else {
+                                continue;
+                            };
+                            if !sym_rc.borrow().is_field(session){
+                                continue;
+                            }
+                            let field_name = sym_rc.borrow().name().clone();
+                            if allowed_fields.contains(&field_name){
+                                valid_field = true;
+                                break 'while_block;
+                            }
+                            invalid_field = true;
+                        }
+                        expr = *expr.as_attribute_expr().unwrap().value.clone();
+                    }
+
+                    // If there is some modified fields in the method, that are not the correct ones, show diagnostic
+                    if !valid_field && invalid_field {
+                        add_diagnostic(&mut self.diagnostics, Diagnostic::new(
+                            Range::new(Position::new(attr_expr.range.start().to_u32(), 0), Position::new(attr_expr.range.end().to_u32(), 0)),
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(NumberOrString::String(S!("OLS30328"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            S!("Compute method not set to modify this field"),
+                            None,
+                            None,
+                        ), &session.current_noqa);
+                    }
                 }
             }
         }
