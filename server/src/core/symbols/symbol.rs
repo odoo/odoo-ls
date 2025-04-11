@@ -1383,7 +1383,7 @@ impl Symbol {
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let sym_to_inv = ref_to_inv.borrow();
             if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_)) {
-                if *step == BuildSteps::ARCH {
+                if *step == BuildSteps::ARCH && sym_to_inv.dependents().len() > 0 {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH as usize].iter().enumerate() {
                         if let Some(hashset) = hashset {
                             for sym in hashset {
@@ -1401,7 +1401,7 @@ impl Symbol {
                         }
                     }
                 }
-                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) {
+                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && sym_to_inv.dependents().len() > 1 {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
                         if let Some(hashset) = hashset {
                             for sym in hashset {
