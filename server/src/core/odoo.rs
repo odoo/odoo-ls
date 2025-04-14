@@ -1305,10 +1305,10 @@ impl Odoo {
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &String) {
         //search if the path does match a missing file path somewhere
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
-        for entry in ep_mgr.borrow().iter_main() {
-            if entry.borrow().is_valid_for(path.as_str()) {
-                let tree = entry.borrow().get_tree_for_entry(&PathBuf::from(path.clone()));
-                entry.borrow_mut().search_symbols_to_rebuild(session, &tree);
+        let tree = ep_mgr.borrow().tree_for_main(path);
+        if let Some(tree) = tree {
+            if let Some(main) = ep_mgr.borrow().main_entry_point.as_ref() {
+                main.borrow_mut().search_symbols_to_rebuild(session, &tree);
             }
         }
         for entry in ep_mgr.borrow().iter_all_but_main() {
