@@ -92,6 +92,9 @@ impl DocumentSymbolFeature {
     }
 
     fn visit_class(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_class_def: &StmtClassDef) {
+        if stmt_class_def.name.to_string().is_empty() {
+            return;
+        }
         let mut children_symbols: Vec<DocumentSymbol> = vec![];
         for child in stmt_class_def.body.iter() {
             DocumentSymbolFeature::visit_stmt(session, child, &mut children_symbols, file_info);
