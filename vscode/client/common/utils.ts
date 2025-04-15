@@ -55,33 +55,38 @@ export function isAddonPath(directoryPath: string): boolean {
 		isReallyModule(directoryPath, name)
 	);
 }
-
-export async function fillTemplate(template, vars = {}) {
-	const handler = new Function('vars', [
-		'const tagged = ( ' + Object.keys(vars).join(', ') + ' ) =>',
-		'`' + template + '`',
-		'return tagged(...Object.values(vars))'
-	].join('\n'));
+export async function fillTemplate(template: string, vars: Record<string, string> = {}): Promise<string | null> {
 	try {
-		return handler(vars);
+	return template.replace(/\$\{([^}]+)\}/g, (_, key) => {
+	  if (key in vars) {
+		return vars[key];
+	  } else {
+		const allowedKeys = ['workspaceFolder', 'userHome'];
+		const message = `Invalid path template parameter "${key}". Only "${allowedKeys.join('" and "')}" are currently supported.`;
+		window.showErrorMessage(message);
+		throw new ReferenceError(`Missing template variable: ${key}`);
+	  }
+	});
 	} catch (error) {
-		if (error instanceof ReferenceError) {
-			const missingVariableMatch = error.message.match(/(\w+) is not defined/);
-			if (missingVariableMatch) {
-				const missingVariable = missingVariableMatch[1];
-				window.showErrorMessage(`Invalid path template paramater "${missingVariable}". Only "workspaceFolder" and "userHome" are currently supported`)
-			}
-		}
-		throw error;
+		return null
 	}
 }
 
 export async function validateAddonPath(addonPath) {
 	addonPath = addonPath.replaceAll("\\", "/");
+	const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
+	// Step 1, fill specific workspaceFolder tepmplates. e.g. ${workspaceFolder:odoo}
 	for (const folder of workspace.workspaceFolders) {
-		const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
+		PATH_VAR_LOCAL[`workspaceFolder\:${folder.name}`] = folder.uri.fsPath.replaceAll("\\", "/");
+	}
+	// Step 2, For generic workspaceFolder templates. e.g. ${workspaceFolder}
+	// This is needed to support the case where the user has a workspace with multiple folders and wants to use ${workspaceFolder} as a generic template for all of them.
+	// Checks for the first match with a valid addon path and returns it.
+	for (const folder of workspace.workspaceFolders) {
 		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
-		let filledPath = path.resolve(await fillTemplate(addonPath, PATH_VAR_LOCAL)).replaceAll("\\", "/").trim();
+		let formatted = await fillTemplate(addonPath, PATH_VAR_LOCAL);
+		if (formatted == null) continue;
+		let filledPath = path.resolve(formatted).replaceAll("\\", "/").trim();
 		if (!filledPath) continue;
 		do {
 			if (isAddonPath(filledPath)) {
@@ -99,10 +104,16 @@ export async function evaluateOdooPath(odooPath) {
 	}
 	odooPath = odooPath.replaceAll("\\", "/");
 
+	const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
+	for (const folder of workspace.workspaceFolders) {
+		PATH_VAR_LOCAL[`workspaceFolder\:${folder.name}`] = folder.uri.fsPath.replaceAll("\\", "/");
+	}
 
 	for (const folder of workspace.workspaceFolders) {
-		global.PATH_VARIABLES["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
-		let filledOdooPath = path.resolve(await fillTemplate(odooPath, global.PATH_VARIABLES)).replaceAll("\\", "/").trim();
+		PATH_VAR_LOCAL["workspaceFolder"] = folder.uri.fsPath.replaceAll("\\", "/");
+		let formatted = await fillTemplate(odooPath, PATH_VAR_LOCAL);
+		if (formatted == null) continue;
+		let filledOdooPath = path.resolve(formatted).replaceAll("\\", "/").trim();
 		do {
 			const version = await getOdooVersion(filledOdooPath);
 			if (version) {
