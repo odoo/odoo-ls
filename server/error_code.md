@@ -232,7 +232,7 @@ In a search domain, when using a dot separator, it should be used either on a Da
 If you used a relational field and get this error, check that the comodel of this field is valid.
 
 ### OLS30323
-"Field does not exist on model"
+"Field does not exist on model or not in dependencies"
 In related keyword argument or decorators api.onchange/depends/constrains, the field provided
 should exist and be able to be resolved from current module
 
