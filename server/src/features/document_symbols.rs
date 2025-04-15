@@ -47,6 +47,9 @@ impl DocumentSymbolFeature {
     }
 
     fn visit_function(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_function_def: &StmtFunctionDef) {
+        if stmt_function_def.name.to_string().is_empty() {
+            return;
+        }
         let mut children_symbols: Vec<DocumentSymbol> = vec![];
         for arg in stmt_function_def.parameters.kwonlyargs.iter().map(|x| &x.parameter)
             .chain(stmt_function_def.parameters.args.iter().map(|x| &x.parameter))
