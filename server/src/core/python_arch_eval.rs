@@ -118,7 +118,7 @@ impl PythonArchEval {
         }
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
-        if symbol.is_external() {
+        if symbol.is_external() && (!self.file_mode  || !file_info_rc.borrow().opened) {
             for sym in symbol.all_symbols() {
                 if sym.borrow().has_ast_indexes() {
                     sym.borrow_mut().ast_indexes_mut().clear(); //TODO isn't it make it invalid? should set to None?

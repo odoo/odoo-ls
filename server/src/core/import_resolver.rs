@@ -70,7 +70,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     let mut start_symbol = None;
     if level.is_some() && level.unwrap() != 0 {
         //if level is some, resolve_packages already built a full tree, so we can start from root
-        start_symbol = Some(source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap().clone());
+        start_symbol = Some(source_root.clone());
     }
     let (from_symbol, fallback_sym) = _get_or_create_symbol(
         session,

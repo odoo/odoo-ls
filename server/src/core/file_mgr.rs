@@ -343,10 +343,7 @@ impl FileMgr {
     }
 
     pub fn get_file_info(&self, path: &String) -> Option<Rc<RefCell<FileInfo>>> {
-        match self.files.get(path) {
-            Some(rc) => Some(rc.clone()),
-            None => None
-        }
+        self.files.get(path).cloned()
     }
 
     pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
