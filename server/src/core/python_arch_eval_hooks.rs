@@ -921,7 +921,7 @@ impl PythonArchEvalHooks {
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30323"))),
                     Some(EXTENSION_NAME.to_string()),
-                    format!("Field {field_name} does not exist on model {model_name}"),
+                    format!("Field {field_name} does not exist on model {model_name} or not in dependencies"),
                     None,
                     None,
                 ), &session.current_noqa);
@@ -955,7 +955,7 @@ impl PythonArchEvalHooks {
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30323"))),
                     Some(EXTENSION_NAME.to_string()),
-                    format!("Field {field_name} does not exist on model {model_name}"),
+                    format!("Field {field_name} does not exist on model {model_name} or not in dependencies"),
                     None,
                     None,
                 ), &session.current_noqa);

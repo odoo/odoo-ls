@@ -381,7 +381,7 @@ impl PythonValidator {
                                 Some(DiagnosticSeverity::ERROR),
                                 Some(NumberOrString::String(S!("OLS30323"))),
                                 Some(EXTENSION_NAME.to_string()),
-                                format!("Field {related_field_name} does not exist on model {}", model_data.name),
+                                format!("Field {related_field_name} does not exist on model {} or not in dependencies", model_data.name),
                                 None,
                                 None,
                             ), &session.current_noqa);
