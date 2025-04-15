@@ -413,13 +413,14 @@ impl FileMgr {
             if !found {
                 continue;
             }
-            let mut to_del = (**file).borrow_mut();
+            let mut to_del = file.borrow_mut();
             to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
             to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
             to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
             to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
             to_del.publish_diagnostics(session)
         }
+        drop(file_mgr);
         session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
     }
 
