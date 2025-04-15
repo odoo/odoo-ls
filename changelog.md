@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.6.0 - 2025/15/04 - Entrypoints and NOQA Update
+
+### Key features
+
+- OdooLS is now able to run on any python file, even if this python file is not part of your odoo setup. It will then run
+like a classical LSP and provide you hover, autocompletion, gotodefinition, etc... but without any odoo knowledge.
+- As the core structure should now be in its nearly final form and because of the previous point, OdooLS now has a base test suite to ensure we are keeping every feature stable patch after patch ! These will grow in the future.
+- Support for #noqa directive, on file, classes, function or line, with or without error codes
+- OdooLS can now handle Walrus operator ⊹╰(⌣ʟ⌣)╯⊹
+- OdooLS now has improved inferencer engine and can parse way more expressions and statements
+- Various cache and algorithm improvements speed up the server by ~30%, but these ~30% are lost with new features and required parsing...
+- OdooLs is now 50% faster on Windows due to disk access improvements. It is nearly not impacting Linux and Macos distribution however.
+- Memory usage has been improved by ~6%
+- In the end, building time is 10% slower due to new features
+- Handle {workspaceFolder:directory} variable in path configurations.
+
+### Server
+
+- Introduce EntryPoints. OdooLS will now provide features for a file depending on its entrypoint: It can be the main entryPoints (usually the odoo project, with odoo/__main__.py), or a single-file entrypoint, the current file. Depending on this context, the server
+can act diffently and then work on any python file, even out of the odoo structure. Temporary files are not yet handled however, we
+still rely on the disk path to identify a file (will change in next updates)
+- Improve Evaluations by handling following Expressions and Statements:
+  - Number literals: Float and Complex
+  - If blocks
+  - unary operators
+  - constants (ellipsis and None)
+  - basic FString
+  - typing.Self
+- Make results unique in model name hover
+- Add a cache to import resolver, speeding up the process.
+- Add traceback to error info in crash report
+- Use Yarn instead of String to store small names of symbols to speed up and improve memory usage
+- Add hover and gotodef feature to decorators (@api.depends,...), to related fields, comodel_name and model strings before arguments.
+- Update Ruff Parser to 0.11.4
+- Improve reactivity of server on typing in 'adaptive' mode
+- Support for NOQA
+- Odoo step has been merged with Arch Eval step, resulting in a process in 3 steps instead of 4.
+
+### Server Fixs
+
+- A module is now automatically (re)imported if reloaded or created if it is in addons path.
+- Fix dependency graph on inheritance and imports.
+- Fix TestCursor hook behaviour to show right Cursor class in tests directories
+- Fix BorrowError on FileManager clear method
+- Hover and GotoDefinition features are now working in .pyi files
+- Evaluation should correctly take into account all base classes of an object/model
+- Fix this changelog filename to be able to publish on VsCodium
+- Fix infinite loop on variable evaluation
+
+### Vscode Fixs
+
+- Prevent throwing an error notification when the client is stopping
+- Improve reactivity of the server if an interruption is coming during processing or shutdown event
+
+#### New diagnostics / odoo helpers
+
+- Check that the manifest doesn't contain the same key twice
+- In a compute function, check that you don't assign another variable that the one you are computing
+- Check that comodel_name on related fields is valid
+- Check that related field is the same type
+- New errors to express the invalid dot notation in strings used for related, domains...
+
 ## 0.4.1 - 2025/12/02
 
 Small patch that address crashes we got from your reports
