@@ -251,3 +251,8 @@ Type of references field in related keyword argument does not match the current 
 ### OLS30327
 "Method does not exist on current model"
 For compute, search, inverse arguments, this error is shown when the method is not found on the current model
+
+### OLS30328
+"Compute method not set to modify this field"
+The compute method is set to modify a certain field(s).
+Consider marking the modified field with the compute method
