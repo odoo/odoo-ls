@@ -382,10 +382,10 @@ function deleteOldFiles(context: ExtensionContext) {
     });
 }
 
-async function checkAddons(context: ExtensionContext) {
+async function checkAddons(context: ExtensionContext): Promise<boolean> {
     let currentConfig = await getCurrentConfig(context);
     if (!currentConfig) {
-        return
+        return false
     }
     const validAddons = [];
     const invalidAddons = [];
@@ -415,7 +415,7 @@ async function checkAddons(context: ExtensionContext) {
     }
     let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
     if (areUniquelyEqual(currentConfig.validatedAddonsPaths, validAddons)){
-        return
+        return false
     }
     configs[currentConfig.id]["validatedAddonsPaths"] = validAddons;
     workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
@@ -451,18 +451,18 @@ async function checkAddons(context: ExtensionContext) {
             }
         });
     }
+    return true
 }
 
-async function checkOdooPath(context: ExtensionContext) {
+async function checkOdooPath(context: ExtensionContext): Promise<boolean>{
     let currentConfig = await getCurrentConfig(context);
     global.OUTPUT_CHANNEL.appendLine("[INFO] checking odoo path ".concat(currentConfig.rawOdooPath))
     const odoo = await evaluateOdooPath(currentConfig.rawOdooPath);
     if (odoo){
-        if (currentConfig.odooPath == odoo.path) return;
+        if (currentConfig.odooPath == odoo.path) return false;
         let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
         configs[currentConfig.id]["odooPath"] = odoo.path;
         workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-
     }else{
         window.showWarningMessage(
             `The odoo path set in this configuration seems invalid. Would you like to change it?`,
@@ -475,7 +475,7 @@ async function checkOdooPath(context: ExtensionContext) {
                 break
             }
         })
-        return
+        return false
     }
 
 
@@ -503,7 +503,9 @@ async function checkOdooPath(context: ExtensionContext) {
                 }
             })
         }
+        return false
     }
+    return true
 }
 
 async function initStatusBar(context: ExtensionContext): Promise<void> {
@@ -539,8 +541,8 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
                 const config = await getCurrentConfig(context)
                 if (config) {
-                    await checkOdooPath(context);
-                    await checkAddons(context);
+                    let changed = await checkOdooPath(context);
+                    changed ||= await checkAddons(context);
                     if (!global.IS_PYTHON_EXTENSION_READY){
                         onDidChangePythonInterpreterEvent.fire(null);
                     }
@@ -552,7 +554,9 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     if (client.needsStart()) {
                         await client.start();
                     } else {
-                        if (client.diagnostics) client.diagnostics.clear();
+                        if (changed && client.diagnostics) {
+                            client.diagnostics.clear();
+                        }
                     }
                 } else {
                     if (global.LSCLIENT?.isRunning()) await stopClient();
@@ -573,13 +577,17 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             const pyExtWasInstalled = global.IS_PYTHON_EXTENSION_READY === true;
             const pyExtInstalled = extensions.getExtension(PVSC_EXTENSION_ID) !== undefined;
             if (pyExtWasInstalled !== pyExtInstalled){
-                await updatePythonPath(context, false);
+                if (await updatePythonPath(context, false) && global.LSCLIENT.diagnostics){
+                    global.LSCLIENT.diagnostics.clear();
+                }
             }
         }),
 
         // Listen to changes to Python Interpreter
         onDidChangePythonInterpreterEvent.event(async (_) => {
-            await updatePythonPath(context, false);
+            if (await updatePythonPath(context, false) && global.LSCLIENT.diagnostics){
+                global.LSCLIENT.diagnostics.clear();
+            }
         }),
 
         // COMMANDS
