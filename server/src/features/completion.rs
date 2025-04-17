@@ -46,7 +46,7 @@ impl CompletionFeature {
         let file_info =  file_info.borrow();
         let file_info_ast = file_info.file_info_ast.borrow();
         let ast = file_info_ast.ast.as_ref().unwrap();
-        complete_vec_stmt(ast, session, file_symbol, offset)
+        complete_vec_stmt(ast, session, file_symbol, offset).or_else(|| complete_name(session, file_symbol, offset, false, &S!("")))
     }
 }
 
@@ -102,7 +102,7 @@ fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: 
     if !stmts.is_empty() && stmts.iter().last().unwrap().range().end().to_usize() >= offset {
         return complete_stmt(session, file_symbol, stmts.iter().last().unwrap(), offset);
     }
-    //The user is writting after the last stmt
+    //The user is writing after the last stmt
     None
 }
 
@@ -391,7 +391,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Attribute(expr_attribute) => complete_attribut(session, file, expr_attribute, offset, is_param, expected_type),
         Expr::Subscript(expr_subscript) => complete_subscript(session, file, expr_subscript, offset, is_param, expected_type),
         Expr::Starred(_) => None,
-        Expr::Name(expr_name) => complete_name(session, file, expr_name, offset, is_param, expected_type),
+        Expr::Name(expr_name) => complete_name_expression(session, file, expr_name, offset, is_param, expected_type),
         Expr::List(expr_list) => complete_list(session, file, expr_list, offset, is_param, expected_type),
         Expr::Tuple(expr_tuple) => complete_tuple(session, file, expr_tuple, offset, is_param, expected_type),
         Expr::Slice(_) => None,
@@ -787,23 +787,22 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     complete_expr(&expr_subscript.slice, session, file, offset, false, &vec![])
 }
 
-fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_name: &ExprName, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    let mut items = vec![];
-    let name = expr_name.id.to_string();
+fn complete_name_expression(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_name: &ExprName, offset: usize, is_param: bool, _expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     if expr_name.range.end().to_usize() == offset {
-        let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-        let symbols = Symbol::get_all_inferred_names(&scope, &name, Some(offset as u32));
-        for symbol in symbols {
-            items.push(CompletionItem {
-                label: symbol.borrow().name().to_string(),
-                kind: Some(lsp_types::CompletionItemKind::VARIABLE),
-                ..Default::default()
-            });
-        }
+        complete_name(session, file, offset, is_param, &expr_name.id.to_string())
+    } else {
+        None
     }
+}
+
+fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: usize, is_param: bool, name: &String) -> Option<CompletionResponse> {
+    let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    let symbols = Symbol::get_all_inferred_names(&scope, name, Some(offset as u32));
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
-        items
+        items: symbols.iter().map(|symbol| {
+            build_completion_item_from_symbol(session, symbol, HashMap::new())
+        }).collect::<Vec<_>>(),
     }))
 }
 
@@ -935,7 +934,7 @@ fn add_nested_field_names(
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
                             if dep.is_none() && (specific_field_type.is_none() || final_sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
-                                items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new(), dep.clone()));
+                                items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new()));
                                 found_one = true;
                                 continue;
                             }
@@ -993,13 +992,13 @@ fn add_model_attributes(
         if _symbol_name.starts_with(attribute_name) {
             if let Some((final_sym, dep)) = symbols.first() {
                 let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
-                items.push(build_completion_item_from_symbol(session, final_sym, context_of_symbol, dep.clone()));
+                items.push(build_completion_item_from_symbol(session, final_sym, context_of_symbol));
             }
         }
     }
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context, dependency: Option<OYarn>) -> CompletionItem {
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context) -> CompletionItem {
     //TODO use dependency to show it? or to filter depending of configuration
     let typ = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
         Rc::downgrade(symbol),
