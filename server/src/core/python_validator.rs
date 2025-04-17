@@ -87,7 +87,7 @@ impl PythonValidator {
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if file_info.ast.is_some() && file_info.valid {
+                if file_info.ast.is_some(){
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = self.sym_stack[0].borrow().get_noqas();
                     self.validate_body(session, file_info.ast.as_ref().unwrap());
