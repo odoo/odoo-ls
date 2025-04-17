@@ -1476,7 +1476,7 @@ impl Odoo {
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
-            return (file_info.borrow().valid && (!file_info.borrow().opened || version >= 0), file_updated);
+            return (!file_info.borrow().opened || version >= 0, file_updated);
         }
         (false, false)
     }
