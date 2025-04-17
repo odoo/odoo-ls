@@ -8,7 +8,10 @@ use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
 use std::{env, path::PathBuf, process};
+use odoo_ls_server::allocator::TrackingAllocator;
 
+#[global_allocator]
+static GLOBAL: TrackingAllocator = TrackingAllocator;
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "full");

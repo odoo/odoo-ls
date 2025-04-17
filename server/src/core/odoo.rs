@@ -1,3 +1,4 @@
+use crate::allocator::ALLOCATED;
 use crate::core::config::Config;
 use crate::core::entry_point::EntryPointType;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -208,6 +209,7 @@ impl SyncOdoo {
             session.sync_odoo.state_init = InitState::PYTHON_READY;
             SyncOdoo::build_database(session);
         }
+        session.sync_odoo.file_mgr.borrow_mut().lighten_cache();
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
     }
@@ -1111,12 +1113,12 @@ impl Odoo {
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
         let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
-        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") || 
+        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") ||
         params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().ast.is_some() {
+                    if file_info.borrow_mut().get_ast(session).is_some() {
                         return Ok(HoverFeature::get_hover(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
@@ -1139,7 +1141,7 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().ast.is_some() {
+                    if file_info.borrow_mut().get_ast(session).is_some() {
                         return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
@@ -1162,7 +1164,7 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().ast.is_some() {
+                    if file_info.borrow_mut().get_ast(session).is_some() {
                         return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                     }
                 }
@@ -1474,7 +1476,7 @@ impl Odoo {
         if params.text_document.uri.to_string().ends_with(".py") || params.text_document.uri.to_string().ends_with(".pyi") {
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if file_info.borrow().ast.is_some() {
+                if file_info.borrow_mut().get_ast(session).is_some() {
                     return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
                 }
             }

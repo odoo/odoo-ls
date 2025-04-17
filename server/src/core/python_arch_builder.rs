@@ -100,14 +100,15 @@ impl PythonArchBuilder {
             let mut file_info = file_info_rc.borrow_mut();
             file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         }
+        file_info_rc.borrow_mut().prepare_ast(session);
         let file_info = file_info_rc.borrow();
-        if file_info.ast.is_some() {
+        if file_info.get_ast_no_build().is_some() {
             let ast = match self.file_mode {
                 true => {
-                    file_info.ast.as_ref().unwrap()
+                    file_info.get_ast_no_build().as_ref().unwrap()
                 },
                 false => {
-                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    &AstUtils::find_stmt_from_ast(file_info.get_ast_no_build().as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
             let old_stack_noqa = session.noqas_stack.clone();

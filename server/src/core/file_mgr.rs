@@ -45,7 +45,7 @@ pub fn combine_noqa_info(noqas: &Vec<NoqaInfo>) -> NoqaInfo {
 
 #[derive(Debug)]
 pub struct FileInfo {
-    pub ast: Option<Vec<ruff_python_ast::Stmt>>,
+    ast: Option<Vec<ruff_python_ast::Stmt>>,
     pub version: i32,
     pub uri: String,
     pub valid: bool, // indicates if the file contains syntax error or not
@@ -155,6 +155,34 @@ impl FileInfo {
             }
         }
         self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+    }
+
+    /* if ast has been set to none to lower memory usage, try to reload it */
+    pub fn prepare_ast(&mut self, session: &mut SessionInfo) {
+        match fs::read_to_string(&self.uri) {
+            Ok(content) => {
+                self.text_rope = Some(ropey::Rope::from(content.as_str()));
+            },
+            Err(_) => {
+                return;
+            },
+        };
+        let mut hasher = DefaultHasher::new();
+        self.text_rope.clone().unwrap().hash(&mut hasher);
+        self.text_hash = hasher.finish();
+        self._build_ast(session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
+    }
+
+    pub fn get_ast(&mut self, session: &mut SessionInfo) -> Option<&Vec<ruff_python_ast::Stmt>> {
+        if self.ast.is_none() {
+            self.prepare_ast(session);
+        }
+        self.ast.as_ref()
+
+    }
+
+    pub fn get_ast_no_build(&self) -> Option<&Vec<ruff_python_ast::Stmt>> {
+        self.ast.as_ref()
     }
 
     pub fn extract_tokens(&mut self, ast: &Parsed<Mod>, source: &String) {
@@ -422,6 +450,19 @@ impl FileMgr {
         }
         drop(file_mgr);
         session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
+    }
+
+    pub fn lighten_cache(&mut self) {
+        for file in self.files.values() {
+            if !file.borrow().opened {
+                println!("remove one");
+                let mut f = file.borrow_mut();
+                f.text_rope = None;
+                f.text_hash = 0;
+                f.version = 0;
+                f.ast = None;
+            }
+        }
     }
 
     pub fn add_workspace_folder(&mut self, path: String) {

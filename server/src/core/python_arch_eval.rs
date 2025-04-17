@@ -79,8 +79,9 @@ impl PythonArchEval {
         }
         let path = self.file.borrow().get_symbol_first_path();
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
+        file_info_rc.borrow_mut().prepare_ast(session);
         let file_info = (*file_info_rc).borrow();
-        if file_info.ast.is_some() {
+        if file_info.get_ast_no_build().is_some() {
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = symbol.borrow().get_noqas();
             let (ast, maybe_func_stmt) = match self.file_mode {
@@ -89,10 +90,10 @@ impl PythonArchEval {
                         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                         return;
                     }
-                    (file_info.ast.as_ref().unwrap(), None)
+                    (file_info.get_ast_no_build().unwrap(), None)
                 },
                 false => {
-                    let func_stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
+                    let func_stmt = AstUtils::find_stmt_from_ast(file_info.get_ast_no_build().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
                     (&func_stmt.body, Some(func_stmt))
                 }
             };

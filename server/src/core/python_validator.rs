@@ -82,15 +82,16 @@ impl PythonValidator {
                 }
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                file_info_rc.borrow_mut().prepare_ast(session);
                 let file_info = file_info_rc.borrow();
                 if file_info_rc.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if file_info.ast.is_some() && file_info.valid {
+                if file_info.get_ast_no_build().is_some() && file_info.valid {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = self.sym_stack[0].borrow().get_noqas();
-                    self.validate_body(session, file_info.ast.as_ref().unwrap());
+                    self.validate_body(session, file_info.get_ast_no_build().as_ref().unwrap());
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info);
@@ -124,9 +125,10 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                file_info_rc.borrow_mut().prepare_ast(session);
                 let file_info = file_info_rc.borrow();
-                if file_info.ast.is_some() {
-                    let stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
+                if file_info.get_ast_no_build().is_some() {
+                    let stmt = AstUtils::find_stmt_from_ast(file_info.get_ast_no_build().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
