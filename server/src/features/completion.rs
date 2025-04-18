@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
+use itertools::Itertools;
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
 use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::{Ranged, TextSize};
@@ -15,6 +16,8 @@ use crate::{oyarn, Sy, S};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::features_utils::FeaturesUtils;
 use crate::core::file_mgr::FileInfo;
+
+use super::features_utils::TypeInfo;
 
 
 #[allow(non_camel_case_types)]
@@ -800,8 +803,8 @@ fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: 
     let symbols = Symbol::get_all_inferred_names(&scope, name, Some(offset as u32));
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
-        items: symbols.iter().map(|symbol| {
-            build_completion_item_from_symbol(session, symbol, HashMap::new())
+        items: symbols.into_iter().map(|(_symbol_name, symbols)| {
+            build_completion_item_from_symbol(session, symbols, HashMap::new())
         }).collect::<Vec<_>>(),
     }))
 }
@@ -934,7 +937,7 @@ fn add_nested_field_names(
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
                             if dep.is_none() && (specific_field_type.is_none() || final_sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
-                                items.push(build_completion_item_from_symbol(session, final_sym, HashMap::new()));
+                                items.push(build_completion_item_from_symbol(session, vec![final_sym.clone()], HashMap::new()));
                                 found_one = true;
                                 continue;
                             }
@@ -992,169 +995,56 @@ fn add_model_attributes(
         if _symbol_name.starts_with(attribute_name) {
             if let Some((final_sym, dep)) = symbols.first() {
                 let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
-                items.push(build_completion_item_from_symbol(session, final_sym, context_of_symbol));
+                items.push(build_completion_item_from_symbol(session, vec![final_sym.clone()], context_of_symbol));
             }
         }
     }
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, context_of_symbol: Context) -> CompletionItem {
-    //TODO use dependency to show it? or to filter depending of configuration
-    let typ = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-        Rc::downgrade(symbol),
-        None,
-        false,
-    )), session, &mut None, false, true, None, &mut vec![]);
-    let mut label_details = Some(CompletionItemLabelDetails {
-        detail: None,
-        description: None,
-    });
-    if typ.len() > 1 {
-        label_details = Some(CompletionItemLabelDetails {
-            detail: None,
-            description: Some(S!("Any")),
-        })
-    } else if typ.len() == 1 && typ[0].is_weak() {
-        label_details= match typ[0].upgrade_weak().unwrap().borrow().typ() {
-            SymType::CLASS => Some(CompletionItemLabelDetails {
-                detail: None,
-                description: Some(typ[0].upgrade_weak().unwrap().borrow().name().to_string()),
-            }),
-            SymType::VARIABLE => {
-                let var_upgraded = typ[0].upgrade_weak().unwrap();
-                let var = var_upgraded.borrow();
-                if var.evaluations().as_ref().unwrap().len() == 1 {
-                    if var.evaluations().as_ref().unwrap()[0].value.is_some() {
-                        match var.evaluations().as_ref().unwrap()[0].value.as_ref().unwrap() {
-                            EvaluationValue::ANY() => None,
-                            EvaluationValue::CONSTANT(expr) => {
-                                match expr {
-                                    Expr::StringLiteral(expr_string_literal) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(expr_string_literal.value.to_string()),
-                                        })
-                                    },
-                                    Expr::BytesLiteral(_) => None,
-                                    Expr::NumberLiteral(_) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(S!("Number")),
-                                        })
-                                    },
-                                    Expr::BooleanLiteral(expr_boolean_literal) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(expr_boolean_literal.value.to_string()),
-                                        })
-                                    },
-                                    Expr::NoneLiteral(_) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(S!("None")),
-                                        })
-                                    },
-                                    Expr::EllipsisLiteral(_) => None,
-                                    _ => {None}
-                                }
-                            },
-                            EvaluationValue::DICT(_) => None,
-                            EvaluationValue::LIST(_) => None,
-                            EvaluationValue::TUPLE(_) => None,
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            },
-            SymType::FUNCTION => {
-                let func_upgraded = typ[0].upgrade_weak().unwrap();
-                let func = func_upgraded.borrow();
-                if func.evaluations().as_ref().unwrap().len() == 1 { //TODO handle multiple evaluations
-                    if func.evaluations().as_ref().unwrap()[0].value.is_some() {
-                        match func.evaluations().as_ref().unwrap()[0].value.as_ref().unwrap() {
-                            EvaluationValue::ANY() => None,
-                            EvaluationValue::CONSTANT(expr) => {
-                                match expr {
-                                    Expr::StringLiteral(expr_string_literal) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(expr_string_literal.value.to_string()),
-                                        })
-                                    },
-                                    Expr::BytesLiteral(_) => None,
-                                    Expr::NumberLiteral(_) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(S!("Number")),
-                                        })
-                                    },
-                                    Expr::BooleanLiteral(expr_boolean_literal) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(expr_boolean_literal.value.to_string()),
-                                        })
-                                    },
-                                    Expr::NoneLiteral(_) => {
-                                        Some(CompletionItemLabelDetails {
-                                            detail: None,
-                                            description: Some(S!("None")),
-                                        })
-                                    },
-                                    Expr::EllipsisLiteral(_) => None,
-                                    _ => {None}
-                                }
-                            },
-                            EvaluationValue::DICT(_) => None,
-                            EvaluationValue::LIST(_) => None,
-                            EvaluationValue::TUPLE(_) => None,
-                        }
-                    } else {
-                        //TODO
-                        Some(CompletionItemLabelDetails {
-                            detail: None,
-                            description: Some(S!("Any")),
-                        })
-                    }
-                } else {
-                    if func.evaluations().as_ref().unwrap().is_empty() {
-                        Some(CompletionItemLabelDetails {
-                            detail: None,
-                            description: Some(S!("None")),
-                        })
-                    } else {
-                        Some(CompletionItemLabelDetails {
-                            detail: None,
-                            description: Some(S!("Any")),
-                        })
-                    }
-                }
-            }
-            _ => {Some(CompletionItemLabelDetails {
-                detail: None,
-                description: None,
-            })}
-        };
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<RefCell<Symbol>>>, context_of_symbol: Context) -> CompletionItem {
+    if symbols.is_empty() {
+        return CompletionItem::default();
     }
+    //TODO use dependency to show it? or to filter depending of configuration
+    let typ = symbols.iter().flat_map(|symbol|
+        Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+            Rc::downgrade(symbol),
+            None,
+            false,
+        )), session, &mut None, false, false, None, &mut vec![])
+    ).collect::<Vec<_>>();
+    let type_details = typ.iter().map(|eval|
+        FeaturesUtils::get_inferred_types(session, eval, &mut Some(context_of_symbol.clone()), &symbols[0].borrow().typ())
+    ).collect::<HashSet<_>>();
+    let label_details_description = match type_details.len() {
+        0 => None,
+        1 => Some(match &type_details.iter().next().unwrap() {
+            TypeInfo::CALLABLE(c) => c.return_types.clone(),
+            TypeInfo::VALUE(v) => v.clone(),
+        }),
+        _ => Some(format!("{} types", type_details.len())),
+    };
+
     CompletionItem {
-        label: symbol.borrow().name().to_string(),
-        label_details: label_details,
-        detail: None,
-        kind: Some(get_completion_item_kind(symbol)),
-        sort_text: Some(get_sort_text_for_symbol(symbol)),
+        label: symbols[0].borrow().name().to_string(),
+        label_details: Some(CompletionItemLabelDetails {
+            detail: None,
+            description: label_details_description,
+        }),
+        detail: Some(type_details.iter().map(|detail| detail.to_string()).join(" | ").to_string()),
+        kind: Some(get_completion_item_kind(&symbols[0])),
+        sort_text: Some(get_sort_text_for_symbol(&symbols[0])),
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: FeaturesUtils::build_markdown_description(session, None, &vec![
+                value: FeaturesUtils::build_markdown_description(session, None, &symbols.iter().map(|symbol|
                     Evaluation {
                         symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
-                            context_of_symbol,
+                            context_of_symbol.clone(),
                             None),
                         value: None,
                         range: None
-                    }],
+                    }).collect::<Vec<_>>(),
                     &None, None)
             })),
         ..Default::default()
