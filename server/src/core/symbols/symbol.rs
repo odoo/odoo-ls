@@ -2100,22 +2100,26 @@ impl Symbol {
     /*
     Return all the symbols that are available at a given position or in a scope for a given start name
      */
-    pub fn get_all_inferred_names(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> Vec<Rc<RefCell<Symbol>>> {
-        fn helper(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>, acc: &mut Vec<Rc<RefCell<Symbol>>>) {
+    pub fn get_all_inferred_names(on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>> {
+        fn helper(
+            on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>, acc: &mut HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>
+        ) {
             // Add symbols from files and functions
-            if matches!(on_symbol.borrow().typ(), SymType::FILE | SymType::FUNCTION){
-                acc.extend(on_symbol.borrow().all_symbols().filter(|sym|
+            if matches!(on_symbol.borrow().typ(), SymType::FILE | SymType::FUNCTION) {
+                on_symbol.borrow().all_symbols().filter(|sym|
                     sym.borrow().name().starts_with(name) && (position.is_none() || !sym.borrow().has_range() || position.unwrap() > sym.borrow().range().end().to_u32())
-                ))
-            };
+                ).for_each(| sym| {
+                    acc.entry(sym.borrow().name().clone()).or_default().push(sym.clone());
+                });
+            }
             // Traverse upwards if we are under a class or a function
-            if matches!(on_symbol.borrow().typ(), SymType::CLASS | SymType::FUNCTION){
+            if matches!(on_symbol.borrow().typ(), SymType::CLASS | SymType::FUNCTION) {
                 if let Some(parent) = on_symbol.borrow().parent().as_ref().and_then(|parent_weak| parent_weak.upgrade()) {
                     helper(&parent, name, position, acc);
                 }
-            };
+            }
         }
-        let mut results: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut results= HashMap::new();
         helper(on_symbol, name, position, &mut results);
         results
     }
