@@ -1037,7 +1037,7 @@ impl Evaluation {
                                 let name = expr.id.to_string();
                                 (Symbol::infer_name(odoo, &parent, &name, Some(expr.range.end().to_u32())), name)
                             },
-                            _ => unreachable!("NamedExpr can only have an identifier")
+                            _ => return AnalyzeAstResult::from_only_diagnostics(diagnostics)
                         }
                     },
                     ExprOrIdent::Ident(expr) => {
