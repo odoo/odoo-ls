@@ -19,7 +19,8 @@ impl AstUtils {
         let mut expr: Option<ExprOrIdent> = None;
         let mut call_expr: Option<ExprCall> = None;
         let mut file_info_borrowed = file_info.borrow_mut();
-        for stmt in file_info_borrowed.get_ast(session).as_ref().unwrap().iter() {
+        let file_info_ast = file_info_borrowed.file_info_ast.borrow();
+        for stmt in file_info_ast.ast.as_ref().unwrap().iter() {
             (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;

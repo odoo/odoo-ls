@@ -82,16 +82,19 @@ impl PythonValidator {
                 }
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                file_info_rc.borrow_mut().prepare_ast(session);
+                if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+                    file_info_rc.borrow_mut().prepare_ast(session);
+                }
                 let file_info = file_info_rc.borrow();
-                if file_info_rc.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
+                if file_info_rc.borrow().file_info_ast.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if file_info.get_ast_no_build().is_some() && file_info.valid {
+                if file_info.file_info_ast.borrow().ast.is_some() && file_info.valid {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = self.sym_stack[0].borrow().get_noqas();
-                    self.validate_body(session, file_info.get_ast_no_build().as_ref().unwrap());
+                    let file_info_ast = file_info.file_info_ast.borrow();
+                    self.validate_body(session, file_info_ast.ast.as_ref().unwrap());
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info);
@@ -107,7 +110,7 @@ impl PythonValidator {
                 let Some(parent_file) = func.borrow().get_file().and_then(|parent_weak| parent_weak.upgrade()) else {
                     panic!("Parent file not found on validating function")
                 };
-                if file_info_rc.borrow().text_hash != parent_file.borrow().get_processed_text_hash(){
+                if file_info_rc.borrow().file_info_ast.borrow().text_hash != parent_file.borrow().get_processed_text_hash(){
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
@@ -125,10 +128,13 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                file_info_rc.borrow_mut().prepare_ast(session);
+                if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+                    file_info_rc.borrow_mut().prepare_ast(session);
+                }
                 let file_info = file_info_rc.borrow();
-                if file_info.get_ast_no_build().is_some() {
-                    let stmt = AstUtils::find_stmt_from_ast(file_info.get_ast_no_build().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
+                if file_info.file_info_ast.borrow().ast.is_some() {
+                    let file_info_ast = file_info.file_info_ast.borrow();
+                    let stmt = AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body

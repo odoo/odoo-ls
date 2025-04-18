@@ -44,7 +44,8 @@ impl CompletionFeature {
     ) -> Option<CompletionResponse> {
         let offset = file_info.borrow().position_to_offset(line, character);
         let mut file_info =  file_info.borrow_mut();
-        let ast = file_info.get_ast(session).unwrap();
+        let file_info_ast = file_info.file_info_ast.borrow();
+        let ast = file_info_ast.ast.as_ref().unwrap();
         complete_vec_stmt(ast, session, file_symbol, offset)
     }
 }
