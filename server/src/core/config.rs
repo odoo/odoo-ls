@@ -49,6 +49,7 @@ impl FromStr for DiagMissingImportsMode {
 pub struct Config {
     pub refresh_mode: RefreshMode,
     pub auto_save_delay: u64,
+    pub file_cache: bool,
     pub diag_missing_imports: DiagMissingImportsMode,
     pub diag_only_opened_files: bool,
     pub addons: Vec<String>,
@@ -65,6 +66,7 @@ impl Config {
         Self {
             refresh_mode: RefreshMode::Adaptive,
             auto_save_delay: 1000,
+            file_cache: false,
             diag_missing_imports: DiagMissingImportsMode::All,
             diag_only_opened_files: false,
             addons: Vec::new(),

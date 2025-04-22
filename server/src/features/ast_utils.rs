@@ -18,8 +18,9 @@ impl AstUtils {
     pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
         let mut expr: Option<ExprOrIdent> = None;
         let mut call_expr: Option<ExprCall> = None;
-        let file_info_borrowed = file_info.borrow();
-        for stmt in file_info_borrowed.ast.as_ref().unwrap().iter() {
+        let mut file_info_borrowed = file_info.borrow_mut();
+        let file_info_ast = file_info_borrowed.file_info_ast.borrow();
+        for stmt in file_info_ast.ast.as_ref().unwrap().iter() {
             (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;

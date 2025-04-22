@@ -96,6 +96,12 @@
           "maximum": 15000,
           "markdownDescription": "Define the delay the server has to wait before refreshing data after an update. Minimum 1000 ms, any setting less than that will be set to 1000"
         },
+        "Odoo.fileCache": {
+          "scope": "window",
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable file caching for files in workspace. It will reduce disk accesses, but it will use more memory (around 30% more)"
+        },
         "Odoo.autocompletion.filterModelNames": {
           "scope": "window",
           "type": "boolean",

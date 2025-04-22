@@ -79,20 +79,24 @@ impl PythonArchEval {
         }
         let path = self.file.borrow().get_symbol_first_path();
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
+        if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+            file_info_rc.borrow_mut().prepare_ast(session);
+        }
         let file_info = (*file_info_rc).borrow();
-        if file_info.ast.is_some() {
+        if file_info.file_info_ast.borrow().ast.is_some() {
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = symbol.borrow().get_noqas();
+            let file_info_ast  = file_info.file_info_ast.borrow();
             let (ast, maybe_func_stmt) = match self.file_mode {
                 true => {
-                    if file_info.text_hash != symbol.borrow().get_processed_text_hash(){
+                    if file_info_ast.text_hash != symbol.borrow().get_processed_text_hash(){
                         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                         return;
                     }
-                    (file_info.ast.as_ref().unwrap(), None)
+                    (file_info_ast.ast.as_ref().unwrap(), None)
                 },
                 false => {
-                    let func_stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
+                    let func_stmt = AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
                     (&func_stmt.body, Some(func_stmt))
                 }
             };
@@ -103,7 +107,7 @@ impl PythonArchEval {
                     PythonArchEvalHooks::handle_func_decorators(session, func_stmt, self.sym_stack[0].clone(), self.file.clone(), self.current_step)
                 );
                 PythonArchEval::handle_function_returns(session, func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
-                PythonArchEval::handle_func_evaluations(ast, &self.sym_stack[0]);
+                PythonArchEval::handle_func_evaluations(&ast, &self.sym_stack[0]);
             }
             session.current_noqa = old_noqa;
         }

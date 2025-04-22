@@ -13,7 +13,9 @@ impl DocumentSymbolFeature {
 
     pub fn get_symbols(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Option<DocumentSymbolResponse> {
         let mut results = vec![];
-        if let Some(ast) = &file_info.borrow().ast {
+        let file_info_bw = file_info.borrow();
+        let file_info_ast = file_info_bw.file_info_ast.borrow();
+        if let Some(ast) = &file_info_ast.ast {
             for stmt in ast.iter() {
                 DocumentSymbolFeature::visit_stmt(session, stmt, &mut results, file_info);
             }

@@ -103,7 +103,10 @@ impl ModuleSymbol {
         }
         let (updated, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        if manifest_file_info.ast.is_none() {
+        if manifest_file_info.file_info_ast.borrow().ast.is_none() {
+            manifest_file_info.prepare_ast(session);
+        }
+        if manifest_file_info.file_info_ast.borrow().ast.is_none() {
             return None;
         }
         let diags = module._load_manifest(session, &manifest_file_info);
@@ -151,7 +154,8 @@ impl ModuleSymbol {
     Returns list of od diagnostics to publish in manifest file. */
     fn _load_manifest(&mut self, session: &mut SessionInfo, file_info: &FileInfo) -> Vec<Diagnostic> {
         let mut res = vec![];
-        let ast = file_info.ast.as_ref().unwrap();
+        let file_info_ast = file_info.file_info_ast.borrow();
+        let ast = file_info_ast.ast.as_ref().unwrap();
         let mut is_manifest_valid = true;
         if ast.len() != 1 {is_manifest_valid = false;}
         match &ast[0] {

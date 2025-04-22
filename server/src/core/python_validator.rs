@@ -82,15 +82,19 @@ impl PythonValidator {
                 }
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+                    file_info_rc.borrow_mut().prepare_ast(session);
+                }
                 let file_info = file_info_rc.borrow();
-                if file_info_rc.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
+                if file_info_rc.borrow().file_info_ast.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if file_info.ast.is_some() && file_info.valid {
+                if file_info.file_info_ast.borrow().ast.is_some() && file_info.valid {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = self.sym_stack[0].borrow().get_noqas();
-                    self.validate_body(session, file_info.ast.as_ref().unwrap());
+                    let file_info_ast = file_info.file_info_ast.borrow();
+                    self.validate_body(session, file_info_ast.ast.as_ref().unwrap());
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info);
@@ -106,7 +110,7 @@ impl PythonValidator {
                 let Some(parent_file) = func.borrow().get_file().and_then(|parent_weak| parent_weak.upgrade()) else {
                     panic!("Parent file not found on validating function")
                 };
-                if file_info_rc.borrow().text_hash != parent_file.borrow().get_processed_text_hash(){
+                if file_info_rc.borrow().file_info_ast.borrow().text_hash != parent_file.borrow().get_processed_text_hash(){
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
@@ -124,9 +128,13 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+                    file_info_rc.borrow_mut().prepare_ast(session);
+                }
                 let file_info = file_info_rc.borrow();
-                if file_info.ast.is_some() {
-                    let stmt = AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
+                if file_info.file_info_ast.borrow().ast.is_some() {
+                    let file_info_ast = file_info.file_info_ast.borrow();
+                    let stmt = AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
                     let body = match stmt {
                         Stmt::FunctionDef(s) => {
                             &s.body
@@ -158,10 +166,28 @@ impl PythonValidator {
                 }
                 FileMgr::delete_path(session, &symbol.paths()[0].to_string());
             } else {
-                drop(symbol);
-                let file_info = self.get_file_info(session.sync_odoo);
-                let mut file_info = file_info.borrow_mut();
-                file_info.publish_diagnostics(session);
+                self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
+            }
+            if !session.sync_odoo.config.file_cache {
+                if symbol.typ() == SymType::PACKAGE(PackageType::MODULE) {
+                    let manifest_path = PathBuf::from(symbol.as_module_package().path.clone()).join("__manifest__.py").sanitize();
+                    if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path) {
+                        if !manifest_file.borrow().opened {
+                            let manifest_file = manifest_file.borrow();
+                            manifest_file.file_info_ast.borrow_mut().ast = None;
+                            manifest_file.file_info_ast.borrow_mut().text_rope = None;
+                            manifest_file.file_info_ast.borrow_mut().text_hash = 0;
+                        }
+                    }
+                }
+                if let Some(file) = self.file_info.as_ref() {
+                    if ! file.borrow().opened {
+                        let f = file.borrow();
+                        f.file_info_ast.borrow_mut().ast = None;
+                        f.file_info_ast.borrow_mut().text_rope = None;
+                        f.file_info_ast.borrow_mut().text_hash = 0;
+                    }
+                }
             }
         }
     }
