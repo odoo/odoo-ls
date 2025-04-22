@@ -1,3 +1,4 @@
+use crate::allocator::ALLOCATED;
 use crate::core::config::Config;
 use crate::core::entry_point::EntryPointType;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -919,6 +920,7 @@ impl Odoo {
         let mut _auto_save_delay : u64 = 2000;
         let mut _ac_filter_model_names : bool = true;
         let mut _diag_missing_imports : DiagMissingImportsMode = DiagMissingImportsMode::All;
+        let mut _file_cache = false;
         let mut selected_configuration: String = S!("");
         let mut configurations = serde_json::Map::new();
         if let Some(map) = config.as_object() {
@@ -961,6 +963,13 @@ impl Odoo {
                             }
                         } else {
                             session.log_message(MessageType::ERROR, String::from("Unable to parse autocompletion_config"));
+                        }
+                    },
+                    "fileCache" => {
+                        if let Some(file_cache) = value.as_bool() {
+                            _file_cache = file_cache
+                        } else {
+                            session.log_message(MessageType::ERROR, String::from("Unable to parse file_cache"));
                         }
                     },
                     "diagMissingImportLevel" => {
@@ -1027,6 +1036,7 @@ impl Odoo {
             config.odoo_path = None;
             session.log_message(MessageType::ERROR, S!("Unable to find selected configuration. No odoo path has been found."));
         }
+        config.file_cache = _file_cache;
         config.refresh_mode = _refresh_mode;
         config.auto_save_delay = _auto_save_delay;
         config.ac_filter_model_names = _ac_filter_model_names;
@@ -1113,12 +1123,15 @@ impl Odoo {
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
         let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
-        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") || 
+        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") ||
         params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().ast.is_some() {
+                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                        file_info.borrow_mut().prepare_ast(session);
+                    }
+                    if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
                         return Ok(HoverFeature::get_hover(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
@@ -1141,7 +1154,10 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().ast.is_some() {
+                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                        file_info.borrow_mut().prepare_ast(session);
+                    }
+                    if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
                         return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
@@ -1164,7 +1180,10 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().ast.is_some() {
+                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                        file_info.borrow_mut().prepare_ast(session);
+                    }
+                    if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
                         return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                     }
                 }
@@ -1476,7 +1495,10 @@ impl Odoo {
         if params.text_document.uri.to_string().ends_with(".py") || params.text_document.uri.to_string().ends_with(".pyi") {
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if file_info.borrow().ast.is_some() {
+                if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
                     return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
                 }
             }

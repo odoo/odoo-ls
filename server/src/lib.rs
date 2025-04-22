@@ -1,3 +1,4 @@
+pub mod allocator;
 pub mod args;
 pub mod cli_backend;
 pub mod constants;

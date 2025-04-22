@@ -100,14 +100,18 @@ impl PythonArchBuilder {
             let mut file_info = file_info_rc.borrow_mut();
             file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         }
+        if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+            file_info_rc.borrow_mut().prepare_ast(session);
+        }
         let file_info = file_info_rc.borrow();
-        if file_info.ast.is_some() {
+        if file_info.file_info_ast.borrow().ast.is_some() {
+            let file_info_ast= file_info.file_info_ast.borrow();
             let ast = match self.file_mode {
                 true => {
-                    file_info.ast.as_ref().unwrap()
+                    file_info_ast.ast.as_ref().unwrap()
                 },
                 false => {
-                    &AstUtils::find_stmt_from_ast(file_info.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    &AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
                 }
             };
             let old_stack_noqa = session.noqas_stack.clone();
@@ -120,7 +124,7 @@ impl PythonArchBuilder {
                 symbol.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack)); //only set for file, functions are set in visit_func_def
                 let old = session.current_noqa.clone();
                 session.current_noqa = symbol.borrow().get_noqas().clone();
-                symbol.borrow_mut().set_processed_text_hash(file_info.text_hash);
+                symbol.borrow_mut().set_processed_text_hash(file_info.file_info_ast.borrow().text_hash);
                 old
             } else {
                 session.noqas_stack.push(symbol.borrow().get_noqas().clone());
