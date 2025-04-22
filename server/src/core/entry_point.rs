@@ -133,7 +133,7 @@ impl EntryPointMgr {
     pub fn add_entry_to_customs(&mut self, path: String) -> Option<Rc<RefCell<Symbol>>> {
         info!("Adding new custom entry point: {}", path);
         let entry_point_tree = PathBuf::from(&path).to_tree();
-        let entry = EntryPoint::new(path.clone(), 
+        let entry = EntryPoint::new(path.clone(),
         flatten_tree(&entry_point_tree),
         EntryPointType::CUSTOM,
         None,

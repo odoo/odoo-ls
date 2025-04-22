@@ -1386,11 +1386,14 @@ impl Odoo {
         //Now let's test if the symbol has been added to main entry tree or not
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
-            let tree = PathBuf::from(path.clone()).to_tree();
+            let path_buf = PathBuf::from(path.clone());
+            let tree = path_buf.to_tree();
             if session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree, u32::MAX).is_empty() {
                 //file has not been added to main entry. Let's build a new entry point
-                EntryPointMgr::create_new_custom_entry_for_path(session, &path);
-                SyncOdoo::process_rebuilds(session);
+                if path_buf.is_file() {
+                    EntryPointMgr::create_new_custom_entry_for_path(session, &path);
+                    SyncOdoo::process_rebuilds(session);
+                }
             }
         }
     }
