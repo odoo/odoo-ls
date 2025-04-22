@@ -869,7 +869,9 @@ impl SyncOdoo {
                     if s.borrow().in_workspace() && matches!(&s.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
                         session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
                     }
-                    symbols.extend(s.borrow().all_module_symbol().map(|x| {x.clone()}) );
+                    if s.borrow().has_modules() {
+                        symbols.extend(s.borrow().all_module_symbol().map(|x| {x.clone()}) );
+                    }
                 }
             }
         }
