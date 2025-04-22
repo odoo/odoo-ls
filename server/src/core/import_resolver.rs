@@ -286,6 +286,8 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                 let mut found = false;
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
+                let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(from_path);
+                let from_path = from_path.as_str();
                 for entry in entry_point_mgr.iter_for_import(for_entry) {
                     if ((entry.borrow().is_public() && (level.is_none() || level.unwrap() == 0)) || entry.borrow().is_valid_for(from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol();

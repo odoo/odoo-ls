@@ -293,6 +293,18 @@ impl EntryPointMgr {
             }
         }
     }
+
+    /// Transform the path of an addon to the odoo relative path.
+    /// Otherwise, return the path as is.
+    pub fn transform_addon_path(&self, path: &str) -> String {
+        for entry in self.addons_entry_points.iter() {
+            if entry.borrow().is_valid_for(path) {
+                let path_str = path.to_string();
+                return path_str.replace(&entry.borrow().path, entry.borrow().addon_to_odoo_path.as_ref().unwrap());
+            }
+        }
+        path.to_string()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
