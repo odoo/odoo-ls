@@ -800,7 +800,7 @@ fn complete_name_expression(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>
 
 fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: usize, is_param: bool, name: &String) -> Option<CompletionResponse> {
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-    let symbols = Symbol::get_all_inferred_names(&scope, name, Some(offset as u32));
+    let symbols = Symbol::get_all_inferred_names(&scope, name, offset as u32);
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
         items: symbols.into_iter().map(|(_symbol_name, symbols)| {
