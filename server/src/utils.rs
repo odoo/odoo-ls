@@ -110,6 +110,7 @@ impl ToFilePath for lsp_types::Uri {
 pub trait PathSanitizer {
     fn sanitize(&self) -> String;
     fn to_tree(&self) -> Tree;
+    fn to_tree_path(&self) -> PathBuf;
 }
 
 impl PathSanitizer for PathBuf {
@@ -129,6 +130,7 @@ impl PathSanitizer for PathBuf {
         path
     }
 
+    /// Convert the path to a tree structure.
     fn to_tree(&self) -> Tree {
         let mut tree = (vec![], vec![]);
         self.components().for_each(|c| {
@@ -138,6 +140,16 @@ impl PathSanitizer for PathBuf {
             tree.0.pop();
         }
         tree
+    }
+
+    /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
+    fn to_tree_path(&self) -> PathBuf {
+        if let Some(file_name) = self.file_name() {
+            if file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py" {
+                return self.parent().unwrap().to_path_buf();
+            }
+        }
+        self.clone()
     }
 }
 
@@ -167,6 +179,16 @@ impl PathSanitizer for Path {
             tree.0.pop();
         }
         tree
+    }
+
+    /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
+    fn to_tree_path(&self) -> PathBuf {
+        if let Some(file_name) = self.file_name() {
+            if file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py" {
+                return self.parent().unwrap().to_path_buf();
+            }
+        }
+        self.to_path_buf()
     }
 }
 

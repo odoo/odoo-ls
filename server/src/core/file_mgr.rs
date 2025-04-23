@@ -411,15 +411,19 @@ impl FileMgr {
     }
 
     pub fn delete_path(session: &mut SessionInfo, uri: &String) {
-        let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(uri);
-        if let Some(to_del) = to_del {
-            if SyncOdoo::is_in_workspace_or_entry(session, uri) {
-                let mut to_del = (*to_del).borrow_mut();
-                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                to_del.publish_diagnostics(session)
+        //delete all files that are the uri or in subdirectory
+        let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|k| k.starts_with(uri)).cloned().collect();
+        for key in matching_keys {
+            let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(&key);
+            if let Some(to_del) = to_del {
+                if SyncOdoo::is_in_workspace_or_entry(session, uri) {
+                    let mut to_del = (*to_del).borrow_mut();
+                    to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+                    to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
+                    to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
+                    to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                    to_del.publish_diagnostics(session)
+                }
             }
         }
     }
