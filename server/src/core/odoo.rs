@@ -1312,14 +1312,14 @@ impl Odoo {
     }
 
     pub fn handle_did_close(session: &mut SessionInfo, params: DidCloseTextDocumentParams) {
-        if let Ok(path) = params.text_document.uri.to_file_path() {
-            session.log_message(MessageType::INFO, format!("File closed: {}", path.sanitize()));
-            session.sync_odoo.opened_files.retain(|x| x != &path.sanitize());
-            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path.to_str().unwrap().to_string());
+        if let Ok(path) = params.text_document.uri.to_file_path().map(|path_buf| path_buf.sanitize()) {
+            session.log_message(MessageType::INFO, format!("File closed: {path}"));
+            session.sync_odoo.opened_files.retain(|x| x != &path);
+            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
                 file_info.borrow_mut().opened = false;
             }
-            session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path.sanitize());
+            session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
         }
     }
 
