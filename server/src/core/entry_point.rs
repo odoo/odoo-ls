@@ -129,7 +129,7 @@ impl EntryPointMgr {
     }
 
     /* Create a new entry to public.
-    return the disk_dir symbol of the last FOLDER of the path
+    return the symbol at the end of the path
      */
     pub fn add_entry_to_customs(session: &mut SessionInfo, path: String) -> Option<Rc<RefCell<Symbol>>> {
         info!("Adding new custom entry point: {}", path);
@@ -140,26 +140,16 @@ impl EntryPointMgr {
         None,
         None);
         session.sync_odoo.entry_point_mgr.borrow_mut().custom_entry_points.push(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     fn _create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &String, entry: Rc<RefCell<EntryPoint>>) -> Option<Rc<RefCell<Symbol>>> {
-        let is_file = path.ends_with(".py") || path.ends_with(".pyi");
-        match is_file {
-            true => {
-                EntryPointMgr::create_dir_symbols_from_path_to_entry(session, &PathBuf::from(path).parent().unwrap().to_path_buf(), entry)
-            },
-            false => {
-                EntryPointMgr::create_dir_symbols_from_path_to_entry(session, &PathBuf::from(path), entry)
-            }
-        }
+        EntryPointMgr::create_dir_symbols_from_path_to_entry(session, &PathBuf::from(path), entry)
     }
 
     pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, path: &String) -> bool {
         let path_sanitized = PathBuf::from(path).sanitize();
-        let parent = EntryPointMgr::add_entry_to_customs(session, path_sanitized.clone());
-        let new_sym = Symbol::create_from_path(session, &PathBuf::from(path), parent.unwrap().clone(), false);
+        let new_sym = EntryPointMgr::add_entry_to_customs(session, path_sanitized.clone());
         if let Some(new_sym) = new_sym {
             new_sym.borrow_mut().set_is_external(false);
             let new_sym_typ = new_sym.borrow().typ();
