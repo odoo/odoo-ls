@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.1 - 2025/24/04 - File cache option and bugfixs
+
+### Key features
+
+- New option that will move file cache from RAM to disk (reduce memory usage by ~30%, but will increase disk access). It is off by
+default to not stress your disk, but you can activate it in your settings if you are on a computer with limited RAM amount.
+- This patch focus on bugs you reported from the 0.6.0. Thank you for sending us your crash report, it helps us building a stable tool !
+
+### Server
+
+- New file cache option to move file cache from RAM to disk. Off by default
+
+### Fixs
+
+- Fix an issue that was removing all diagnostics on settings change for no reason
+- Fix a crash on evaluation refresh
+- Fix transformation of path from addon entry to main entry
+- Fix creation of entryPoint for namespace symbols
+- Fix an issue that prevented the server to mark files as closed, creating a crash on reopening.
+- Fix parsing of `__manifest__.py` and `__init__.py` in custom entry point. It fixes crash when opening files outside of the config
+- Fix crash on parsing empty `__manifest__.py` file
+- Fix reloading of custom entry point
+- Fix path comparison. "account_account" will not be considered below "account" because it shares the same start. Now path components are properly used
+for the comparison. 
+
 ## 0.6.0 - 2025/15/04 - Entrypoints and NOQA Update
 
 ### Key features
