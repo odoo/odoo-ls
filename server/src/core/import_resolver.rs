@@ -4,7 +4,7 @@ use tracing::{error, info};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Identifier};
@@ -286,10 +286,10 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                 let mut found = false;
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
-                let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(from_path);
-                let from_path = from_path.as_str();
+                let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(&PathBuf::from(from_path));
+                let from_path = PathBuf::from(from_path);
                 for entry in entry_point_mgr.iter_for_import(for_entry) {
-                    if ((entry.borrow().is_public() && (level.is_none() || level.unwrap() == 0)) || entry.borrow().is_valid_for(from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
+                    if ((entry.borrow().is_public() && (level.is_none() || level.unwrap() == 0)) || entry.borrow().is_valid_for(&from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol();
                         if let Some(entry_point) = entry_point {
                             let mut next_symbol = entry_point.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);

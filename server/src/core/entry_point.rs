@@ -232,7 +232,7 @@ impl EntryPointMgr {
 
     pub fn remove_entries_with_path(&mut self, path: &String) {
         for entry in self.iter_all() {
-            if entry.borrow().path.starts_with(path) { //delete any entrypoint that would be in a subdirectory too
+            if PathBuf::from(entry.borrow().path.clone()).starts_with(path) { //delete any entrypoint that would be in a subdirectory too
                 entry.borrow_mut().to_delete = true;
             }
         }
@@ -289,14 +289,14 @@ impl EntryPointMgr {
 
     /// Transform the path of an addon to the odoo relative path.
     /// Otherwise, return the path as is.
-    pub fn transform_addon_path(&self, path: &str) -> String {
+    pub fn transform_addon_path(&self, path: &PathBuf) -> String {
         for entry in self.addons_entry_points.iter() {
             if entry.borrow().is_valid_for(path) {
-                let path_str = path.to_string();
+                let path_str = path.sanitize();
                 return path_str.replace(&entry.borrow().path, entry.borrow().addon_to_odoo_path.as_ref().unwrap());
             }
         }
-        path.to_string()
+        path.sanitize()
     }
 }
 
@@ -336,7 +336,7 @@ impl EntryPoint {
         res
     }
 
-    pub fn is_valid_for(&self, path: &str) -> bool {
+    pub fn is_valid_for(&self, path: &PathBuf) -> bool {
         path.starts_with(&self.path)
     }
 

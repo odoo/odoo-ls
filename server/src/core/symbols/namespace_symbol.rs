@@ -1,7 +1,7 @@
 use byteyarn::Yarn;
 use weak_table::PtrWeakHashSet;
 
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
 use crate::constants::{BuildSteps, OYarn};
 
@@ -53,7 +53,7 @@ impl NamespaceSymbol {
         let mut best_length: i32 = -1;
         let mut index = 0;
         while index < self.directories.len() {
-            if file.borrow().paths()[0].starts_with(&self.directories[index].path) && self.directories[index].path.len() as i32 > best_length {
+            if PathBuf::from(&file.borrow().paths()[0]).starts_with(&self.directories[index].path) && self.directories[index].path.len() as i32 > best_length {
                 best_index = index as i32;
                 best_length = self.directories[index].path.len() as i32;
             }
