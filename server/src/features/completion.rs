@@ -99,7 +99,7 @@ fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: 
         previous = Some(stmt);
     }
     //if the right stmt is the last one
-    if stmts.iter().last().unwrap().range().end().to_usize() >= offset {
+    if !stmts.is_empty() && stmts.iter().last().unwrap().range().end().to_usize() >= offset {
         return complete_stmt(session, file_symbol, stmts.iter().last().unwrap(), offset);
     }
     //The user is writting after the last stmt
