@@ -96,7 +96,7 @@ The extension found some classes inheriting this model, but didn't find any clas
 
 ### OLS30201
 
-"A manifest should only contains one dictionary".
+"A manifest should contain exactly one dictionary".
 A \_\_manifest\_\_.py file should be evaluated with a literal_eval to a single dictionary. Do not store any other information in it.
 
 ### OLS30202

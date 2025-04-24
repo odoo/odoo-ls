@@ -156,25 +156,13 @@ impl ModuleSymbol {
         let mut res = vec![];
         let file_info_ast = file_info.file_info_ast.borrow();
         let ast = file_info_ast.ast.as_ref().unwrap();
-        let mut is_manifest_valid = true;
-        if ast.len() != 1 {is_manifest_valid = false;}
-        match &ast[0] {
-            Stmt::Expr(expr) => {
-                if expr.value.is_dict_expr() {
-                    //everything is fine, let's process it below
-                } else {
-                    is_manifest_valid = false;
-                }
-            },
-            _ => {is_manifest_valid = false;}
-        }
-        if !is_manifest_valid {
+        if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
             add_diagnostic(&mut res, Diagnostic::new(
                 Range::new(Position::new(0, 0), Position::new(0, 1)),
                 Some(DiagnosticSeverity::ERROR),
                 Some(NumberOrString::String(S!("OLS30201"))),
                 Some(EXTENSION_NAME.to_string()),
-                "A manifest should only contains one dictionary".to_string(),
+                "A manifest should contain exactly one dictionary".to_string(),
                 None,
                 None,
             ), &session.current_noqa);
