@@ -539,6 +539,7 @@ impl SyncOdoo {
                 }
             }
         }
+        session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade().is_some());
     }
 
     pub fn process_rebuilds(session: &mut SessionInfo) -> bool {
