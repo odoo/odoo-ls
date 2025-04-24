@@ -412,7 +412,7 @@ impl FileMgr {
 
     pub fn delete_path(session: &mut SessionInfo, uri: &String) {
         //delete all files that are the uri or in subdirectory
-        let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|k| k.starts_with(uri)).cloned().collect();
+        let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|k| PathBuf::from(k).starts_with(uri)).cloned().collect();
         for key in matching_keys {
             let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(&key);
             if let Some(to_del) = to_del {

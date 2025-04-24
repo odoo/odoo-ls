@@ -435,7 +435,7 @@ impl SyncOdoo {
         //find which entrypoint to use
         for entry in self.entry_point_mgr.borrow().iter_all() {
             let entry_point = entry.borrow();
-            if entry_point.is_public() || from_path.starts_with(&entry_point.path) {
+            if entry_point.is_public() || PathBuf::from(from_path).starts_with(&entry_point.path) {
                 let symbols = entry_point.root.borrow().get_symbol(&(entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree).iter().chain(&tree.0).map(|x| x.clone()).collect(), tree.1.clone()), position);
                 if !symbols.is_empty() {
                     return symbols;
@@ -767,7 +767,7 @@ impl SyncOdoo {
         let mut parents = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
-            if entry.borrow().is_valid_for(path.sanitize().as_str()) {
+            if entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
                 if path_symbol.is_empty() {
@@ -801,7 +801,7 @@ impl SyncOdoo {
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
         for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref().unwrap()) {
-            if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path.as_os_str().to_str().unwrap()) {
+            if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
                 if path_symbol.is_empty() {
@@ -838,7 +838,7 @@ impl SyncOdoo {
      */
     pub fn path_to_main_entry_tree(&self, path: &PathBuf) -> Option<Tree> {
         for entry in self.entry_point_mgr.borrow().iter_main() {
-            if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path.sanitize().as_str()) {
+            if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 return Some(tree);
             }
@@ -1338,7 +1338,7 @@ impl Odoo {
             }
         }
         for entry in ep_mgr.borrow().iter_all_but_main() {
-            if entry.borrow().is_valid_for(path.as_str()) {
+            if entry.borrow().is_valid_for(&PathBuf::from(path)) {
                 let tree = entry.borrow().get_tree_for_entry(&PathBuf::from(path.clone()));
                 entry.borrow_mut().search_symbols_to_rebuild(session, &tree);
             }
