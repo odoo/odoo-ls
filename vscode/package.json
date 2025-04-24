@@ -99,7 +99,7 @@
         "Odoo.fileCache": {
           "scope": "window",
           "type": "boolean",
-          "default": false,
+          "default": true,
           "markdownDescription": "Enable file caching for files in workspace. It will reduce disk accesses, but it will use more memory (around 30% more)"
         },
         "Odoo.autocompletion.filterModelNames": {

@@ -66,7 +66,7 @@ impl Config {
         Self {
             refresh_mode: RefreshMode::Adaptive,
             auto_save_delay: 1000,
-            file_cache: false,
+            file_cache: true,
             diag_missing_imports: DiagMissingImportsMode::All,
             diag_only_opened_files: false,
             addons: Vec::new(),
