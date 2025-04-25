@@ -1,6 +1,6 @@
 use glob::glob;
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
-use tracing::{error, info};
+use tracing::error;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -12,8 +12,8 @@ use crate::{constants::*, oyarn, Sy, S};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
 
-use super::entry_point::{self, EntryPoint, EntryPointType};
-use super::file_mgr::{add_diagnostic, NoqaInfo};
+use super::entry_point::{EntryPoint, EntryPointType};
+use super::file_mgr::add_diagnostic;
 use super::odoo::SyncOdoo;
 use super::symbols::symbol::Symbol;
 
@@ -185,24 +185,15 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
     let paths = (*odoo_addons).borrow().paths().clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name.as_str());
-        if is_dir_cs(full_path.sanitize()) {
-            let _arc_symbol = Symbol::create_from_path(session, &full_path, odoo_addons.clone(), false);
-            if _arc_symbol.is_some() {
-                let typ = _arc_symbol.as_ref().unwrap().borrow().typ();
-                match typ {
-                    SymType::NAMESPACE => {
-                        return Some(_arc_symbol.as_ref().unwrap().clone());
-                    },
-                    SymType::PACKAGE(_) => {
-                        let _arc_symbol = _arc_symbol.as_ref().unwrap().clone();
-                        session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&_arc_symbol));
-                        session.sync_odoo.add_to_rebuild_arch(_arc_symbol.clone());
-                        return Some(_arc_symbol);
-                    },
-                    _ => {return None}
-                }
-            }
+        if !is_dir_cs(full_path.sanitize()) {
+            continue;
         }
+        let Some(module_symbol) = Symbol::create_from_path(session, &full_path, odoo_addons.clone(), true) else {
+            continue;
+        };
+        session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&module_symbol));
+        session.sync_odoo.add_to_rebuild_arch(module_symbol.clone());
+        return Some(module_symbol.clone());
     }
     None
 }
