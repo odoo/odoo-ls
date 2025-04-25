@@ -127,6 +127,14 @@ A module cannot have its own name as a dependency in its manifest
 "The data key should be a list of strings"
 Values in the manifest's "data" list should be strings
 
+### OLS30209
+"Manifest keys should be strings"
+Keys of the dictionary in manifest files have to be string literals
+
+### OLS30210
+"Module `{module_name}` depends on `{wrong_dependency}` which is not found. Please review your addons paths"
+Module has dependency on a dependency that is either wrong or does not exist. Check that module folder exists, and it contains `__init__.py` and `__manifest__.py`
+
 ### OLS30302
 
 "Do not use dict unpacking to build your manifest".
