@@ -6,7 +6,7 @@ use weak_table::PtrWeakHashSet;
 use std::collections::{HashMap, HashSet};
 
 use crate::{constants::*, oyarn, Sy};
-use crate::core::file_mgr::{add_diagnostic, FileInfo, NoqaInfo};
+use crate::core::file_mgr::{add_diagnostic, FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
@@ -33,7 +33,7 @@ pub struct ModuleSymbol {
     loaded: bool,
     module_name: OYarn,
     pub dir_name: OYarn,
-    depends: Vec<OYarn>,
+    depends: Vec<(OYarn, TextRange)>,
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<String>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
@@ -72,7 +72,7 @@ impl ModuleSymbol {
             loaded: false,
             module_name: OYarn::from(""),
             dir_name: OYarn::from(""),
-            depends: vec!(OYarn::from("base")),
+            depends: vec!((OYarn::from("base"), TextRange::default())),
             all_depends: HashSet::new(),
             data: Vec::new(),
             weak_self: None,
@@ -199,7 +199,7 @@ impl ModuleSymbol {
                                             if depend_value == self.dir_name {
                                                 add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                             } else {
-                                                self.depends.push(depend_value);
+                                                self.depends.push((depend_value, depend.range().clone()));
                                             }
                                         }
                                     }
@@ -266,11 +266,11 @@ impl ModuleSymbol {
     Returns list of diagnostics to publish in manifest file */
     fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
         symbol.as_module_package_mut().all_depends.clear();
-        let all_depends = symbol.as_module_package().depends.clone();
+        let all_depends = symbol.as_module_package().depends.iter().map(|(depend, _)| depend.clone()).collect::<Vec<_>>();
         symbol.as_module_package_mut().all_depends.extend(all_depends);
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<OYarn> = vec![];
-        for depend in symbol.as_module_package().depends.clone().iter() {
+        for (depend, range) in symbol.as_module_package().depends.clone().iter() {
             //TODO: raise an error on dependency cycle
             if !session.sync_odoo.modules.contains_key(depend) {
                 let module = find_module(session, odoo_addons.clone(), depend);
@@ -278,7 +278,7 @@ impl ModuleSymbol {
                     symbol.get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
                     symbol.not_found_paths_mut().push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
                     add_diagnostic(&mut diagnostics, Diagnostic::new(
-                        Range::new(Position::new(0, 0), Position::new(0, 1)),
+                        FileMgr::textRange_to_temporary_Range(range),
                         Some(DiagnosticSeverity::ERROR),
                         Some(NumberOrString::String(S!("OLS30210"))),
                         Some(EXTENSION_NAME.to_string()),
