@@ -288,8 +288,8 @@ impl SyncOdoo {
 
     fn build_base(session: &mut SessionInfo) -> bool {
         let odoo_path = session.sync_odoo.config.odoo_path.clone();
-        let Some(odoo_path) = odoo_path else {
-            info!("Odoo path not provided. Continuing in single file mode");
+        let Some(odoo_path) = odoo_path.filter(|odoo_path| PathBuf::from(odoo_path.clone()).exists()) else {
+            info!("Odoo path not provided or is not a valid path. Continuing in single file mode");
             return false;
         };
         session.sync_odoo.has_main_entry = true;
