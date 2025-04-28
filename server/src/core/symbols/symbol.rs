@@ -1885,7 +1885,7 @@ impl Symbol {
                                             continue;
                                         }
                                     }
-                                    if sym_rc.borrow().as_variable().evaluations.is_empty() && can_eval_external {
+                                    if sym_rc.borrow().as_variable().evaluations.is_empty() && sym_rc.borrow().name() != "__all__" && can_eval_external {
                                         //no evaluation? let's check that the file has been evaluated
                                         let file_symbol = sym_rc.borrow().get_file();
                                         if let Some(file_symbol) = file_symbol {

@@ -170,9 +170,9 @@ impl PythonArchBuilder {
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<OYarn> = vec![];
-                if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first() {
+                if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
                     let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                        Rc::downgrade(all), None, false
+                        Rc::downgrade(&all), None, false
                     )), session, &mut None, false, true, None, &mut self.diagnostics);
                     if let Some(all_value_first) = all_value.get(0) {
                         if !all_value_first.is_expired_if_weak() {
