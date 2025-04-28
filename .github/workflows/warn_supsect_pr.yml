@@ -41,7 +41,7 @@ jobs:
           script: |
             let body = "";
             if (process.env.file_changed === 'true') {
-              body += "⚠️ The file 'Cargo.toml or caonstant.rs' has been modified in this PR. Please review the changes carefully.\n";
+              body += "⚠️ The file 'Cargo.toml or constant.rs' has been modified in this PR. Please review the changes carefully.\n";
             }
             if (process.env.println_found === 'true') {
               body += "⚠️ A 'println!(' statement was found in the commit. Please ensure debug statements are removed before merging.\n";
