@@ -72,6 +72,9 @@ fn main() {
     info!("Server version: {}", EXTENSION_VERSION);
     info!("Compiled setting: DEBUG_ODOO_BUILDER: {}", DEBUG_ODOO_BUILDER);
     info!("Compiled setting: DEBUG_MEMORY: {}", DEBUG_MEMORY);
+    info!("Compiled setting: DEBUG_THREADS: {}", DEBUG_THREADS);
+    info!("Compiled setting: DEBUG_STEPS: {}", DEBUG_STEPS);
+    info!("Compiled setting: DEBUG_REBUILD_NOW: {}", DEBUG_REBUILD_NOW);
     info!("Operating system: {}", std::env::consts::OS);
     info!("");
 
