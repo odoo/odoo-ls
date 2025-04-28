@@ -136,7 +136,7 @@ impl PathSanitizer for PathBuf {
         self.components().for_each(|c| {
             tree.0.push(oyarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
         });
-        if matches!(tree.0.last().unwrap().as_str(), "__init__" | "__manifest__") {
+        if matches!(tree.0.last().map(|s| s.as_str()), Some("__init__" | "__manifest__")) {
             tree.0.pop();
         }
         tree
@@ -175,7 +175,7 @@ impl PathSanitizer for Path {
         self.components().for_each(|c| {
             tree.0.push(oyarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
         });
-        if matches!(tree.0.last().unwrap().as_str(), "__init__" | "__manifest__") {
+        if matches!(tree.0.last().map(|s| s.as_str()), Some("__init__" | "__manifest__")) {
             tree.0.pop();
         }
         tree
