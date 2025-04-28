@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.2 - 2025/28/04 - Bugfixs
+
+### Fixs
+
+- Fix crash on empty odoo path
+- Fix crash while autocomplete on an empty file
+- Fix crash on autocompletion in some wase where the needed files are not built already
+- Fix crash on module search that could return namespaces instead of modules
+- Fix diagnostics range in manifest depends
+- Add missing error code in error_code.md
+- Fix crash on lazy loading invalid `__all__` variable
+- Clean some logs 
+
 ## 0.6.1 - 2025/24/04 - File cache option and bugfixs
 
 ### Key features
