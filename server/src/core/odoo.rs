@@ -26,23 +26,25 @@ use std::str::FromStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
-use std::cmp;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
 use super::config::{DiagMissingImportsMode, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
-use super::symbols::disk_dir_symbol::DiskDirSymbol;
 use super::symbols::symbol::Symbol;
 use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
-use crate::core::python_odoo_builder::PythonOdooBuilder;
 use crate::core::python_validator::PythonValidator;
-use crate::utils::{PathSanitizer, ToFilePath as _};
+use crate::utils::{fill_template, is_addon_path, PathSanitizer, ToFilePath as _};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
+
+static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap()
+});
+
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
@@ -264,8 +266,7 @@ impl SyncOdoo {
         };
         for line in release_file.lines() {
             if line.starts_with("version_info = (") {
-                let re = Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap();
-                let result = re.captures(line);
+                let result = VERSION_REGEX.captures(line);
                 match result {
                     Some(result) => {
                         let version_info = result.get(1).unwrap().as_str();
@@ -1226,7 +1227,7 @@ impl Odoo {
         let file_mgr = session.sync_odoo.get_file_mgr();
         let mut file_mgr = file_mgr.borrow_mut();
         for added in params.event.added {
-            file_mgr.add_workspace_folder(added.uri.to_string());
+            file_mgr.add_workspace_folder(added.name.clone(),added.uri.to_string());
         }
         for removed in params.event.removed {
             file_mgr.remove_workspace_folder(removed.uri.to_string());
@@ -1487,7 +1488,7 @@ impl Odoo {
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
     fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> (bool, bool) {
-        if path.extension().is_some() && path.extension().unwrap() == "py" {
+        if matches!(path.extension(), Some(ext) if ext == "py") {
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
@@ -1497,7 +1498,7 @@ impl Odoo {
     }
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
-        if path.extension().is_some() && path.extension().unwrap() == "py" {
+        if matches!(path.extension(), Some(ext) if ext == "py") {
             SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
         }
     }

@@ -75,7 +75,7 @@ export async function fillTemplate(template: string, vars: Record<string, string
 export async function validateAddonPath(addonPath) {
 	addonPath = addonPath.replaceAll("\\", "/");
 	const PATH_VAR_LOCAL = { ...global.PATH_VARIABLES };
-	// Step 1, fill specific workspaceFolder tepmplates. e.g. ${workspaceFolder:odoo}
+	// Step 1, fill specific workspaceFolder templates. e.g. ${workspaceFolder:odoo}
 	for (const folder of workspace.workspaceFolders) {
 		PATH_VAR_LOCAL[`workspaceFolder\:${folder.name}`] = folder.uri.fsPath.replaceAll("\\", "/");
 	}
