@@ -205,7 +205,7 @@ impl EntryPointMgr {
         )
     }
 
-    //iter through all main entry points, sorted by tree lenght (from bigger to smaller)
+    //iter through all main entry points, sorted by tree length (from bigger to smaller)
     pub fn iter_main(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>>
     {
         let mut collected = self.main_entry_point.iter().chain(self.addons_entry_points.iter()).collect::<Vec<_>>();

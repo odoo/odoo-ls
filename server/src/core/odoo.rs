@@ -800,7 +800,7 @@ impl SyncOdoo {
      */
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
-        for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref().unwrap()) {
+        for entry in session.sync_odoo.entry_point_mgr.borrow().iter_main() {
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
