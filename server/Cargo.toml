@@ -36,6 +36,8 @@ once_cell = "1.20.1"
 itertools = "0.14.0"
 byteyarn = "0.5.1"
 roxmltree = "0.20.0"
+dirs = "5.0"
+toml = "0.8.22"
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.29.0", features = ["process"] }
 

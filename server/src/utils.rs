@@ -1,8 +1,15 @@
-use std::{fs, path::{Path, PathBuf}, str::FromStr};
+use std::{collections::{hash_map, HashMap}, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 use path_slash::{PathBufExt, PathExt};
+use regex::Regex;
 use ruff_text_size::TextSize;
+use std::process::Command;
 
 use crate::{constants::Tree, oyarn};
+
+static TEMPLATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\$\{([^}]+)\}").unwrap()
+});
+static HOME_DIR: LazyLock<Option<String>> = LazyLock::new(|| dirs::home_dir().map(|buf| buf.sanitize()));
 
 #[macro_export]
 macro_rules! S {
@@ -199,3 +206,82 @@ pub trait MaxTextSize {
 impl MaxTextSize for TextSize {
     const MAX: TextSize = TextSize::new(u32::MAX);
 }
+
+
+pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Option<String> {
+    let mut invalid = false;
+
+    let result = TEMPLATE_REGEX.replace_all(template, |captures: &regex::Captures| -> String{
+        let key = captures[1].to_string();
+        if let Some(value) = vars.get(&key) {
+            value.clone()
+        } else {
+            invalid = true;
+            S!("")
+        }
+    });
+    if invalid {None} else {Some(S!(result))}
+}
+
+
+pub fn build_pattern_map(ws_folders: hash_map::Iter<String, String>) -> HashMap<String, String> {
+    // TODO: Maybe cache this
+    let mut pattern_map = HashMap::new();
+    if let Some(home_dir) = HOME_DIR.as_ref() {
+        pattern_map.insert(S!("userHome"), home_dir.clone());
+    }
+    for (ws_name, ws_path) in ws_folders{
+        pattern_map.insert(format!("workspaceFolder:{}", ws_name.clone()), ws_path.clone());
+    }
+    pattern_map
+}
+
+
+/// Fill the template with the given pattern map.
+/// While also checking it with the predicate function.
+/// pass `|_| true` to skip the predicate check.
+/// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
+pub fn fill_validate_path<F>(ws_folders: hash_map::Iter<String, String>, template: &str, predicate: F) -> Option<String>
+where
+    F: Fn(&String) -> bool,
+{
+        let mut pattern_map = build_pattern_map(ws_folders.clone());
+        for (_, ws_path) in ws_folders {
+            pattern_map.insert(S!("workspaceFolder"), ws_path.clone());
+            if let Some(path) = fill_template(template, &pattern_map) {
+                if predicate(&path) {
+                    return Some(path);
+                }
+            }
+        }
+        None
+    }
+
+fn is_really_module(directory_path: &str, entry: &DirEntry) -> bool {
+    let module_name = entry.file_name();
+    let full_path = Path::new(directory_path).join(module_name).join("__manifest__.py");
+
+    // Check if the file exists and is a regular file
+    full_path.exists() && full_path.is_file()
+}
+
+pub fn is_addon_path(directory_path: &String) -> bool {
+    fs::read_dir(directory_path)
+    .into_iter()
+    .flatten()
+    .flatten()
+    .any(|entry| is_really_module(directory_path, &entry))
+}
+
+pub fn is_odoo_path(directory_path: &String) -> bool {
+    let odoo_release_path = Path::new(directory_path).join("odoo").join("release.py");
+    odoo_release_path.exists() && odoo_release_path.is_file()
+}
+
+pub fn is_python_path(path: &String) -> bool {
+    match Command::new(path).arg("--version").output() {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+

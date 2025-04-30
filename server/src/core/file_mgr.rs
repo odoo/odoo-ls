@@ -376,7 +376,7 @@ impl FileInfo {
 #[derive(Debug)]
 pub struct FileMgr {
     pub files: HashMap<String, Rc<RefCell<FileInfo>>>,
-    workspace_folder: Vec<String>,
+    workspace_folder: HashMap<String, String>,
 }
 
 impl FileMgr {
@@ -384,7 +384,7 @@ impl FileMgr {
     pub fn new() -> Self {
         Self {
             files: HashMap::new(),
-            workspace_folder: vec![],
+            workspace_folder: HashMap::new(),
         }
     }
 
@@ -481,20 +481,21 @@ impl FileMgr {
         session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
     }
 
-    pub fn add_workspace_folder(&mut self, path: String) {
+    pub fn add_workspace_folder(&mut self, name: String, path: String) {
         let sanitized = PathBuf::from(path).sanitize();
-        if !self.workspace_folder.contains(&sanitized) {
-            self.workspace_folder.push(sanitized);
-        }
+        self.workspace_folder.insert(name, sanitized);
     }
 
-    pub fn remove_workspace_folder(&mut self, path: String) {
-        let index = self.workspace_folder.iter().position(|x| *x == path).unwrap();
-        self.workspace_folder.swap_remove(index);
+    pub fn remove_workspace_folder(&mut self, name: String) {
+        self.workspace_folder.remove(&name);
+    }
+
+    pub fn iter_workspace_folders(&self) -> std::collections::hash_map::Iter<String, String> {
+        self.workspace_folder.iter()
     }
 
     pub fn is_in_workspace(&self, path: &str) -> bool {
-        for p in self.workspace_folder.iter() {
+        for p in self.workspace_folder.values() {
             if path.starts_with(p) {
                 return true;
             }

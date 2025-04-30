@@ -40,8 +40,8 @@ impl CliBackend {
         let workspace_folders = self.cli.tracked_folders.clone().unwrap_or(vec![]);
         info!("Using tracked folders: {:?}", workspace_folders);
 
-        for tracked_folder in workspace_folders {
-            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(PathBuf::from(tracked_folder).sanitize());
+        for (id, tracked_folder) in workspace_folders.into_iter().enumerate() {
+            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(format!("{}", id), PathBuf::from(tracked_folder).sanitize());
         }
 
         let mut config = Config::new();
