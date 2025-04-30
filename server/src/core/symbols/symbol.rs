@@ -242,6 +242,92 @@ impl Symbol {
         variable
     }
 
+    pub fn add_new_ext_symbol(&mut self, session: &mut SessionInfo, name: OYarn, range: &TextRange, owner: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {
+        let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name.clone(), range.clone(), self.is_external()))));
+        variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));
+        variable.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
+        match self {
+            Symbol::File(f) => {
+                let set = f.ext_symbols.entry(name.clone()).or_insert_with(|| PtrWeakHashSet::new());
+                set.insert(owner.clone());
+                owner.borrow_mut().add_decl_ext_symbol(&self.weak_self().unwrap().upgrade().unwrap(), &variable, name.clone(), range)
+            },
+            Symbol::Package(PackageSymbol::Module(m)) => {
+                let set = m.ext_symbols.entry(name.clone()).or_insert_with(|| PtrWeakHashSet::new());
+                set.insert(owner.clone());
+                owner.borrow_mut().add_decl_ext_symbol(&self.weak_self().unwrap().upgrade().unwrap(), &variable, name.clone(), range)
+            },
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => {
+                let set = p.ext_symbols.entry(name.clone()).or_insert_with(|| PtrWeakHashSet::new());
+                set.insert(owner.clone());
+                owner.borrow_mut().add_decl_ext_symbol(&self.weak_self().unwrap().upgrade().unwrap(), &variable, name.clone(), range)
+            },
+            Symbol::Class(c) => {
+                let set = c.ext_symbols.entry(name.clone()).or_insert_with(|| PtrWeakHashSet::new());
+                set.insert(owner.clone());
+                owner.borrow_mut().add_decl_ext_symbol(&self.weak_self().unwrap().upgrade().unwrap(), &variable, name.clone(), range)
+            },
+            Symbol::Function(f) => {
+                let set = f.ext_symbols.entry(name.clone()).or_insert_with(|| PtrWeakHashSet::new());
+                set.insert(owner.clone());
+                owner.borrow_mut().add_decl_ext_symbol(&self.weak_self().unwrap().upgrade().unwrap(), &variable, name.clone(), range)
+            },
+            Symbol::Namespace(n) => {
+                let set = n.ext_symbols.entry(name.clone()).or_insert_with(|| PtrWeakHashSet::new());
+                set.insert(owner.clone());
+                owner.borrow_mut().add_decl_ext_symbol(&self.weak_self().unwrap().upgrade().unwrap(), &variable, name.clone(), range)
+            }
+            _ => {
+                panic!("Impossible to add an extern symbol to a {}", self.typ());
+            }
+        }
+        variable
+    }
+
+    /* used by add_new_ext_symbol. Do not call directly */
+    pub fn add_decl_ext_symbol(&mut self, object: &Rc<RefCell<Symbol>>, symbol: &Rc<RefCell<Symbol>>, name: OYarn, range: &TextRange) {
+        match self {
+            Symbol::File(f) => {
+                let section = f.get_section_for(range.start().to_u32()).index;
+                let map_for_obj = f.decl_ext_symbols.entry(object.clone()).or_insert_with(|| HashMap::new());
+                let sections = map_for_obj.entry(name.clone()).or_insert_with(|| HashMap::new());
+                let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+                section_vec.push(symbol.clone());
+            },
+            Symbol::Package(PackageSymbol::Module(m)) => {
+                let section = m.get_section_for(range.start().to_u32()).index;
+                let map_for_obj = m.decl_ext_symbols.entry(object.clone()).or_insert_with(|| HashMap::new());
+                let sections = map_for_obj.entry(name.clone()).or_insert_with(|| HashMap::new());
+                let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+                section_vec.push(symbol.clone());
+            },
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => {
+                let section = p.get_section_for(range.start().to_u32()).index;
+                let map_for_obj = p.decl_ext_symbols.entry(object.clone()).or_insert_with(|| HashMap::new());
+                let sections = map_for_obj.entry(name.clone()).or_insert_with(|| HashMap::new());
+                let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+                section_vec.push(symbol.clone());
+            },
+            Symbol::Class(c) => {
+                let section = c.get_section_for(range.start().to_u32()).index;
+                let map_for_obj = c.decl_ext_symbols.entry(object.clone()).or_insert_with(|| HashMap::new());
+                let sections = map_for_obj.entry(name.clone()).or_insert_with(|| HashMap::new());
+                let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+                section_vec.push(symbol.clone());
+            },
+            Symbol::Function(f) => {
+                let section = f.get_section_for(range.start().to_u32()).index;
+                let map_for_obj = f.decl_ext_symbols.entry(object.clone()).or_insert_with(|| HashMap::new());
+                let sections = map_for_obj.entry(name.clone()).or_insert_with(|| HashMap::new());
+                let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+                section_vec.push(symbol.clone());
+            }
+            _ => {
+                panic!("Impossible to add a declaration of external symbol to a {}", self.typ());
+            }
+        }
+    }
+
     pub fn add_new_function(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
         let function = Rc::new(RefCell::new(Symbol::Function(FunctionSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         function.borrow_mut().set_weak_self(Rc::downgrade(&function));
@@ -1252,15 +1338,39 @@ impl Symbol {
                 p.get_content_symbol(oyarn!("{}", name), position)
             },
             Symbol::Function(f) => {
-                if let Some(vec) = f.get_ext_symbol(oyarn!("{}", name)) {
-                    return ContentSymbols{
-                        symbols: vec.clone(),
-                        always_defined: true,
-                    };
-                }
-                ContentSymbols::default()
+                return ContentSymbols{
+                    symbols: f.get_ext_symbol(&oyarn!("{}", name)),
+                    always_defined: true,
+                };
             },
+            Symbol::Namespace(n) => {
+                return ContentSymbols{
+                    symbols: n.get_ext_symbol(&oyarn!("{}", name)),
+                    always_defined: true,
+                };
+            }
             _ => {ContentSymbols::default()}
+        }
+    }
+
+    pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+        match self {
+            Symbol::Class(c) => {
+                c.get_decl_ext_symbol(symbol, name)
+            },
+            Symbol::File(f) => {
+                f.get_decl_ext_symbol(symbol, name)
+            },
+            Symbol::Package(PackageSymbol::Module(m)) => {
+                m.get_decl_ext_symbol(symbol, name)
+            },
+            Symbol::Package(PackageSymbol::PythonPackage(p)) => {
+                p.get_decl_ext_symbol(symbol, name)
+            },
+            Symbol::Function(f) => {
+                f.get_decl_ext_symbol(symbol, name)
+            },
+            _ => {vec![]}
         }
     }
 
