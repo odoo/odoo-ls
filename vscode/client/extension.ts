@@ -298,7 +298,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
         }
 
         global.SERVER_PID = 0;
-        let serverPath = "./win_odoo_ls_server.exe";
+        let serverPath = "./odoo_ls_server.exe";
         if (process.platform === 'darwin') {
             serverPath = "./macos_odoo_ls_server"
         } else if (process.platform !== 'win32') {
