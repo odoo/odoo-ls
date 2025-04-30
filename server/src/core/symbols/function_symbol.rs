@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::min, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model}, oyarn, threads::SessionInfo};
 
@@ -56,8 +56,8 @@ pub struct FunctionSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
-
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
 }
 
 impl FunctionSymbol {
@@ -84,6 +84,7 @@ impl FunctionSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             args: vec![],
             is_overloaded: false,
             is_class_method: false,
@@ -181,5 +182,29 @@ impl FunctionSymbol {
             return self.args.get(arg_index as usize);
         }
         None
+    }
+
+    pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut result = vec![];
+        if let Some(owners) = self.ext_symbols.get(name) {
+            for owner in owners.iter() {
+                let owner = owner.borrow();
+                result.extend(owner.get_decl_ext_symbol(&self.weak_self.as_ref().unwrap().upgrade().unwrap(), name));
+            }
+        }
+        result
+    }
+
+    pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut result = vec![];
+        if let Some(object_decl_symbols) = self.decl_ext_symbols.get(symbol) {
+            if let Some(symbols) = object_decl_symbols.get(name) {
+                for end_symbols in symbols.values() {
+                    //TODO actually we don't take position into account, but can we really?
+                    result.extend(end_symbols.iter().map(|s| s.clone()));
+                }
+            }
+        }
+        result
     }
 }

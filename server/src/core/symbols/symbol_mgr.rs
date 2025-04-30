@@ -34,7 +34,6 @@ pub trait SymbolMgr {
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols;
-    fn get_ext_symbol(&self, name: OYarn) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
     fn _init_symbol_mgr(&mut self);
     fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
     fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>;
@@ -104,15 +103,18 @@ macro_rules! impl_section_mgr_for {
         ///Return all the symbols that are valid as last declaration for the given position
         fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols {
             let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
-            if let Some(sections) = sections {
+            let mut content = if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
-                return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new());
+                self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
+            } else {
+                ContentSymbols::default()
+            };
+            let ext_sym = self.get_ext_symbol(&name);
+            if ext_sym.len() > 1 {
+                content.symbols.extend(ext_sym.iter().cloned());
+                content.always_defined = true;
             }
-            ContentSymbols::default()
-        }
-
-        fn get_ext_symbol(&self, name: OYarn) -> Option<&Vec<Rc<RefCell<Symbol>>>> {
-            self.ext_symbols.get(&name)
+            content
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol

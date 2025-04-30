@@ -24,6 +24,7 @@ pub struct NamespaceSymbol {
     in_workspace: bool,
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
     pub dependents: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
 }
 
 impl NamespaceSymbol {
@@ -45,6 +46,7 @@ impl NamespaceSymbol {
             in_workspace: false,
             dependencies: vec![],
             dependents: vec![],
+            ext_symbols: HashMap::new(),
         }
     }
 
@@ -142,6 +144,17 @@ impl NamespaceSymbol {
 
     pub fn is_in_workspace(&self) -> bool {
         self.in_workspace
+    }
+
+    pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut result = vec![];
+        if let Some(owners) = self.ext_symbols.get(name) {
+            for owner in owners.iter() {
+                let owner = owner.borrow();
+                result.extend(owner.get_decl_ext_symbol(&self.weak_self.as_ref().unwrap().upgrade().unwrap(), name));
+            }
+        }
+        result
     }
 
 }
