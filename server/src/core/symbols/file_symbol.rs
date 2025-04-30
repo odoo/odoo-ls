@@ -1,4 +1,4 @@
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
@@ -29,7 +29,8 @@ pub struct FileSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
 }
 
 impl FileSymbol {
@@ -51,6 +52,7 @@ impl FileSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],

@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::min, collections::HashMap, rc::{Rc, Weak}};
 use lsp_types::Diagnostic;
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model}, oyarn, threads::SessionInfo};
 
@@ -56,8 +56,8 @@ pub struct FunctionSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
-
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
 }
 
 impl FunctionSymbol {
@@ -84,6 +84,7 @@ impl FunctionSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             args: vec![],
             is_overloaded: false,
             is_class_method: false,

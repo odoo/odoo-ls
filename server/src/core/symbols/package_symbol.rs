@@ -1,4 +1,4 @@
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model}, oyarn, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
@@ -122,7 +122,8 @@ pub struct PythonPackageSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
 }
 
 impl PythonPackageSymbol {
@@ -146,6 +147,7 @@ impl PythonPackageSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],

@@ -2,7 +2,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, P
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::info;
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use std::collections::{HashMap, HashSet};
 
 use crate::{constants::*, oyarn, Sy};
@@ -55,7 +55,8 @@ pub struct ModuleSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
 }
 
 impl ModuleSymbol {
@@ -85,6 +86,7 @@ impl ModuleSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],

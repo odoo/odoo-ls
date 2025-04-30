@@ -3,7 +3,7 @@ use ruff_text_size::{TextRange, TextSize};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use weak_table::PtrWeakHashSet;
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
 use crate::constants::{OYarn, SymType};
 use crate::core::file_mgr::NoqaInfo;
@@ -34,7 +34,8 @@ pub struct ClassSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
 }
 
 impl ClassSymbol {
@@ -52,6 +53,7 @@ impl ClassSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
+            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             bases: vec![],
             _model: None,
             noqas: NoqaInfo::None,

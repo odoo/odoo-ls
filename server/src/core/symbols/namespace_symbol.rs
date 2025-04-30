@@ -24,6 +24,7 @@ pub struct NamespaceSymbol {
     in_workspace: bool,
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
     pub dependents: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
+    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
 }
 
 impl NamespaceSymbol {
@@ -45,6 +46,7 @@ impl NamespaceSymbol {
             in_workspace: false,
             dependencies: vec![],
             dependents: vec![],
+            ext_symbols: HashMap::new(),
         }
     }
 
