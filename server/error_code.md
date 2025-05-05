@@ -9,6 +9,7 @@ Error codes from OdooLS have the format "OLSXZZZZ".
 
   - 0100 are errors related to modules dependencies
   - 0200 are errors related to manifests
+  - 0400 are errors related to XML
 
 ## INFOs
 
@@ -264,3 +265,42 @@ For compute, search, inverse arguments, this error is shown when the method is n
 "Compute method not set to modify this field"
 The compute method is set to modify a certain field(s).
 Consider marking the modified field with the compute method
+
+### OLS30400
+"Invalid attribute"
+odoo, openerp and data nodes can not contain this attribute.
+
+### OLS30401
+"Invalid node tag"
+This tag is invalid
+
+### OLS30402
+"menuitem node must contains an id attribute"
+
+### OLS30403
+"Invalid attribute in menuitem node"
+This attribute is not valid in a menuitem node
+
+### OLS30404
+"Sequence attribute must be a string representing a number"
+
+### OLS30405
+"SubmenuItem is not allowed when action and parent attributes are defined on a menuitem"
+
+### OLS30406
+"web_icon attribute is not allowed when parent is specified"
+
+### OLS30407
+"Invalid child node in menuitem"
+
+### OLS30408
+"parent attribute is not allowed in submenuitems"
+
+### OLS30409 - OLS30443
+"Various errors of RNG validation of XML files"
+
+### OLS30444
+"Data file not found in the module"
+
+### OLS30445
+"Data file should be an XML or a CSV file"

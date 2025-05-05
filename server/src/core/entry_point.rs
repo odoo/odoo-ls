@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp, path::{self, PathBuf}, rc::{Rc, Weak}, u32};
+use std::{cell::RefCell, cmp, collections::HashMap, path::{self, PathBuf}, rc::{Rc, Weak}, u32};
 
 use byteyarn::Yarn;
 use tracing::{error, info, warn};
@@ -319,6 +319,7 @@ pub struct EntryPoint {
     pub root: Rc<RefCell<Symbol>>,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
+    pub data_symbols: HashMap<String, Weak<RefCell<Symbol>>>, //key is path, weak to Rc that is hold by the module symbol
 }
 impl EntryPoint {
     pub fn new(path: String, tree: Vec<OYarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
@@ -331,7 +332,9 @@ impl EntryPoint {
             addon_to_odoo_tree,
             not_found_symbols: PtrWeakHashSet::new(),
             root: root.clone(),
-            to_delete: false}));
+            to_delete: false,
+            data_symbols: HashMap::new(),
+        }));
         root.borrow_mut().as_root_mut().entry_point = Some(res.clone());
         res
     }

@@ -1,4 +1,5 @@
 pub mod config;
+pub mod csv_arch_builder;
 pub mod evaluation;
 pub mod entry_point;
 pub mod file_mgr;
@@ -13,3 +14,5 @@ pub mod python_odoo_builder;
 pub mod python_validator;
 pub mod python_utils;
 pub mod symbols;
+pub mod xml_arch_builder;
+pub mod xml_arch_builder_rng_validation;

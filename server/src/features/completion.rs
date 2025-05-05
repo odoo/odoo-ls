@@ -1088,5 +1088,7 @@ fn get_completion_item_kind(symbol: &Rc<RefCell<Symbol>>) -> CompletionItemKind 
         SymType::VARIABLE => CompletionItemKind::VARIABLE,
         SymType::CLASS => CompletionItemKind::CLASS,
         SymType::FUNCTION => CompletionItemKind::FUNCTION,
+        SymType::XML_FILE => CompletionItemKind::FILE,
+        SymType::CSV_FILE => CompletionItemKind::FILE,
     }
 }

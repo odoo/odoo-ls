@@ -4,7 +4,10 @@ use ruff_text_size::{Ranged, TextRange};
 use tracing::info;
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use std::collections::{HashMap, HashSet};
+use std::fs;
 
+use crate::core::csv_arch_builder::CsvArchBuilder;
+use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{add_diagnostic, FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
@@ -21,6 +24,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 
 use super::symbol_mgr::SectionRange;
+use super::xml_file_symbol::XmlFileSymbol;
 
 
 #[derive(Debug)]
@@ -56,7 +60,8 @@ pub struct ModuleSymbol {
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
     pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
-    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
+    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>,
+    pub data_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
 }
 
 impl ModuleSymbol {
@@ -92,6 +97,7 @@ impl ModuleSymbol {
             dependents: vec![],
             processed_text_hash: 0,
             noqas: NoqaInfo::None,
+            data_symbols: HashMap::new(),
         };
         module._init_symbol_mgr();
         info!("building new module: {:?}", dir_path.sanitize());
@@ -136,7 +142,7 @@ impl ModuleSymbol {
             }
         }
         let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), session, odoo_addons);
-        diagnostics.append(&mut ModuleSymbol::_load_data(symbol.clone(), session.sync_odoo));
+        ModuleSymbol::check_data(&symbol, session);
         diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
         {
             let mut _symbol = symbol.borrow_mut();
@@ -305,8 +311,80 @@ impl ModuleSymbol {
         (diagnostics, loaded)
     }
 
-    fn _load_data(_symbol: Rc<RefCell<Symbol>>, _odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
-        vec![]
+    fn check_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        let data_paths = symbol.borrow().as_module_package().data.clone();
+        for data_url in data_paths.iter() {
+            //check if the file exists
+            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            if !path.exists() {
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30444"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Data file {} not found", path.sanitize()),
+                    None,
+                    None));
+            } else if !path.ends_with("xml") && !path.ends_with("csv") {
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30445"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Data file {} is not a valid XML or CSV file", path.sanitize()),
+                    None,
+                    None));
+            }
+        }
+        diagnostics
+    }
+
+    pub fn load_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) {
+        let data_paths = symbol.borrow().as_module_package().data.clone();
+        for data_url in data_paths.iter() {
+            //load data from file
+            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), None, None, false); //create ast if not in cache
+            let mut file_info = file_info.borrow_mut();
+            let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+            if file_name.ends_with(".xml") {
+                let xml_sym = symbol.borrow_mut().add_new_xml_file(session, &file_name, &path.sanitize());
+                symbol.borrow_mut().add_dependency(&mut xml_sym.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                if file_info.file_info_ast.borrow().text_rope.as_ref().is_none() {
+                    //TODO do we want to add a diagnostic here?
+                    continue;
+                }
+                //That's a little bit crappy, but the SYNTAX step of XML files are done here, as lifetime of roXMLTree are not flexible enough to be separated from the Arch building
+                let data = file_info.file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+                let document = roxmltree::Document::parse(&data);
+                if let Ok(document) = document {
+                    file_info.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+                    let root = document.root_element();
+                    let mut xml_builder = XmlArchBuilder::new();
+                    xml_builder.load_arch(session, xml_sym, &mut file_info, &root);
+                    file_info.publish_diagnostics(session); //TODO do it only if diagnostics are not empty, else in validation
+                } else {
+                    let mut diagnostics = vec![];
+                    XmlFileSymbol::build_syntax_diagnostics(&mut diagnostics, &mut file_info, &document.unwrap_err());
+                    file_info.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+                    file_info.publish_diagnostics(session);
+                    continue
+                }
+            } else if file_name.ends_with(".csv") {
+                let csv_sym = symbol.borrow_mut().add_new_csv_file(session, &file_name, &path.sanitize());
+                symbol.borrow_mut().add_dependency(&mut csv_sym.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                if file_info.file_info_ast.borrow().text_rope.as_ref().is_none() {
+                    //TODO do we want to add a diagnostic here?
+                    continue;
+                }
+                let data = file_info.file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+                let mut csv_builder = CsvArchBuilder::new();
+                csv_builder.load_csv(session, csv_sym, &data);
+            } else {
+                error!("Unsupported data file type: {}", file_name);
+            }
+        }
     }
 
     fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {

@@ -1,5 +1,6 @@
 pub mod class_symbol;
 pub mod compiled_symbol;
+pub mod csv_file_symbol;
 pub mod disk_dir_symbol;
 pub mod file_symbol;
 pub mod function_symbol;
@@ -10,3 +11,4 @@ pub mod root_symbol;
 pub mod symbol;
 pub mod symbol_mgr;
 pub mod variable_symbol;
+pub mod xml_file_symbol;
