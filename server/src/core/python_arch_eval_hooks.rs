@@ -11,7 +11,7 @@ use ruff_python_ast::Expr;
 use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
-use tracing::error;
+use tracing::warn;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbols::symbol::Symbol;
@@ -373,7 +373,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                 if arg_symbol.borrow().name().eq(&Sy!("domain")) {
                     arg_symbol.borrow_mut().set_evaluations(vec![Evaluation::new_domain(odoo)]);
                 } else {
-                    error!("domain not found on search signature")
+                    warn!("domain not found on search signature")
                 }
             }
         }

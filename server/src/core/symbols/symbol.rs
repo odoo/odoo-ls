@@ -28,12 +28,14 @@ use crate::core::symbols::root_symbol::RootSymbol;
 
 use super::class_symbol::ClassSymbol;
 use super::compiled_symbol::CompiledSymbol;
+use super::csv_file_symbol::CsvFileSymbol;
 use super::disk_dir_symbol::DiskDirSymbol;
 use super::file_symbol::FileSymbol;
 use super::namespace_symbol::{NamespaceDirectory, NamespaceSymbol};
 use super::package_symbol::{PackageSymbol, PythonPackageSymbol};
 use super::symbol_mgr::{ContentSymbols, SymbolMgr};
 use super::variable_symbol::VariableSymbol;
+use super::xml_file_symbol::XmlFileSymbol;
 
 #[derive(Debug)]
 pub enum Symbol {
@@ -46,6 +48,8 @@ pub enum Symbol {
     Class(ClassSymbol),
     Function(FunctionSymbol),
     Variable(VariableSymbol),
+    XmlFileSymbol(XmlFileSymbol),
+    CsvFileSymbol(CsvFileSymbol),
 }
 
 impl Symbol {
@@ -388,6 +392,28 @@ impl Symbol {
         class
     }
 
+    pub fn add_new_xml_file(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+        let xml_sym = Rc::new(RefCell::new(Symbol::XmlFileSymbol(XmlFileSymbol::new(name.clone(), path.clone(), self.is_external()))));
+        xml_sym.borrow_mut().set_weak_self(Rc::downgrade(&xml_sym));
+        xml_sym.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
+        xml_sym.borrow_mut().set_in_workspace(self.in_workspace());
+        let entry = self.get_entry().unwrap();
+        entry.borrow_mut().data_symbols.insert(path.clone(), Rc::downgrade(&xml_sym));
+        self.as_module_package_mut().data_symbols.insert(path.clone(), xml_sym.clone());
+        xml_sym
+    }
+
+    pub fn add_new_csv_file(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+        let csv_sym = Rc::new(RefCell::new(Symbol::CsvFileSymbol(CsvFileSymbol::new(name.clone(), path.clone(), self.is_external()))));
+        csv_sym.borrow_mut().set_weak_self(Rc::downgrade(&csv_sym));
+        csv_sym.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
+        csv_sym.borrow_mut().set_in_workspace(self.in_workspace());
+        let entry = self.get_entry().unwrap();
+        entry.borrow_mut().data_symbols.insert(path.clone(), Rc::downgrade(&csv_sym));
+        self.as_module_package_mut().data_symbols.insert(path.clone(), csv_sym.clone());
+        csv_sym
+    }
+
     pub fn as_root(&self) -> &RootSymbol {
         match self {
             Symbol::Root(r) => r,
@@ -553,6 +579,8 @@ impl Symbol {
             Symbol::Class(_) => SymType::CLASS,
             Symbol::Function(_) => SymType::FUNCTION,
             Symbol::Variable(_) => SymType::VARIABLE,
+            Symbol::XmlFileSymbol(_) => SymType::XML_FILE,
+            Symbol::CsvFileSymbol(_) => SymType::CSV_FILE,
         }
     }
 
@@ -567,6 +595,8 @@ impl Symbol {
             Symbol::Class(c) => &c.name,
             Symbol::Function(f) => &f.name,
             Symbol::Variable(v) => &v.name,
+            Symbol::XmlFileSymbol(x) => &x.name,
+            Symbol::CsvFileSymbol(c) => &c.name,
         }
     }
 
@@ -581,6 +611,8 @@ impl Symbol {
             Symbol::Class(c) => &c.doc_string,
             Symbol::Function(f) => &f.doc_string,
             Symbol::Variable(v) => &v.doc_string,
+            Symbol::XmlFileSymbol(x) => &None,
+            Symbol::CsvFileSymbol(_) => &None,
         }
     }
 
@@ -595,6 +627,8 @@ impl Symbol {
             Symbol::Class(c) => c.doc_string = doc_string,
             Symbol::Function(f) => f.doc_string = doc_string,
             Symbol::Variable(v) => v.doc_string = doc_string,
+            Symbol::XmlFileSymbol(_) => panic!(),
+            Symbol::CsvFileSymbol(_) => panic!(),
         }
     }
 
@@ -609,6 +643,8 @@ impl Symbol {
             Symbol::Class(c) => c.is_external,
             Symbol::Function(f) => f.is_external,
             Symbol::Variable(v) => v.is_external,
+            Symbol::XmlFileSymbol(x) => x.is_external,
+            Symbol::CsvFileSymbol(c) => c.is_external,
         }
     }
     pub fn set_is_external(&mut self, external: bool) {
@@ -623,6 +659,8 @@ impl Symbol {
             Symbol::Class(c) => c.is_external = external,
             Symbol::Function(f) => f.is_external = external,
             Symbol::Variable(v) => v.is_external = external,
+            Symbol::XmlFileSymbol(x) => x.is_external = external,
+            Symbol::CsvFileSymbol(c) => c.is_external = external,
         }
     }
 
@@ -637,6 +675,8 @@ impl Symbol {
             Symbol::Class(_) => true,
             Symbol::Function(_) => true,
             Symbol::Variable(_) => true,
+            Symbol::XmlFileSymbol(_) => false,
+            Symbol::CsvFileSymbol(_) => false,
         }
     }
 
@@ -651,13 +691,15 @@ impl Symbol {
             Symbol::Class(c) => &c.range,
             Symbol::Function(f) => &f.range,
             Symbol::Variable(v) => &v.range,
+            Symbol::XmlFileSymbol(x) => panic!(),
+            Symbol::CsvFileSymbol(c) => panic!(),
         }
     }
 
     pub fn body_range(&self) -> &TextRange {
         match self {
             Symbol::Root(_) => panic!(),
-            Self::DiskDir(_) => panic!(),
+            Symbol::DiskDir(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
             Symbol::Package(_) => panic!(),
             Symbol::File(_) => panic!(),
@@ -665,6 +707,8 @@ impl Symbol {
             Symbol::Class(c) => &c.body_range,
             Symbol::Function(f) => &f.body_range,
             Symbol::Variable(_) => panic!(),
+            Symbol::XmlFileSymbol(_) => panic!(),
+            Symbol::CsvFileSymbol(_) => panic!(),
         }
     }
 
@@ -673,12 +717,14 @@ impl Symbol {
             Symbol::Variable(_) => true,
             Symbol::Class(_) => true,
             Symbol::Function(_) => true,
-            Self::DiskDir(_) => false,
+            Symbol::DiskDir(_) => false,
             Symbol::File(_) => false,
             Symbol::Compiled(_) => false,
             Symbol::Namespace(_) => false,
             Symbol::Package(_) => false,
             Symbol::Root(_) => false,
+            Symbol::XmlFileSymbol(_) => false,
+            Symbol::CsvFileSymbol(_) => false,
         }
     }
 
@@ -687,12 +733,14 @@ impl Symbol {
             Symbol::Variable(v) => Some(&v.ast_indexes),
             Symbol::Class(c) => Some(&c.ast_indexes),
             Symbol::Function(f) => Some(&f.ast_indexes),
-            Self::DiskDir(_) => None,
+            Symbol::DiskDir(_) => None,
             Symbol::File(_) => None,
             Symbol::Compiled(_) => None,
             Symbol::Namespace(_) => None,
             Symbol::Package(_) => None,
             Symbol::Root(_) => None,
+            Symbol::XmlFileSymbol(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
         }
     }
 
@@ -701,12 +749,14 @@ impl Symbol {
             Symbol::Variable(v) => &mut v.ast_indexes,
             Symbol::Class(c) => &mut c.ast_indexes,
             Symbol::Function(f) => &mut f.ast_indexes,
-            Self::DiskDir(_) => panic!(),
+            Symbol::DiskDir(_) => panic!(),
             Symbol::File(_) => panic!(),
             Symbol::Compiled(_) => panic!(),
             Symbol::Namespace(_) => panic!(),
             Symbol::Package(_) => panic!(),
             Symbol::Root(_) => panic!(),
+            Symbol::XmlFileSymbol(_) => panic!(),
+            Symbol::CsvFileSymbol(_) => panic!(),
         }
     }
 
@@ -714,7 +764,7 @@ impl Symbol {
         match self {
             Symbol::Root(r) => r.weak_self.clone(),
             Symbol::Namespace(n) => n.weak_self.clone(),
-            Self::DiskDir(d) => d.weak_self.clone(),
+            Symbol::DiskDir(d) => d.weak_self.clone(),
             Symbol::Package(PackageSymbol::Module(m)) => m.weak_self.clone(),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.weak_self.clone(),
             Symbol::File(f) => f.weak_self.clone(),
@@ -722,6 +772,8 @@ impl Symbol {
             Symbol::Class(c) => c.weak_self.clone(),
             Symbol::Function(f) => f.weak_self.clone(),
             Symbol::Variable(v) => v.weak_self.clone(),
+            Symbol::XmlFileSymbol(x) => x.weak_self.clone(),
+            Symbol::CsvFileSymbol(c) => c.weak_self.clone(),
         }
     }
 
@@ -736,6 +788,8 @@ impl Symbol {
             Symbol::Class(c) => c.parent.clone(),
             Symbol::Function(f) => f.parent.clone(),
             Symbol::Variable(v) => v.parent.clone(),
+            Symbol::XmlFileSymbol(x) => x.parent.clone(),
+            Symbol::CsvFileSymbol(c) => c.parent.clone(),
         }
     }
 
@@ -750,6 +804,8 @@ impl Symbol {
             Symbol::Class(c) => c.parent = parent,
             Symbol::Function(f) => f.parent = parent,
             Symbol::Variable(v) => v.parent = parent,
+            Symbol::XmlFileSymbol(x) => x.parent = parent,
+            Symbol::CsvFileSymbol(c) => c.parent = parent,
         }
     }
 
@@ -764,6 +820,8 @@ impl Symbol {
             Symbol::Class(_) => vec![],
             Symbol::Function(_) => vec![],
             Symbol::Variable(_) => vec![],
+            Symbol::XmlFileSymbol(x) => vec![x.path.clone()],
+            Symbol::CsvFileSymbol(c) => vec![c.path.clone()],
         }
     }
     pub fn add_path(&mut self, path: String) {
@@ -779,6 +837,8 @@ impl Symbol {
             Symbol::Class(_) => {},
             Symbol::Function(_) => {},
             Symbol::Variable(_) => {},
+            Symbol::XmlFileSymbol(_) => {},
+            Symbol::CsvFileSymbol(_) => {},
         }
     }
 
@@ -793,6 +853,8 @@ impl Symbol {
             Symbol::Class(_) => panic!("invalid symbol type to extract path"),
             Symbol::Function(_) => panic!("invalid symbol type to extract path"),
             Symbol::Variable(_) => panic!("invalid symbol type to extract path"),
+            Symbol::XmlFileSymbol(x) => x.path.clone(),
+            Symbol::CsvFileSymbol(c) => c.path.clone(),
         }
     }
 
@@ -800,39 +862,45 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &n.dependencies(),
-            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Symbol::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies(),
             Symbol::File(f) => &f.dependencies(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
+            Symbol::XmlFileSymbol(x) => &x.dependencies(),
+            Symbol::CsvFileSymbol(c) => &c.dependencies(),
         }
     }
     pub fn dependencies_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => n.dependencies_mut(),
-            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Symbol::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies_as_mut(),
             Symbol::File(f) => f.dependencies_mut(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
+            Symbol::XmlFileSymbol(x) => x.dependencies_mut(),
+            Symbol::CsvFileSymbol(c) => c.dependencies_mut(),
         }
     }
     pub fn dependents(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => n.dependents(),
-            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Symbol::DiskDir(d) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents(),
             Symbol::File(f) => f.dependents(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
+            Symbol::XmlFileSymbol(x) => x.dependents(),
+            Symbol::CsvFileSymbol(c) => c.dependents(),
         }
     }
     pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
@@ -846,6 +914,8 @@ impl Symbol {
             Symbol::Class(_) => panic!("No dependencies on Class"),
             Symbol::Function(_) => panic!("No dependencies on Function"),
             Symbol::Variable(_) => panic!("No dependencies on Variable"),
+            Symbol::XmlFileSymbol(x) => x.dependents_mut(),
+            Symbol::CsvFileSymbol(c) => c.dependents_mut(),
         }
     }
     pub fn has_modules(&self) -> bool {
@@ -868,6 +938,8 @@ impl Symbol {
             Symbol::Class(_c) => panic!("No module symbol on Class"),
             Symbol::Function(_) => panic!("No module symbol on Function"),
             Symbol::Variable(_) => panic!("No module symbol on Variable"),
+            Symbol::XmlFileSymbol(_) => panic!("No module symbol on XmlFileSymbol"),
+            Symbol::CsvFileSymbol(_) => panic!("No module symbol on CsvFileSymbol"),
         }
     }
     pub fn in_workspace(&self) -> bool {
@@ -882,6 +954,8 @@ impl Symbol {
             Symbol::Class(_) => panic!(),
             Symbol::Function(_) => panic!(),
             Symbol::Variable(_) => panic!(),
+            Symbol::XmlFileSymbol(x) => x.is_in_workspace(),
+            Symbol::CsvFileSymbol(c) => c.is_in_workspace(),
         }
     }
     pub fn set_in_workspace(&mut self, in_workspace: bool) {
@@ -896,6 +970,8 @@ impl Symbol {
             Symbol::Class(_) => panic!(),
             Symbol::Function(_) => panic!(),
             Symbol::Variable(_) => panic!(),
+            Symbol::XmlFileSymbol(x) => x.set_in_workspace(in_workspace),
+            Symbol::CsvFileSymbol(c) => c.set_in_workspace(in_workspace),
         }
     }
     pub fn build_status(&self, step:BuildSteps) -> BuildStatus {
@@ -938,6 +1014,18 @@ impl Symbol {
                 }
             },
             Symbol::Variable(_) => todo!(),
+            Symbol::XmlFileSymbol(x) => match step {
+                BuildSteps::SYNTAX => panic!(),
+                BuildSteps::ARCH => x.arch_status,
+                BuildSteps::ARCH_EVAL => x.arch_status,
+                BuildSteps::VALIDATION => x.validation_status,
+            },
+            Symbol::CsvFileSymbol(c) => match step {
+                BuildSteps::SYNTAX => panic!(),
+                BuildSteps::ARCH => c.arch_status,
+                BuildSteps::ARCH_EVAL => c.arch_status,
+                BuildSteps::VALIDATION => c.validation_status,
+            },
         }
     }
     pub fn set_build_status(&mut self, step:BuildSteps, status: BuildStatus) {
@@ -980,6 +1068,22 @@ impl Symbol {
                 }
             },
             Symbol::Variable(_) => todo!(),
+            Symbol::XmlFileSymbol(x) => {
+                match step {
+                    BuildSteps::SYNTAX => panic!(),
+                    BuildSteps::ARCH => x.arch_status = status,
+                    BuildSteps::ARCH_EVAL => panic!(),
+                    BuildSteps::VALIDATION => x.validation_status = status,
+                }
+            },
+            Symbol::CsvFileSymbol(c) => {
+                match step {
+                    BuildSteps::SYNTAX => panic!(),
+                    BuildSteps::ARCH => c.arch_status = status,
+                    BuildSteps::ARCH_EVAL => panic!(),
+                    BuildSteps::VALIDATION => c.validation_status = status,
+                }
+            },
         }
     }
 
@@ -1005,6 +1109,8 @@ impl Symbol {
                 f.symbols.iter()
             },
             Symbol::Variable(_) => panic!(),
+            Symbol::XmlFileSymbol(_) => panic!(),
+            Symbol::CsvFileSymbol(_) => panic!(),
         }
     }
     pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
@@ -1018,6 +1124,8 @@ impl Symbol {
             Symbol::Class(_) => { None },
             Symbol::Function(f) => Some(&f.evaluations),
             Symbol::Variable(v) => Some(&v.evaluations),
+            Symbol::XmlFileSymbol(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
         }
     }
     pub fn evaluations_mut(&mut self) -> Option<&mut Vec<Evaluation>> {
@@ -1031,6 +1139,8 @@ impl Symbol {
             Symbol::Class(_) => { None },
             Symbol::Function(f) => Some(&mut f.evaluations),
             Symbol::Variable(v) => Some(&mut v.evaluations),
+            Symbol::XmlFileSymbol(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
         }
     }
     pub fn set_evaluations(&mut self, data: Vec<Evaluation>) {
@@ -1044,6 +1154,8 @@ impl Symbol {
             Symbol::Class(_) => { panic!() },
             Symbol::Function(f) => { f.evaluations = data; },
             Symbol::Variable(v) => v.evaluations = data,
+            Symbol::XmlFileSymbol(_) => { panic!() },
+            Symbol::CsvFileSymbol(_) => { panic!() },
         }
     }
 
@@ -1060,6 +1172,8 @@ impl Symbol {
             Symbol::Class(_) => { &EMPTY_VEC },
             Symbol::Function(_) => { &EMPTY_VEC },
             Symbol::Variable(_) => &EMPTY_VEC,
+            Symbol::XmlFileSymbol(_) => { &EMPTY_VEC },
+            Symbol::CsvFileSymbol(_) => { &EMPTY_VEC },
         }
     }
 
@@ -1075,6 +1189,8 @@ impl Symbol {
             Symbol::Class(_) => { panic!("no not_found_path on Class") },
             Symbol::Function(_) => { panic!("no not_found_path on Function") },
             Symbol::Variable(_) => panic!("no not_found_path on Variable"),
+            Symbol::XmlFileSymbol(_) => { panic!("no not_found_path on XmlFileSymbol") },
+            Symbol::CsvFileSymbol(_) => { panic!("no not_found_path on CsvFileSymbol") },
         }
     }
 
@@ -1405,6 +1521,8 @@ impl Symbol {
             Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
             Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
             Symbol::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
+            Symbol::XmlFileSymbol(x) => x.get_dependencies(step as usize, level as usize),
+            Symbol::CsvFileSymbol(c) => c.get_dependencies(step as usize, level as usize),
         }
     }
 
@@ -1423,6 +1541,8 @@ impl Symbol {
             Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
             Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
             Symbol::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
+            Symbol::XmlFileSymbol(x) => x.get_all_dependencies(step as usize),
+            Symbol::CsvFileSymbol(c) => c.get_all_dependencies(step as usize),
         }
     }
 
@@ -1445,6 +1565,8 @@ impl Symbol {
             Symbol::Class(_) => panic!("There is no dependencies on Class Symbol"),
             Symbol::Function(_) => panic!("There is no dependencies on Function Symbol"),
             Symbol::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
+            Symbol::XmlFileSymbol(x) => x.get_dependents(level as usize, step as usize),
+            Symbol::CsvFileSymbol(c) => c.get_dependents(level as usize, step as usize),
         }
     }
 
@@ -1504,7 +1626,7 @@ impl Symbol {
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let sym_to_inv = ref_to_inv.borrow();
-            if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_)) {
+            if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE) {
                 if *step == BuildSteps::ARCH && sym_to_inv.dependents().len() > 0 {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH as usize].iter().enumerate() {
                         if let Some(hashset) = hashset {
@@ -1594,7 +1716,7 @@ impl Symbol {
             drop(sym_ref);
             parent_bw.remove_symbol(ref_to_unload.clone());
             drop(parent_bw);
-            if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
+            if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
             //check if we should not reimport automatically
@@ -1653,7 +1775,8 @@ impl Symbol {
 
     pub fn is_file_content(&self) -> bool{
         match self {
-            Symbol::Root(_) | Symbol::Namespace(_) | Symbol::DiskDir(_) | Symbol::Package(_) | Symbol::File(_) | Symbol::Compiled(_) => false,
+            Symbol::Root(_) | Symbol::Namespace(_) | Symbol::DiskDir(_) | Symbol::Package(_) |
+            Symbol::File(_) | Symbol::Compiled(_) | Symbol::XmlFileSymbol(_) | Symbol::CsvFileSymbol(_) => false,
             Symbol::Class(_) | Symbol::Function(_) | Symbol::Variable(_) => true
         }
     }
@@ -1682,6 +1805,8 @@ impl Symbol {
             Symbol::Class(c) => c.weak_self = Some(weak_self),
             Symbol::Function(f) => f.weak_self = Some(weak_self),
             Symbol::Variable(v) => v.weak_self = Some(weak_self),
+            Symbol::XmlFileSymbol(x) => x.weak_self = Some(weak_self),
+            Symbol::CsvFileSymbol(c) => c.weak_self = Some(weak_self),
         }
     }
 
@@ -1697,6 +1822,8 @@ impl Symbol {
             Symbol::Compiled(_) => panic!("set_processed_text_hash called on Compiled"),
             Symbol::Class(_) => panic!("set_processed_text_hash called on Class"),
             Symbol::Variable(_) => panic!("set_processed_text_hash called on Variable"),
+            Symbol::XmlFileSymbol(x) => x.processed_text_hash = hash,
+            Symbol::CsvFileSymbol(c) => c.processed_text_hash = hash,
         }
     }
 
@@ -1712,6 +1839,8 @@ impl Symbol {
             Symbol::Compiled(_) => panic!("get_processed_text_hash called on Compiled"),
             Symbol::Class(_) => panic!("get_processed_text_hash called on Class"),
             Symbol::Variable(_) => panic!("get_processed_text_hash called on Variable"),
+            Symbol::XmlFileSymbol(x) => x.processed_text_hash,
+            Symbol::CsvFileSymbol(c) => c.processed_text_hash,
         }
     }
 
@@ -1727,6 +1856,8 @@ impl Symbol {
             Symbol::Compiled(_) => panic!("set_noqas called on Compiled"),
             Symbol::Class(c) => c.noqas = noqa,
             Symbol::Variable(_) => panic!("set_noqas called on Variable"),
+            Symbol::XmlFileSymbol(x) => x.noqas = noqa,
+            Symbol::CsvFileSymbol(c) => c.noqas = noqa,
         }
     }
 
@@ -1742,6 +1873,8 @@ impl Symbol {
             Symbol::Compiled(_) => panic!("get_noqas called on Compiled"),
             Symbol::Class(c) => c.noqas.clone(),
             Symbol::Variable(_) => panic!("get_noqas called on Variable"),
+            Symbol::XmlFileSymbol(x) => x.noqas.clone(),
+            Symbol::CsvFileSymbol(c) => c.noqas.clone(),
         }
     }
 
@@ -1818,6 +1951,8 @@ impl Symbol {
                 Symbol::Namespace(_) => { panic!("A namespace can not contain python code") },
                 Symbol::Root(_) => { panic!("Root can not contain python code") },
                 Symbol::Variable(_) => { panic!("A variable can not contain python code") }
+                Symbol::XmlFileSymbol(_) => { panic!("An XML file symbol can not contain python code") }
+                Symbol::CsvFileSymbol(_) => { panic!("A CSV file symbol can not contain python code") }
             };
         } else {
             match self {
@@ -1825,7 +1960,13 @@ impl Symbol {
                 Symbol::File(_) => { panic!("A file can not contain a file structure"); },
                 Symbol::Function(_) => { panic!("A function can not contain a file structure") },
                 Symbol::DiskDir(d) => { d.module_symbols.remove(symbol.borrow().name()); },
-                Symbol::Package(PackageSymbol::Module(m)) => { m.module_symbols.remove(symbol.borrow().name()); },
+                Symbol::Package(PackageSymbol::Module(m)) => {
+                    if symbol.borrow().typ() == SymType::XML_FILE {
+                        m.data_symbols.remove(symbol.borrow().paths()[0].as_str());
+                    } else {
+                        m.module_symbols.remove(symbol.borrow().name());
+                    }
+                },
                 Symbol::Package(PackageSymbol::PythonPackage(p)) => { p.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Compiled(c) => { c.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Namespace(n) => {
@@ -1835,6 +1976,8 @@ impl Symbol {
                 },
                 Symbol::Root(r) => { r.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Variable(_) => { panic!("A variable can not contain a file structure"); }
+                Symbol::XmlFileSymbol(_) => { panic!("An XML file symbol can not contain a file structure") }
+                Symbol::CsvFileSymbol(_) => { panic!("A CSV file symbol can not contain a file structure") }
             };
         }
         symbol.borrow_mut().set_parent(None);
@@ -2556,6 +2699,8 @@ impl Symbol {
                 Symbol::Package(_) => {},
                 Symbol::Compiled(_) => {},
                 Symbol::Variable(_) => {},
+                Symbol::XmlFileSymbol(_) => {},
+                Symbol::CsvFileSymbol(_) => {},
             }
         }
 
@@ -2603,6 +2748,8 @@ impl Symbol {
                 Symbol::Package(_) => {},
                 Symbol::Compiled(_) => {},
                 Symbol::Variable(_) => {},
+                Symbol::XmlFileSymbol(_) => {},
+                Symbol::CsvFileSymbol(_) => {},
             }
         }
 

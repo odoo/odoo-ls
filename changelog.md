@@ -4,7 +4,7 @@
 
 ### Fixs
 
-- Log instead of crash if a file is not in cache anymore as it can happen in some normal situations where chache is invalidated
+- Log instead of crash if a file is not in cache anymore as it can happen in some normal situations where cache is invalidated
 - Fix various borrow errors on 'go to definition' feature
 - Fix various crashes when hovering some part of the code
 - Provide PDB alongside exe on windows to get better tracebacks.
@@ -20,7 +20,7 @@
 - Fix diagnostics range in manifest depends
 - Add missing error code in error_code.md
 - Fix crash on lazy loading invalid `__all__` variable
-- Clean some logs 
+- Clean some logs
 
 ## 0.6.1 - 2025/24/04 - File cache option and bugfixs
 

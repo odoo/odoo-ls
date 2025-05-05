@@ -61,7 +61,9 @@ pub enum SymType{
     COMPILED,
     VARIABLE,
     CLASS,
-    FUNCTION
+    FUNCTION,
+    XML_FILE,
+    CSV_FILE,
 }
 
 impl fmt::Display for SymType {

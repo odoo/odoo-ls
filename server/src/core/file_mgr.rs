@@ -1,5 +1,6 @@
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
+use roxmltree::{Document, Node};
 use ruff_python_ast::Mod;
 use ruff_python_parser::{Mode, ParseOptions, Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
@@ -43,6 +44,13 @@ pub fn combine_noqa_info(noqas: &Vec<NoqaInfo>) -> NoqaInfo {
     NoqaInfo::Codes(codes.iter().cloned().collect())
 }
 
+#[derive(Debug)]
+pub enum AstType {
+    Python,
+    Xml,
+    Csv
+}
+
 /* Structure that hold ast and rope for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
  */
 #[derive(Debug)]
@@ -50,6 +58,7 @@ pub struct FileInfoAst {
     pub text_hash: u64,
     pub text_rope: Option<ropey::Rope>,
     pub ast: Option<Vec<ruff_python_ast::Stmt>>,
+    pub ast_type: AstType,
 }
 
 #[derive(Debug)]
@@ -77,6 +86,7 @@ impl FileInfo {
                 text_hash: 0,
                 text_rope: None,
                 ast: None,
+                ast_type: AstType::Python,
             })),
             diagnostics: HashMap::new(),
             noqas_blocs: HashMap::new(),
@@ -114,8 +124,8 @@ impl FileInfo {
                 Ok(content) => {
                     self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from(content.as_str()));
                 },
-                Err(_) => {
-                    session.log_message(MessageType::ERROR, format!("Failed to read file {}", uri));
+                Err(e) => {
+                    session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", uri, e));
                     return false;
                 },
             };
@@ -132,6 +142,14 @@ impl FileInfo {
     }
 
     pub fn _build_ast(&mut self, in_workspace: bool) {
+        if self.uri.ends_with(".xml") {
+            self.file_info_ast.borrow_mut().ast_type = AstType::Xml;
+            return;
+        }
+        if self.uri.ends_with(".csv") {
+            self.file_info_ast.borrow_mut().ast_type = AstType::Csv;
+            return;
+        }
         let mut diagnostics = vec![];
         let fia_rc = self.file_info_ast.clone();
         let fia = fia_rc.borrow_mut();
@@ -171,14 +189,16 @@ impl FileInfo {
 
     /* if ast has been set to none to lower memory usage, try to reload it */
     pub fn prepare_ast(&mut self, session: &mut SessionInfo) {
-        match fs::read_to_string(&self.uri) {
-            Ok(content) => {
-                self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from(content.as_str()));
-            },
-            Err(_) => {
-                return;
-            },
-        };
+        if self.file_info_ast.borrow_mut().text_rope.is_none() { //can already be set in xml files
+            match fs::read_to_string(&self.uri) {
+                Ok(content) => {
+                    self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from(content.as_str()));
+                },
+                Err(_) => {
+                    return;
+                },
+            };
+        }
         let mut hasher = DefaultHasher::new();
         self.file_info_ast.borrow().text_rope.clone().unwrap().hash(&mut hasher);
         self.file_info_ast.borrow_mut().text_hash = hasher.finish();

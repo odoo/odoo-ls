@@ -26,6 +26,7 @@ use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::python_utils::AssignTargetType;
 use super::symbols::function_symbol::{Argument, ArgumentType};
+use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::symbol_mgr::SectionIndex;
 
 
@@ -82,6 +83,9 @@ impl PythonArchBuilder {
                 self.file.borrow().parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
                 SyncOdoo::is_in_workspace_or_entry(session, path.as_str());
             self.file.borrow_mut().set_in_workspace(in_workspace);
+        }
+        if symbol.borrow().typ() == SymType::PACKAGE(crate::constants::PackageType::MODULE) {
+            ModuleSymbol::load_data(symbol, session);
         }
         let file_info_rc = match self.file_mode {
             true => {

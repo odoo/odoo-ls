@@ -118,7 +118,7 @@ impl SyncOdoo {
             need_rebuild: false,
             import_cache: None,
             capabilities: lsp_types::ClientCapabilities::default(),
-            opened_files: vec![]
+            opened_files: vec![],
         };
         sync_odoo
     }
@@ -767,6 +767,19 @@ impl SyncOdoo {
         let mut parents = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    let parent = sym.borrow().parent().clone().unwrap().upgrade().unwrap();
+                    if clean_cache {
+                        FileMgr::delete_path(session, &path.sanitize());
+                    }
+                    Symbol::unload(session, sym.clone());
+                    parents.push(parent);
+                }
+                entry.borrow_mut().data_symbols.remove(path.sanitize().as_str());
+                continue;
+            }
             if entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
@@ -1125,9 +1138,9 @@ impl Odoo {
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
-        let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
-        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") ||
-        params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
+        let uri = params.text_document_position_params.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
@@ -1151,9 +1164,9 @@ impl Odoo {
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
-        let path = FileMgr::uri2pathname(params.text_document_position_params.text_document.uri.as_str());
-        if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") ||
-        params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
+        let uri = params.text_document_position_params.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        if uri.ends_with(".py") || uri.ends_with(".pyi") ||uri.ends_with(".xml") || uri.ends_with(".csv") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
                 if let Some(file_info) = file_info {
@@ -1178,8 +1191,9 @@ impl Odoo {
             params.text_document_position.position.line,
             params.text_document_position.position.character
             ));
-        let path = FileMgr::uri2pathname(params.text_document_position.text_document.uri.as_str());
-        if params.text_document_position.text_document.uri.to_string().ends_with(".py") {
+        let uri = params.text_document_position.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        if uri.ends_with(".py") ||uri.ends_with(".xml") || uri.ends_with(".csv") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
@@ -1487,7 +1501,7 @@ impl Odoo {
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
     fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> (bool, bool) {
-        if path.extension().is_some() && path.extension().unwrap() == "py" {
+        if path.extension().is_some() && (["py", "xml", "csv"] .contains(&path.extension().unwrap().to_str().unwrap())) {
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
@@ -1497,7 +1511,7 @@ impl Odoo {
     }
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
-        if path.extension().is_some() && path.extension().unwrap() == "py" {
+        if path.extension().is_some() && (["py", "xml", "csv"] .contains(&path.extension().unwrap().to_str().unwrap())) {
             SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
         }
     }
@@ -1506,8 +1520,9 @@ impl Odoo {
         session.log_message(MessageType::INFO, format!("Document symbol requested for {}",
             params.text_document.uri.as_str(),
         ));
-        let path = FileMgr::uri2pathname(params.text_document.uri.as_str());
-        if params.text_document.uri.to_string().ends_with(".py") || params.text_document.uri.to_string().ends_with(".pyi") {
+        let uri = params.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
                 if file_info.borrow().file_info_ast.borrow().ast.is_none() {

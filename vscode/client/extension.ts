@@ -52,6 +52,8 @@ function getClientOptions(): LanguageClientOptions {
         // Register the server for plain text documents
         documentSelector: [
             { scheme: "file", language: "python" },
+            { scheme: "file", language: "csv" },
+            { scheme: "file", language: "xml" },
             { scheme: "untitled", language: "python" },
         ],
         synchronize: {
