@@ -1,9 +1,10 @@
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
-use tracing::info;
+use tracing::{info, error};
 use weak_table::PtrWeakHashSet;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{add_diagnostic, FileInfo, FileMgr, NoqaInfo};
@@ -134,7 +135,7 @@ impl ModuleSymbol {
             }
         }
         let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), session, odoo_addons);
-        diagnostics.append(&mut ModuleSymbol::_load_data(symbol.clone(), session.sync_odoo));
+        diagnostics.append(&mut ModuleSymbol::_load_data(symbol.clone(), session));
         diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
         {
             let mut _symbol = symbol.borrow_mut();
@@ -303,8 +304,55 @@ impl ModuleSymbol {
         (diagnostics, loaded)
     }
 
-    fn _load_data(_symbol: Rc<RefCell<Symbol>>, _odoo: &mut SyncOdoo) -> Vec<Diagnostic> {
-        vec![]
+    fn _load_data(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        for data_url in symbol.borrow().as_module_package().data.iter() {
+            //load data from file
+            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            let data = fs::read_to_string(path);
+            if data.is_err() {
+                add_diagnostic(&mut diagnostics, Diagnostic::new(
+                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30212"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Uanble to read data file: {}", data.unwrap_err()),
+                    None,
+                    None,
+                ), &session.current_noqa);
+                continue;
+            }
+            let data = data.unwrap();
+            let document = roxmltree::Document::parse(&data);
+            if document.is_err() {
+                add_diagnostic(&mut diagnostics, Diagnostic::new(
+                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30211"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("The file {} is not a valid XML file", data),
+                    None,
+                    None,
+                ), &session.current_noqa);
+                continue;
+            } else {
+                let document = document.unwrap();
+                let root = document.root_element();
+                if root.tag_name().name() != "odoo" {
+                    add_diagnostic(&mut diagnostics, Diagnostic::new(
+                        Range::new(Position::new(0, 0), Position::new(0, 1)),
+                        Some(DiagnosticSeverity::ERROR),
+                        Some(NumberOrString::String(S!("OLS30213"))),
+                        Some(EXTENSION_NAME.to_string()),
+                        format!("Root node is not an 'odoo' node"),
+                        None,
+                        None,
+                    ), &session.current_noqa);
+                    continue;
+                }
+            }
+        }
+        diagnostics
     }
 
     fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
