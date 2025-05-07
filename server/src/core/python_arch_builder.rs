@@ -91,10 +91,6 @@ impl PythonArchBuilder {
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
         self.file_info = Some(file_info_rc.clone());
-        if !file_info_rc.borrow().valid {
-            symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
-            return
-        }
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
@@ -743,17 +739,19 @@ impl PythonArchBuilder {
         let mut last_test_section = test_section.index;
 
         self.visit_expr(session, &if_stmt.test);
-        scope.borrow_mut().as_mut_symbol_mgr().add_section( // first body section
-            if_stmt.body.first().unwrap().range().start(),
-            None // Take preceding section (if test)
-        );
-        self.ast_indexes.push(0 as u16); //0 for body
-        self.visit_node(session, &if_stmt.body)?;
-        self.ast_indexes.pop();
+        let mut stmt_sections = if if_stmt.body.is_empty() {
+            vec![]
+        } else {
+            scope.borrow_mut().as_mut_symbol_mgr().add_section( // first body section
+                if_stmt.body[0].range().start(),
+                None // Take preceding section (if test)
+            );
+            self.ast_indexes.push(0 as u16); //0 for body
+            self.visit_node(session, &if_stmt.body)?;
+            self.ast_indexes.pop();
+            vec![ SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())]
+        };
 
-        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
-
-        let mut stmt_sections = vec![body_section];
         let mut else_clause_exists = false;
 
         let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().enumerate().map(|(index, elif_else_clause)|{
@@ -767,18 +765,21 @@ impl PythonArchBuilder {
                 },
                 None => else_clause_exists = true
             }
+            if elif_else_clause.body.is_empty() {
+                return Ok::<Option<SectionIndex>, Error>(None);
+            }
             scope.borrow_mut().as_mut_symbol_mgr().add_section(
-                elif_else_clause.body.first().unwrap().range().start(),
+                elif_else_clause.body[0].range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
             self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
             self.visit_node(session, &elif_else_clause.body)?;
             self.ast_indexes.pop();
             let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
-            Ok::<SectionIndex, Error>(clause_section)
+            Ok::<Option<SectionIndex>, Error>(Some(clause_section))
         });
 
-        stmt_sections.extend(stmt_clauses_iter.collect::<Result<Vec<_>, _>>()?);
+        stmt_sections.extend(stmt_clauses_iter.collect::<Result<Vec<_>, _>>()?.into_iter().filter_map(|x| x).collect::<Vec<_>>());
 
         if !else_clause_exists{
             // If there is no else clause, the there is an implicit else clause
@@ -804,15 +805,17 @@ impl PythonArchBuilder {
                 AssignTargetType::Name(ref name_expr) => {
                     scope.borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
                 },
-                AssignTargetType::Attribute(ref attr_expr) => {
+                AssignTargetType::Attribute(_) => {
                 }
             }
         }
         let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
-            for_stmt.body.first().unwrap().range().start(),
-            None
-        );
+        if let Some(first_body_stmt) = for_stmt.body.first() {
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                first_body_stmt.range().start(),
+                None
+            );
+        }
 
         self.ast_indexes.push(0 as u16);
         self.visit_node(session, &for_stmt.body)?;
@@ -821,7 +824,7 @@ impl PythonArchBuilder {
 
         if !for_stmt.orelse.is_empty(){
             scope.borrow_mut().as_mut_symbol_mgr().add_section(
-                for_stmt.orelse.first().unwrap().range().start(),
+                for_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
             self.ast_indexes.push(1 as u16);
@@ -859,8 +862,11 @@ impl PythonArchBuilder {
                 match handler {
                     ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
                         if !catch_all_except_exists { catch_all_except_exists = h.type_.is_none()};
+                        if h.body.is_empty() {
+                            continue;
+                        }
                         scope.borrow_mut().as_mut_symbol_mgr().add_section(
-                            h.body.first().unwrap().range().start(),
+                            h.body[0].range().start(),
                             Some(previous_section.clone())
                         );
                         self.ast_indexes.push(index as u16);
@@ -876,7 +882,7 @@ impl PythonArchBuilder {
                     stmt_sections.remove(0);
                 }
                 scope.borrow_mut().as_mut_symbol_mgr().add_section(
-                    try_stmt.orelse.first().unwrap().range().start(),
+                    try_stmt.orelse[0].range().start(),
                     Some(previous_section.clone())
                 );
                 self.ast_indexes.push(1 as u16);
@@ -975,11 +981,13 @@ impl PythonArchBuilder {
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
         // TODO: Handle breaks for sections
         let scope = self.sym_stack.last().unwrap().clone();
-        let body_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
-            while_stmt.body.first().unwrap().range().start(),
-            None
-        );
-        let previous_section = SectionIndex::INDEX(body_section.index - 1);
+        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        if let Some(first_body_stmt) = while_stmt.body.first() {
+            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                first_body_stmt.range().start(),
+                None
+            );
+        }
         self.visit_expr(session, &while_stmt.test);
         self.ast_indexes.push(0 as u16); // 0 for body
         self.visit_node(session, &while_stmt.body)?;
@@ -988,7 +996,7 @@ impl PythonArchBuilder {
         let mut stmt_sections = vec![body_section];
         if !while_stmt.orelse.is_empty(){
             scope.borrow_mut().as_mut_symbol_mgr().add_section(
-                while_stmt.orelse.first().unwrap().range().start(),
+                while_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
             self.ast_indexes.push(1 as u16); // 1 for else

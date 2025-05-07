@@ -37,6 +37,7 @@ pub trait SymbolMgr {
     fn get_ext_symbol(&self, name: OYarn) -> Option<&Vec<Rc<RefCell<Symbol>>>>;
     fn _init_symbol_mgr(&mut self);
     fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
+    fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>;
 }
 
 
@@ -156,6 +157,24 @@ macro_rules! impl_section_mgr_for {
             res
         }
 
+        fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>> {
+            let mut result = HashMap::new();
+            let current_section = self.get_section_for(position);
+            let current_index = SectionIndex::INDEX(current_section.index);
+
+            for (name, section_map) in self.symbols.iter() {
+                if !name.starts_with(name_prefix) {
+                    continue;
+                }
+                let mut seen = HashSet::new();
+                let content = self._get_loc_symbol(section_map, position, &current_index, &mut seen);
+
+                if !content.symbols.is_empty() {
+                    result.insert(name.clone(), content.symbols);
+                }
+            }
+            result
+        }
     }
 )+)
 }

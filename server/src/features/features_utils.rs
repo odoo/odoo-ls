@@ -19,14 +19,22 @@ use crate::{oyarn, Sy, S};
 
 
 #[derive(Clone, Eq, PartialEq, Hash)]
-struct CallableSignature {
-    arguments: String,
-    return_types: String,
+pub struct CallableSignature {
+    pub arguments: String,
+    pub return_types: String,
 }
 #[derive(Clone, Eq, PartialEq, Hash)]
-enum TypeInfo {
+pub enum TypeInfo {
     CALLABLE(CallableSignature),
     VALUE(String),
+}
+impl TypeInfo {
+    pub(crate) fn to_string(&self) -> String {
+        match self {
+            TypeInfo::CALLABLE(CallableSignature { arguments, return_types }) => format!("(({}) -> {})", arguments, return_types),
+            TypeInfo::VALUE(value) => value.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 struct InferredType {
@@ -444,7 +452,7 @@ impl FeaturesUtils {
     /// Return return type representation of evaluation
     /// for a function evaluation it is typically (_arg: _arg_type, ...) -> (_result_type)
     /// for variable it just shows the type, or Any if it fails to find it
-    fn get_inferred_types(session: &mut SessionInfo, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, symbol_type: &SymType) -> TypeInfo {
+    pub fn get_inferred_types(session: &mut SessionInfo, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, symbol_type: &SymType) -> TypeInfo {
         if *symbol_type == SymType::CLASS{
             return TypeInfo::VALUE(S!(""));
         }
@@ -465,7 +473,7 @@ impl FeaturesUtils {
                                     }
                                 }
                             };
-                            context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
+                            context.as_mut().map(|ctx| ctx.insert(S!("base_call"), ContextValue::SYMBOL(call_parent)));
                             let return_type = match inferred_type.evaluations() {
                                 Some(func_eval) => {
                                     let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
@@ -481,7 +489,7 @@ impl FeaturesUtils {
                                 },
                                 None => S!("None"),
                             };
-                            context.as_mut().unwrap().remove(&S!("base_call"));
+                            context.as_mut().map(|ctx| ctx.remove(&S!("base_call")));
                             let argument_names = inferred_type.as_func().args.iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
                             TypeInfo::CALLABLE(CallableSignature { arguments: argument_names, return_types: return_type })
                         },
@@ -535,7 +543,7 @@ impl FeaturesUtils {
         }
         let return_types_string = inferred_types.iter().map(|rt| match &rt.eval_info {
             TypeInfo::CALLABLE(CallableSignature { arguments, return_types }) => {
-                if single_func_eval {return_types.clone()} else {format!("({}) -> {})", arguments, return_types)}
+                if single_func_eval {return_types.clone()} else {format!("(({}) -> {})", arguments, return_types)}
             },
             TypeInfo::VALUE(value) => value.clone(),
         }).unique().collect::<Vec<_>>();
