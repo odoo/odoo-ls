@@ -78,7 +78,10 @@ impl PythonArchEval {
             panic!("Trying to eval_arch a symbol without any path")
         }
         let path = self.file.borrow().get_symbol_first_path();
-        let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
+        let Some(file_info_rc) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone() else {
+            warn!("File info not found for {}", path);
+            return;
+        };
         if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
             file_info_rc.borrow_mut().prepare_ast(session);
         }
