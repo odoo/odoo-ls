@@ -1155,12 +1155,12 @@ impl Odoo {
         if params.text_document_position_params.text_document.uri.to_string().ends_with(".py") ||
         params.text_document_position_params.text_document.uri.to_string().ends_with(".pyi") {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
-                let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
                 if let Some(file_info) = file_info {
                     if file_info.borrow().file_info_ast.borrow().ast.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                    if file_info.borrow().file_info_ast.borrow().ast.is_some() {
                         return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
