@@ -31,6 +31,7 @@ use super::compiled_symbol::CompiledSymbol;
 use super::disk_dir_symbol::DiskDirSymbol;
 use super::file_symbol::FileSymbol;
 use super::namespace_symbol::{NamespaceDirectory, NamespaceSymbol};
+use super::namespace_symbol_hooks::NamespaceSymbolHooks;
 use super::package_symbol::{PackageSymbol, PythonPackageSymbol};
 use super::symbol_mgr::{ContentSymbols, SymbolMgr};
 use super::variable_symbol::VariableSymbol;
@@ -1052,6 +1053,7 @@ impl Symbol {
                 if parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
                     //Force namespace for odoo/addons
                     let ref_sym = (*parent).borrow_mut().add_new_namespace(session, &name, &path_str);
+                    NamespaceSymbolHooks::on_create(&ref_sym);
                     return Some(ref_sym);
                 } else {
                     let ref_sym = parent.borrow_mut().add_new_python_package(session, &name, &path_str);
@@ -1062,6 +1064,7 @@ impl Symbol {
                 }
             } else if path.is_dir() {
                 let ref_sym = (*parent).borrow_mut().add_new_namespace(session, &name, &path_str);
+                NamespaceSymbolHooks::on_create(&ref_sym);
                 return Some(ref_sym);
             }
         }
