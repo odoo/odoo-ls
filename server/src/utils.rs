@@ -127,6 +127,12 @@ impl PathSanitizer for PathBuf {
 
         #[cfg(windows)]
         {
+            // check if path begins with //?/ if yes remove it
+            // to handle extended-length path prefix
+            // https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+            if path.starts_with("\\\\?\\") {
+                path = path[4..].to_string();
+            }
             // Check if path begin with a letter + ':'
             if path.len() > 2 && path.chars().nth(1) == Some(':') {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
@@ -167,6 +173,9 @@ impl PathSanitizer for Path {
 
         #[cfg(windows)]
         {
+            if path.starts_with("\\\\?\\") {
+                path = path[4..].to_string();
+            }
             // Check if path begin with a letter + ':'
             if path.len() > 2 && path.chars().nth(1) == Some(':') {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
