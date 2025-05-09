@@ -2,6 +2,7 @@ use std::collections::{hash_map, HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path, error::Error};
+use itertools::Itertools;
 use serde::Deserialize;
 
 use crate::utils::{fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
@@ -29,7 +30,8 @@ impl FromStr for RefreshMode {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum DiagMissingImportsMode {
     None,
     OnlyOdoo,
@@ -63,7 +65,7 @@ pub struct Config {
     pub no_typeshed: bool,
     pub additional_stubs: Vec<String>,
     pub stdlib: String,
-    pub ac_filter_model_names: bool, // AC: Only show model names from module dependencies 
+    pub ac_filter_model_names: bool, // AC: Only show model names from module dependencies
 }
 
 impl Config {
@@ -126,16 +128,29 @@ struct ConfigEntryRaw {
 
     #[serde(default)]
     refresh_mode: Option<RefreshMode>,
+
+    #[serde(default)]
+    file_cache: Option<bool>,
+
+    #[serde(default)]
+    diag_missing_imports: Option<DiagMissingImportsMode>,
+
+    #[serde(default)]
+    ac_filter_model_names: Option<bool>,
 }
 #[derive(Debug, Clone)]
 pub struct ConfigEntry {
-    odoo_path: Option<PathBuf>,
+    odoo_path: Option<String>,
     addons_paths: Vec<String>,
     addons_merge: MergeMethod,
     python_path: Option<String>,
     additional_stubs: Vec<String>,
     additional_stubs_merge: MergeMethod,
     refresh_mode: RefreshMode,
+    file_cache: bool,
+    diag_missing_imports: DiagMissingImportsMode,
+    ac_filter_model_names: bool,
+    extends: Option<String>, // Added extends field
 }
 pub type ConfigNew = HashMap<String, ConfigEntry>;
 
@@ -155,16 +170,25 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, Stri
     let raw: ConfigFile = toml::from_str(&contents)?;
 
     let config = raw.config.into_iter().map(|entry| {
+        // We check for templates that result in a valid path
+        // and then we check if the path is valid after converting it to an absolute path
         let odoo_path = entry.odoo_path
-            .and_then(|p| fill_validate_path(ws_folders.clone(), &p, is_odoo_path))
-            .map(|p| config_dir.join(p));
-        let addons_paths = entry.addons_paths.iter()
-            .filter_map(|p| fill_validate_path(ws_folders.clone(), p, is_addon_path))
-            .map(|p| config_dir.join(p).sanitize())
+            .map(|p| fill_validate_path(ws_folders.clone(), &p, is_odoo_path).unwrap_or(p))
+            .and_then(|p| std::fs::canonicalize(config_dir.join(p)).ok())
+            .map(|p| p.sanitize())
+            .filter(|p| is_python_path(p));
+        let addons_paths = entry.addons_paths.into_iter()
+            .map(|p| fill_validate_path(ws_folders.clone(), &p, is_addon_path).unwrap_or(p))
+            .flat_map(|p| std::fs::canonicalize(config_dir.join(p)).ok())
+            .map(|p| p.sanitize())
+            .filter(|p| is_addon_path(p))
+            .unique()
             .collect::<Vec<_>>();
         let python_path = entry.python_path
-            .and_then(|p| fill_validate_path(ws_folders.clone(), &p, is_python_path))
-            .map(|p| config_dir.join(p).sanitize());
+            .map(|p| fill_validate_path(ws_folders.clone(), &p, is_python_path).unwrap_or(p))
+            .and_then(|p| std::fs::canonicalize(config_dir.join(p)).ok())
+            .map(|p| p.sanitize())
+            .filter(|p| is_python_path(p));
         (entry.name, ConfigEntry {
             odoo_path,
             addons_paths: addons_paths,
@@ -172,12 +196,70 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, Stri
             python_path: python_path,
             additional_stubs: entry.additional_stubs,
             additional_stubs_merge: entry.additional_stubs_merge,
+            extends: entry.extends,
+            // Maybe we should not set default values here
+            // but rather in the ConfigEntry struct through a getter
+            // because the default might override selected configs while merging
+            // we need to distinguish between default and empty
             refresh_mode: entry.refresh_mode.unwrap_or(RefreshMode::Adaptive), // Default to Adaptive
+            file_cache: entry.file_cache.unwrap_or(true), // Default to true
+            diag_missing_imports: entry.diag_missing_imports.unwrap_or(DiagMissingImportsMode::All), // Default to All
+            ac_filter_model_names: entry.ac_filter_model_names.unwrap_or(true), // Default to true
         })
     }).collect();
 
     Ok(config)
 }
+
+fn apply_extends(mut config: ConfigNew) -> ConfigNew {
+    let keys: Vec<String> = config.keys().cloned().collect();
+    for key in keys {
+        if let Some(entry) = config.get(&key).cloned() {
+            if let Some(extends_key) = entry.extends.clone() {
+                if let Some(parent_entry) = config.get(&extends_key).cloned() {
+                    let merged_entry = ConfigEntry {
+                        odoo_path: entry.odoo_path.or(parent_entry.odoo_path),
+                        python_path: entry.python_path.or(parent_entry.python_path),
+                        addons_paths: match entry.addons_merge {
+                            MergeMethod::Merge => {
+                                let mut merged_paths = parent_entry.addons_paths.clone();
+                                merged_paths.extend(entry.addons_paths);
+                                merged_paths
+                            },
+                            MergeMethod::Override => entry.addons_paths,
+                        },
+                        additional_stubs: match entry.additional_stubs_merge {
+                            MergeMethod::Merge => {
+                                let mut merged_stubs = parent_entry.additional_stubs.clone();
+                                merged_stubs.extend(entry.additional_stubs);
+                                merged_stubs
+                            },
+                            MergeMethod::Override => entry.additional_stubs,
+                        },
+                        refresh_mode: if entry.refresh_mode != RefreshMode::Adaptive {
+                            entry.refresh_mode
+                        } else {
+                            parent_entry.refresh_mode
+                        },
+                        file_cache: entry.file_cache || parent_entry.file_cache,
+                        diag_missing_imports: if entry.diag_missing_imports != DiagMissingImportsMode::All {
+                            entry.diag_missing_imports
+                        } else {
+                            parent_entry.diag_missing_imports
+                        },
+                        ac_filter_model_names: entry.ac_filter_model_names || parent_entry.ac_filter_model_names,
+                        addons_merge: entry.addons_merge,
+                        additional_stubs_merge: entry.additional_stubs_merge,
+                        extends: entry.extends,
+                    };
+                    config.insert(key, merged_entry);
+                }
+            }
+        }
+    }
+    config
+}
+
 fn merge_configs(child: &ConfigNew, parent: &ConfigNew) -> ConfigNew {
     let mut merged = HashMap::new();
 
@@ -233,6 +315,18 @@ fn merge_configs(child: &ConfigNew, parent: &ConfigNew) -> ConfigNew {
                     parent.refresh_mode.clone()
                 };
 
+                let file_cache = child.file_cache || parent.file_cache;
+
+                let diag_missing_imports = if child.diag_missing_imports != DiagMissingImportsMode::All {
+                    child.diag_missing_imports.clone()
+                } else {
+                    parent.diag_missing_imports.clone()
+                };
+
+                let ac_filter_model_names = child.ac_filter_model_names || parent.ac_filter_model_names;
+
+                let extends = child.extends.clone().or(parent.extends.clone());
+
                 ConfigEntry {
                     odoo_path,
                     addons_paths,
@@ -241,6 +335,10 @@ fn merge_configs(child: &ConfigNew, parent: &ConfigNew) -> ConfigNew {
                     additional_stubs,
                     additional_stubs_merge: child.additional_stubs_merge.clone(),
                     refresh_mode,
+                    file_cache,
+                    diag_missing_imports,
+                    ac_filter_model_names,
+                    extends,
                 }
             }
             (Some(child), None) => child.clone(),
@@ -250,7 +348,6 @@ fn merge_configs(child: &ConfigNew, parent: &ConfigNew) -> ConfigNew {
 
         merged.insert(key, entry);
     }
-
     merged
 }
 
@@ -269,6 +366,7 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, sta
         if config_path.exists() && config_path.is_file() {
             let current_config = read_config_from_file(ws_folders.clone(), &config_path)?;
             merged_config = merge_configs(&current_config, &merged_config);
+            merged_config = apply_extends(merged_config);
         }
 
         // Stop if we’re at the root

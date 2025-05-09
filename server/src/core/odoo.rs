@@ -1,5 +1,5 @@
 use crate::allocator::ALLOCATED;
-use crate::core::config::Config;
+use crate::core::config::{load_merged_config_upward, Config};
 use crate::core::entry_point::EntryPointType;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
@@ -1054,6 +1054,15 @@ impl Odoo {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
         let config = Odoo::update_configuration(session);
+        {
+            // TODO, replace config with this
+            // manage workspace folders conflicts
+            let file_mgr = session.sync_odoo.get_file_mgr();
+            for workspace_folder in file_mgr.borrow().iter_workspace_folders(){
+                let conf = load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), workspace_folder.1);
+                println!("{:?}", conf);
+            }
+        }
         match config {
             Ok(config) => {
                 SyncOdoo::init(session, config);
