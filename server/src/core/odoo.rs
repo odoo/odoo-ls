@@ -1,5 +1,5 @@
 use crate::allocator::ALLOCATED;
-use crate::core::config::Config;
+use crate::core::config::{load_merged_config_upward, Config};
 use crate::core::entry_point::EntryPointType;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{DiagMissingImportsMode, RefreshMode};
+use super::config::{merge_all_workspaces, DiagMissingImportsMode, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -1068,6 +1068,14 @@ impl Odoo {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
         let config = Odoo::update_configuration(session);
+        {
+            // TODO, replace config with this
+            // manage workspace folders conflicts
+            let file_mgr = session.sync_odoo.get_file_mgr();
+            let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.1)).flatten().collect();
+            let config = merge_all_workspaces(ws_confs);
+            println!("{:?}", config);
+        }
         match config {
             Ok(config) => {
                 SyncOdoo::init(session, config);
