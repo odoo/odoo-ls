@@ -143,4 +143,17 @@ impl FileSymbol {
         self.in_workspace
     }
 
+    pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut result = vec![];
+        if let Some(object_decl_symbols) = self.decl_ext_symbols.get(symbol) {
+            if let Some(symbols) = object_decl_symbols.get(name) {
+                for end_symbols in symbols.values() {
+                    //TODO actually we don't take position into account, but can we really?
+                    result.extend(end_symbols.iter().map(|s| s.clone()));
+                }
+            }
+        }
+        result
+    }
+
 }

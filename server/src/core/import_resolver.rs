@@ -56,6 +56,9 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbo
 
 pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     //A: search base of different imports
+    if source_file_symbol.borrow().paths()[0].as_str().contains("command.py") {
+        println!("here");
+    }
     let source_root = source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap();
     let entry = source_root.borrow().get_entry().unwrap();
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();

@@ -299,14 +299,21 @@ impl PythonOdooBuilder {
             //we don't want to compare these classes with themselves
             return false;
         } else {
+            if sym.as_class_sym().bases.is_empty() {
+                return false;
+            }
             let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]), u32::MAX);
             let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]), u32::MAX);
             let transient = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]), u32::MAX);
             if base_model.is_empty() || model.is_empty() || transient.is_empty() {
-                session.send_notification(ShowMessage::METHOD, ShowMessageParams{
-                    typ: MessageType::ERROR,
-                    message: "Odoo base models are not found. OdooLS will be unable to generate valid diagnostics".to_string()
-                });
+                //one of them is not already loaded, but that's not really an issue, as now odoo step has been merged
+                //with arch eval step, some files will be odooed before loading the orm fully. In this case we should
+                //ignore this error. Moreover if a base is set on the class, it means that the base has been loaded, so
+                //it is NOT a model.
+                // session.send_notification(ShowMessage::METHOD, ShowMessageParams{
+                //     typ: MessageType::ERROR,
+                //     message: "Odoo base models are not found. OdooLS will be unable to generate valid diagnostics".to_string()
+                // });
                 return false;
             }
             let base_model = base_model[0].clone();
