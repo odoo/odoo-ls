@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{DiagMissingImportsMode, RefreshMode};
+use super::config::{merge_all_workspaces, DiagMissingImportsMode, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -1058,10 +1058,9 @@ impl Odoo {
             // TODO, replace config with this
             // manage workspace folders conflicts
             let file_mgr = session.sync_odoo.get_file_mgr();
-            for workspace_folder in file_mgr.borrow().iter_workspace_folders(){
-                let conf = load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), workspace_folder.1);
-                println!("{:?}", conf);
-            }
+            let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.1)).flatten().collect();
+            let config = merge_all_workspaces(ws_confs);
+            println!("{:?}", config);
         }
         match config {
             Ok(config) => {
