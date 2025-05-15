@@ -107,42 +107,15 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             result[name_index as usize].symbol = from_symbol.as_ref().unwrap().clone();
             continue;
         }
-        if alias.asname.is_none() {
-            // If asname is not defined, we only search for the first part of the name.
-            // In all "from X import A" case, it simply means search for A
-            // But in "import A.B.C", it means search for A only.
-            // If user typed import A.B.C as D, we will search for A.B.C to link it to symbol D,
-            // but if user typed import A.B.C, we will only search for A and create A, as any use by after will require to type A.B.C
-            let (mut name_symbol, fallback_sym) = _get_or_create_symbol(
-                session,
-                &entry,
-                source_path.as_str(),
-                from_symbol.clone(),
-                &vec![name.split(".").map(|s| oyarn!("{}", s)).next().unwrap()],
-                None,
-            None);
-            if name_symbol.is_none() {
-                if !name.contains(".") && from_symbol.is_some() {
-                    //check the last name is not a symbol in the file
-                    let name_symbol_vec = from_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], vec![name.clone()]), u32::MAX);
-                    name_symbol = name_symbol_vec.last().cloned();
-                }
-                if name_symbol.is_none() {
-                    result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
-                    continue;
-                }
-            }
-            result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
-            result[name_index as usize].found = true;
-            result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
-            continue;
-        }
         let name_split: Vec<OYarn> = name.split(".").map(|s| oyarn!("{}", s)).collect();
-        let name_first_part: Vec<OYarn> = Vec::from_iter(name_split[0..name_split.len()-1].iter().cloned());
+        let name_first_part: Vec<OYarn> = vec![name_split.first().unwrap().clone()];
+        let name_middle_part: Vec<OYarn> = if name_split.len() > 2 {
+            Vec::from_iter(name_split[1..name_split.len()-1].iter().cloned())
+        } else {
+            vec![]
+        };
         let name_last_name: Vec<OYarn> = vec![name_split.last().unwrap().clone()];
-
-        // get the full file_tree, including the first part of the name import stmt. (os in import os.path)
-        let (next_symbol, fallback_sym) = _get_or_create_symbol(
+        let (mut next_symbol, mut fallback_sym) = _get_or_create_symbol(
             session,
             &entry,
             source_path.as_str(),
@@ -150,31 +123,64 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             &name_first_part,
             None,
         None);
+        if next_symbol.is_none() && name_split.len() == 1 && from_symbol.is_some() {
+            //check the last name is not a symbol in the file
+            let name_symbol_vec = from_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_first_part), u32::MAX);
+            next_symbol = name_symbol_vec.last().cloned();
+        }
         if next_symbol.is_none() {
             result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
             continue;
         }
-        // now we can search for the last symbol, or create it if it doesn't exist
-        let (mut name_symbol, fallback_sym) = _get_or_create_symbol(
-            session,
-            &entry,
-            "",
-            Some(next_symbol.as_ref().unwrap().clone()),
-            &name_last_name,
-            None,
-        None);
-        if name_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
-            //TODO what if multiple values?
-            name_symbol = next_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
-            if name_symbol.is_none() {
-                result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
-                continue;
-            }
-        }
-        // we found it ! store the result if not already done
-        if result[name_index as usize].found == false {
+        if alias.asname.is_none() {
+            // If asname is not defined, we only have to return the first symbol found. However we have to search for the other names to import them too
+            // In all "from X import A" case, it simply means search for A
+            // But in "import A.B.C", it means search for A only, and import B.C
+            // If user typed import A.B.C as D, we will search for A.B.C to link it to symbol D,
+            result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
             result[name_index as usize].found = true;
-            result[name_index as usize].symbol = name_symbol.as_ref().unwrap().clone();
+            result[name_index as usize].symbol = next_symbol.as_ref().unwrap().clone();
+        }
+        if !name_middle_part.is_empty() {
+            (next_symbol, fallback_sym) = _get_or_create_symbol(
+                session,
+                &entry,
+                "",
+                Some(next_symbol.as_ref().unwrap().clone()),
+                &name_middle_part,
+                None,
+            None);
+        }
+        if next_symbol.is_none() {
+            if alias.asname.is_some() {
+                result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+            }
+            continue;
+        }
+        if name_split.len() > 1 {
+            // now we can search for the last symbol, or create it if it doesn't exist
+            let (mut last_symbol, fallback_sym) = _get_or_create_symbol(
+                session,
+                &entry,
+                "",
+                Some(next_symbol.as_ref().unwrap().clone()),
+                &name_last_name,
+                None,
+            None);
+            if last_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
+                //TODO what if multiple values?
+                let ns = next_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
+                last_symbol = ns;
+                if alias.asname.is_some() && last_symbol.is_none() {
+                    result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+                    continue;
+                }
+            }
+            // we found it ! store the result if not already done
+            if alias.asname.is_some() && result[name_index as usize].found == false {
+                result[name_index as usize].found = true;
+                result[name_index as usize].symbol = last_symbol.as_ref().unwrap().clone();
+            }
         }
     }
 
