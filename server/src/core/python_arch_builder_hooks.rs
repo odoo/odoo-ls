@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
+use ruff_text_size::{TextRange, TextSize};
 use tracing::warn;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
@@ -88,6 +89,20 @@ impl PythonArchBuilderHooks {
                 let (maj, min, mic) = SyncOdoo::read_version(session, PathBuf::from(symbol.borrow().paths()[0].clone()));
                 if maj != session.sync_odoo.version_major || min != session.sync_odoo.version_minor || mic != session.sync_odoo.version_micro {
                     session.sync_odoo.need_rebuild = true;
+                }
+            }
+        } else if name == "init" {
+            if session.sync_odoo.full_version.as_str() >= "18.1" {
+                if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
+                    let odoo_namespace = session.sync_odoo.get_symbol(symbol.borrow().paths()[0].as_str(), &(vec![Sy!("odoo")], vec![]), u32::MAX);
+                    if let Some(odoo_namespace) = odoo_namespace.get(0) {
+                        // create _ and Command as ext_symbols
+                        let owner = symbol.clone();
+                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("SUPERUSER_ID"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
+                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("_"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
+                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("_lt"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
+                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("Command"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
+                    }
                 }
             }
         }

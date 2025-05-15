@@ -102,11 +102,18 @@ macro_rules! impl_section_mgr_for {
         ///Return all the symbols that are valid as last declaration for the given position
         fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols {
             let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
-            if let Some(sections) = sections {
+            let mut content = if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
-                return self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new());
+                self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
+            } else {
+                ContentSymbols::default()
+            };
+            let ext_sym = self.get_ext_symbol(&name);
+            if ext_sym.len() > 1 {
+                content.symbols.extend(ext_sym.iter().cloned());
+                content.always_defined = true;
             }
-            ContentSymbols::default()
+            content
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
