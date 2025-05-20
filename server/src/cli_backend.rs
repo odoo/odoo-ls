@@ -3,6 +3,7 @@ use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
 use lsp_types::{LogMessageParams, PublishDiagnosticsParams};
 use tracing::{error, info};
 
+use crate::core::config::ConfigEntry;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
 use crate::args::Cli;
@@ -44,15 +45,14 @@ impl CliBackend {
             session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(format!("{}", id), PathBuf::from(tracked_folder).sanitize());
         }
 
-        let mut config = Config::new();
-        config.addons = addons_paths;
+        let mut config = ConfigEntry::new();
+        config.addons_paths = addons_paths;
         config.odoo_path = community_path;
-        config.python_path = S!("python3");
         config.refresh_mode = crate::core::config::RefreshMode::Off;
         config.diag_missing_imports = DiagMissingImportsMode::All;
-        config.no_typeshed = self.cli.no_typeshed;
+        // config.no_typeshed = self.cli.no_typeshed;
         config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]);
-        config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
+        // config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
         SyncOdoo::init(&mut session, config);
 
         let output_path = self.cli.output.clone().unwrap_or(S!("output.json"));

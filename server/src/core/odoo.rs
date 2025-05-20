@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{merge_all_workspaces, DiagMissingImportsMode, RefreshMode};
+use super::config::{merge_all_workspaces, ConfigEntry, DiagMissingImportsMode, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -61,7 +61,7 @@ pub struct SyncOdoo {
     pub version_minor: u32,
     pub version_micro: u32,
     pub full_version: String,
-    pub config: Config,
+    pub config: ConfigEntry,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
@@ -97,7 +97,7 @@ impl SyncOdoo {
             version_minor: 0,
             version_micro: 0,
             full_version: "0.0.0".to_string(),
-            config: Config::new(),
+            config: ConfigEntry::new(),
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
             has_main_entry: false,
             has_odoo_main_entry: false,
@@ -126,14 +126,14 @@ impl SyncOdoo {
         sync_odoo
     }
 
-    pub fn reset(session: &mut SessionInfo, config: Config) {
+    pub fn reset(session: &mut SessionInfo, config: ConfigEntry) {
         session.log_message(MessageType::INFO, S!("Resetting Database..."));
         info!("Resetting database...");
         session.sync_odoo.version_major = 0;
         session.sync_odoo.version_minor = 0;
         session.sync_odoo.version_micro = 0;
         session.sync_odoo.full_version = "0.0.0".to_string();
-        session.sync_odoo.config = Config::new();
+        session.sync_odoo.config = ConfigEntry::new();
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
         session.sync_odoo.stubs_dirs = vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
             env::current_dir().unwrap().join("additional_stubs").sanitize()];
@@ -152,20 +152,14 @@ impl SyncOdoo {
         SyncOdoo::init(session, config);
     }
 
-    pub fn init(session: &mut SessionInfo, config: Config) {
+    pub fn init(session: &mut SessionInfo, config: ConfigEntry) {
         info!("Initializing odoo");
         let start_time = Instant::now();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
-        if session.sync_odoo.config.no_typeshed {
-            session.sync_odoo.stubs_dirs.clear();
-        }
         for stub in session.sync_odoo.config.additional_stubs.iter() {
             session.sync_odoo.stubs_dirs.push(PathBuf::from(stub.clone()).sanitize());
-        }
-        if !session.sync_odoo.config.stdlib.is_empty() {
-            session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib.clone()).sanitize();
         }
         info!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
         for stub in session.sync_odoo.stubs_dirs.iter() {
@@ -181,6 +175,7 @@ impl SyncOdoo {
             for stub_dir in session.sync_odoo.stubs_dirs.clone().iter() {
                 EntryPointMgr::add_entry_to_public(session, stub_dir.clone());
             }
+            // TODO implement a default for python_path, use TS as inspiration
             let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output();
             if let Err(_output) = &output {
                 error!("Wrong python command: {}", session.sync_odoo.config.python_path.clone());
@@ -382,7 +377,7 @@ impl SyncOdoo {
         } else {
             session.log_message(MessageType::WARNING, format!("Unable to find odoo addons path at {}. You can ignore this message if you use a nightly build or if your community addons are in another addon paths.", odoo_addon_path.sanitize()));
         }
-        for addon in session.sync_odoo.config.addons.clone().iter() {
+        for addon in session.sync_odoo.config.addons_paths.clone().iter() {
             let addon_path = PathBuf::from(addon);
             if addon_path.exists() {
                 addon_symbol.borrow_mut().add_path(
@@ -1067,15 +1062,15 @@ impl Odoo {
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
-        let config = Odoo::update_configuration(session);
-        {
+        // let config = Odoo::update_configuration(session);
             // TODO, replace config with this
             // manage workspace folders conflicts
-            let file_mgr = session.sync_odoo.get_file_mgr();
-            let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.1)).flatten().collect();
-            let config = merge_all_workspaces(ws_confs);
-            println!("{:?}", config);
-        }
+        let file_mgr = session.sync_odoo.get_file_mgr();
+        let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.1)).flatten().collect();
+        let config = merge_all_workspaces(ws_confs);
+        let selected_config = S!("root");
+        let config = config.map(|x| x.get(&selected_config).unwrap().clone());
+        println!("{:?}", config);
         match config {
             Ok(config) => {
                 SyncOdoo::init(session, config);
@@ -1220,30 +1215,30 @@ impl Odoo {
     }
 
     pub fn handle_did_change_configuration(session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
-        let old_config = session.sync_odoo.config.clone();
-        match Odoo::update_configuration(session) {
-            Ok (config) => {
-                session.sync_odoo.config = config.clone();
-                if config.odoo_path != old_config.odoo_path ||
-                    config.addons != old_config.addons ||
-                    config.additional_stubs != old_config.additional_stubs ||
-                    config.stdlib != old_config.stdlib ||
-                    config.python_path != old_config.python_path {
-                        SyncOdoo::reset(session, config);
-                } else {
-                    if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
-                        SyncOdoo::refresh_evaluations(session);
-                    }
-                    if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
-                        session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
-                    }
-                }
-            },
-            Err(e) => {
-                session.log_message(MessageType::ERROR, format!("Unable to update config: {}", e));
-                error!("Unable to update configuration: {}", e);
-            }
-        }
+        return;
+        // let old_config = session.sync_odoo.config.clone();
+        // match Odoo::update_configuration(session) {
+        //     Ok (config) => {
+        //         session.sync_odoo.config = config.clone();
+        //         if config.odoo_path != old_config.odoo_path ||
+        //             config.addons != old_config.addons ||
+        //             config.additional_stubs != old_config.additional_stubs ||
+        //             config.python_path != old_config.python_path {
+        //                 SyncOdoo::reset(session, config);
+        //         } else {
+        //             if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
+        //                 SyncOdoo::refresh_evaluations(session);
+        //             }
+        //             if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
+        //                 session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
+        //             }
+        //         }
+        //     },
+        //     Err(e) => {
+        //         session.log_message(MessageType::ERROR, format!("Unable to update config: {}", e));
+        //         error!("Unable to update configuration: {}", e);
+        //     }
+        // }
     }
 
     pub fn handle_did_change_workspace_folders(session: &mut SessionInfo, params: DidChangeWorkspaceFoldersParams) {
