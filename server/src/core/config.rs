@@ -6,6 +6,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 
 use crate::utils::{fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
+use crate::S;
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -13,6 +14,11 @@ pub enum RefreshMode {
     OnSave,
     Adaptive,
     Off
+}
+impl Default for RefreshMode {
+    fn default() -> Self {
+        RefreshMode::Adaptive
+    }
 }
 
 impl FromStr for RefreshMode {
@@ -36,6 +42,11 @@ pub enum DiagMissingImportsMode {
     None,
     OnlyOdoo,
     All
+}
+impl Default for DiagMissingImportsMode {
+    fn default() -> Self {
+        DiagMissingImportsMode::All
+    }
 }
 
 impl FromStr for DiagMissingImportsMode {
@@ -87,11 +98,17 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum MergeMethod {
     Merge,
     Override,
+}
+
+impl Default for MergeMethod {
+    fn default() -> Self {
+        MergeMethod::Merge
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,8 +128,8 @@ pub struct ConfigEntryRaw {
     #[serde(default)]
     odoo_path: Option<String>,
 
-    #[serde(default = "default_addons_merge")]
-    addons_merge: MergeMethod,
+    #[serde(default)]
+    addons_merge: Option<MergeMethod>,
 
     #[serde(default)]
     addons_paths: Vec<String>,
@@ -123,8 +140,8 @@ pub struct ConfigEntryRaw {
     #[serde(default)]
     additional_stubs: Vec<String>,
 
-    #[serde(default = "default_addons_merge")]
-    additional_stubs_merge: MergeMethod,
+    #[serde(default)]
+    additional_stubs_merge: Option<MergeMethod>,
 
     #[serde(default)]
     refresh_mode: Option<RefreshMode>,
@@ -137,20 +154,25 @@ pub struct ConfigEntryRaw {
 
     #[serde(default)]
     ac_filter_model_names: Option<bool>,
+
+    #[serde(default)]
+    auto_save_delay: Option<u64>,
+
+    #[serde(default)]
+    add_workspace_addon_path: Option<bool>,
 }
 #[derive(Debug, Clone)]
 pub struct ConfigEntry {
-    odoo_path: Option<String>,
-    addons_paths: Vec<String>,
-    addons_merge: MergeMethod,
-    python_path: Option<String>,
-    additional_stubs: Vec<String>,
-    additional_stubs_merge: MergeMethod,
-    refresh_mode: RefreshMode,
-    file_cache: bool,
-    diag_missing_imports: DiagMissingImportsMode,
-    ac_filter_model_names: bool,
-    extends: Option<String>, // Added extends field
+    pub odoo_path: Option<String>,
+    pub addons_paths: Vec<String>,
+    pub python_path: String,
+    pub additional_stubs: Vec<String>,
+    pub refresh_mode: RefreshMode,
+    pub file_cache: bool,
+    pub diag_missing_imports: DiagMissingImportsMode,
+    pub ac_filter_model_names: bool,
+    pub auto_save_delay: u64,
+    pub extends: Option<String>, // Added extends field
 }
 pub type ConfigNew = HashMap<String, ConfigEntry>;
 
@@ -206,7 +228,7 @@ fn apply_extends(mut config: HashMap<String, ConfigEntryRaw>) -> HashMap<String,
                     let merged_entry = ConfigEntryRaw {
                         odoo_path: entry.odoo_path.or(parent_entry.odoo_path),
                         python_path: entry.python_path.or(parent_entry.python_path),
-                        addons_paths: match entry.addons_merge {
+                        addons_paths: match entry.addons_merge.unwrap_or_default() {
                             MergeMethod::Merge => {
                                 let mut merged_paths = parent_entry.addons_paths.clone();
                                 merged_paths.extend(entry.addons_paths);
@@ -214,7 +236,7 @@ fn apply_extends(mut config: HashMap<String, ConfigEntryRaw>) -> HashMap<String,
                             },
                             MergeMethod::Override => entry.addons_paths,
                         },
-                        additional_stubs: match entry.additional_stubs_merge {
+                        additional_stubs: match entry.additional_stubs_merge.unwrap_or_default() {
                             MergeMethod::Merge => {
                                 let mut merged_stubs = parent_entry.additional_stubs.clone();
                                 merged_stubs.extend(entry.additional_stubs);
@@ -226,10 +248,12 @@ fn apply_extends(mut config: HashMap<String, ConfigEntryRaw>) -> HashMap<String,
                         file_cache: entry.file_cache.or(parent_entry.file_cache),
                         diag_missing_imports: entry.diag_missing_imports.or(parent_entry.diag_missing_imports),
                         ac_filter_model_names: entry.ac_filter_model_names.or(parent_entry.ac_filter_model_names),
-                        addons_merge: entry.addons_merge,
-                        additional_stubs_merge: entry.additional_stubs_merge,
+                        addons_merge: entry.addons_merge.or(parent_entry.addons_merge),
+                        additional_stubs_merge: entry.additional_stubs_merge.or(parent_entry.additional_stubs_merge),
                         extends: entry.extends,
                         name: entry.name,
+                        auto_save_delay: entry.auto_save_delay.or(parent_entry.auto_save_delay),
+                        add_workspace_addon_path: entry.add_workspace_addon_path.or(parent_entry.add_workspace_addon_path),
                     };
                     config.insert(key, merged_entry);
                 }
@@ -259,15 +283,11 @@ fn merge_configs(
             (Some(child), Some(parent)) => {
                 let odoo_path = child.odoo_path.clone().or(parent.odoo_path.clone());
                 let python_path = child.python_path.clone().or(parent.python_path.clone());
-                let addons_paths = match child.addons_merge {
-                    MergeMethod::Merge => {
-                        let mut merged_paths = parent.addons_paths.clone();
-                        merged_paths.extend(child.addons_paths.clone());
-                        merged_paths
-                    },
+                let addons_paths = match child.addons_merge.unwrap_or_default() {
+                    MergeMethod::Merge => parent.addons_paths.clone().into_iter().chain(child.addons_paths.clone().into_iter()).unique().collect(),
                     MergeMethod::Override => child.addons_paths.clone(),
                 };
-                let additional_stubs = match child.additional_stubs_merge {
+                let additional_stubs = match child.additional_stubs_merge.unwrap_or_default() {
                     MergeMethod::Merge => {
                         let mut merged_stubs = parent.additional_stubs.clone();
                         merged_stubs.extend(child.additional_stubs.clone());
@@ -279,7 +299,11 @@ fn merge_configs(
                 let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
                 let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
                 let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
+                let addons_merge = child.addons_merge.or(parent.addons_merge);
+                let additional_stubs_merge = child.additional_stubs_merge.or(parent.additional_stubs_merge);
                 let extends = child.extends.clone().or(parent.extends.clone());
+                let auto_save_delay = child.auto_save_delay.or(parent.auto_save_delay);
+                let add_workspace_addon_path = child.add_workspace_addon_path.or(parent.add_workspace_addon_path);
 
                 ConfigEntryRaw {
                     odoo_path,
@@ -290,10 +314,12 @@ fn merge_configs(
                     file_cache,
                     diag_missing_imports,
                     ac_filter_model_names,
-                    addons_merge: child.addons_merge.clone(),
-                    additional_stubs_merge: child.additional_stubs_merge.clone(),
+                    addons_merge,
+                    additional_stubs_merge,
                     extends,
                     name: child.name.clone(),
+                    auto_save_delay,
+                    add_workspace_addon_path,
                 }
             }
             (Some(child), None) => child.clone(),
@@ -320,7 +346,7 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, sta
         let config_path = current_dir.join("odools.toml");
         if config_path.exists() && config_path.is_file() {
             let current_config = read_config_from_file(ws_folders.clone(), &config_path)?;
-            merged_config = merge_configs(&current_config, &merged_config);
+            merged_config = merge_configs(&merged_config, &current_config);
             merged_config = apply_extends(merged_config);
         }
 
@@ -332,28 +358,41 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, sta
         }
     }
 
+    for (_, entry) in merged_config.iter_mut() {
+        if entry.odoo_path.is_none() && is_odoo_path(start){
+            entry.odoo_path = Some(start.clone());
+        }
+        if (matches!(entry.add_workspace_addon_path, Some(true)) || entry.addons_paths.is_empty()) && is_addon_path(start) {
+            entry.addons_paths.push(start.clone());
+        }
+    }
+
     Ok(merged_config)
 }
 
 pub fn merge_all_workspaces(
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
 ) -> Result<ConfigNew, String> {
-    let mut merged_config: HashMap<String, ConfigEntry> = HashMap::new();
+    let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
 
+    // First, merge all workspace configurations into a ConfigEntryRaw structure
     for workspace_config in workspace_configs {
         for (key, raw_entry) in workspace_config {
-            let merged_entry = merged_config.entry(key.clone()).or_insert_with(|| ConfigEntry {
+            let merged_entry = merged_raw_config.entry(key.clone()).or_insert_with(|| ConfigEntryRaw {
+                name: key.clone(),
+                extends: None,
                 odoo_path: None,
+                addons_merge: None,
                 addons_paths: vec![],
-                addons_merge: MergeMethod::Merge,
                 python_path: None,
                 additional_stubs: vec![],
-                additional_stubs_merge: MergeMethod::Merge,
-                refresh_mode: RefreshMode::Adaptive,
-                file_cache: true,
-                diag_missing_imports: DiagMissingImportsMode::All,
-                ac_filter_model_names: true,
-                extends: None,
+                additional_stubs_merge: None,
+                refresh_mode: None,
+                file_cache: None,
+                diag_missing_imports: None,
+                ac_filter_model_names: None,
+                auto_save_delay: None,
+                add_workspace_addon_path: None,
             });
 
             // Check for conflicts in odoo_path
@@ -367,76 +406,57 @@ pub fn merge_all_workspaces(
             }
 
             // Merge fields
-            merged_entry.odoo_path = match (&merged_entry.odoo_path, &raw_entry.odoo_path) {
-                (Some(existing), Some(new)) if existing == new => Some(existing.clone()),
-                (None, Some(new)) | (Some(new), None) => Some(new.clone()),
-                _ => merged_entry.odoo_path.clone(),
-            };
+            merged_entry.odoo_path = merged_entry.odoo_path.clone().or(raw_entry.odoo_path.clone());
+            merged_entry.python_path = merged_entry.python_path.clone().or(raw_entry.python_path.clone());
+            merged_entry.addons_paths = merged_entry.addons_paths.clone().into_iter().chain(raw_entry.addons_paths.clone().into_iter()).unique().collect();
+            merged_entry.additional_stubs = merged_entry.additional_stubs.clone().into_iter().chain(raw_entry.additional_stubs.clone().into_iter()).unique().collect();
+            merged_entry.refresh_mode = merged_entry.refresh_mode.clone().or(raw_entry.refresh_mode);
+            merged_entry.file_cache = merged_entry.file_cache.or(raw_entry.file_cache);
+            merged_entry.diag_missing_imports = merged_entry.diag_missing_imports.clone().or(raw_entry.diag_missing_imports);
+            merged_entry.ac_filter_model_names = merged_entry.ac_filter_model_names.or(raw_entry.ac_filter_model_names);
+            merged_entry.auto_save_delay = merged_entry.auto_save_delay.or(raw_entry.auto_save_delay);
 
-            merged_entry.python_path = match (&merged_entry.python_path, &raw_entry.python_path) {
-                (Some(existing), Some(new)) if existing == new => Some(existing.clone()),
-                (None, Some(new)) | (Some(new), None) => Some(new.clone()),
-                _ => merged_entry.python_path.clone(),
-            };
-
-            merged_entry.addons_paths = match raw_entry.addons_merge {
-                MergeMethod::Merge => {
-                    let mut merged_paths = merged_entry.addons_paths.clone();
-                    merged_paths.extend(raw_entry.addons_paths.clone());
-                    merged_paths
-                }
-                MergeMethod::Override => raw_entry.addons_paths.clone(),
-            };
-
-            merged_entry.additional_stubs = match raw_entry.additional_stubs_merge {
-                MergeMethod::Merge => {
-                    let mut merged_stubs = merged_entry.additional_stubs.clone();
-                    merged_stubs.extend(raw_entry.additional_stubs.clone());
-                    merged_stubs
-                }
-                MergeMethod::Override => raw_entry.additional_stubs.clone(),
-            };
-
-            merged_entry.refresh_mode = match (&merged_entry.refresh_mode, &raw_entry.refresh_mode) {
-                (RefreshMode::Adaptive, Some(new)) => new.clone(),
-                (_, None) => merged_entry.refresh_mode.clone(),
-                (_, Some(new)) => new.clone(),
-            };
-
-            merged_entry.file_cache = merged_entry.file_cache && raw_entry.file_cache.unwrap_or(true);
-
-            merged_entry.diag_missing_imports = match (
-                &merged_entry.diag_missing_imports,
-                &raw_entry.diag_missing_imports,
-            ) {
-                (DiagMissingImportsMode::All, Some(new)) => new.clone(),
-                (_, None) => merged_entry.diag_missing_imports.clone(),
-                (_, Some(new)) => new.clone(),
-            };
-
-            merged_entry.ac_filter_model_names =
-                merged_entry.ac_filter_model_names && raw_entry.ac_filter_model_names.unwrap_or(true);
-
-            merged_entry.extends = match (&merged_entry.extends, &raw_entry.extends) {
-                (Some(existing), Some(new)) if existing == new => Some(existing.clone()),
-                (None, Some(new)) | (Some(new), None) => Some(new.clone()),
-                _ => merged_entry.extends.clone(),
-            };
-
-            merged_entry.addons_merge = match (&merged_entry.addons_merge, &raw_entry.addons_merge) {
-                (MergeMethod::Merge, MergeMethod::Merge) => MergeMethod::Merge,
-                (_, new) => new.clone(),
-            };
-
-            merged_entry.additional_stubs_merge = match (
-                &merged_entry.additional_stubs_merge,
-                &raw_entry.additional_stubs_merge,
-            ) {
-                (MergeMethod::Merge, MergeMethod::Merge) => MergeMethod::Merge,
-                (_, new) => new.clone(),
-            };
         }
     }
 
-    Ok(merged_config)
+    // Convert the merged ConfigEntryRaw structure into ConfigEntry
+    let mut final_config: ConfigNew = HashMap::new();
+    for (key, raw_entry) in merged_raw_config {
+        final_config.insert(
+            key,
+            ConfigEntry {
+                odoo_path: raw_entry.odoo_path,
+                addons_paths: raw_entry.addons_paths,
+                python_path: raw_entry.python_path.unwrap_or(S!("python3")),
+                additional_stubs: raw_entry.additional_stubs,
+                refresh_mode: raw_entry.refresh_mode.unwrap_or_default(),
+                file_cache: raw_entry.file_cache.unwrap_or(true),
+                diag_missing_imports: raw_entry.diag_missing_imports.unwrap_or_default(),
+                ac_filter_model_names: raw_entry.ac_filter_model_names.unwrap_or(true),
+                auto_save_delay: raw_entry.auto_save_delay.unwrap_or(1000),
+                extends: raw_entry.extends,
+            },
+        );
+    }
+
+    Ok(final_config)
 }
+
+impl ConfigEntry {
+    pub fn new() -> Self {
+        Self {
+            odoo_path: None,
+            addons_paths: vec![],
+            python_path: S!("python3"),
+            additional_stubs: vec![],
+            refresh_mode: RefreshMode::default(),
+            file_cache: true,
+            diag_missing_imports: DiagMissingImportsMode::default(),
+            ac_filter_model_names: true,
+            auto_save_delay: 1000,
+            extends: None,
+        }
+    }
+}
+
+
