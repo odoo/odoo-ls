@@ -297,7 +297,6 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
     let client : SafeLanguageClient;
     try {
-        await updatePythonPath(context);
         if (!workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
             displayDisablePythonLSMessage();
         }
@@ -387,132 +386,6 @@ function deleteOldFiles(context: ExtensionContext) {
     });
 }
 
-async function checkAddons(context: ExtensionContext): Promise<boolean> {
-    let currentConfig = await getCurrentConfig(context);
-    if (!currentConfig) {
-        return false
-    }
-    const validAddons = [];
-    const invalidAddons = [];
-    for (const addonPath of currentConfig.addons) {
-        const validationResult = await validateAddonPath(addonPath);
-
-        if (validationResult !== null) {
-            validAddons.push(validationResult);
-        } else {
-            invalidAddons.push(addonPath);
-        }
-    }
-    if (invalidAddons.length > 0) {
-        const invalidPathsMessage = invalidAddons.join(", ");
-
-        window.showWarningMessage(
-            `The following addon paths in this configuration seem invalid: (${invalidPathsMessage}). Would you like to change the configuration?`,
-            "Update current configuration",
-            "Ignore"
-        ).then(selection => {
-            switch (selection) {
-                case "Update current configuration":
-                    ConfigurationWebView.render(context, currentConfig);
-                    break;
-            }
-        });
-    }
-    let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-    if (areUniquelyEqual(currentConfig.validatedAddonsPaths, validAddons)){
-        return false
-    }
-    configs[currentConfig.id]["validatedAddonsPaths"] = validAddons;
-    workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-
-    // Check if workspace folders could also be addons folder
-    currentConfig = configs[currentConfig.id];
-    let files = await workspace.findFiles('**/__manifest__.py')
-    let missingFiles = files.filter(file => {
-        return !(
-            currentConfig.addons.some((addon) => file.fsPath.replaceAll("\\", "/").startsWith(addon)) ||
-            file.fsPath.replaceAll("\\", "/").startsWith(currentConfig.odooPath)
-        )
-    })
-    let missingPaths = [...new Set(missingFiles.map(file => {
-        let filePath = file.fsPath.split(path.sep)
-        return filePath.slice(0, filePath.length - 2).join(path.sep)
-    }))]
-    if (missingPaths.length > 0) {
-        global.LSCLIENT.warn("Missing addon paths : " + JSON.stringify(missingPaths))
-        window.showWarningMessage(
-            "We detected addon paths that weren't added in the current configuration. Would you like to add them?",
-            "Update current configuration",
-            "View Paths",
-            "Ignore"
-        ).then(selection => {
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig);
-                    break
-                case ("View Paths"):
-                    global.LSCLIENT.outputChannel.show();
-                    break
-            }
-        });
-    }
-    return true
-}
-
-async function checkOdooPath(context: ExtensionContext): Promise<boolean>{
-    let currentConfig = await getCurrentConfig(context);
-    global.OUTPUT_CHANNEL.appendLine("[INFO] checking odoo path ".concat(currentConfig.rawOdooPath))
-    const odoo = await evaluateOdooPath(currentConfig.rawOdooPath);
-    if (odoo){
-        if (currentConfig.odooPath == odoo.path) return false;
-        let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-        configs[currentConfig.id]["odooPath"] = odoo.path;
-        workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-    }else{
-        window.showWarningMessage(
-            `The odoo path set in this configuration seems invalid. Would you like to change it?`,
-            "Update current configuration",
-            "Ignore"
-        ).then(selection => {
-        switch (selection) {
-            case ("Update current configuration"):
-                ConfigurationWebView.render(context, currentConfig);
-                break
-            }
-        })
-        return false
-    }
-
-
-    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.file(odoo.path)) : true
-    if (!odooFound) {
-        let invalidPath = false
-        for (const f of workspace.workspaceFolders) {
-            if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath) ||
-                fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
-                global.OUTPUT_CHANNEL.appendLine("invalid Path ".concat(f.uri.toString()))
-                invalidPath = true;
-                break;
-            }
-        }
-        if (invalidPath) {
-            window.showWarningMessage(
-                `The Odoo configuration selected does not match the odoo path in the workspace. Would you like to change it?`,
-                "Update current configuration",
-                "Ignore"
-            ).then(selection => {
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig);
-                    break
-                }
-            })
-        }
-        return false
-    }
-    return true
-}
-
 async function initStatusBar(context: ExtensionContext): Promise<void> {
     global.STATUS_BAR = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     global.STATUS_BAR.command = "odoo.clickStatusBar"
@@ -546,8 +419,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
                 const config = await getCurrentConfig(context)
                 if (config) {
-                    let changed = await checkOdooPath(context);
-                    changed ||= await checkAddons(context);
                     if (!global.IS_PYTHON_EXTENSION_READY){
                         onDidChangePythonInterpreterEvent.fire(null);
                     }
@@ -558,10 +429,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     }
                     if (client.needsStart()) {
                         await client.start();
-                    } else {
-                        if (changed && client.diagnostics) {
-                            client.diagnostics.clear();
-                        }
                     }
                 } else {
                     if (global.LSCLIENT?.isRunning()) await stopClient();
@@ -578,22 +445,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
         }),
 
-        extensions.onDidChange(async (_) => {
-            const pyExtWasInstalled = global.IS_PYTHON_EXTENSION_READY === true;
-            const pyExtInstalled = extensions.getExtension(PVSC_EXTENSION_ID) !== undefined;
-            if (pyExtWasInstalled !== pyExtInstalled){
-                if (await updatePythonPath(context, false) && global.LSCLIENT.diagnostics){
-                    global.LSCLIENT.diagnostics.clear();
-                }
-            }
-        }),
-
-        // Listen to changes to Python Interpreter
-        onDidChangePythonInterpreterEvent.event(async (_) => {
-            if (await updatePythonPath(context, false) && global.LSCLIENT.diagnostics){
-                global.LSCLIENT.diagnostics.clear();
-            }
-        }),
 
         // COMMANDS
         commands.registerCommand("odoo.openWelcomeView", async () => {
@@ -668,16 +519,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 });
 
                 qpick.onDidTriggerItemButton(async (buttonEvent) => {
-                    if (buttonEvent.button.iconPath == gearIcon) {
-                        const buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
-                        const config = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[buttonConfigId]
-                        try {
-                            ConfigurationWebView.render(context, config);
-                        } catch (error) {
-                            global.LSCLIENT.error(error);
-                            await displayCrashMessage(context, error, global.SERVER_PID, 'render.ConfigurationWebView');
-                        }
-                    }
+                    if (buttonEvent.button.iconPath == gearIcon) {}
                 });
 
                 qpick.onDidAccept(async () => {
@@ -860,9 +702,6 @@ export async function activate(context: ExtensionContext): Promise<void> {
         if (config) {
             deleteOldFiles(context)
             global.LSCLIENT.info('Starting the extension.');
-            await checkOdooPath(context);
-            await checkAddons(context);
-
             global.STATUS_BAR.text = `Odoo (${config["name"]})`
             global.LSCLIENT.start();
         }
@@ -950,26 +789,6 @@ export async function checkStandalonePythonVersion(context, python_path_from_con
     return true
 }
 
-async function updatePythonPath(context, outputLogs: boolean = true): Promise<boolean>{
-	let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-	const selectedConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
-    // if config is disabled return nothing
-	if (selectedConfig == -1 || !configs[selectedConfig]) {
-		return null;
-	}
-	let config = (Object.keys(configs[selectedConfig]).length !== 0 ? configs[selectedConfig] : null);
-    let pythonPath =  await getStandalonePythonPath(context);
-    let finalPythonPath = await buildFinalPythonPath(context, pythonPath);
-    if (config) {
-        if (config["finalPythonPath"]) {
-            if (config["finalPythonPath"] === finalPythonPath)
-                return false;
-        }
-        config["finalPythonPath"] = finalPythonPath;
-        workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-    }
-    return true
-}
 
 async function setPythonLSNone() {
     await workspace.getConfiguration('python').update('languageServer', 'None', ConfigurationTarget.Workspace)

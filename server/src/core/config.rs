@@ -359,9 +359,6 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, sta
     }
 
     for (_, entry) in merged_config.iter_mut() {
-        if entry.odoo_path.is_none() && is_odoo_path(start){
-            entry.odoo_path = Some(start.clone());
-        }
         if (matches!(entry.add_workspace_addon_path, Some(true)) || entry.addons_paths.is_empty()) && is_addon_path(start) {
             entry.addons_paths.push(start.clone());
         }
@@ -372,6 +369,7 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, sta
 
 pub fn merge_all_workspaces(
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
+    ws_folders: hash_map::Iter<String, String>
 ) -> Result<ConfigNew, String> {
     let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
 
@@ -416,6 +414,22 @@ pub fn merge_all_workspaces(
             merged_entry.ac_filter_model_names = merged_entry.ac_filter_model_names.or(raw_entry.ac_filter_model_names);
             merged_entry.auto_save_delay = merged_entry.auto_save_delay.or(raw_entry.auto_save_delay);
 
+        }
+    }
+    // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
+    for (_, entry) in merged_raw_config.iter_mut() {
+        if entry.odoo_path.is_none() {
+            for (_name, path) in ws_folders.clone() {
+                if is_odoo_path(path) {
+                    if entry.odoo_path.is_some() {
+                        return Err(format!(
+                            "Conflict detected in 'odoo_path' for key '{}': '{}' vs '{}'\nPlease set the odoo_path in the config file.",
+                            entry.name, entry.odoo_path.clone().unwrap(), path
+                        ));
+                    }
+                    entry.odoo_path = Some(path.clone());
+                }
+            }
         }
     }
 
