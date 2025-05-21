@@ -1059,6 +1059,36 @@ impl Odoo {
         Ok(config)
     }
 
+    fn read_selected_configuration(session: &mut SessionInfo) -> Result<String, String> {
+        let configuration_item = ConfigurationItem {
+            scope_uri: None,
+            section: Some("Odoo".to_string()),
+        };
+        let config_params = ConfigurationParams {
+            items: vec![configuration_item],
+        };
+        let config = match session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params) {
+            Ok(config) => config.unwrap(),
+            Err(_) => {
+                return Err(S!("Unable to get configuration from client, client not available"));
+            }
+        };
+        let config = config.get(0);
+        if config.is_none() {
+            session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
+            return Err(S!("No config found for Odoo"));
+        }
+        let config = config.unwrap();
+        if let Some(map) = config.as_object() {
+            if let Some(value) = map.get("selectedConfiguration") {
+                if let Some(value_str) = value.as_str() {
+                    return Ok(value_str.to_string());
+                }
+            }
+        }
+        Err(S!("Unable to read selectedConfiguration"))
+    }
+
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
@@ -1067,9 +1097,9 @@ impl Odoo {
             // manage workspace folders conflicts
         let file_mgr = session.sync_odoo.get_file_mgr();
         let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.1)).flatten().collect();
-        let config = merge_all_workspaces(ws_confs);
-        let selected_config = S!("root");
-        let config = config.map(|x| x.get(&selected_config).unwrap().clone());
+        let config = merge_all_workspaces(ws_confs, file_mgr.borrow().iter_workspace_folders());
+        let selected_config = Odoo::read_selected_configuration(session);
+        let config = config.and_then(|x| x.get(&selected_config?).cloned().ok_or(S!("Unable to find selected configuration")));
         println!("{:?}", config);
         match config {
             Ok(config) => {
