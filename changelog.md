@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 - 2025/23/05 - Bugfixs
+
+### Fixs
+
+- Log instead of crash if a file is not in cache anymore as it can happen in some normal situations where chache is invalidated
+- Fix various borrow errors on 'go to definition' feature
+- Fix various crashes when hovering some part of the code
+- Provide PDB alongside exe on windows to get better tracebacks.
+
 ## 0.6.2 - 2025/28/04 - Bugfixs
 
 ### Fixs
