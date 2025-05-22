@@ -4,7 +4,7 @@ use core::fmt;
 use byteyarn::{yarn, Yarn};
 
 pub const EXTENSION_NAME: &str = "Odoo";
-pub const EXTENSION_VERSION: &str = "0.6.2";
+pub const EXTENSION_VERSION: &str = "0.6.3";
 
 pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
