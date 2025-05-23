@@ -11,7 +11,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::fs::File;
 use serde_json::json;
-use crate::core::{config::{Config, DiagMissingImportsMode}, odoo::SyncOdoo};
+use crate::core::{config::{DiagMissingImportsMode}, odoo::SyncOdoo};
 use crate::S;
 
 

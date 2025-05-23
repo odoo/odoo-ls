@@ -8,7 +8,7 @@ pub const EXTENSION_VERSION: &str = "0.6.3";
 
 pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
-pub const DEBUG_THREADS: bool = false;
+pub const DEBUG_THREADS: bool = true;
 pub const DEBUG_STEPS: bool = false;
 pub const DEBUG_REBUILD_NOW: bool = false;
 
