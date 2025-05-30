@@ -64,6 +64,11 @@
         "command": "odoo.restartServer",
         "title": "Restart Language Server",
         "category": "Odoo"
+      },
+      {
+        "command": "odoo.showServerConfig",
+        "title": "Show Server Configuration (TOML/JSON)",
+        "category": "Odoo"
       }
     ],
     "views": {},
@@ -162,68 +167,10 @@
           "default": "off",
           "description": "Traces the communication between VS Code and the language server."
         },
-        "Odoo.configurations": {
-          "scope": "application",
-          "type": "object",
-          "default": {
-            "0": {}
-          },
-          "description": "The list containing all the configurations, edit at your own risks",
-          "patternProperties": {
-            ".*": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "integer",
-                  "default": 0,
-                  "description": "Unique identifier for the configuration"
-                },
-                "name": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Name of the configuration"
-                },
-                "rawOdooPath": {
-                  "type": "string",
-                  "default": "",
-                  "description": "path where odoo community is installed, you can use ${workspaceFolder} and ${userHome}"
-                },
-                "odooPath": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Internal use: modify at your own risk"
-                },
-                "pythonPath": {
-                  "type": "string",
-                  "default": "python3",
-                  "description": "the python that will be used if you don't have the python extension"
-                },
-                "addons": {
-                  "type": "array",
-                  "default": [],
-                  "description": "paths of addons",
-                  "items": {
-                    "type": "string",
-                    "default": ""
-                  }
-                },
-                "validatedAddonsPaths": {
-                  "type": "array",
-                  "default": [],
-                  "description": "Internal use: modify at your own risk",
-                  "items": {
-                    "type": "string",
-                    "default": ""
-                  }
-                }
-              }
-            }
-          }
-        },
         "Odoo.selectedConfiguration": {
           "scope": "window",
           "type": "string",
-          "default": "0",
+          "default": "root",
           "description": "Configuration active in this workspace"
         }
       }

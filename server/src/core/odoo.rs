@@ -12,23 +12,21 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use byteyarn::{yarn, Yarn};
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_python_parser::{Mode, ParseOptions};
-use tracing::{debug, error, warn, info, trace};
+use tracing::{error, warn, info, trace};
 
 use std::collections::HashSet;
 use weak_table::PtrWeakHashSet;
 use std::process::Command;
-use std::str::FromStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{merge_all_workspaces, ConfigEntry, DiagMissingImportsMode, RefreshMode};
+use super::config::{merge_all_workspaces, ConfigEntry, ConfigFile, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -37,7 +35,7 @@ use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::python_validator::PythonValidator;
-use crate::utils::{fill_template, is_addon_path, PathSanitizer, ToFilePath as _};
+use crate::utils::{PathSanitizer, ToFilePath as _};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
 
@@ -61,6 +59,7 @@ pub struct SyncOdoo {
     pub version_micro: u32,
     pub full_version: String,
     pub config: ConfigEntry,
+    pub config_file: Option<ConfigFile>,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
@@ -97,6 +96,7 @@ impl SyncOdoo {
             version_micro: 0,
             full_version: "0.0.0".to_string(),
             config: ConfigEntry::new(),
+            config_file: None,
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
             has_main_entry: false,
             has_odoo_main_entry: false,
@@ -947,10 +947,11 @@ impl Odoo {
         let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.0, ws_f.1)).flatten().collect();
         let config = merge_all_workspaces(ws_confs, file_mgr.borrow().iter_workspace_folders());
         let selected_config = Odoo::read_selected_configuration(session);
-        let config = config.and_then(|x| x.get(&selected_config?).cloned().ok_or(S!("Unable to find selected configuration")));
+        let config = config.and_then(|(ce, cfile)| ce.get(&selected_config?).cloned().map(|config| (config, cfile)).ok_or(S!("Unable to find selected configuration")));
         println!("{:?}", config);
         match config {
-            Ok(config) => {
+            Ok((config, config_file)) => {
+                session.sync_odoo.config_file = Some(config_file);
                 SyncOdoo::init(session, config);
                 session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
                     (std::time::Instant::now() - start).as_secs(),
@@ -960,6 +961,15 @@ impl Odoo {
                 session.log_message(MessageType::ERROR, format!("Unable to load config: {}", e));
                 error!(e);
             }
+        }
+    }
+
+    pub fn read_config(session: &mut SessionInfo) -> Result<Option<String>, ResponseError> {
+        if let Some(ref config_file) = session.sync_odoo.config_file {
+            let md = config_file.to_html_string();
+            Ok(Some(md))
+        } else {
+            Ok(None)
         }
     }
 

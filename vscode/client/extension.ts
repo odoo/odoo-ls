@@ -6,16 +6,13 @@ import * as fs from "fs";
 import * as semver from "semver";
 import {homedir} from "os"
 import {
-    extensions,
     commands,
     ExtensionContext,
     ExtensionMode,
-    QuickPickItem,
     StatusBarAlignment,
-    ThemeIcon,
+    ViewColumn,
     workspace,
     window,
-    QuickPickItemKind,
     TextDocument,
     OutputChannel,
     Uri,
@@ -29,7 +26,6 @@ import {
     ServerOptions,
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./views/welcome/welcomeWebView";
-import { ConfigurationWebView } from './views/configurations/configurationWebView';
 import { CrashReportWebView } from './views/crash_report/crashReport';
 import { ChangelogWebview } from "./views/changelog/changelogWebview";
 import {
@@ -38,7 +34,7 @@ import {
 import {
     onDidChangePythonInterpreterEvent
 } from "./common/python";
-import { areUniquelyEqual, buildFinalPythonPath, evaluateOdooPath, getCurrentConfig, validateAddonPath } from "./common/utils";
+import { getCurrentConfig } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
 import {
@@ -47,7 +43,6 @@ import {
 } from "./migration/migrateConfig";
 import { SafeLanguageClient } from "./common/safeLanguageClient";
 import { constants } from "fs/promises";
-import { PVSC_EXTENSION_ID } from "@vscode/python-extension";
 
 
 function getClientOptions(): LanguageClientOptions {
@@ -203,7 +198,7 @@ function startLangServer(
 
 async function setStatusConfig(context: ExtensionContext) {
     const config = await getCurrentConfig(context);
-    let text = (config ? `Odoo (${config["name"]})` : `Odoo (Disabled)`);
+    let text = (config ? `Odoo (${config})` : `Odoo (Disabled)`);
     global.STATUS_BAR.text = (global.IS_LOADING) ? "$(loading~spin) " + text : text;
 }
 
@@ -214,22 +209,6 @@ function getLastConfigId(context: ExtensionContext): number | undefined {
 function IncrementLastConfigId(context: ExtensionContext) {
     const lastId: number = context.globalState.get("Odoo.nextConfigId");
     context.globalState.update("Odoo.nextConfigId", lastId + 1);
-}
-
-async function addNewConfiguration(context: ExtensionContext) {
-    const configId = getLastConfigId(context);
-    let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-
-    const newConf = getConfigurationStructure(configId);
-    workspace.getConfiguration().update("Odoo.configurations",
-    {
-        ...configs,
-        [configId]: newConf,
-    },
-    ConfigurationTarget.Global);
-
-    IncrementLastConfigId(context);
-    ConfigurationWebView.render(context, newConf);
 }
 
 async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
@@ -478,75 +457,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             ChangelogWebview.render(context);
         }),
         commands.registerCommand('odoo.clickStatusBar', async () => {
-            try {
-                const qpick = window.createQuickPick();
-                const configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-                let selectedConfiguration = null;
-                const currentConfig = await getCurrentConfig(context);
-                let currentConfigItem: QuickPickItem;
-                const configMap = new Map();
-                const separator = { kind: QuickPickItemKind.Separator };
-                const addConfigItem = {
-                    label: "$(add) Add new configuration"
-                };
-                const disabledItem = {
-                    label: "Disabled"
-                }
-                const gearIcon = new ThemeIcon("gear");
-
-                for (const configId in configs) {
-                    if ((currentConfig && configId == currentConfig["id"]) || (Object.keys(configs[configId]).length === 0))
-                        continue;
-                    configMap.set({ "label": configs[configId]["name"], "buttons": [{ iconPath: gearIcon }] }, configId)
-                }
-
-                let picks = [disabledItem, ...Array.from(configMap.keys())];
-                if (picks.length)
-                    picks.push(separator);
-
-                if (currentConfig) {
-                    currentConfigItem = { "label": currentConfig["name"], "description": "(current)", "buttons": [{ iconPath: gearIcon }] };
-                    picks.splice(currentConfig["id"] + 1, 0, currentConfigItem);
-                }
-
-                picks.push(addConfigItem);
-                qpick.title = "Select a configuration";
-                qpick.items = picks;
-                qpick.activeItems = currentConfig ? [picks[currentConfig["id"] + 1]] : [picks[0]];
-
-                qpick.onDidChangeSelection(selection => {
-                    selectedConfiguration = selection[0];
-                });
-
-                qpick.onDidTriggerItemButton(async (buttonEvent) => {
-                    if (buttonEvent.button.iconPath == gearIcon) {}
-                });
-
-                qpick.onDidAccept(async () => {
-                    if (selectedConfiguration == addConfigItem) {
-                        try {
-                            await addNewConfiguration(context);
-                        }
-                        catch (error) {
-                            global.LSCLIENT.error(error)
-                            await displayCrashMessage(context, error, global.SERVER_PID, 'render.ConfigurationWebView')
-                        }
-                    }
-                    else if (selectedConfiguration == disabledItem) {
-                        await changeSelectedConfig(context, -1);
-                    }
-                    else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
-                        await changeSelectedConfig(context, configMap.get(selectedConfiguration));
-                    }
-                    qpick.hide();
-                });
-                qpick.onDidHide(() => qpick.dispose());
-                qpick.show();
-            }
-            catch (error) {
-                global.LSCLIENT.error(error)
-                await displayCrashMessage(context, error, global.SERVER_PID, 'odoo.clickStatusBar')
-            }
+            await showConfigFromServer(context)
         }),
         commands.registerCommand(
             "odoo.disablePythonLanguageServerCommand", setPythonLSNone
@@ -556,7 +467,10 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 if (global.LSCLIENT) {
                     global.LSCLIENT.restart();
                 }
-        })
+        }),
+        commands.registerCommand("odoo.showServerConfig", async () => {
+            await showConfigFromServer(context);
+        }),
     );
 
     if (context.extensionMode === ExtensionMode.Development) {
@@ -702,7 +616,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         if (config) {
             deleteOldFiles(context)
             global.LSCLIENT.info('Starting the extension.');
-            global.STATUS_BAR.text = `Odoo (${config["name"]})`
+            global.STATUS_BAR.text = `Odoo (${config})`
             global.LSCLIENT.start();
         }
     }
@@ -767,7 +681,6 @@ export async function getStandalonePythonVersion(python_path_from_config: string
  * @returns either valid version or invalid
  */
 export async function checkStandalonePythonVersion(context, python_path_from_config: string): Promise<boolean>{
-    const currentConfig = await getCurrentConfig(context);
     let pythonVersion = await getStandalonePythonVersion(python_path_from_config);
     if (!pythonVersion) {
         return false;
@@ -775,15 +688,8 @@ export async function checkStandalonePythonVersion(context, python_path_from_con
     if (semver.lt(pythonVersion, "3.8.0")) {
         window.showErrorMessage(
             `You must use python 3.8 or newer. Would you like to change it?`,
-            "Update current configuration",
             "Ignore"
-        ).then(selection => {
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig);
-                    break
-            }
-        });
+        );
         return false
     }
     return true
@@ -820,4 +726,46 @@ async function displayDisablePythonLSMessage() {
                 await workspace.getConfiguration('Odoo').update("disablePythonLanguageServerPopup", true, ConfigurationTarget.Global)
         }
     });
+}
+
+async function showConfigFromServer(context: ExtensionContext) {
+  try {
+    if (!global.LSCLIENT || !global.LSCLIENT.isRunning()) {
+      window.showErrorMessage("Odoo Language Server is not running.");
+      return;
+    }
+
+    const result = await global.LSCLIENT.sendRequest("$Odoo/readConfig", {});
+    if (!result) {
+      window.showErrorMessage("No config received from server.");
+      return;
+    }
+
+    // Replace file:/// links with vscode://file/ links
+    let html = String(result).replace(
+      /href="file:\/\/\/([^"]+)"/g,
+      (match, filePath) => {
+        // decode URI if needed
+        const decodedPath = decodeURIComponent(filePath);
+        // Use vscode://file/<absolute_path>
+        const vscodeUri = `vscode://file/${decodedPath}`;
+        return `href="${vscodeUri}"`;
+      }
+    );
+
+    // Create a Webview panel
+    const panel = window.createWebviewPanel(
+      'odooConfigPreview',
+      'Odoo Config Preview',
+      ViewColumn.Beside,
+      {
+        retainContextWhenHidden: true,
+      }
+    );
+
+    panel.webview.html = html;
+
+  } catch (err) {
+    window.showErrorMessage("Failed to read config from server: " + err);
+  }
 }

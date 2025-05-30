@@ -5,12 +5,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path, error::Error};
 use itertools::Itertools;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::utils::{fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum RefreshMode {
     OnSave,
@@ -38,7 +38,7 @@ impl FromStr for RefreshMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagMissingImportsMode {
     None,
@@ -66,7 +66,7 @@ impl FromStr for DiagMissingImportsMode {
 }
 
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum MergeMethod {
     Merge,
@@ -79,12 +79,161 @@ impl Default for MergeMethod {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct ConfigFile {
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct ConfigFile {
     config: Vec<ConfigEntryRaw>,
 }
 
-#[derive(Debug, Clone)]
+impl ConfigFile {
+    pub fn new() -> Self {
+        ConfigFile {
+            config: vec![],
+        }
+    }
+
+    pub fn to_html_string(&self) -> String {
+        fn render_source(source: &str) -> String {
+            if source.starts_with('/') || source.chars().nth(1) == Some(':') {
+                // Windows or Unix path
+                format!("<a href=\"file:///{}\">{}</a>", source.replace("\\", "/"), source)
+            } else {
+                source.to_string()
+            }
+        }
+
+        fn is_sourced_field(val: &serde_json::Value) -> bool {
+            val.get("value").is_some() && val.get("sources").is_some() && val.get("sources").unwrap().is_array()
+        }
+
+        fn render_field(key: &str, value: &serde_json::Value) -> String {
+            let mut rows = String::new();
+            if is_sourced_field(value) {
+                let val = &value["value"];
+                let sources = value["sources"].as_array().unwrap();
+                let rendered_src = sources.iter()
+                    .filter_map(|s| s.as_str())
+                    .map(render_source)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if val.is_object() && !val.is_null() {
+                    // Nested object
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {{</div><div class=\"toml-right\"></div></div>\n", key));
+                    for (k, v) in val.as_object().unwrap() {
+                        for line in render_field(k, v).lines() {
+                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {}</div></div>\n", line));
+                        }
+                    }
+                    rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">}</div><div class=\"toml-right\"></div></div>\n");
+                } else if val.is_array() {
+                    // Array of values
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = [</div><div class=\"toml-right\"></div></div>\n", key));
+                    for item in val.as_array().unwrap() {
+                        if is_sourced_field(item) {
+                            let item_val = &item["value"];
+                            let item_sources = item["sources"].as_array().unwrap();
+                            let item_rendered_src = item_sources.iter()
+                                .filter_map(|s| s.as_str())
+                                .map(render_source)
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\">{}</div></div>\n", item_val, item_rendered_src));
+                        } else {
+                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\">{}</div></div>\n", item, rendered_src));
+                        }
+                    }
+                    rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">]</div><div class=\"toml-right\"></div></div>\n");
+                } else {
+                    // Single value
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {}</div><div class=\"toml-right\">{}</div></div>\n", key, val, rendered_src));
+                }
+            } else if value.is_array() {
+                // Array of Sourced or primitive values
+                rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = [</div><div class=\"toml-right\"></div></div>\n", key));
+                for item in value.as_array().unwrap() {
+                    if is_sourced_field(item) {
+                        let item_val = &item["value"];
+                        let item_sources = item["sources"].as_array().unwrap();
+                        let item_rendered_src = item_sources.iter()
+                            .filter_map(|s| s.as_str())
+                            .map(render_source)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\">{}</div></div>\n", item_val, item_rendered_src));
+                    } else {
+                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\"></div></div>\n", item));
+                    }
+                }
+                rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">]</div><div class=\"toml-right\"></div></div>\n");
+            } else if value.is_object() && !value.is_null() {
+                // Nested object
+                rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {{</div><div class=\"toml-right\"></div></div>\n", key));
+                for (k, v) in value.as_object().unwrap() {
+                    for line in render_field(k, v).lines() {
+                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {}</div></div>\n", line));
+                    }
+                }
+                rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">}</div><div class=\"toml-right\"></div></div>\n");
+            } else {
+                // Primitive value
+                rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {}</div><div class=\"toml-right\"></div></div>\n", key, value));
+            }
+            rows
+        }
+
+        let mut html = String::from(
+            r#"<style>
+  .toml-table {
+    font-family: monospace;
+    width: 100%;
+    border-spacing: 0;
+  }
+  .toml-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+  .toml-line-break {
+    border-bottom: 1px dotted #ccc;
+  }
+  .toml-left {
+    white-space: pre;
+  }
+  .toml-right {
+    white-space: pre;
+    color: #888;
+    font-size: 0.9em;
+  }
+</style>
+<div class="toml-table">
+"#,
+        );
+        let entry_htmls: Vec<String> = self.config.iter().map(|entry| {
+            let entry_val = serde_json::to_value(entry).unwrap_or(serde_json::Value::Null);
+            let mut entry_html = String::new();
+            entry_html.push_str("<div class=\"toml-row\"><div class=\"toml-left\"><b>[[config]]</b></div><div class=\"toml-right\"></div></div>\n");
+            if let serde_json::Value::Object(map) = entry_val {
+                let order = [
+                    "name", "extends", "odoo_path", "addons_paths", "addons_merge",
+                    "python_path", "additional_stubs", "additional_stubs_merge",
+                    "refresh_mode", "file_cache", "diag_missing_imports",
+                    "ac_filter_model_names", "auto_save_delay", "add_workspace_addon_path",
+                ];
+                for key in order {
+                    if let Some(val) = map.get(key) {
+                        entry_html.push_str(&render_field(key, val));
+                    }
+                }
+            }
+            entry_html
+        }).collect();
+
+        html.push_str(&entry_htmls.join("<div class=\"toml-line-break\"></div>\n"));
+        html.push_str("</div>\n");
+        html
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct Sourced<T> {
     value: T,
     sources: HashSet<String>,
@@ -95,7 +244,7 @@ impl<'a, T: Default> Default for Sourced<T> {
     fn default() -> Self {
         Sourced {
             value: T::default(),
-            sources: HashSet::new(),
+            sources: HashSet::from([S!("$default")]),
         }
     }
 }
@@ -152,49 +301,59 @@ where
     }
 }
 
+pub fn serialize_option_as_default<T, S>(opt: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + Default,
+    S: Serializer,
+{
+    match opt {
+        Some(val) => val.serialize(serializer),
+        None => T::default().serialize(serializer),
+    }
+}
 // Raw structure for initial deserialization
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConfigEntryRaw {
     #[serde(default = "default_name")]
     name: String,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     extends: Option<String>, // Allowed to extend from another config
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     odoo_path: Option<Sourced<String>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     addons_merge: Option<Sourced<MergeMethod>>,
 
     #[serde(default)]
     addons_paths: Vec<Sourced<String>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     python_path: Option<Sourced<String>>,
 
     #[serde(default)]
     additional_stubs: Vec<Sourced<String>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     additional_stubs_merge: Option<Sourced<MergeMethod>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     refresh_mode: Option<Sourced<RefreshMode>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     file_cache: Option<Sourced<bool>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     diag_missing_imports: Option<Sourced<DiagMissingImportsMode>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     ac_filter_model_names: Option<Sourced<bool>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     auto_save_delay: Option<Sourced<u64>>,
 
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_option_as_default")]
     add_workspace_addon_path: Option<Sourced<bool>>,
 }
 
@@ -452,12 +611,13 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, wor
 pub fn merge_all_workspaces(
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
     ws_folders: hash_map::Iter<String, String>
-) -> Result<ConfigNew, String> {
+) -> Result<(ConfigNew, ConfigFile), String> {
     let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
 
     for workspace_config in workspace_configs {
         for (key, raw_entry) in workspace_config {
             let merged_entry = merged_raw_config.entry(key.clone()).or_insert_with(ConfigEntryRaw::new);
+            merged_entry.name = key.clone();
 
             // Merge fields
             merged_entry.odoo_path = merge_sourced_options(
@@ -522,6 +682,8 @@ pub fn merge_all_workspaces(
         }
     }
 
+    let config_file = ConfigFile { config: merged_raw_config.values().cloned().collect::<Vec<_>>()};
+
     // Convert the merged ConfigEntryRaw structure into ConfigEntry
     let mut final_config: ConfigNew = HashMap::new();
     for (key, raw_entry) in merged_raw_config {
@@ -541,6 +703,6 @@ pub fn merge_all_workspaces(
         );
     }
 
-    Ok(final_config)
+    Ok((final_config, config_file))
 }
 
