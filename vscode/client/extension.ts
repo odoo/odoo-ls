@@ -43,6 +43,7 @@ import {
 } from "./migration/migrateConfig";
 import { SafeLanguageClient } from "./common/safeLanguageClient";
 import { constants } from "fs/promises";
+import { ThemeIcon } from "vscode";
 
 
 function getClientOptions(): LanguageClientOptions {
@@ -211,8 +212,14 @@ function IncrementLastConfigId(context: ExtensionContext) {
     context.globalState.update("Odoo.nextConfigId", lastId + 1);
 }
 
-async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
-    await workspace.getConfiguration().update("Odoo.selectedConfiguration", configId, ConfigurationTarget.Workspace);
+async function changeSelectedConfig(context: ExtensionContext, configName: string) {
+  try {
+    await workspace.getConfiguration().update("Odoo.selectedConfiguration", configName, ConfigurationTarget.Workspace);
+    return true;
+  } catch (err) {
+    window.showErrorMessage(`Failed to change configuration: ${err}`);
+    return false;
+  }
 }
 
 async function findLastLogFile(context: ExtensionContext, pid: number) {
@@ -457,7 +464,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             ChangelogWebview.render(context);
         }),
         commands.registerCommand('odoo.clickStatusBar', async () => {
-            await showConfigFromServer(context)
+            await showConfigProfileQuickPick(context);
         }),
         commands.registerCommand(
             "odoo.disablePythonLanguageServerCommand", setPythonLSNone
@@ -728,14 +735,89 @@ async function displayDisablePythonLSMessage() {
     });
 }
 
-async function showConfigFromServer(context: ExtensionContext) {
+async function showConfigProfileQuickPick(context: ExtensionContext) {
+  if (!global.LSCLIENT || !global.LSCLIENT.isRunning()) {
+    window.showErrorMessage("Odoo Language Server is not running.");
+    return;
+  }
+  try {
+    const profiles: string[] = await global.LSCLIENT.sendRequest("$Odoo/listConfigProfiles", {});
+    if (!profiles || profiles.length === 0) {
+      window.showErrorMessage("No configuration profiles found.");
+      return;
+    }
+
+    const allConfigsLabel = "$(list-unordered) Show all configurations";
+    const items = [
+      {
+        label: allConfigsLabel,
+        description: "",
+        alwaysShow: true,
+        buttons: [
+          {
+            iconPath: new ThemeIcon("eye"),
+            tooltip: "Preview all configurations",
+          }
+        ]
+      },
+      ...profiles.map((profile) => ({
+        label: profile,
+        description: "",
+        alwaysShow: true,
+        buttons: [
+          {
+            iconPath: new ThemeIcon("eye"),
+            tooltip: "Preview configuration",
+          }
+        ]
+      }))
+    ];
+
+    const quickPick = window.createQuickPick();
+    quickPick.items = items;
+    quickPick.title = "Select Odoo Configuration Profile";
+    quickPick.matchOnDescription = true;
+    quickPick.matchOnDetail = true;
+    quickPick.canSelectMany = false;
+
+    quickPick.onDidTriggerItemButton(async (e) => {
+      if (e.item.label === allConfigsLabel) {
+        await showConfigFromServer(context, undefined);
+      } else {
+        await showConfigFromServer(context, e.item.label);
+      }
+    });
+
+    quickPick.onDidAccept(async () => {
+      const selection = quickPick.selectedItems[0];
+      if (selection) {
+        if (selection.label === allConfigsLabel) {
+          await showConfigFromServer(context, undefined);
+        } else {
+          const ok = await changeSelectedConfig(context, selection.label);
+          if (ok && global.LSCLIENT) {
+            await global.LSCLIENT.restart();
+          }
+        }
+      }
+      quickPick.hide();
+    });
+
+    quickPick.show();
+  } catch (err) {
+    window.showErrorMessage("Failed to list config profiles: " + err);
+  }
+}
+
+async function showConfigFromServer(context: ExtensionContext, profileName?: string) {
   try {
     if (!global.LSCLIENT || !global.LSCLIENT.isRunning()) {
       window.showErrorMessage("Odoo Language Server is not running.");
       return;
     }
 
-    const result = await global.LSCLIENT.sendRequest("$Odoo/readConfig", {});
+    const params = profileName ? { profile: profileName } : {};
+    const result = await global.LSCLIENT.sendRequest("$Odoo/readConfig", params);
     if (!result) {
       window.showErrorMessage("No config received from server.");
       return;
@@ -745,15 +827,12 @@ async function showConfigFromServer(context: ExtensionContext) {
     let html = String(result).replace(
       /href="file:\/\/\/([^"]+)"/g,
       (match, filePath) => {
-        // decode URI if needed
         const decodedPath = decodeURIComponent(filePath);
-        // Use vscode://file/<absolute_path>
         const vscodeUri = `vscode://file/${decodedPath}`;
         return `href="${vscodeUri}"`;
       }
     );
 
-    // Create a Webview panel
     const panel = window.createWebviewPanel(
       'odooConfigPreview',
       'Odoo Config Preview',

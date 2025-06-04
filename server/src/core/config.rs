@@ -81,7 +81,7 @@ impl Default for MergeMethod {
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct ConfigFile {
-    config: Vec<ConfigEntryRaw>,
+    pub config: Vec<ConfigEntryRaw>,
 }
 
 impl ConfigFile {
@@ -315,7 +315,7 @@ where
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConfigEntryRaw {
     #[serde(default = "default_name")]
-    name: String,
+    pub name: String,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
     extends: Option<String>, // Allowed to extend from another config
