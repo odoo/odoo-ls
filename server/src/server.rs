@@ -421,18 +421,6 @@ impl Server {
                         }
                         self.sender_s_to_read.send(Message::Request(r)).unwrap();
                     }
-                    "$Odoo/listConfigProfiles" => {
-                        if DEBUG_THREADS {
-                            info!("Sending request to main thread : {} - {}", r.method, r.id);
-                        }
-                        self.sender_s_to_read.send(Message::Request(r)).unwrap();
-                    },
-                    "$Odoo/readConfig" => {
-                        if DEBUG_THREADS {
-                            info!("Sending request to main thread : {} - {}", r.method, r.id);
-                        }
-                        self.sender_s_to_read.send(Message::Request(r)).unwrap();
-                    },
                     ResolveCompletionItem::METHOD => {
                         info!("Got ignored CompletionItem/resolve")
                     }
