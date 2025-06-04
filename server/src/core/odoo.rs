@@ -936,6 +936,25 @@ impl Odoo {
         Err(S!("Unable to read selectedConfiguration"))
     }
 
+    pub fn send_all_configurations(session: &mut SessionInfo) {
+        if let Some(ref config_file) = session.sync_odoo.config_file {
+            let mut configs_map = serde_json::Map::new();
+            for entry in &config_file.config {
+                let html = crate::core::config::ConfigFile { config: vec![entry.clone()] }.to_html_string();
+                configs_map.insert(entry.name.clone(), serde_json::Value::String(html));
+            }
+
+            configs_map.insert(
+                "__all__".to_string(),
+                serde_json::Value::String(config_file.to_html_string())
+            );
+            session.send_notification(
+                "$Odoo/setConfiguration",
+                serde_json::Value::Object(configs_map)
+            );
+        }
+    }
+
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
@@ -947,6 +966,7 @@ impl Odoo {
         match config {
             Ok((config, config_file)) => {
                 session.sync_odoo.config_file = Some(config_file);
+                Odoo::send_all_configurations(session);
                 SyncOdoo::init(session, config);
                 session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
                     (std::time::Instant::now() - start).as_secs(),
@@ -956,35 +976,6 @@ impl Odoo {
                 session.log_message(MessageType::ERROR, format!("Unable to load config: {}", e));
                 error!(e);
             }
-        }
-    }
-
-    pub fn list_config_profiles(session: &mut SessionInfo) -> Result<Vec<String>, ResponseError> {
-        if let Some(ref config_file) = session.sync_odoo.config_file {
-            let profiles: Vec<String> = config_file.config.iter().map(|entry| entry.name.clone()).collect();
-            Ok(profiles)
-        } else {
-            Ok(vec![])
-        }
-    }
-
-    pub fn read_config(session: &mut SessionInfo, params: Option<serde_json::Value>) -> Result<Option<String>, ResponseError> {
-        let profile = params
-            .as_ref()
-            .and_then(|v| v.get("profile"))
-            .and_then(|v| v.as_str());
-        if let Some(ref config_file) = session.sync_odoo.config_file {
-            if let Some(profile_name) = profile {
-                if let Some(entry) = config_file.config.iter().find(|e| e.name == profile_name) {
-                    let single_config = crate::core::config::ConfigFile { config: vec![entry.clone()] };
-                    let md = single_config.to_html_string();
-                    return Ok(Some(md));
-                }
-            }
-            let md = config_file.to_html_string();
-            Ok(Some(md))
-        } else {
-            Ok(None)
         }
     }
 
