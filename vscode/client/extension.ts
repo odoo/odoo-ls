@@ -770,6 +770,10 @@ async function showConfigProfileQuickPick(context: ExtensionContext) {
 }
 
 function showConfigPreview(profileName: string) {
+  if (!CONFIG_HTML_MAP || Object.keys(CONFIG_HTML_MAP).length === 0) {
+    window.showErrorMessage("No configuration profiles available. Please wait for the server to send configurations.");
+    return;
+  }
   const html = CONFIG_HTML_MAP[profileName];
   if (!html) {
     window.showErrorMessage("No config HTML found for this profile.");

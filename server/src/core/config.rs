@@ -575,7 +575,7 @@ fn merge_configs(
 }
 
 
-pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
+fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
     let mut current_dir = PathBuf::from(workspace_path);
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
@@ -608,7 +608,7 @@ pub fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, wor
     Ok(merged_config)
 }
 
-pub fn merge_all_workspaces(
+fn merge_all_workspaces(
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
     ws_folders: hash_map::Iter<String, String>
 ) -> Result<(ConfigNew, ConfigFile), String> {
@@ -706,3 +706,7 @@ pub fn merge_all_workspaces(
     Ok((final_config, config_file))
 }
 
+pub fn get_configuration(ws_folders: hash_map::Iter<String, String>)  -> Result<(ConfigNew, ConfigFile), String> {
+    let ws_confs: Vec<_> = ws_folders.clone().map(|ws_f| load_merged_config_upward(ws_folders.clone(), ws_f.0, ws_f.1)).flatten().collect();
+    merge_all_workspaces(ws_confs, ws_folders.clone())
+}
