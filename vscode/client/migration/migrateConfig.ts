@@ -1,3 +1,4 @@
+import * as semver from "semver";
 import {
     ExtensionContext,
     workspace,
@@ -15,5 +16,14 @@ export async function migrateConfigToSettings(context: ExtensionContext){
 export async function migrateAfterDelay(context: ExtensionContext){
     if (String(workspace.getConfiguration().get("Odoo.serverLogLevel")) == "afterDelay"){
         workspace.getConfiguration().update("Odoo.serverLogLevel", "adaptive", ConfigurationTarget.Global)
+    }
+}
+export async function migrateShowHome(context: ExtensionContext) {
+    // Reset the welcome view display setting if the extension version is 0.8.0
+    const currentSemVer = semver.parse(context.extension.packageJSON.version);
+    const lastRecordedSemVer = semver.parse(context.globalState.get("Odoo.lastRecordedVersion", ""));
+    const targetSemVer = semver.parse("0.8.0");
+    if (currentSemVer >= targetSemVer && lastRecordedSemVer && lastRecordedSemVer < targetSemVer) {
+        context.globalState.update('Odoo.displayWelcomeView', undefined);
     }
 }

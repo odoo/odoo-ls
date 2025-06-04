@@ -39,7 +39,8 @@ import { getConfigurationStructure, stateInit } from "./common/validation";
 import { execSync } from "child_process";
 import {
     migrateAfterDelay,
-    migrateConfigToSettings
+    migrateConfigToSettings,
+    migrateShowHome
 } from "./migration/migrateConfig";
 import { SafeLanguageClient } from "./common/safeLanguageClient";
 import { constants } from "fs/promises";
@@ -593,6 +594,9 @@ async function initializeCSVSemanticTokenProvider(context: ExtensionContext): Pr
 function handleMigration(context){
     migrateConfigToSettings(context)
     migrateAfterDelay(context)
+    if (isExtensionUpdated(context)) {
+        migrateShowHome(context);
+    }
 }
 
 export async function activate(context: ExtensionContext): Promise<void> {
