@@ -1528,9 +1528,7 @@ impl Odoo {
                 if file_info.borrow().file_info_ast.borrow().ast.is_none() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
-                    return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
-                }
+                return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
             }
         }
         Ok(None)

@@ -4,7 +4,7 @@ use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind};
 use ruff_python_ast::{Expr, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtGlobal, StmtIf, StmtImport, StmtImportFrom, StmtMatch, StmtNonlocal, StmtTry, StmtTypeAlias, StmtWhile, StmtWith};
 use ruff_text_size::Ranged;
 
-use crate::{constants::SymType, core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign, AssignTargetType}, symbols::symbol::Symbol}, threads::SessionInfo};
+use crate::{constants::SymType, core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign, AssignTargetType}, symbols::symbol::Symbol}, threads::SessionInfo, S};
 
 
 pub struct DocumentSymbolFeature;
@@ -18,6 +18,12 @@ impl DocumentSymbolFeature {
         if let Some(ast) = &file_info_ast.ast {
             for stmt in ast.iter() {
                 DocumentSymbolFeature::visit_stmt(session, stmt, &mut results, file_info);
+            }
+        } else if file_info_bw.uri.ends_with(".xml") {
+            let data = file_info_ast.text_rope.as_ref().unwrap().to_string();
+            let document = roxmltree::Document::parse(&data);
+            if let Ok(document) = document {
+                DocumentSymbolFeature::visit_xml_document(session, document, &mut results, file_info);
             }
         }
         if results.is_empty() {
@@ -382,6 +388,80 @@ impl DocumentSymbolFeature {
                 children: None
             });
         }
+    }
+
+///////////////////////////////////////////////
+// XML
+///////////////////////////////////////////////
+
+    fn visit_xml_document(session: &mut SessionInfo, document: roxmltree::Document, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>) {
+        let mut children = vec![];
+        for node in document.root_element().children() {
+            if node.is_element() {
+                DocumentSymbolFeature::visit_xml_node(session, &node, &mut children, file_info);
+            }
+        }
+        let range = Range {
+            start: file_info.borrow().offset_to_position(document.root_element().range().start),
+            end: file_info.borrow().offset_to_position(document.root_element().range().end),
+        };
+        results.push(DocumentSymbol {
+            name: document.root_element().tag_name().name().to_string(),
+            detail: None,
+            kind: SymbolKind::STRUCT,
+            tags: None,
+            deprecated: None,
+            range,
+            selection_range: range.clone(),
+            children: Some(children),
+        });
+    }
+
+    fn visit_xml_node(session: &mut SessionInfo, node: &roxmltree::Node, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>) {
+        let range = Range {
+            start: file_info.borrow().offset_to_position(node.range().start),
+            end: file_info.borrow().offset_to_position(node.range().end),
+        };
+        let mut children = vec![];
+        for child in node.children() {
+            if child.is_element() {
+                DocumentSymbolFeature::visit_xml_node(session, &child, &mut children, file_info);
+            }
+        }
+        let kind = match node.tag_name().name() {
+            "record" => SymbolKind::CLASS,
+            "menuitem" => SymbolKind::CLASS,
+            "value" => SymbolKind::TYPE_PARAMETER,
+            "function" => SymbolKind::FUNCTION,
+            "report" => SymbolKind::PACKAGE,
+            "field" => SymbolKind::FIELD,
+            "template" => SymbolKind::INTERFACE,
+            "delete" => SymbolKind::CONSTRUCTOR,
+            "act_window" => SymbolKind::METHOD,
+            _ => SymbolKind::VARIABLE
+        };
+        let name = match node.tag_name().name() {
+            "record" => S!("[record] ") + node.attribute("id").map_or_else(|| "".to_string(), |id| id.to_string()).as_str(),
+            "menuitem" => S!("[menuitem] ") + node.attribute("id").map_or_else(|| "??".to_string(), |id| id.to_string()).as_str(),
+            "value" => S!("[value] ") + node.attribute("name").map_or_else(|| "".to_string(), |id| id.to_string()).as_str(),
+            "function" => S!("[function] ") + node.attribute("name").map_or_else(|| "??".to_string(), |id| id.to_string()).as_str(),
+            "report" => S!("[report] ") + node.attribute("name").map_or_else(|| "??".to_string(), |id| id.to_string()).as_str(),
+            "field" => S!("[field] ") + node.attribute("name").map_or_else(|| "??".to_string(), |id| id.to_string()).as_str(),
+            "template" => S!("[template] ") + node.attribute("id").map_or_else(|| "".to_string(), |id| id.to_string()).as_str(),
+            "delete" => S!("[delete] ") + node.attribute("model").map_or_else(|| "??".to_string(), |id| id.to_string()).as_str(),
+            "act_window" => S!("[act_window] ") + node.attribute("id").map_or_else(|| "??".to_string(), |id| id.to_string()).as_str(),
+            _ => node.tag_name().name().to_string(),
+        };
+        results.push(DocumentSymbol {
+            name: name,
+            detail: None,
+            kind: kind,
+            tags: None,
+            deprecated: None,
+            range,
+            selection_range: range.clone(),
+            children: Some(children),
+        });
     }
 
 }
