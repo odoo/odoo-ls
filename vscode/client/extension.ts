@@ -20,6 +20,9 @@ import {
     OutputChannel,
     Uri,
     ConfigurationTarget,
+    Range,
+    TextEditor,
+    DecorationOptions,
 } from "vscode";
 import {
     LanguageClientOptions,
@@ -52,8 +55,8 @@ function getClientOptions(): LanguageClientOptions {
         // Register the server for plain text documents
         documentSelector: [
             { scheme: "file", language: "python" },
-            { scheme: "file", language: "csv" },
             { scheme: "file", language: "xml" },
+            { scheme: "file", language: "csv" },
             { scheme: "untitled", language: "python" },
         ],
         synchronize: {
@@ -725,6 +728,98 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
     }
 }
 
+function generateHSLColors(count: number): string[] {
+    const colors: string[] = [
+        "hsl(200, 70%, 65%)",
+        
+        "hsl(30, 70%, 65%)",
+        
+        "hsl(60, 70%, 65%)",
+        
+        "hsl(100, 70%, 65%)",
+    ];
+    const saturation = 70;
+    const lightness = 65;
+    const angle = 137.508;
+    const baseHue = 100
+
+    for (let i = 4; i < count; i++) {
+        const hue = (baseHue + i * angle) % 360;
+        const hsl = `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`;
+        colors.push(hsl);
+    }
+
+    return colors;
+}
+
+async function initializeCSVSemanticTokenProvider(context: ExtensionContext): Promise<void> {
+    const rainbowCsv = extensions.getExtension('mechatroner.rainbow-csv');
+
+    if (rainbowCsv && rainbowCsv.isActive) {
+    console.log('Rainbow CSV is active, disabling decorations.');
+    return;
+    }
+    const activeEditor = window.activeTextEditor;
+
+    if (activeEditor) {
+        triggerUpdateDecorations(activeEditor);
+    }
+
+    context.subscriptions.push(
+        window.onDidChangeActiveTextEditor(editor => {
+        if (editor) triggerUpdateDecorations(editor);
+        }),
+        workspace.onDidChangeTextDocument(event => {
+        if (window.activeTextEditor && event.document === window.activeTextEditor.document) {
+            triggerUpdateDecorations(window.activeTextEditor);
+        }
+        })
+    );
+
+    function triggerUpdateDecorations(editor: TextEditor) {
+        if (!editor || editor.document.languageId !== 'csv') return;
+
+        const text = editor.document.getText();
+        const lines = text.split(/\r?\n/);
+
+        let maxColumns = 0;
+        const allRows = lines.map(line => line.split(','));
+        for (const row of allRows) {
+            if (row.length > maxColumns) maxColumns = row.length;
+        }
+
+        const baseColor: [number, number, number] = [255, 125, 135];
+
+        const colors = generateHSLColors(maxColumns);
+
+        const decorationTypes = colors.map(color =>
+            window.createTextEditorDecorationType({ color })
+        );
+
+        const decorationsArray: DecorationOptions[][] = colors.map(() => []);
+
+        for (let lineIdx = 0; lineIdx < allRows.length; lineIdx++) {
+            const columns = allRows[lineIdx];
+            let colStart = 0;
+
+            for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+            const colText = columns[colIdx];
+            const startPos = colStart;
+            const endPos = colStart + colText.length;
+
+            const range = new Range(lineIdx, startPos, lineIdx, endPos);
+            decorationsArray[colIdx].push({ range });
+
+            colStart = endPos + 1; // +1 for the comma
+            }
+        }
+
+        decorationTypes.forEach((decType, idx) => {
+            editor.setDecorations(decType, decorationsArray[idx]);
+        });
+    }
+}
+
 function handleMigration(context){
     migrateConfigToSettings(context)
     migrateAfterDelay(context)
@@ -743,6 +838,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
 
         await initStatusBar(context);
         await initializeSubscriptions(context);
+        await initializeCSVSemanticTokenProvider(context);
 
         switch (context.globalState.get('Odoo.displayWelcomeView', null)) {
             case null:

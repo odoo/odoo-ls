@@ -21,6 +21,14 @@
     "workspaceContains:**/__manifest__.py"
   ],
   "contributes": {
+    "languages": [
+      {
+        "id": "csv",
+        "aliases": ["CSV"],
+        "extensions": [".csv"],
+        "mimetypes": ["text/csv"]
+      }
+    ],
     "commands": [
       {
         "command": "odoo.clickStatusBar",
