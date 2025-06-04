@@ -1,4 +1,3 @@
-use crate::core::config::{load_merged_config_upward};
 use crate::core::entry_point::EntryPointType;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
@@ -26,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{merge_all_workspaces, ConfigEntry, ConfigFile, RefreshMode};
+use super::config::{get_configuration, ConfigEntry, ConfigFile, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -958,22 +957,25 @@ impl Odoo {
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let ws_confs: Vec<_> = file_mgr.borrow().iter_workspace_folders().map(|ws_f| load_merged_config_upward(file_mgr.borrow().iter_workspace_folders(), ws_f.0, ws_f.1)).flatten().collect();
-        let config = merge_all_workspaces(ws_confs, file_mgr.borrow().iter_workspace_folders());
+        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().iter_workspace_folders());
+        if let Ok((_, config_file)) = &config {
+            session.sync_odoo.config_file = Some(config_file.clone());
+            Odoo::send_all_configurations(session);
+        }
         let selected_config = Odoo::read_selected_configuration(session);
-        let config = config.and_then(|(ce, cfile)| ce.get(&selected_config?).cloned().map(|config| (config, cfile)).ok_or(S!("Unable to find selected configuration")));
+        let config = config.and_then(|(ce, _)|{
+            let config_name = selected_config?;
+            ce.get(&config_name).cloned().ok_or(format!("Unable to find selected configuration \"{config_name}\""))
+        });
         match config {
-            Ok((config, config_file)) => {
-                session.sync_odoo.config_file = Some(config_file);
-                Odoo::send_all_configurations(session);
+            Ok(config) => {
                 SyncOdoo::init(session, config);
                 session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
                     (std::time::Instant::now() - start).as_secs(),
                     session.sync_odoo.modules.len()))
             },
             Err(e) => {
-                session.log_message(MessageType::ERROR, format!("Unable to load config: {}", e));
+                session.show_message(MessageType::ERROR, format!("Unable to load config: {}  \n\nPlease select a correct profile or fix the issues in the config", e));
                 error!(e);
             }
         }
