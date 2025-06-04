@@ -393,7 +393,13 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                         to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
                     },
                     "$Odoo/readConfig" => {
-                        to_value::<String>(Odoo::read_config(&mut session))
+                        to_value::<String>(Odoo::read_config(&mut session, Some(r.params)))
+                    },
+                    "$Odoo/listConfigProfiles" => {
+                        match Odoo::list_config_profiles(&mut session) {
+                            Ok(profiles) => to_value::<Vec<String>>(Ok(Some(profiles))),
+                            Err(e) => to_value::<Vec<String>>(Err(e)),
+                        }
                     },
                     _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
                         code: 1,
