@@ -81,6 +81,7 @@ impl Default for MergeMethod {
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct ConfigFile {
+    #[serde(default)]
     pub config: Vec<ConfigEntryRaw>,
 }
 
@@ -418,7 +419,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, Stri
     let path = path.as_ref();
     let config_dir = path.parent().unwrap_or(Path::new("."));
     let contents = fs::read_to_string(path)?;
-    let raw: ConfigFile = toml::from_str(&contents)?;
+    let raw = toml::from_str::<ConfigFile>(&contents)?;
 
     let config = raw.config.into_iter().map(|mut entry| {
         // odoo_path
@@ -579,6 +580,7 @@ fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspa
     let mut current_dir = PathBuf::from(workspace_path);
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
+    merged_config.insert("root".to_string(), ConfigEntryRaw::new());
 
     loop {
         if !visited_dirs.insert(current_dir.clone()) {
