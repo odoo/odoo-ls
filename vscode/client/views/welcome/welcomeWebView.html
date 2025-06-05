@@ -40,28 +40,109 @@
                 <p>
                     Your available configurations are displayed here:<br/>
                     <img class="img-margins" src="<%= image_1 %>" /><br/>
-                    Click on it to open the configuration selector panel:<br/>
+                    Click on it to select it, or the eye icon at the edge to see that specific configuration<br/>
+                    You could also just See all the configurations by clicking on the "See all configurations" button.<br/>:
                     <img class="img-margins" src="<%= image_2 %>" /><br/>
-                    To create a new configuration, click on "Add a configuration". To edit one, click on the wheel next to the configuration you would like to edit.<br/>
+                </p>
+            </section>
+            <h2> Configuration </h2>
+            <section>
+                <p>
+                    <ul>
+                        <li>
+                            The configuration is a set of parameters that will be used to analyze your code. It contains the path to your Odoo source code, the addons you want to use, the Python interpreter to use, and more.
+                        </li>
+                        <li>
+                            You can create a new configuration by creating one or more <code>odools.toml</code> files.
+                        </li>
+                        <li>
+                            Structure of the <code>odools.toml</code> file:
+                            <ul>
+                                <li>
+                                    There is always one <b>"root"</b> configuration profile, which is the default configuration. It is generated for you by default even if you do not provide any configuration file.<br/>
+                                    It will use defaults and also infer odoo path and addons paths from your workspace folders.
+                                </li>
+                                <li>
+                                    You can create multiple profiles, each with its own set of parameters. Each profile is a section in the <code>odools.toml</code> file, and you can switch between them.
+                                </li>
+                                <li>
+                                    Each profile can have its own set of parameters, such as the path to the Odoo source code, the addons to use, the Python interpreter to use, and more.
+                                </li>
+                                <li>
+                                    Profiles can extend each other, so you can have a base profile with common parameters and then extend it with specific parameters for each profile.
+                                </li>
+                                <li>
+                                    Profile extension works only on the same files, so that it does not affect the merging of <code>odools.toml</code> files in child directories.
+                                </li>
+                                <li>
+                                    <code>odools.toml</code> files are searched for from each workspace folder and up through its parent directories until the root, while merging them together.<br/>
+                                    Priorities are given to the most specific file, so if you have a file in your workspace folder, it will override the one in the parent directory.<br/>
+                                    This allows you to have a global configuration in your home directory, and then override it with a specific configuration in your workspace folder.<br/>
+                                    Also, you have the freedom to have multiple <code>odools.toml</code> files in different directories, and compose them with profiles and extensions for your use case.<br/>
+                                </li>
+                                <li>
+                                    However, there can be no conflicts between profiles between workspace folders.
+                                    <ul>
+                                        <li>
+                                            If we have two workspace folders, each with its own <code>odools.toml</code> file, the profiles in those files should not conflict with each other otherwise they won't start.
+                                        </li>
+                                        <li>
+                                            It is the responsibility of the user to ensure that the profiles in the <code>odools.toml</code> files in different workspace folders do not conflict with each other.
+                                        </li>
+                                        <li>
+                                            Using the profiles features and extensions, you can always create non-conflicting profiles that work without disrupting other profiles.
+                                        </li>
+                                        <li>
+                                            Conflicts can happen even if you do not specifically create them, for example if you open a workspace with two folders that are valid odoo paths, in that case it is ambiguous which one to use.
+                                        </li>
+                                        <li>
+                                            Addons folders are merged together by default between workspace folders.
+                                        </li>
+                                    </ul>
+                                </li>
+                                <li>
+                                    When seeing the configuration, you conveniently have the source of that configuration value, which could be a default value (<code>$default</code>), a value from the <code>odools.toml</code> file, or an inferred value from the workspace folders (<code>$workspaceFolder:FOLDERNAME</code>).<br/>
+                                    You can click on the links to open the file; you might be prompted to trust the link.
+                                </li>
+                                <li>
+                                    For now all the paths are relative to the current path of the <code>odools.toml</code> file.<br/>
+                                </li>
+                                <li>
+                                    Some variables are allowed in odoo_paths, addons_paths and python_path: ${userHome}, ${workspaceFolder:FOLDERNAME}, and ${workspaceFolder}.<br/>
+                                    Setting the <code>odoo_path</code> to ${workspaceFolder} will use the current workspace folder as the Odoo source code path.<br/>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </p>
+                <p>
+                    Configuration Structure parameters:
+                </p>
+                <ul>
+                    <li><b>name</b> (string): Name of the configuration profile (default: "root")</li>
+                    <li><b>extends</b> (string, optional): Name of another profile in the same file to extend from</li>
+                    <li><b>odoo_path</b> (string, optional): Path to the Odoo source code</li>
+                    <li><b>addons_paths</b> (array of string): List of addon directories to include</li>
+                    <li><b>addons_merge</b> ("merge" | "override", default: "merge"): How to combine addons_paths with parent profile ("merge" to combine, "override" to replace)</li>
+                    <li><b>python_path</b> (string, optional): Path to the Python interpreter</li>
+                    <li><b>additional_stubs</b> (array of string): Additional stub directories</li>
+                    <li><b>additional_stubs_merge</b> ("merge" | "override", default: "merge"): How to combine additional_stubs with parent profile</li>
+                    <li><b>refresh_mode</b> ("onSave" | "adaptive" | "off", default: "adaptive"): When to refresh the server data</li>
+                    <li><b>file_cache</b> (bool, default: true): Enable file caching for workspace files</li>
+                    <li><b>diag_missing_imports</b> ("all" | "only_odoo" | "none", default: "all"): Diagnostics for missing imports</li>
+                    <li><b>ac_filter_model_names</b> (bool, default: true): Only show model names from module dependencies in autocompletion</li>
+                    <li><b>auto_save_delay</b> (integer, default: 1000): Delay in ms before refreshing after an update (minimum 1000, maximum 15000)</li>
+                    <li><b>add_workspace_addon_path</b> (bool, default: false): Add the workspace folder as an addon path if it looks like an addon if you specified other addons paths</li>
+                </ul>
+                <p>
+                    Example 1:
+                    No configuration file, with three workspace folders, once with an Odoo source code, two with addons enterprise and extra-addons.
                     <img class="img-margins" src="<%= image_3 %>" /><br/>
                 </p>
                 <p>
-                    Create your configuration with the information related to the odoo environment you want to use:<br/>
-                    <img class="img-margins" src="<%= image_4 %>" /><br/>
-                </p>
-                <p>
-                    When your configuration is ready, select it from the panel. This selection will run for the current workspace.<br/>
+                    When your configuration is ready, restart the language server to reload the configs, select it from the panel. This selection will run for the current workspace.<br/>
                     While the wheel next to the Odoo button is spinning, the extension is loading the configuration. When it's done, the wheel will stop spinning and the extension will start to help you in your work.<br/>
                     You can use your vscode while the extension is loading, but not all features will be available until the configuration is ready.
-                </p>
-            </section>
-            <h2> Advanced configuration </h2>
-            <section>
-                <p>
-                    If you want to edit manually your configurations or script the setup, you can edit them by modifying the settings.json of your
-                    workspace. Be cautious however, as you can break the extension by doing that. Follow carefully the helpers and type annotations.
-                    <!-- TODO: Edit Wiki -->
-                    You can find more information about settings on our github: https://github.com/odoo/odoo-ls/wiki/Edit-settings.json
                 </p>
             </section>
         </div>
