@@ -415,7 +415,7 @@ fn default_name() -> String {
     "root".to_string()
 }
 
-fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, String>, path: P) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
+fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, path: P, workspace_name: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
     let path = path.as_ref();
     let config_dir = path.parent().unwrap_or(Path::new("."));
     let contents = fs::read_to_string(path)?;
@@ -424,7 +424,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, Stri
     let config = raw.config.into_iter().map(|mut entry| {
         // odoo_path
         entry.odoo_path = entry.odoo_path
-            .map(|p| fill_validate_path(ws_folders.clone(), &p.value, is_odoo_path).unwrap_or(p.value.clone()))
+            .map(|p| fill_validate_path(ws_folders, workspace_name, &p.value, is_odoo_path).unwrap_or(p.value.clone()))
             .and_then(|p| std::fs::canonicalize(config_dir.join(p)).ok())
             .map(|p| p.sanitize())
             .filter(|p| is_odoo_path(p))
@@ -432,7 +432,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, Stri
 
         // addons_paths
         entry.addons_paths = entry.addons_paths.into_iter()
-            .map(|sourced| fill_validate_path(ws_folders.clone(), &sourced.value, is_addon_path).unwrap_or(sourced.value.clone()))
+            .map(|sourced| fill_validate_path(ws_folders, workspace_name, &sourced.value, is_addon_path).unwrap_or(sourced.value.clone()))
             .flat_map(|p| std::fs::canonicalize(config_dir.join(&p)).ok())
             .map(|p| p.sanitize())
             .filter(|p| is_addon_path(p))
@@ -448,7 +448,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: hash_map::Iter<String, Stri
 
         // python_path
         entry.python_path = entry.python_path
-            .map(|p| fill_validate_path(ws_folders.clone(), &p.value, is_python_path).unwrap_or(p.value))
+            .map(|p| fill_validate_path(ws_folders, workspace_name, &p.value, is_python_path).unwrap_or(p.value))
             .and_then(|p| std::fs::canonicalize(config_dir.join(p)).ok())
             .map(|p| p.sanitize())
             .filter(|p| is_python_path(p))
@@ -576,7 +576,7 @@ fn merge_configs(
 }
 
 
-fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
+fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
     let mut current_dir = PathBuf::from(workspace_path);
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
@@ -589,7 +589,7 @@ fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspa
 
         let config_path = current_dir.join("odools.toml");
         if config_path.exists() && config_path.is_file() {
-            let current_config = read_config_from_file(ws_folders.clone(), &config_path)?;
+            let current_config = read_config_from_file(ws_folders, &config_path, workspace_name)?;
             merged_config = merge_configs(&merged_config, &current_config);
         }
         if let Some(parent) = current_dir.parent() {
@@ -611,7 +611,7 @@ fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspa
 
 fn merge_all_workspaces(
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
-    ws_folders: hash_map::Iter<String, String>
+    ws_folders: &HashMap<String, String>
 ) -> Result<(ConfigNew, ConfigFile), String> {
     let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
 
@@ -670,7 +670,7 @@ fn merge_all_workspaces(
     // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
     for (_, entry) in merged_raw_config.iter_mut() {
         if entry.odoo_path.is_none() {
-            for (name, path) in ws_folders.clone() {
+            for (name, path) in ws_folders.iter() {
                 if is_odoo_path(path) {
                     if entry.odoo_path.is_some() {
                         return Err(
@@ -707,7 +707,8 @@ fn merge_all_workspaces(
     Ok((final_config, config_file))
 }
 
-pub fn get_configuration(ws_folders: hash_map::Iter<String, String>)  -> Result<(ConfigNew, ConfigFile), String> {
-    let ws_confs: Vec<_> = ws_folders.clone().map(|ws_f| load_merged_config_upward(ws_folders.clone(), ws_f.0, ws_f.1)).flatten().collect();
-    merge_all_workspaces(ws_confs, ws_folders.clone())
+pub fn get_configuration(ws_folders: &HashMap<String, String>)  -> Result<(ConfigNew, ConfigFile), String> {
+    let ws_confs: Vec<_> = ws_folders.iter().map(|ws_f| load_merged_config_upward(ws_folders, ws_f.0, ws_f.1)).flatten().collect();
+    merge_all_workspaces(ws_confs, ws_folders)
 }
+

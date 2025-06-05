@@ -957,7 +957,7 @@ impl Odoo {
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
-        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().iter_workspace_folders());
+        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders());
         if let Ok((_, config_file)) = &config {
             session.sync_odoo.config_file = Some(config_file.clone());
             Odoo::send_all_configurations(session);
