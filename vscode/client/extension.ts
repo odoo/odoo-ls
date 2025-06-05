@@ -382,10 +382,19 @@ function deleteOldFiles(context: ExtensionContext) {
 
 async function initStatusBar(context: ExtensionContext): Promise<void> {
     global.STATUS_BAR = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-    global.STATUS_BAR.command = "odoo.clickStatusBar"
+    global.STATUS_BAR.command = "odoo.clickStatusBar";
+    global.STATUS_BAR.tooltip = "Odoo: Change Configuration";
     context.subscriptions.push(global.STATUS_BAR);
     await setStatusConfig(context);
     global.STATUS_BAR.show();
+
+    // Add a restart button to the status bar
+    global.STATUS_BAR_RESTART = window.createStatusBarItem(StatusBarAlignment.Left, 99);
+    global.STATUS_BAR_RESTART.text = "$(refresh)";
+    global.STATUS_BAR_RESTART.tooltip = "Odoo: Restart Language Server";
+    global.STATUS_BAR_RESTART.command = "odoo.restartServer";
+    context.subscriptions.push(global.STATUS_BAR_RESTART);
+    global.STATUS_BAR_RESTART.show();
 }
 
 
@@ -481,6 +490,8 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             "odoo.restartServer", async () => {
                 if (global.LSCLIENT) {
                     global.LSCLIENT.restart();
+                    global.IS_LOADING = false;
+                    setStatusConfig(context);
                 }
         }),
         commands.registerCommand("odoo.showServerConfig", async () => {
@@ -763,7 +774,9 @@ async function showConfigProfileQuickPick(context: ExtensionContext) {
       } else {
         const ok = await changeSelectedConfig(context, selection.label);
         if (ok && global.LSCLIENT) {
-          await global.LSCLIENT.restart();
+            await global.LSCLIENT.restart();
+            global.IS_LOADING = false;
+            setStatusConfig(context);
         }
       }
     }
