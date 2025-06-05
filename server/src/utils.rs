@@ -1,4 +1,4 @@
-use std::{collections::{hash_map, HashMap}, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
+use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 use path_slash::{PathBufExt, PathExt};
 use regex::Regex;
 use ruff_text_size::TextSize;
@@ -233,13 +233,13 @@ pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Option<S
 }
 
 
-pub fn build_pattern_map(ws_folders: hash_map::Iter<String, String>) -> HashMap<String, String> {
+pub fn build_pattern_map(ws_folders: &HashMap<String, String>) -> HashMap<String, String> {
     // TODO: Maybe cache this
     let mut pattern_map = HashMap::new();
     if let Some(home_dir) = HOME_DIR.as_ref() {
         pattern_map.insert(S!("userHome"), home_dir.clone());
     }
-    for (ws_name, ws_path) in ws_folders{
+    for (ws_name, ws_path) in ws_folders.iter(){
         pattern_map.insert(format!("workspaceFolder:{}", ws_name.clone()), ws_path.clone());
     }
     pattern_map
@@ -250,13 +250,13 @@ pub fn build_pattern_map(ws_folders: hash_map::Iter<String, String>) -> HashMap<
 /// While also checking it with the predicate function.
 /// pass `|_| true` to skip the predicate check.
 /// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
-pub fn fill_validate_path<F>(ws_folders: hash_map::Iter<String, String>, template: &str, predicate: F) -> Option<String>
+pub fn fill_validate_path<F>(ws_folders: &HashMap<String, String>, workspace_name: &String, template: &str, predicate: F) -> Option<String>
 where
     F: Fn(&String) -> bool,
 {
-        let mut pattern_map = build_pattern_map(ws_folders.clone());
-        for (_, ws_path) in ws_folders {
-            pattern_map.insert(S!("workspaceFolder"), ws_path.clone());
+        let mut pattern_map = build_pattern_map(ws_folders);
+        if let Some(path) = ws_folders.get(workspace_name) {
+            pattern_map.insert(S!("workspaceFolder"), path.clone());
             if let Some(path) = fill_template(template, &pattern_map) {
                 if predicate(&path) {
                     return Some(path);

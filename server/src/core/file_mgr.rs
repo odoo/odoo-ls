@@ -490,8 +490,8 @@ impl FileMgr {
         self.workspace_folder.remove(&name);
     }
 
-    pub fn iter_workspace_folders(&self) -> std::collections::hash_map::Iter<String, String> {
-        self.workspace_folder.iter()
+    pub fn get_workspace_folders(&self) -> &HashMap<String, String> {
+        &self.workspace_folder
     }
 
     pub fn is_in_workspace(&self, path: &str) -> bool {
