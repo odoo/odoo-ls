@@ -591,15 +591,14 @@ fn load_merged_config_upward(ws_folders: hash_map::Iter<String, String>, workspa
         if config_path.exists() && config_path.is_file() {
             let current_config = read_config_from_file(ws_folders.clone(), &config_path)?;
             merged_config = merge_configs(&merged_config, &current_config);
-            apply_extends(&mut merged_config);
         }
-
         if let Some(parent) = current_dir.parent() {
             current_dir = parent.to_path_buf();
         } else {
             break;
         }
     }
+    apply_extends(&mut merged_config);
 
     for (_, entry) in merged_config.iter_mut() {
         if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_empty()) && is_addon_path(workspace_path) {
