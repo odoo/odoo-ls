@@ -712,3 +712,8 @@ pub fn get_configuration(ws_folders: &HashMap<String, String>)  -> Result<(Confi
     merge_all_workspaces(ws_confs, ws_folders)
 }
 
+// TODO: add settings for disabled notifs for specific workspace folders
+// for later: add some diagnostics filtering settings path or code based
+// TODO: Update welcome page, + show it again for the updated clients
+// TODO: Test and tests
+// TODO: Check for odools.toml changes on workspace folders

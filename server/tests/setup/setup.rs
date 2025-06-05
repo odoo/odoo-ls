@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 
 use lsp_types::TextDocumentContentChangeEvent;
-use odoo_ls_server::{core::{config::{Config, DiagMissingImportsMode}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
+use odoo_ls_server::{core::{config::{ConfigEntry, DiagMissingImportsMode}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
 
 use odoo_ls_server::S;
 use tracing::{info, level_filters::LevelFilter};
@@ -56,8 +56,8 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
     test_addons_path = test_addons_path.join("tests").join("data").join("addons");
     info!("Test addons path: {:?}", test_addons_path);
 
-    let mut config = Config::new();
-    config.addons = vec![test_addons_path.sanitize()];
+    let mut config = ConfigEntry::new();
+    config.addons_paths = vec![test_addons_path.sanitize()];
     config.odoo_path = community_path.map(|x| PathBuf::from(x).sanitize());
     let Some(python_cmd) = get_python_command() else {
         panic!("Python not found")
@@ -65,7 +65,6 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
     config.python_path = python_cmd;
     config.refresh_mode = odoo_ls_server::core::config::RefreshMode::Off;
     config.diag_missing_imports = DiagMissingImportsMode::All;
-    config.no_typeshed = false;
 
     let (s, r) = crossbeam_channel::unbounded();
     let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
