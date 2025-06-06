@@ -6,9 +6,6 @@ use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, oyarn, 
 
 use super::{symbols::{symbol::Symbol}};
 
-/*
-Struct made to load RelaxNG Odoo schemas and add hooks and specific OdooLS behavior on particular nodes.
-*/
 pub struct CsvArchBuilder {
 }
 

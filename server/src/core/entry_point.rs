@@ -29,7 +29,9 @@ impl EntryPointMgr {
         }
     }
 
-    //path must point to a directory on disk
+    /**
+     * Create each required directory symbols for a given path.
+     * /!\ path must point to a directory on disk */
     pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &PathBuf, entry: Rc<RefCell<EntryPoint>>) -> Option<Rc<RefCell<Symbol>>> {
         let mut iter_path = PathBuf::new();
         let mut current_sym = entry.borrow().root.clone();

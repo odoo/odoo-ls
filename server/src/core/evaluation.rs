@@ -430,7 +430,7 @@ impl Evaluation {
             range: None
         }
     }
-    //return the evaluation but valid outside of the given function scope
+    ///return the evaluation but valid outside of the given function scope
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
         let mut res = vec![];
         match self.symbol.sym {
@@ -523,7 +523,7 @@ impl Evaluation {
         res
     }
 
-    //create an evaluation that is evaluating to the given symbol
+    /// Create an evaluation that is evaluating to the given symbol
     pub fn eval_from_symbol(symbol: &Weak<RefCell<Symbol>>, instance: Option<bool>) -> Evaluation{
         if symbol.is_expired() {
             return Evaluation::new_none();
@@ -554,14 +554,15 @@ impl Evaluation {
         }
     }
 
-    //Build evaluations from an ast node that can be associated to a LocalizedSymbol
-    //For example: a = "5"
-    // eval_from_ast should be called on '"5"' to build the evaluation of 'a'
-    //The result is a list, because some ast can give various possible results. For example: a = func()
-    //required_dependencies will be filled with dependencies required to build the value, step by step.
-    //You have to provide a vector with the length matching the available steps. For example, in arch_eval, required_dependencies
-    //should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
-    //not build but required during the eval_from_ast, it will NOT be built
+    /** Build evaluations from an ast node that can be associated to a LocalizedSymbol
+    * For example: a = "5"
+    *  eval_from_ast should be called on '"5"' to build the evaluation of 'a'
+    * The result is a list, because some ast can give various possible results. For example: a = func()
+    * required_dependencies will be filled with dependencies required to build the value, step by step.
+    * You have to provide a vector with the length matching the available steps. For example, in arch_eval, required_dependencies
+    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
+    * not build but required during the eval_from_ast, it will NOT be built
+    */
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
@@ -611,7 +612,7 @@ impl Evaluation {
     }
 
 
-    /*
+    /**
     analyze_ast will extract all known information about an ast:
     result.0: the direct evaluation
     result.3: the context after the evaluation. Can't be None
