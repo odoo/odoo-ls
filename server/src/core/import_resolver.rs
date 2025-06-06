@@ -198,7 +198,7 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
             continue;
         };
         session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&module_symbol));
-        session.sync_odoo.add_to_rebuild_arch(module_symbol.clone());
+        SyncOdoo::build_now(session, &module_symbol, BuildSteps::ARCH);
         return Some(module_symbol.clone());
     }
     None

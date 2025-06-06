@@ -370,12 +370,28 @@ impl EntryPoint {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, tree: &Tree) -> bool {
+    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path:&String, tree: &Tree) -> bool {
         let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
         let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let mut need_rebuild = false;
         let mut to_add = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
-        for s in self.not_found_symbols.iter() {
+        'loop_symbols: for s in self.not_found_symbols.iter() {
+            if s.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+                let mut sym = s.borrow_mut();
+                if let Some(step) = sym.as_module_package().not_found_data.get(path) {
+                    need_rebuild = true;
+                    match step {
+                        BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
+                            to_add[*step as usize].push(s.clone());
+                        }
+                        _ => {}
+                    }
+                    sym.as_module_package_mut().not_found_data.remove(path);
+                }
+            }
+            if need_rebuild {
+                continue 'loop_symbols; //as if a data has been found, we won't find anything later, so we can continue the loop
+            }
             let mut index: i32 = 0; //i32 sa we could go in negative values
             while (index as usize) < s.borrow().not_found_paths().len() {
                 let (step, not_found_tree) = s.borrow().not_found_paths()[index as usize].clone();
@@ -407,7 +423,9 @@ impl EntryPoint {
             session.sync_odoo.add_to_validations(s.clone());
         }
         for sym in found_sym.iter() {
-            self.not_found_symbols.remove(&sym);
+            if sym.borrow().not_found_paths().is_empty() && (sym.borrow().typ() != SymType::PACKAGE(PackageType::MODULE) || sym.borrow().as_module_package().not_found_data.is_empty()) {
+                self.not_found_symbols.remove(&sym);
+            }
         }
         need_rebuild
     }

@@ -1231,7 +1231,6 @@ impl Symbol {
         if parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = parent.borrow_mut().add_new_module_package(session, &name, path);
             if let Some(module) = module {
-                ModuleSymbol::load_module_info(module.clone(), session, parent.clone());
                 session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
                 return Some(module);
             } else if require_module {
@@ -1626,7 +1625,7 @@ impl Symbol {
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let sym_to_inv = ref_to_inv.borrow();
-            if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE) {
+            if matches!(&sym_to_inv.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
                 if *step == BuildSteps::ARCH && sym_to_inv.dependents().len() > 0 {
                     for (index, hashset) in sym_to_inv.dependents()[BuildSteps::ARCH as usize].iter().enumerate() {
                         if let Some(hashset) = hashset {
@@ -1716,7 +1715,7 @@ impl Symbol {
             drop(sym_ref);
             parent_bw.remove_symbol(ref_to_unload.clone());
             drop(parent_bw);
-            if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE) {
+            if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
             }
             //check if we should not reimport automatically
@@ -1961,7 +1960,7 @@ impl Symbol {
                 Symbol::Function(_) => { panic!("A function can not contain a file structure") },
                 Symbol::DiskDir(d) => { d.module_symbols.remove(symbol.borrow().name()); },
                 Symbol::Package(PackageSymbol::Module(m)) => {
-                    if symbol.borrow().typ() == SymType::XML_FILE {
+                    if symbol.borrow().typ() == SymType::XML_FILE || symbol.borrow().typ() == SymType::CSV_FILE {
                         m.data_symbols.remove(symbol.borrow().paths()[0].as_str());
                     } else {
                         m.module_symbols.remove(symbol.borrow().name());

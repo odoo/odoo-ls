@@ -1348,13 +1348,13 @@ impl Odoo {
         let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
         if let Some(tree) = tree {
             if let Some(main) = ep_mgr.borrow().main_entry_point.as_ref() {
-                main.borrow_mut().search_symbols_to_rebuild(session, &tree);
+                main.borrow_mut().search_symbols_to_rebuild(session, path, &tree);
             }
         }
         for entry in ep_mgr.borrow().iter_all_but_main() {
             if entry.borrow().is_valid_for(&PathBuf::from(path)) {
                 let tree = entry.borrow().get_tree_for_entry(&PathBuf::from(path.clone()));
-                entry.borrow_mut().search_symbols_to_rebuild(session, &tree);
+                entry.borrow_mut().search_symbols_to_rebuild(session, path, &tree);
             }
         }
         //test if the new path is a new module

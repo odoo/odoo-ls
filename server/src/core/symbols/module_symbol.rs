@@ -39,7 +39,7 @@ pub struct ModuleSymbol {
     pub dir_name: OYarn,
     depends: Vec<(OYarn, TextRange)>,
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
-    data: Vec<String>, // TODO
+    data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
@@ -48,6 +48,7 @@ pub struct ModuleSymbol {
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
+    pub not_found_data: HashMap<String, BuildSteps>,
     pub in_workspace: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
@@ -73,6 +74,7 @@ impl ModuleSymbol {
             i_ext: S!(""),
             is_external,
             not_found_paths: vec![],
+            not_found_data: HashMap::new(),
             in_workspace: false,
             root_path: dir_path.sanitize(),
             loaded: false,
@@ -134,28 +136,20 @@ impl ModuleSymbol {
         section_vec.push(content.clone());
     }
 
-    pub fn load_module_info(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> Vec<OYarn> {
-        {
-            let _symbol = symbol.borrow();
-            if _symbol.as_module_package().loaded {
-                return vec![];
-            }
+    pub fn load_module_info(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) {
+        let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), session, odoo_addons);
+        diagnostics.extend(ModuleSymbol::check_data(&symbol, session));
+        if !symbol.borrow().as_module_package().loaded {
+            diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
         }
-        let (mut diagnostics, mut loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), session, odoo_addons);
-        ModuleSymbol::check_data(&symbol, session);
-        diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
-        {
-            let mut _symbol = symbol.borrow_mut();
-            let module = _symbol.as_module_package_mut();
-            module.loaded = true;
-            loaded.push(module.dir_name.clone());
-            let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
-            let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
-            let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-            manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
-            manifest_file_info.publish_diagnostics(session);
-        }
-        loaded
+        let mut _symbol = symbol.borrow_mut();
+        let module = _symbol.as_module_package_mut();
+        module.loaded = true;
+        let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
+        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
+        let mut manifest_file_info = (*manifest_file_info).borrow_mut();
+        manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
+        manifest_file_info.publish_diagnostics(session);
     }
 
     /* Load manifest to identify the module characteristics.
@@ -220,7 +214,7 @@ impl ModuleSymbol {
                                         if !data.is_literal_expr() {
                                             add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data key should be a list of strings", S!("OLS30208"), &data.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
                                         } else {
-                                            self.data.push(data.as_string_literal_expr().unwrap().value.to_string());
+                                            self.data.push((data.as_string_literal_expr().unwrap().value.to_string(), data.range().clone()));
                                         }
                                     }
                                 }
@@ -303,6 +297,7 @@ impl ModuleSymbol {
                 }
             } else {
                 let module = session.sync_odoo.modules.get(depend).unwrap().upgrade().unwrap();
+                SyncOdoo::build_now(session, &module, BuildSteps::ARCH);
                 let mut module = (*module).borrow_mut();
                 symbol.as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
                 symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
@@ -314,21 +309,23 @@ impl ModuleSymbol {
     fn check_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         let data_paths = symbol.borrow().as_module_package().data.clone();
-        for data_url in data_paths.iter() {
+        for (data_url, data_range) in data_paths.iter() {
             //check if the file exists
             let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
             if !path.exists() {
+                symbol.borrow_mut().as_module_package_mut().not_found_data.insert(path.sanitize(), BuildSteps::ARCH);
+                symbol.borrow().get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.clone());
                 diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30444"))),
                     Some(EXTENSION_NAME.to_string()),
                     format!("Data file {} not found", path.sanitize()),
                     None,
                     None));
-            } else if !path.ends_with("xml") && !path.ends_with("csv") {
+            } else if path.extension().map_or(true, |ext| !["xml", "csv"].contains(&ext.to_str().unwrap_or(""))) {
                 diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
                     Some(DiagnosticSeverity::ERROR),
                     Some(NumberOrString::String(S!("OLS30445"))),
                     Some(EXTENSION_NAME.to_string()),
@@ -342,7 +339,7 @@ impl ModuleSymbol {
 
     pub fn load_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) {
         let data_paths = symbol.borrow().as_module_package().data.clone();
-        for data_url in data_paths.iter() {
+        for (data_url, _data_range) in data_paths.iter() {
             //load data from file
             let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
             let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), None, None, false); //create ast if not in cache
@@ -364,7 +361,7 @@ impl ModuleSymbol {
                     let mut xml_builder = XmlArchBuilder::new();
                     xml_builder.load_arch(session, xml_sym, &mut file_info, &root);
                     file_info.publish_diagnostics(session); //TODO do it only if diagnostics are not empty, else in validation
-                } else {
+                } else if data.len() > 0 {
                     let mut diagnostics = vec![];
                     XmlFileSymbol::build_syntax_diagnostics(&mut diagnostics, &mut file_info, &document.unwrap_err());
                     file_info.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
