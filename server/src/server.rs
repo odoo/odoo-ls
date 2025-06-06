@@ -507,11 +507,11 @@ impl Server {
                         exit(1);
                     }
                     Ok(nix::sys::wait::WaitStatus::StillAlive) => {
-                        // Le processus est toujours en cours d'exécution, attendez un peu avant de réessayer
+                        // Process is still running, continue waiting
                         std::thread::sleep(std::time::Duration::from_secs(1));
                     }
                     Ok(_) => {
-                        // Autres statuts peuvent être ignorés
+                        // Other wait statuses can be ignored for this purpose
                     }
                     Err(err) => {
                         eprintln!("Error waiting for process {}: {}", pid, err);
@@ -544,7 +544,7 @@ impl Server {
                     if stop_channel.recv_timeout(std::time::Duration::from_millis(10)).is_ok() {
                         break;
                     }
-                    let wait_result = WaitForSingleObject(process_handle, 1000); // Attendre 1 seconde
+                    let wait_result = WaitForSingleObject(process_handle, 1000);
 
                     match wait_result {
                         WAIT_OBJECT_0 => {
@@ -554,7 +554,7 @@ impl Server {
                             exit(1);
                         }
                         _ => {
-                            // Le processus est toujours en cours d'exécution, attendez un peu avant de réessayer
+                            // Process is still running, continue waiting
                             std::thread::sleep(std::time::Duration::from_secs(1));
                         }
                     }
