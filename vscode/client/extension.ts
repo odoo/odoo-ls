@@ -730,13 +730,13 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
 
 function generateHSLColors(count: number): string[] {
     const colors: string[] = [
-        "hsl(200, 70%, 65%)",
+        "hsl(200, 70%, 55%)",
         
-        "hsl(30, 70%, 65%)",
+        "hsl(30, 70%, 55%)",
         
-        "hsl(60, 70%, 65%)",
+        "hsl(60, 70%, 55%)",
         
-        "hsl(100, 70%, 65%)",
+        "hsl(100, 70%, 55%)",
     ];
     const saturation = 70;
     const lightness = 65;
