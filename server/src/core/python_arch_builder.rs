@@ -9,7 +9,7 @@ use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
 
-use crate::constants::{BuildStatus, BuildSteps, OYarn, SymType, DEBUG_STEPS};
+use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
@@ -84,7 +84,7 @@ impl PythonArchBuilder {
                 SyncOdoo::is_in_workspace_or_entry(session, path.as_str());
             self.file.borrow_mut().set_in_workspace(in_workspace);
         }
-        if symbol.borrow().typ() == SymType::PACKAGE(crate::constants::PackageType::MODULE) {
+        if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
             let odoo_addons = symbol.borrow().parent().as_ref().and_then(|p| p.upgrade()).unwrap();
             ModuleSymbol::load_module_info(symbol, session, odoo_addons);
             ModuleSymbol::load_data(symbol, session);

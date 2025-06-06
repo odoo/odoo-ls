@@ -19,10 +19,7 @@ impl HoverFeature {
         if evals.is_empty() {
             return None;
         };
-        let range = Some(Range {
-            start: file_info.borrow().offset_to_position(range.unwrap().start().to_usize()),
-            end: file_info.borrow().offset_to_position(range.unwrap().end().to_usize())
-        });
+        let range = Some(file_info.borrow().text_range_to_range(&range.unwrap()));
         Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,

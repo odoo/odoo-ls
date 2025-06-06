@@ -343,6 +343,13 @@ impl FileInfo {
         FileInfo::offset_to_position_with_rope(self.file_info_ast.borrow().text_rope.as_ref().expect("no rope provided"), offset)
     }
 
+    pub fn text_range_to_range(&self, range: &TextRange) -> Range {
+        Range {
+            start: self.offset_to_position(range.start().to_usize()),
+            end: self.offset_to_position(range.end().to_usize())
+        }
+    }
+
     pub fn position_to_offset_with_rope(rope: &Rope, line: u32, char: u32) -> usize {
         let line_char = rope.try_line_to_char(line as usize).expect("unable to get char from line");
         rope.try_char_to_byte(line_char + char as usize).expect("unable to get byte from char")
@@ -398,10 +405,7 @@ impl FileMgr {
             if file.borrow().file_info_ast.borrow().text_rope.is_none() {
                 file.borrow_mut().prepare_ast(session);
             }
-            return Range {
-                start: file.borrow().offset_to_position(range.start().to_usize()),
-                end: file.borrow().offset_to_position(range.end().to_usize())
-            }
+            return file.borrow().text_range_to_range(range);
         }
         //file not in cache, let's load rope on the fly
         match fs::read_to_string(path) {
