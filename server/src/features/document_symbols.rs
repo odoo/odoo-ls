@@ -70,14 +70,8 @@ impl DocumentSymbolFeature {
                 kind: SymbolKind::VARIABLE,
                 tags: None,
                 deprecated: None,
-                range: Range{
-                    start: file_info.borrow().offset_to_position(arg.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(arg.range.end().to_usize()),
-                },
-                selection_range: Range{
-                    start: file_info.borrow().offset_to_position(arg.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(arg.range.end().to_usize()),
-                },
+                range: file_info.borrow().text_range_to_range(&arg.range),
+                selection_range: file_info.borrow().text_range_to_range(&arg.range),
                 children: None
             });
         }
@@ -90,14 +84,8 @@ impl DocumentSymbolFeature {
             kind: SymbolKind::FUNCTION,
             tags: None,
             deprecated: None,
-            range: Range{
-                start: file_info.borrow().offset_to_position(stmt_function_def.range.start().to_usize()),
-                end: file_info.borrow().offset_to_position(stmt_function_def.range.end().to_usize()),
-            },
-            selection_range: Range{
-                start: file_info.borrow().offset_to_position(stmt_function_def.range.start().to_usize()),
-                end: file_info.borrow().offset_to_position(stmt_function_def.range.end().to_usize()),
-            },
+            range: file_info.borrow().text_range_to_range(&stmt_function_def.range),
+            selection_range: file_info.borrow().text_range_to_range(&stmt_function_def.range),
             children: Some(children_symbols)
         });
     }
@@ -116,14 +104,8 @@ impl DocumentSymbolFeature {
             kind: SymbolKind::CLASS,
             tags: None,
             deprecated: None,
-            range: Range{
-                start: file_info.borrow().offset_to_position(stmt_class_def.range.start().to_usize()),
-                end: file_info.borrow().offset_to_position(stmt_class_def.range.end().to_usize()),
-            },
-            selection_range: Range{
-                start: file_info.borrow().offset_to_position(stmt_class_def.range.start().to_usize()),
-                end: file_info.borrow().offset_to_position(stmt_class_def.range.end().to_usize()),
-            },
+            range: file_info.borrow().text_range_to_range(&stmt_class_def.range),
+            selection_range: file_info.borrow().text_range_to_range(&stmt_class_def.range),
             children: Some(children_symbols)
         });
     }
@@ -153,14 +135,8 @@ impl DocumentSymbolFeature {
                         kind: SymbolKind::VARIABLE,
                         tags: None,
                         deprecated: None,
-                        range: Range{
-                            start: file_info.borrow().offset_to_position(target_name.range.start().to_usize()),
-                            end: file_info.borrow().offset_to_position(target_name.range.end().to_usize()),
-                        },
-                        selection_range: Range{
-                            start: file_info.borrow().offset_to_position(target_name.range.start().to_usize()),
-                            end: file_info.borrow().offset_to_position(target_name.range.end().to_usize()),
-                        },
+                        range: file_info.borrow().text_range_to_range(&target_name.range),
+                        selection_range: file_info.borrow().text_range_to_range(&target_name.range),
                         children: None,
                     });
                 },
@@ -182,14 +158,8 @@ impl DocumentSymbolFeature {
             kind: SymbolKind::VARIABLE,
             tags: None,
             deprecated: None,
-            range: Range{
-                start: file_info.borrow().offset_to_position(stmt_type_alias.range.start().to_usize()),
-                end: file_info.borrow().offset_to_position(stmt_type_alias.range.end().to_usize()),
-            },
-            selection_range: Range{
-                start: file_info.borrow().offset_to_position(stmt_type_alias.range.start().to_usize()),
-                end: file_info.borrow().offset_to_position(stmt_type_alias.range.end().to_usize()),
-            },
+            range: file_info.borrow().text_range_to_range(&stmt_type_alias.range),
+            selection_range: file_info.borrow().text_range_to_range(&stmt_type_alias.range),
             children: None
         });
     }
@@ -243,14 +213,8 @@ impl DocumentSymbolFeature {
                     kind: SymbolKind::VARIABLE,
                     tags: None,
                     deprecated: None,
-                    range: Range{
-                        start: file_info.borrow().offset_to_position(var.range().start().to_usize()),
-                        end: file_info.borrow().offset_to_position(var.range().end().to_usize()),
-                    },
-                    selection_range: Range{
-                        start: file_info.borrow().offset_to_position(var.range().start().to_usize()),
-                        end: file_info.borrow().offset_to_position(var.range().end().to_usize()),
-                    },
+                    range: file_info.borrow().text_range_to_range(&var.range()),
+                    selection_range: file_info.borrow().text_range_to_range(&var.range()),
                     children: None
                 });
             }
@@ -282,14 +246,8 @@ impl DocumentSymbolFeature {
                         kind: SymbolKind::VARIABLE,
                         tags: None,
                         deprecated: None,
-                        range: Range{
-                            start: file_info.borrow().offset_to_position(name.range().start().to_usize()),
-                            end: file_info.borrow().offset_to_position(name.range().end().to_usize()),
-                        },
-                        selection_range: Range{
-                            start: file_info.borrow().offset_to_position(name.range().start().to_usize()),
-                            end: file_info.borrow().offset_to_position(name.range().end().to_usize()),
-                        },
+                        range: file_info.borrow().text_range_to_range(&name.range()),
+                        selection_range: file_info.borrow().text_range_to_range(&name.range()),
                         children: None
                     });
                 }
@@ -314,14 +272,8 @@ impl DocumentSymbolFeature {
                 kind: SymbolKind::VARIABLE,
                 tags: None,
                 deprecated: None,
-                range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
-                selection_range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
+                range: file_info.borrow().text_range_to_range(&name.range),
+                selection_range: file_info.borrow().text_range_to_range(&name.range),
                 children: None
             });
         }
@@ -335,14 +287,8 @@ impl DocumentSymbolFeature {
                 kind: SymbolKind::VARIABLE,
                 tags: None,
                 deprecated: None,
-                range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
-                selection_range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
+                range: file_info.borrow().text_range_to_range(&name.range),
+                selection_range: file_info.borrow().text_range_to_range(&name.range),
                 children: None
             });
         }
@@ -356,14 +302,8 @@ impl DocumentSymbolFeature {
                 kind: SymbolKind::VARIABLE,
                 tags: None,
                 deprecated: None,
-                range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
-                selection_range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
+                range: file_info.borrow().text_range_to_range(&name.range),
+                selection_range: file_info.borrow().text_range_to_range(&name.range),
                 children: None
             });
         }
@@ -377,14 +317,8 @@ impl DocumentSymbolFeature {
                 kind: SymbolKind::VARIABLE,
                 tags: None,
                 deprecated: None,
-                range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
-                selection_range: Range{
-                    start: file_info.borrow().offset_to_position(name.range.start().to_usize()),
-                    end: file_info.borrow().offset_to_position(name.range.end().to_usize()),
-                },
+                range: file_info.borrow().text_range_to_range(&name.range),
+                selection_range: file_info.borrow().text_range_to_range(&name.range),
                 children: None
             });
         }
