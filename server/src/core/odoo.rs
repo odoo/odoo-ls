@@ -1309,7 +1309,10 @@ impl Odoo {
                 }
                 let tree = session.sync_odoo.path_to_main_entry_tree(&path);
                 let updated_path = path.to_tree_path();
-                if tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(tree.as_ref().unwrap(), u32::MAX).is_empty() {
+                if tree.is_none() ||
+                (session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(tree.as_ref().unwrap(), u32::MAX).is_empty()
+                && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path.sanitize()).is_none())
+                {
                     //main entry doesn't handle this file. Let's test customs entries, or create a new one
                     let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
                     for custom_entry in ep_mgr.borrow().custom_entry_points.iter() {
