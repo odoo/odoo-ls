@@ -448,19 +448,27 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, p
     let contents = fs::read_to_string(path)?;
     let raw = toml::from_str::<ConfigFile>(&contents)?;
 
+    fn fill_or_canonicalize<F>(sourced_path: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String, config_dir: &Path, predicate: F) -> Option<PathBuf>
+    where
+    F: Fn(&String) -> bool,
+    {
+        // If it is a valid pattern, in $PATH, a valid alias or a valid absolute path: (no need to canonicalize like python3 for example)
+        fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate).map(PathBuf::from)
+        // If it is relative path it should work here
+        .or(std::fs::canonicalize(config_dir.join(sourced_path.value)).ok())
+    }
+
     let config = raw.config.into_iter().map(|mut entry| {
         // odoo_path
         entry.odoo_path = entry.odoo_path
-            .map(|p| fill_validate_path(ws_folders, workspace_name, &p.value, is_odoo_path).unwrap_or(p.value.clone()))
-            .and_then(|p| std::fs::canonicalize(config_dir.join(p)).ok())
+            .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, config_dir, is_odoo_path))
             .map(|p| p.sanitize())
             .filter(|p| is_odoo_path(p))
             .map(|op| Sourced { value: op, sources: HashSet::from([path.sanitize()])});
 
         // addons_paths
         entry.addons_paths = entry.addons_paths.into_iter()
-            .map(|sourced| fill_validate_path(ws_folders, workspace_name, &sourced.value, is_addon_path).unwrap_or(sourced.value.clone()))
-            .flat_map(|p| std::fs::canonicalize(config_dir.join(&p)).ok())
+            .flat_map(|p| fill_or_canonicalize(p, ws_folders, workspace_name, config_dir, is_addon_path))
             .map(|p| p.sanitize())
             .filter(|p| is_addon_path(p))
             .unique()
@@ -475,8 +483,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, p
 
         // python_path
         entry.python_path = entry.python_path
-            .map(|p| fill_validate_path(ws_folders, workspace_name, &p.value, is_python_path).unwrap_or(p.value))
-            .and_then(|p| std::fs::canonicalize(config_dir.join(p)).ok())
+            .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, config_dir, is_python_path))
             .map(|p| p.sanitize())
             .filter(|p| is_python_path(p))
             .map(|op| Sourced { value: op, sources: HashSet::from([path.sanitize()])});
