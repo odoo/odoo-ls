@@ -235,11 +235,19 @@ impl ConfigFile {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct Sourced<T> {
+pub struct Sourced<T> {
     value: T,
     sources: HashSet<String>,
 }
 
+impl<T> Sourced<T> {
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+    pub fn sources(&self) -> &HashSet<String> {
+        &self.sources
+    }
+}
 
 impl<'a, T: Default> Default for Sourced<T> {
     fn default() -> Self {
@@ -377,6 +385,19 @@ impl ConfigEntryRaw {
             add_workspace_addon_path: None,
         }
     }
+
+    pub fn python_path_sourced(&self) -> Option<&Sourced<String>> {
+        self.python_path.as_ref()
+    }
+    pub fn file_cache_sourced(&self) -> Option<&Sourced<bool>> {
+        self.file_cache.as_ref()
+    }
+    pub fn auto_save_delay_sourced(&self) -> Option<&Sourced<u64>> {
+        self.auto_save_delay.as_ref()
+    }
+    pub fn addons_paths_sourced(&self) -> &Vec<Sourced<String>> {
+        &self.addons_paths
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -392,8 +413,8 @@ pub struct ConfigEntry {
     pub auto_save_delay: u64,
 }
 
-impl ConfigEntry {
-    pub fn new() -> Self {
+impl Default for ConfigEntry {
+    fn default() -> Self {
         Self {
             odoo_path: None,
             addons_paths: vec![],
@@ -405,6 +426,12 @@ impl ConfigEntry {
             ac_filter_model_names: true,
             auto_save_delay: 1000,
         }
+    }
+}
+
+impl ConfigEntry {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -711,9 +738,3 @@ pub fn get_configuration(ws_folders: &HashMap<String, String>)  -> Result<(Confi
     let ws_confs: Vec<_> = ws_folders.iter().map(|ws_f| load_merged_config_upward(ws_folders, ws_f.0, ws_f.1)).flatten().collect();
     merge_all_workspaces(ws_confs, ws_folders)
 }
-
-// TODO: add settings for disabled notifs for specific workspace folders
-// for later: add some diagnostics filtering settings path or code based
-// TODO: Update welcome page, + show it again for the updated clients
-// TODO: Test and tests
-// TODO: Check for odools.toml changes on workspace folders
