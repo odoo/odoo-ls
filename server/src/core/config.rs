@@ -498,9 +498,61 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, p
 }
 
 fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>){
+/*
+    each profile has a parent, Option<String>
+    each profile can have multiple children, Vec<String>
+
+    So we have to construct an N-tree structure
+    where each node is a profile, and each edge is an extends relationship.
+    We can then traverse the tree and merge the profiles from the top after we have a topo sort for each component.
+
+    This way we can also detect circular dependencies.
+ */
+    struct Node {
+        parent: Option<String>,
+        children: HashSet<String>,
+    }
     let keys: Vec<String> = config.keys().cloned().collect();
-    for key in keys {
-        if let Some(entry) = config.get(&key).cloned() {
+    let mut nodes: HashMap<String, Node> = keys.iter().map(|key|
+        (key.clone(), Node {
+            parent: None,
+            children: HashSet::new(),
+        })
+    ).collect();
+    let edges: Vec<(String, String)> = keys.iter().filter_map(|key| {
+        match config.get(key).and_then(|entry| entry.extends.clone()) {
+            Some(extends_key) => Some((key.clone(), extends_key)),
+            None => None,
+        }
+    }).collect();
+    for (child, parent) in edges {
+        if let Some(node) = nodes.get_mut(&child) {
+            node.parent = Some(parent.clone());
+        }
+        if let Some(node) = nodes.get_mut(&parent) {
+            node.children.insert(child);
+        }
+    }
+
+    let mut ordered_nodes= vec![];
+    for parent in nodes.iter().filter(|(_, n)| n.parent.is_none()){
+        let mut visited = HashSet::new();
+        let mut stack = vec![parent.0.clone()];
+        while let Some(current) = stack.pop().map(|value| {ordered_nodes.push(value.clone()); value}) {
+            if visited.contains(&current) {
+                return; // Circular dependency detected maybe later we can return an error?
+            }
+            visited.insert(current.clone());
+            if let Some(node) = nodes.get(&current) {
+                for child in &node.children {
+                    stack.push(child.clone());
+                }
+            }
+        }
+    }
+
+    for key in ordered_nodes.iter(){
+        if let Some(entry) = config.get(key).cloned() {
             if let Some(extends_key) = entry.extends.clone() {
                 if let Some(parent_entry) = config.get(&extends_key).cloned() {
                     let merged_entry = ConfigEntryRaw {
@@ -531,7 +583,7 @@ fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>){
                         auto_save_delay: entry.auto_save_delay.or(parent_entry.auto_save_delay),
                         add_workspace_addon_path: entry.add_workspace_addon_path.or(parent_entry.add_workspace_addon_path),
                     };
-                    config.insert(key, merged_entry);
+                    config.insert(key.clone(), merged_entry);
                 }
             }
         }
