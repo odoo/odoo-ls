@@ -47,6 +47,7 @@ harness = false
 
 [dev-dependencies]
 iai-callgrind = "0.14.0"
+assert_fs = "1.0"
 
 [features]
 default = []

@@ -50,7 +50,6 @@ impl CliBackend {
         config.odoo_path = community_path;
         config.refresh_mode = crate::core::config::RefreshMode::Off;
         config.diag_missing_imports = DiagMissingImportsMode::All;
-        // config.no_typeshed = self.cli.no_typeshed;
         config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]);
         // config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
         SyncOdoo::init(&mut session, config);
