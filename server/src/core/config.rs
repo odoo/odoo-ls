@@ -442,11 +442,11 @@ fn default_name() -> String {
     "root".to_string()
 }
 
-fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, path: P, workspace_name: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
+fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, path: P, workspace_name: &String) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     let path = path.as_ref();
     let config_dir = path.parent().unwrap_or(Path::new("."));
-    let contents = fs::read_to_string(path)?;
-    let raw = toml::from_str::<ConfigFile>(&contents)?;
+    let contents = fs::read_to_string(path).map_err(|err| err.to_string())?;
+    let raw = toml::from_str::<ConfigFile>(&contents).map_err(|err| err.to_string())?;
 
     fn fill_or_canonicalize<F>(sourced_path: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String, config_dir: &Path, predicate: F) -> Option<PathBuf>
     where
@@ -504,7 +504,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, p
     Ok(config)
 }
 
-fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>){
+fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>) -> Result<(), String> {
 /*
     each profile has a parent, Option<String>
     each profile can have multiple children, Vec<String>
@@ -533,21 +533,20 @@ fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>){
         }
     }).collect();
     for (child, parent) in edges {
-        if let Some(node) = nodes.get_mut(&child) {
-            node.parent = Some(parent.clone());
-        }
-        if let Some(node) = nodes.get_mut(&parent) {
-            node.children.insert(child);
-        }
+        nodes.get_mut(&child).unwrap().parent = Some(parent.clone());
+        let Some(node) = nodes.get_mut(&parent) else {
+            return Err(S!(format!("Profile '{}' extends non-existing profile '{}'", child, parent)));
+        };
+        node.children.insert(child);
     }
 
     let mut ordered_nodes= vec![];
+    let mut visited = HashSet::new();
     for parent in nodes.iter().filter(|(_, n)| n.parent.is_none()){
-        let mut visited = HashSet::new();
         let mut stack = vec![parent.0.clone()];
         while let Some(current) = stack.pop().map(|value| {ordered_nodes.push(value.clone()); value}) {
             if visited.contains(&current) {
-                return; // Circular dependency detected maybe later we can return an error?
+                return Err(S!("Circular dependency detected in profile extensions!"));
             }
             visited.insert(current.clone());
             if let Some(node) = nodes.get(&current) {
@@ -556,6 +555,9 @@ fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>){
                 }
             }
         }
+    }
+    if visited.len() != nodes.len() {
+        return Err(S!("Circular dependency detected in profile extensions!"))
     }
 
     for key in ordered_nodes.iter(){
@@ -595,6 +597,7 @@ fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>){
             }
         }
     }
+    Ok(())
 }
 
 fn merge_configs(
@@ -662,7 +665,7 @@ fn merge_configs(
 }
 
 
-fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, Box<dyn Error>> {
+fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     let mut current_dir = PathBuf::from(workspace_path);
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
@@ -684,7 +687,7 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
             break;
         }
     }
-    apply_extends(&mut merged_config);
+    apply_extends(&mut merged_config)?;
 
     for (_, entry) in merged_config.iter_mut() {
         if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_empty()) && is_addon_path(workspace_path) {
@@ -794,6 +797,6 @@ fn merge_all_workspaces(
 }
 
 pub fn get_configuration(ws_folders: &HashMap<String, String>)  -> Result<(ConfigNew, ConfigFile), String> {
-    let ws_confs: Vec<_> = ws_folders.iter().map(|ws_f| load_merged_config_upward(ws_folders, ws_f.0, ws_f.1)).flatten().collect();
-    merge_all_workspaces(ws_confs, ws_folders)
+    let ws_confs: Result<Vec<_>, _> = ws_folders.iter().map(|ws_f| load_merged_config_upward(ws_folders, ws_f.0, ws_f.1)).collect();
+    merge_all_workspaces(ws_confs?, ws_folders)
 }
