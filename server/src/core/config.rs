@@ -403,9 +403,9 @@ impl ConfigEntryRaw {
 #[derive(Debug, Clone)]
 pub struct ConfigEntry {
     pub odoo_path: Option<String>,
-    pub addons_paths: Vec<String>,
+    pub addons_paths: HashSet<String>,
     pub python_path: String,
-    pub additional_stubs: Vec<String>,
+    pub additional_stubs: HashSet<String>,
     pub refresh_mode: RefreshMode,
     pub file_cache: bool,
     pub diag_missing_imports: DiagMissingImportsMode,
@@ -417,9 +417,9 @@ impl Default for ConfigEntry {
     fn default() -> Self {
         Self {
             odoo_path: None,
-            addons_paths: vec![],
+            addons_paths: HashSet::new(),
             python_path: S!("python3"),
-            additional_stubs: vec![],
+            additional_stubs: HashSet::new(),
             refresh_mode: RefreshMode::default(),
             file_cache: true,
             diag_missing_imports: DiagMissingImportsMode::default(),
@@ -799,4 +799,13 @@ fn merge_all_workspaces(
 pub fn get_configuration(ws_folders: &HashMap<String, String>)  -> Result<(ConfigNew, ConfigFile), String> {
     let ws_confs: Result<Vec<_>, _> = ws_folders.iter().map(|ws_f| load_merged_config_upward(ws_folders, ws_f.0, ws_f.1)).collect();
     merge_all_workspaces(ws_confs?, ws_folders)
+}
+
+/// Check if the old and new configuration entries are different enough to require a restart.
+/// Only changes in the odoo_path, addons_paths, python_path, and additional_stubs are considered significant.
+pub fn needs_restart(old: &ConfigEntry, new: &ConfigEntry) -> bool {
+    old.odoo_path != new.odoo_path ||
+    old.addons_paths != new.addons_paths ||
+    old.python_path != new.python_path ||
+    old.additional_stubs != new.additional_stubs
 }

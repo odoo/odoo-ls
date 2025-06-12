@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{get_configuration, ConfigEntry, ConfigFile, RefreshMode};
+use super::config::{self, get_configuration, ConfigEntry, ConfigFile, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -905,7 +905,7 @@ pub struct Odoo {}
 
 impl Odoo {
 
-    fn read_selected_configuration(session: &mut SessionInfo) -> Result<String, String> {
+    pub fn read_selected_configuration(session: &mut SessionInfo) -> Result<String, String> {
         let configuration_item = ConfigurationItem {
             scope_uri: None,
             section: Some("Odoo".to_string()),
@@ -1163,6 +1163,9 @@ impl Odoo {
         }
         for uri in file_uris.iter() {
             let path = uri.to_file_path().unwrap();
+            if Odoo::check_handle_config_file_update(session, &path) {
+                continue; //config file update, handled by the config file handler
+            }
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
             let (valid, updated) = Odoo::update_file_cache(session, path.clone(), None, -100);
             if valid && updated {
@@ -1357,6 +1360,9 @@ impl Odoo {
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
         let path = params.text_document.uri.to_file_path().unwrap();
+        if Odoo::check_handle_config_file_update(session, &path) {
+            return; //config file update, handled by the config file handler
+        }
         session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
         if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave || session.sync_odoo.state_init == InitState::NOT_READY {
             return
@@ -1382,7 +1388,7 @@ impl Odoo {
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
     fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> (bool, bool) {
-        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) {
+        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
@@ -1392,7 +1398,7 @@ impl Odoo {
     }
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
-        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) {
+        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
             SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
         }
     }
@@ -1413,6 +1419,54 @@ impl Odoo {
             }
         }
         Ok(None)
+    }
+    /// Checks if the given path is a configuration file under one of the workspace folders.
+    fn is_config_workspace_file(session: &mut SessionInfo, path: &PathBuf) -> bool {
+        for (_, ws_dir) in session.sync_odoo.get_file_mgr().borrow().get_workspace_folders().iter() {
+            if path.starts_with(ws_dir) && path.ends_with("odools.toml") {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Checks if the given path is a configuration file and handles the update accordingly.
+    /// Returns true if the path is a configuration file and was handled, false otherwise.
+    fn check_handle_config_file_update(session: &mut SessionInfo, path: &PathBuf) -> bool {
+        // Check if the change is affecting a config file
+        if Odoo::is_config_workspace_file(session, path) {
+            let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders())
+                .and_then(|(cfg_map, cfg_file)| {
+                    let config_name = Odoo::read_selected_configuration(session)?;
+                    cfg_map.get(&Odoo::read_selected_configuration(session)?)
+                        .cloned()
+                        .ok_or_else(|| format!("Unable to find selected configuration \"{config_name}\""))
+                        .map(|config| (config, cfg_file))
+                });
+
+            match config_result {
+                Ok((new_config, cfg_file)) => {
+                    if config::needs_restart(&session.sync_odoo.config, &new_config) {
+                        // Changes require a restart, ask the client to restart the server
+                        session.send_notification("$Odoo/restartNeeded", ());
+                    } else {
+                        // Changes can be applied without restart
+                        session.sync_odoo.config_file = Some(cfg_file);
+                        session.sync_odoo.config = new_config;
+                    }
+                }
+                Err(err) => {
+                    // Invalid config, send a notification to the user and add the error to the logs
+                    let msg = format!("Invalid configuration file: {err}.");
+                    error!("{msg}");
+                    session.show_message(MessageType::ERROR, msg);
+                }
+            }
+            true
+        }
+        else {
+            false
+        }
     }
 
 }

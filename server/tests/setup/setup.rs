@@ -57,7 +57,7 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
     info!("Test addons path: {:?}", test_addons_path);
 
     let mut config = ConfigEntry::new();
-    config.addons_paths = vec![test_addons_path.sanitize()];
+    config.addons_paths = vec![test_addons_path.sanitize()].into_iter().collect();
     config.odoo_path = community_path.map(|x| PathBuf::from(x).sanitize());
     let Some(python_cmd) = get_python_command() else {
         panic!("Python not found")

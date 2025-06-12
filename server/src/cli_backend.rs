@@ -46,11 +46,11 @@ impl CliBackend {
         }
 
         let mut config = ConfigEntry::new();
-        config.addons_paths = addons_paths;
+        config.addons_paths = addons_paths.into_iter().collect();
         config.odoo_path = community_path;
         config.refresh_mode = crate::core::config::RefreshMode::Off;
         config.diag_missing_imports = DiagMissingImportsMode::All;
-        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]);
+        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]).into_iter().collect();
         // config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
         SyncOdoo::init(&mut session, config);
 
