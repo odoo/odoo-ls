@@ -2,6 +2,7 @@ use assert_fs::prelude::*;
 use assert_fs::TempDir;
 use odoo_ls_server::utils::PathSanitizer;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use odoo_ls_server::core::config::get_configuration;
 use odoo_ls_server::S;
 
@@ -667,14 +668,12 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
 
 
     // addons_paths should include shared_addons, ws1_addons, ws2_addons (order not guaranteed, but all present)
-    let mut expected = vec![
+    let expected = vec![
         shared_addons.path().sanitize(),
         ws1_addons.path().sanitize(),
         ws2_addons.path().sanitize(),
-    ];
-    expected.sort();
-    let mut actual = config.addons_paths.clone();
-    actual.sort();
+    ].into_iter().collect::<HashSet<_>>();
+    let actual = config.addons_paths.clone();
     assert_eq!(actual, expected);
 
     // Also check that sources for shared_addons include both ws1 and ws2 odools.toml
@@ -749,7 +748,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     // With override, only workspace's addons_paths should be present
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("root").unwrap();
-    assert_eq!(config.addons_paths, vec![ws_addons.path().sanitize()]);
+    assert_eq!(config.addons_paths, vec![ws_addons.path().sanitize()].into_iter().collect::<HashSet<_>>());
 
     // Now test with merge: both parent and workspace addons_paths should be present
 
@@ -768,14 +767,12 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     // Re-run config
     let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
     let config2 = config_map2.get("root").unwrap();
-    let mut expected = vec![
+    let expected = vec![
         parent_addons1.path().sanitize(),
         parent_addons2.path().sanitize(),
         ws_addons.path().sanitize(),
-    ];
-    expected.sort();
-    let mut actual = config2.addons_paths.clone();
-    actual.sort();
+    ].into_iter().collect::<HashSet<_>>();
+    let actual = config2.addons_paths.clone();
     assert_eq!(actual, expected);
 }
 

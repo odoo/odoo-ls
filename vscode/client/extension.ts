@@ -6,6 +6,7 @@ import * as fs from "fs";
 import * as semver from "semver";
 import {homedir} from "os"
 import {
+    extensions,
     commands,
     ExtensionContext,
     ExtensionMode,
@@ -36,7 +37,6 @@ import {
 } from "./common/python";
 import { getCurrentConfig } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
-import { execSync } from "child_process";
 import {
     migrateAfterDelay,
     migrateConfigToSettings,
@@ -337,6 +337,13 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             client.onNotification("Odoo/displayCrashNotification", async (params) => {
                 await displayCrashMessage(context, params["crashInfo"], params["pid"]);
             }),
+            client.onNotification("$Odoo/restartNeeded", async () => {
+                if (global.LSCLIENT) {
+                    global.LSCLIENT.restart();
+                    global.IS_LOADING = false;
+                    setStatusConfig(context);
+                }
+            })
         );
         global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","/")};
         if (autoStart) {
