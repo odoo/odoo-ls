@@ -157,7 +157,7 @@
                     <li><b>file_cache</b> (bool, default: true): Enable file caching for workspace files</li>
                     <li><b>diag_missing_imports</b> ("all" | "only_odoo" | "none", default: "all"): Diagnostics for missing imports</li>
                     <li><b>ac_filter_model_names</b> (bool, default: true): Only show model names from module dependencies in autocompletion</li>
-                    <li><b>auto_save_delay</b> (integer, default: 1000): Delay in ms before refreshing after an update (minimum 1000, maximum 15000)</li>
+                    <li><b>auto_save_delay</b> (integer, default: 1000): Delay in ms before refreshing after an update <b>(minimum 1000, maximum 15000; values outside this range will be clamped)</b></li>
                     <li><b>add_workspace_addon_path</b> (bool, default: false): Add the workspace folder as an addon path if it looks like an addon if you specified other addons paths</li>
                 </ul>
                 <p>

@@ -1130,3 +1130,136 @@ fn test_malformed_config_missing_required_fields() {
     // Should still have a default "root" config entry
     assert!(config_map.contains_key("root"));
 }
+
+#[test]
+fn test_template_variable_expansion_userhome_and_workspacefolder() {
+    let temp = TempDir::new().unwrap();
+    let ws1 = temp.child("ws1");
+    ws1.create_dir_all().unwrap();
+
+    // Create a dummy addon in user home for testing
+    let user_home = dirs::home_dir().unwrap();
+    let user_home_addon_path = user_home.join("my_home_addons").join("my_home_addon");
+    std::fs::create_dir_all(&user_home_addon_path).unwrap();
+    std::fs::File::create(user_home_addon_path.join("__manifest__.py")).unwrap();
+
+    // Create a dummy addon in ws1 for testing
+    let ws1_addon = ws1.child("my_ws1_addon");
+    ws1_addon.create_dir_all().unwrap();
+    ws1_addon.child("__manifest__.py").touch().unwrap();
+
+    // Compose config using both ${userHome} and ${workspaceFolder:ws1}
+    let toml_content = format!(
+        r#"
+        [[config]]
+        name = "root"
+        addons_paths = [
+            "${{userHome}}/my_home_addons",
+            "${{workspaceFolder:ws1}}"
+        ]
+    "#
+    );
+    ws1.child("odools.toml").write_str(&toml_content).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
+
+    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+
+    // Both expanded paths should be present in addons_paths
+    let expected_home_addon = user_home.join("my_home_addons").sanitize();
+    let expected_ws1_addon = ws1.path().sanitize();
+
+    assert!(config.addons_paths.contains(&expected_home_addon));
+    assert!(config.addons_paths.contains(&expected_ws1_addon));
+}
+
+#[test]
+fn test_config_with_relative_addons_paths() {
+    let temp = TempDir::new().unwrap();
+    let ws = temp.child("ws");
+    ws.create_dir_all().unwrap();
+
+    // Create addons1/mod1/__manifest__.py
+    let addons1 = ws.child("addons1");
+    let mod1 = addons1.child("mod1");
+    mod1.create_dir_all().unwrap();
+    mod1.child("__manifest__.py").touch().unwrap();
+
+    // Create addons2/mod2/__manifest__.py
+    let addons2 = ws.child("addons2");
+    let mod2 = addons2.child("mod2");
+    mod2.create_dir_all().unwrap();
+    mod2.child("__manifest__.py").touch().unwrap();
+
+    // Write odools.toml with relative paths
+    let toml_content = r#"
+        [[config]]
+        name = "root"
+        addons_paths = [
+            "./addons1",
+            "./addons2"
+        ]
+    "#;
+    ws.child("odools.toml").write_str(toml_content).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
+
+    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+
+    // The expected absolute, sanitized paths
+    let expected1 = ws.child("addons1").path().sanitize();
+    let expected2 = ws.child("addons2").path().sanitize();
+
+    assert!(config.addons_paths.contains(&expected1), "Expected addons_paths to contain {}", expected1);
+    assert!(config.addons_paths.contains(&expected2), "Expected addons_paths to contain {}", expected2);
+}
+
+#[test]
+fn test_auto_save_delay_boundaries() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    // Below minimum (should clamp to 1000)
+    let toml_content_min = r#"
+        [[config]]
+        name = "root"
+        auto_save_delay = 500
+    "#;
+    ws_folder.child("odools.toml").write_str(toml_content_min).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    assert_eq!(config.auto_save_delay, 1000);
+
+    // Above maximum (should clamp to 15000)
+    let toml_content_max = r#"
+        [[config]]
+        name = "root"
+        auto_save_delay = 20000
+    "#;
+    ws_folder.child("odools.toml").write_str(toml_content_max).unwrap();
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    assert_eq!(config.auto_save_delay, 15000);
+
+    // Within bounds (should keep value)
+    let toml_content_ok = r#"
+        [[config]]
+        name = "root"
+        auto_save_delay = 1234
+    "#;
+    ws_folder.child("odools.toml").write_str(toml_content_ok).unwrap();
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    assert_eq!(config.auto_save_delay, 1234);
+}
