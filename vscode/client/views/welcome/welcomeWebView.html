@@ -98,6 +98,29 @@
                                         <li>
                                             Addons folders are merged together by default between workspace folders.
                                         </li>
+                                        <li>
+                                            <b>Important:</b> <br/>
+                                            <ul>
+                                                <li>
+                                                    <b>Set semantics:</b> <code>addons_paths</code> and <code>additional_stubs</code> are merged as <b>sets</b> (unique, unordered). Duplicates are removed and order is not preserved.
+                                                </li>
+                                                <li>
+                                                    <b>Conflicts:</b> If two workspace folders define the same profile with different values for a field (e.g., <code>file_cache</code>), the extension will refuse to start and show an error.
+                                                </li>
+                                                <li>
+                                                    <b>Profile extension errors:</b> If a profile extends a non-existent profile, or if there is a cycle in profile extensions, the extension will show an error and not start.
+                                                </li>
+                                                <li>
+                                                    <b>Path normalization:</b> All paths are normalized (case, slashes, trailing slashes) and deduplicated.
+                                                </li>
+                                                <li>
+                                                    <b>Restart required:</b> Some configuration changes (such as <code>odoo_path</code>, <code>addons_paths</code>, <code>python_path</code>, <code>additional_stubs</code>) require a restart of the language server to take effect.
+                                                </li>
+                                                <li>
+                                                    <b>Automatic reload:</b> <code>odools.toml</code> files located directly under workspace folders are watched for changes and will automatically update the configuration when modified. However, configuration files located elsewhere (such as in parent directories or outside the workspace) are not watched, and changes to those files will not be picked up automatically, regardless of which configuration fields are changed.
+                                                </li>
+                                            </ul>
+                                        </li>
                                     </ul>
                                 </li>
                                 <li>
@@ -110,6 +133,9 @@
                                 <li>
                                     Some variables are allowed in odoo_paths, addons_paths and python_path: ${userHome}, ${workspaceFolder:FOLDERNAME}, and ${workspaceFolder}.<br/>
                                     Setting the <code>odoo_path</code> to ${workspaceFolder} will use the current workspace folder as the Odoo source code path.<br/>
+                                </li>
+                                <li>
+                                    Extends with profiles that do not exist will be ignored, and cyclic dependencies will result in undefined behavior for now.
                                 </li>
                             </ul>
                         </li>
@@ -135,10 +161,151 @@
                     <li><b>add_workspace_addon_path</b> (bool, default: false): Add the workspace folder as an addon path if it looks like an addon if you specified other addons paths</li>
                 </ul>
                 <p>
-                    Example 1:
-                    No configuration file, with three workspace folders, once with an Odoo source code, two with addons enterprise and extra-addons.
-                    <img class="img-margins" src="<%= image_3 %>" /><br/>
+                    <b>Examples:</b>
                 </p>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 1: Multiple workspace folders, no config files</b><br/>
+                    <span style="color:#888">// Folders:</span><br/>
+                    <span>workspace/</span><br/>
+                    <span>&nbsp;&nbsp;odoo/</span><br/>
+                    <span>&nbsp;&nbsp;enterprise/</span><br/>
+                    <span>&nbsp;&nbsp;extra-addons/</span><br/>
+                    <span style="color:#888">// Open VSCode with all three as workspace folders</span><br/>
+                    <span>Result:</span><br/>
+                    <ul>
+                        <li><b>odoo_path</b>: set to the folder containing <code>odoo/odoo/release.py</code> (if found)</li>
+                        <li><b>addons_paths</b>: all folders that look like Odoo addons (e.g., <code>enterprise</code>, <code>extra-addons</code>)</li>
+                        <li>All other fields use defaults</li>
+                    </ul>
+                    <img class="img-margins" src="<%= image_3 %>" /><br/>
+                </div>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 2: Two workspace folders, each with its own odools.toml</b><br/>
+                    <span style="color:#888">// Folder structure:</span><br/>
+                    <span>ws1/odools.toml</span><br/>
+                    <span>ws2/odools.toml</span><br/>
+                    <span style="color:#888">// ws1/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "root"
+file_cache = false
+addons_paths = ["${workspaceFolder}"]
+</pre>
+                    <span style="color:#888">// ws2/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "root"
+file_cache = false
+addons_paths = ["${workspaceFolder}"]
+</pre>
+                    <span>Result:</span>
+                    <ul>
+                        <li><b>file_cache</b>: <code>false</code> (no conflict, both agree)</li>
+                        <li><b>addons_paths</b>: both workspace folders are included (set semantics, order not guaranteed)</li>
+                        <li>All other fields use defaults</li>
+                    </ul>
+                </div>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 3: Two workspace folders, conflicting config</b><br/>
+                    <span style="color:#888">// ws1/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "root"
+file_cache = true
+</pre>
+                    <span style="color:#888">// ws2/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "root"
+file_cache = false
+</pre>
+                    <span>Result:</span>
+                    <ul>
+                        <li><b>Error:</b> Conflict detected for <code>file_cache</code> in profile <code>root</code>. The extension will not start.</li>
+                    </ul>
+                </div>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 4: Profile extension and shadowing</b><br/>
+                    <span style="color:#888">// ws1/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "base"
+file_cache = false
+auto_save_delay = 2000
+
+[[config]]
+name = "root"
+extends = "base"
+auto_save_delay = 5000
+</pre>
+                    <span>Result:</span>
+                    <ul>
+                        <li><b>file_cache</b>: <code>false</code> (inherited from <code>base</code>)</li>
+                        <li><b>auto_save_delay</b>: <code>5000</code> (overrides <code>base</code>)</li>
+                    </ul>
+                </div>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 5: Profile extension cycle (error)</b><br/>
+                    <span style="color:#888">// ws1/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "a"
+extends = "b"
+file_cache = true
+
+[[config]]
+name = "b"
+extends = "a"
+file_cache = false
+</pre>
+                    <span>Result:</span>
+                    <ul>
+                        <li><b>Error:</b> Circular dependency detected in profile extensions! The extension will not start.</li>
+                    </ul>
+                </div>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 6: Profile extends non-existent profile (error)</b><br/>
+                    <span style="color:#888">// ws1/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "root"
+extends = "doesnotexist"
+file_cache = true
+</pre>
+                    <span>Result:</span>
+                    <ul>
+                        <li><b>Error:</b> Profile 'root' extends non-existing profile 'doesnotexist'. The extension will not start.</li>
+                    </ul>
+                </div>
+                <div style="font-family:monospace; font-size:1em; margin-bottom:1em;">
+                    <b>Example 7: Advanced configuration with multiple profiles</b><br/>
+                    <span style="color:#888">// ws1/odools.toml:</span><br/>
+<pre>
+[[config]]
+name = "base"
+odoo_path = "/path/to/odoo"
+addons_paths = ["/path/to/addons"]
+python_path = "/path/to/python"
+
+[[config]]
+name = "dev"
+extends = "base"
+file_cache = false
+auto_save_delay = 3000
+
+[[config]]
+name = "prod"
+extends = "base"
+file_cache = true
+auto_save_delay = 1000
+</pre>
+                    <span>Result:</span>
+                    <ul>
+                        <li><b>base profile:</b> Sets up the basic environment with odoo_path, addons_paths, and python_path</li>
+                        <li><b>dev profile:</b> Extends base, disables file cache, and sets a longer auto save delay</li>
+                        <li><b>prod profile:</b> Extends base, enables file cache, and sets a shorter auto save delay</li>
+                    </ul>
+                </div>
                 <p>
                     When your configuration is ready, restart the language server to reload the configs, select it from the panel. This selection will run for the current workspace.<br/>
                     While the wheel next to the Odoo button is spinning, the extension is loading the configuration. When it's done, the wheel will stop spinning and the extension will start to help you in your work.<br/>
