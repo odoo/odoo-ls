@@ -788,7 +788,7 @@ fn merge_all_workspaces(
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
-                auto_save_delay: raw_entry.auto_save_delay.map(|op| op.value).unwrap_or(1000),
+                auto_save_delay: clamp_auto_save_delay(raw_entry.auto_save_delay.map(|op| op.value).unwrap_or(1000)),
             },
         );
     }
@@ -808,4 +808,14 @@ pub fn needs_restart(old: &ConfigEntry, new: &ConfigEntry) -> bool {
     old.addons_paths != new.addons_paths ||
     old.python_path != new.python_path ||
     old.additional_stubs != new.additional_stubs
+}
+
+fn clamp_auto_save_delay(val: u64) -> u64 {
+    if val < 1000 {
+        1000
+    } else if val > 15000 {
+        15000
+    } else {
+        val
+    }
 }
