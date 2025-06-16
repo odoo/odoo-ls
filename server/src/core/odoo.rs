@@ -905,7 +905,7 @@ pub struct Odoo {}
 
 impl Odoo {
 
-    pub fn read_selected_configuration(session: &mut SessionInfo) -> Result<String, String> {
+    pub fn read_selected_configuration(session: &mut SessionInfo) -> Result<Option<String>, String> {
         let configuration_item = ConfigurationItem {
             scope_uri: None,
             section: Some("Odoo".to_string()),
@@ -924,15 +924,12 @@ impl Odoo {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
             return Err(S!("No config found for Odoo"));
         }
-        let config = config.unwrap();
-        if let Some(map) = config.as_object() {
-            if let Some(value) = map.get("selectedConfiguration") {
-                if let Some(value_str) = value.as_str() {
-                    return Ok(value_str.to_string());
-                }
-            }
-        }
-        Err(S!("Unable to read selectedConfiguration"))
+        let value = config
+            .and_then(|c| c.as_object())
+            .and_then(|c| c.get("selectedConfiguration"))
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string());
+        return Ok(value);
     }
 
     pub fn send_all_configurations(session: &mut SessionInfo) {
@@ -962,9 +959,27 @@ impl Odoo {
             session.sync_odoo.config_file = Some(config_file.clone());
             Odoo::send_all_configurations(session);
         }
-        let selected_config = Odoo::read_selected_configuration(session);
+        let maybe_selected_config = match Odoo::read_selected_configuration(session){
+            Ok(config) => config,
+            Err(e) => {
+                session.show_message(MessageType::ERROR, format!("Unable to read selected configuration: {}  \n\nPlease select a correct profile or fix the issues in the config", e));
+                error!(e);
+                return;
+            }
+        };
+        let selected_config = match maybe_selected_config {
+            None => {
+                session.show_message(MessageType::INFO, String::from("No Odoo configuration selected. Please select a configuration in the settings."));
+                return;
+            }
+            Some(c) if c == "" => {
+                session.show_message(MessageType::INFO, String::from("No Odoo configuration selected. Please select a configuration in the settings."));
+                return;
+            }
+            Some(config) => config,
+        };
         let config = config.and_then(|(ce, _)|{
-            let config_name = selected_config?;
+            let config_name = selected_config;
             ce.get(&config_name).cloned().ok_or(format!("Unable to find selected configuration \"{config_name}\""))
         });
         match config {
@@ -1437,8 +1452,10 @@ impl Odoo {
         if Odoo::is_config_workspace_file(session, path) {
             let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders())
                 .and_then(|(cfg_map, cfg_file)| {
-                    let config_name = Odoo::read_selected_configuration(session)?;
-                    cfg_map.get(&Odoo::read_selected_configuration(session)?)
+                    let Some(config_name) = Odoo::read_selected_configuration(session)? else {
+                      return Err(S!("No configuration selected"));
+                    };
+                    cfg_map.get(&config_name)
                         .cloned()
                         .ok_or_else(|| format!("Unable to find selected configuration \"{config_name}\""))
                         .map(|config| (config, cfg_file))
