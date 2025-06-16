@@ -710,6 +710,12 @@ fn merge_all_workspaces(
             merged_entry.name = key.clone();
 
             // Merge fields
+            merged_entry.extends = match (merged_entry.extends.clone(), raw_entry.extends) {
+                (Some(existing), Some(new)) if existing != new => {
+                    return Err(S!(format!("Conflict in 'extends' for profile '{}': '{}' vs '{}'", key, existing, new)));
+                }
+                (existing, new) => new.or(existing),
+            };
             merged_entry.odoo_path = merge_sourced_options(
                 merged_entry.odoo_path.clone(),
                 raw_entry.odoo_path.clone(),

@@ -170,7 +170,6 @@
         "Odoo.selectedConfiguration": {
           "scope": "window",
           "type": "string",
-          "default": "root",
           "description": "Configuration active in this workspace"
         }
       }

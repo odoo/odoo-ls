@@ -221,6 +221,9 @@ function IncrementLastConfigId(context: ExtensionContext) {
 
 async function changeSelectedConfig(context: ExtensionContext, configName: string) {
   try {
+    if (configName == "Disabled"){
+        configName = undefined;
+    }
     await workspace.getConfiguration().update("Odoo.selectedConfiguration", configName, ConfigurationTarget.Workspace);
     return true;
   } catch (err) {
@@ -427,22 +430,16 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     global.CAN_QUEUE_CONFIG_CHANGE = true;
                 }
 
-                const config = await getCurrentConfig(context)
-                if (config) {
-                    if (!global.IS_PYTHON_EXTENSION_READY){
-                        onDidChangePythonInterpreterEvent.fire(null);
-                    }
-                    let client = global.LSCLIENT;
-                    if (!client) {
-                        global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
-                        client = global.LSCLIENT;
-                    }
-                    if (client.needsStart()) {
-                        await client.start();
-                    }
-                } else {
-                    if (global.LSCLIENT?.isRunning()) await stopClient();
-                    global.IS_LOADING = false;
+                if (!global.IS_PYTHON_EXTENSION_READY){
+                    onDidChangePythonInterpreterEvent.fire(null);
+                }
+                let client = global.LSCLIENT;
+                if (!client) {
+                    global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
+                    client = global.LSCLIENT;
+                }
+                if (client.needsStart()) {
+                    await client.start();
                 }
                 await setStatusConfig(context);
                 if (event.affectsConfiguration("Odoo.disablePythonLanguageServerPopup") && !workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
@@ -648,13 +645,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
         // We update the last used version on every run.
         updateLastRecordedVersion(context);
 
-        const config = await getCurrentConfig(context);
-        if (config) {
-            deleteOldFiles(context)
-            global.LSCLIENT.info('Starting the extension.');
-            global.STATUS_BAR.text = `Odoo (${config})`
-            global.LSCLIENT.start();
-        }
+        deleteOldFiles(context);
+        global.LSCLIENT.info('Starting the extension.');
+        setStatusConfig(context);
+        global.LSCLIENT.start();
     }
     catch (error) {
         displayCrashMessage(context, error, global.SERVER_PID, 'odoo.activate');
@@ -755,7 +749,11 @@ async function showConfigProfileQuickPick(context: ExtensionContext) {
           tooltip: "Preview configuration",
         }
       ]
-    }))
+    })),
+    {
+        label: "Disabled",
+        alwaysShow: true,
+    }
   ];
 
   const quickPick = window.createQuickPick();
@@ -774,6 +772,7 @@ async function showConfigProfileQuickPick(context: ExtensionContext) {
   });
 
   quickPick.onDidAccept(async () => {
+    quickPick.hide();
     const selection = quickPick.selectedItems[0];
     if (selection) {
       if (selection.label === allConfigsLabel) {
@@ -781,13 +780,12 @@ async function showConfigProfileQuickPick(context: ExtensionContext) {
       } else {
         const ok = await changeSelectedConfig(context, selection.label);
         if (ok && global.LSCLIENT) {
-            await global.LSCLIENT.restart();
+            global.LSCLIENT.restart();
             global.IS_LOADING = false;
             setStatusConfig(context);
         }
       }
     }
-    quickPick.hide();
   });
 
   quickPick.show();
