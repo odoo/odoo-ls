@@ -1,7 +1,7 @@
 use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
-use tracing::info;
+use tracing::{error, info};
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use std::collections::{HashMap, HashSet};
 use std::fs;
