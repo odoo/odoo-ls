@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::Rc};
 
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
 use tracing::{error, warn};
@@ -8,6 +9,8 @@ use tracing::{error, warn};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, oyarn, threads::SessionInfo, S};
 
 use super::{file_mgr::FileInfo, odoo::SyncOdoo, symbols::{symbol::Symbol, xml_file_symbol::XmlFileSymbol}, xml_arch_builder::XmlArchBuilder};
+
+static BINDING_VIEWS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([a-z]+(,[a-z]+)*)?$").unwrap());
 
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
 impl XmlArchBuilder {
@@ -526,7 +529,7 @@ impl XmlArchBuilder {
                 "binding_views" => {
                     let pattern = r"^([a-z]+(,[a-z]+)*)?$";
                     let re = Regex::new(pattern).unwrap();
-                    if !re.is_match(attr.value()) {
+                    if !BINDING_VIEWS_RE.is_match(attr.value()) {
                         diagnostics.push(Diagnostic::new(
                             Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                             Some(DiagnosticSeverity::ERROR),
