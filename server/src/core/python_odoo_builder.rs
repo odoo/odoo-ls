@@ -49,6 +49,10 @@ impl PythonOdooBuilder {
             Some(model) => model.borrow_mut().add_symbol(session, sym.clone()),
             None => {
                 let model = Model::new(model_name.clone(), sym.clone());
+                sym.borrow().find_module().map(|module| {
+                    let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
+                    module.borrow_mut().as_module_package_mut().xml_ids.insert(xml_id_model_name, Rc::downgrade(&sym));
+                });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }

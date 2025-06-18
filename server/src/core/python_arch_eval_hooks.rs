@@ -432,6 +432,13 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                             func: |odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval_func_relational(symbol.clone());
     }},
+    PythonArchEvalFunctionHook {
+                            odoo_entry: true,
+                            tree: (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("ref")]),
+                            if_exist_only: true,
+                            func: |odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        PythonArchEvalHooks::_validation_env_ref(symbol.clone());
+    }},
 ]});
 
 
@@ -1004,6 +1011,94 @@ impl PythonArchEvalHooks {
                 ), &session.current_noqa);
             }
         }
+        diagnostics
+    }
+
+    fn eval_env_ref(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr> {
+        let Some(context) = context else {return None};
+        let in_validation = context.get(&S!("is_in_validation")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
+        let Some(parameters) = context.get(&S!("parameters")).map(|ps| ps.as_arguments()) else {return None};
+        if parameters.args.is_empty() {
+            return None; // No arguments to process
+        }
+        if !parameters.args[0].is_string_literal_expr() {
+            return None;
+        }
+        if parameters.keywords.len() == 1 {
+            if parameters.keywords[0].value.as_boolean_literal_expr().unwrap().value == false {
+                return None; // No need to process if the second argument (raise_if_not_found) is false
+            }
+        }
+        let xml_id_expr = parameters.args[0].as_string_literal_expr().unwrap();
+        let xml_id_str = xml_id_expr.value.to_str();
+        let mut xml_id_split = xml_id_str.split('.');
+        let module_name = xml_id_split.next().unwrap();
+        let mut xml_id = xml_id_split.collect::<Vec<&str>>().join(".");
+        let mut module = session.sync_odoo.modules.get(module_name).cloned();
+        if module.is_none() {
+            if in_validation {
+                if xml_id.len() == 0 {
+                    diagnostics.push(Diagnostic::new(
+                        FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                        Some(DiagnosticSeverity::ERROR),
+                        Some(NumberOrString::String(S!("OLS30330"))),
+                        Some(EXTENSION_NAME.to_string()),
+                        S!("Unspecified module. Add the module name before the XML ID: 'module.xml_id'"),
+                        None,
+                        None
+                    ));
+                } else {
+                    diagnostics.push(Diagnostic::new(
+                        FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                        Some(DiagnosticSeverity::ERROR),
+                        Some(NumberOrString::String(S!("OLS30331"))),
+                        Some(EXTENSION_NAME.to_string()),
+                        S!("Unknown module"),
+                        None,
+                        None
+                    ));
+                }
+            }
+            return None;
+        }
+        let Some(module_rc) = module.unwrap().upgrade() else {
+            return None;
+        };
+        let module_rc_bw = module_rc.borrow();
+        let Some(symbol) = module_rc_bw.as_module_package().xml_ids.get(xml_id.as_str()) else {
+            if in_validation {
+                diagnostics.push(Diagnostic::new(
+                    FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                    Some(DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(S!("OLS30329"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    S!("Unknown XML ID"),
+                    None,
+                    None
+                ));
+            }
+            return None;
+        };
+        //TODO => csv xml_id
+        //TODO check module dependencies
+        //TODO in xml, ref can omit the 'module.' before the xml_id
+        //TODO implement base.module_'nameofmodule'
+        return None; //TODO implement returned value
+    }
+
+    fn _validation_env_ref(func_sym: Rc<RefCell<Symbol>>) -> Vec<Diagnostic> {
+        let mut diagnostics = vec![];
+        func_sym.borrow_mut().set_evaluations(vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(
+                Rc::downgrade(&func_sym),
+                Some(true),
+                HashMap::new(),
+                Some(PythonArchEvalHooks::eval_env_ref)
+            ),
+            value: None,
+            range: None
+        }]);
+
         diagnostics
     }
 
