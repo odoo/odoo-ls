@@ -926,7 +926,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
 
         [[config]]
         name = "base"
-        auto_save_delay = 111
+        auto_save_delay = 1111
         ac_filter_model_names = false
 
         [[config]]
@@ -952,7 +952,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
 
     // Should inherit file_cache from mid, auto_save_delay from base, diag_missing_imports from root, ac_filter_model_names from workspace
     assert_eq!(config.file_cache, false);
-    assert_eq!(config.auto_save_delay, 111);
+    assert_eq!(config.auto_save_delay, 1111);
     assert_eq!(format!("{:?}", config.diag_missing_imports).to_lowercase(), "onlyodoo");
     assert_eq!(config.ac_filter_model_names, true);
 
@@ -960,7 +960,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let parent_toml_swapped = r#"
         [[config]]
         name = "base"
-        auto_save_delay = 111
+        auto_save_delay = 1111
         ac_filter_model_names = false
 
         [[config]]
@@ -978,7 +978,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
     let config2 = config_map2.get("root").unwrap();
     assert_eq!(config2.file_cache, false);
-    assert_eq!(config2.auto_save_delay, 111);
+    assert_eq!(config2.auto_save_delay, 1111);
     assert_eq!(format!("{:?}", config2.diag_missing_imports).to_lowercase(), "onlyodoo");
     assert_eq!(config2.ac_filter_model_names, true);
 
@@ -986,7 +986,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let ws_toml_base = r#"
         [[config]]
         name = "base"
-        auto_save_delay = 111
+        auto_save_delay = 1111
         ac_filter_model_names = false
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml_base).unwrap();
@@ -1007,7 +1007,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let config3 = config_map3.get("root").unwrap();
     // Should still resolve the chain correctly
     assert_eq!(config3.file_cache, false);
-    assert_eq!(config3.auto_save_delay, 111);
+    assert_eq!(config3.auto_save_delay, 1111);
     assert_eq!(format!("{:?}", config3.diag_missing_imports).to_lowercase(), "onlyodoo");
     assert_eq!(config3.ac_filter_model_names, false);
 }
@@ -1219,6 +1219,50 @@ fn test_config_with_relative_addons_paths() {
 }
 
 #[test]
+fn test_relative_addons_paths_in_parent_config() {
+    let temp = TempDir::new().unwrap();
+    let ws = temp.child("ws");
+    ws.create_dir_all().unwrap();
+
+    // Create addons1/mod1/__manifest__.py
+    let addons1 = temp.child("addons1");
+    let mod1 = addons1.child("mod1");
+    mod1.create_dir_all().unwrap();
+    mod1.child("__manifest__.py").touch().unwrap();
+
+    // Create addons2/mod2/__manifest__.py
+    let addons2 = temp.child("addons2");
+    let mod2 = addons2.child("mod2");
+    mod2.create_dir_all().unwrap();
+    mod2.child("__manifest__.py").touch().unwrap();
+
+    // Write odools.toml in parent directory (temp), with relative paths
+    let toml_content = r#"
+        [[config]]
+        name = "root"
+        addons_paths = [
+            "./addons1",
+            "./addons2"
+        ]
+    "#;
+    temp.child("odools.toml").write_str(toml_content).unwrap();
+
+    // Workspace folder does not have its own odools.toml
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
+
+    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+
+    // The expected absolute, sanitized paths
+    let expected1 = addons1.path().sanitize();
+    let expected2 = addons2.path().sanitize();
+
+    assert!(config.addons_paths.contains(&expected1), "Expected addons_paths to contain {}", expected1);
+    assert!(config.addons_paths.contains(&expected2), "Expected addons_paths to contain {}", expected2);
+}
+
+#[test]
 fn test_auto_save_delay_boundaries() {
     let temp = TempDir::new().unwrap();
     let ws_folder = temp.child("workspace1");
@@ -1263,3 +1307,95 @@ fn test_auto_save_delay_boundaries() {
     let config = config_map.get("root").unwrap();
     assert_eq!(config.auto_save_delay, 1234);
 }
+
+#[test]
+fn test_odoo_path_with_version_variable_and_workspace_folder() {
+    let temp = TempDir::new().unwrap();
+
+    // Create temp/18.0/odoo/release.py
+    let odoo_18 = temp.child("18.0").child("odoo").child("odoo");
+    odoo_18.create_dir_all().unwrap();
+    odoo_18.child("release.py").touch().unwrap();
+
+    // Create temp/17.0/odoo/release.py
+    let odoo_17 = temp.child("17.0").child("odoo").child("odoo");
+    odoo_17.create_dir_all().unwrap();
+    odoo_17.child("release.py").touch().unwrap();
+
+    // Write odools.toml in temp with odoo_path using $version
+    let toml_content = r#"
+        [[config]]
+        name = "root"
+        "$version" = "18.0"
+        odoo_path = "./${version}/odoo"
+    "#;
+    temp.child("odools.toml").write_str(toml_content).unwrap();
+
+    // Workspace: temp (simulate as workspace root)
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws"), temp.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
+    assert_eq!(
+        config.odoo_path.as_ref().unwrap(),
+        &expected_odoo_path,
+        "odoo_path should resolve to 18.0/odoo"
+    );
+
+    // Now test with workspace at temp/18.0/addons/
+    let ws_18_addons = temp.child("18.0").child("addons");
+    let addon1 = ws_18_addons.child("addon1");
+    addon1.create_dir_all().unwrap();
+    addon1.child("__manifest__.py").touch().unwrap();
+
+    // Write odools.toml in temp/18.0/addons/ with $version = "${workspaceFolder}/.."
+    let ws18_toml = r#"
+        [[config]]
+        name = "root"
+        "$version" = "${workspaceFolder}/.."
+        odoo_path = "./${version}/odoo"
+    "#;
+    ws_18_addons.child("odools.toml").write_str(ws18_toml).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws18"), ws_18_addons.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
+    assert_eq!(
+        config.odoo_path.as_ref().unwrap(),
+        &expected_odoo_path,
+        "odoo_path should resolve to 18.0/odoo when workspace is 18.0/addons"
+    );
+
+    // Now test with workspace at temp/17.0/addons/
+    let ws_17_addons = temp.child("17.0").child("addons");
+    let addon2 = ws_17_addons.child("addon2");
+    addon2.create_dir_all().unwrap();
+    addon2.child("__manifest__.py").touch().unwrap();
+
+    // Write odools.toml in temp/17.0/addons/ with $version = "${workspaceFolder}/.."
+    let ws17_toml = r#"
+        [[config]]
+        name = "root"
+        "$version" = "${workspaceFolder}/.."
+        odoo_path = "./${version}/odoo"
+    "#;
+    ws_17_addons.child("odools.toml").write_str(ws17_toml).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws17"), ws_17_addons.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    let expected_odoo_path = temp.child("17.0").child("odoo").path().sanitize();
+    assert_eq!(
+        config.odoo_path.as_ref().unwrap(),
+        &expected_odoo_path,
+        "odoo_path should resolve to 17.0/odoo when workspace is 17.0/addons"
+    );
+}
+

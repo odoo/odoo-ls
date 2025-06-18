@@ -1,13 +1,16 @@
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::{fs, path::Path, error::Error};
+use std::{fs, path::Path};
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::json;
+use weak_table::weak_value_hash_map;
 
-use crate::utils::{fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
+use crate::core::config;
+use crate::utils::{fill_template, fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
@@ -276,8 +279,19 @@ where
     T: Clone + Eq + Hash,
     I: IntoIterator<Item = Sourced<T>>,
 {
-    iter1.into_iter()
-    .chain(iter2)
+    group_sourced_iters(
+        iter1.into_iter()
+        .chain(iter2)
+    )
+}
+
+/// Groups `Sourced<T>` items by their value, merging their sources into a single `Sourced<T>`.
+fn group_sourced_iters<T, I>(iter: I) -> impl Iterator<Item = Sourced<T>>
+where
+    T: Clone + Eq + Hash,
+    I: IntoIterator<Item = Sourced<T>>,
+{
+    iter.into_iter()
     .into_group_map_by(|s| s.value.clone())
     .into_iter()
     .map(|(value, group)| Sourced {
@@ -320,6 +334,48 @@ where
         None => T::default().serialize(serializer),
     }
 }
+
+fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String) -> Sourced<String> {
+    let Some(config_path) = var.sources.iter().next().map(PathBuf::from) else {
+        unreachable!("Expected at least one source for sourced_path: {:?}", var);
+    };
+    let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    match fill_validate_path(ws_folders, workspace_name, var.value(), |p| PathBuf::from(p).exists(), HashMap::new(), &config_dir) {
+        Some(filled_path) => {
+            let var_pb = PathBuf::from(&filled_path);
+            if var_pb.is_file() {
+                // If it is a file, we can return the file name
+                let Some(file_name) = var_pb.file_name() else {
+                    unreachable!("Expected a file name for path {:?}", &var_pb);
+                };
+                let f_name = file_name.to_string_lossy();
+                if f_name == "__manifest__.py" {
+                    // If it is a manifest file, we can return the version from it
+                    if let Ok(contents) = fs::read_to_string(&var_pb) {
+                        if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&contents) {
+                            if let Some(version) = manifest.get("version") {
+                                let version = version.to_string();
+                                // I want the first two components of the version
+                                let mut parts = version.trim_matches('"').split('.');
+                                let (Some(major), Some(minor)) = (parts.next(), parts.next()) else {
+                                    panic!("Invalid version format in manifest file: {}", version);
+                                };
+                                return Sourced { value: S!(format!("{}.{}", major, minor)), sources: var.sources.clone() };
+                            }
+                        }
+                    }
+                }
+            }
+            let Some(suffix) = var_pb.components().last() else {
+                unreachable!("Invalid variable value {:?}", &filled_path);
+            };
+            Sourced { value: S!(suffix.as_os_str().to_string_lossy()), sources: var.sources.clone() }
+        },
+        // Not a valid path, just return the variable as is
+        None => var,
+    }
+}
+
 // Raw structure for initial deserialization
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConfigEntryRaw {
@@ -364,6 +420,9 @@ pub struct ConfigEntryRaw {
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
     add_workspace_addon_path: Option<Sourced<bool>>,
+
+    #[serde(default, rename(serialize = "$version", deserialize = "$version"), serialize_with = "serialize_option_as_default")]
+    version: Option<Sourced<String>>,
 }
 
 impl ConfigEntryRaw {
@@ -383,6 +442,7 @@ impl ConfigEntryRaw {
             ac_filter_model_names: None,
             auto_save_delay: None,
             add_workspace_addon_path: None,
+            version: None,
         }
     }
 
@@ -442,38 +502,64 @@ fn default_name() -> String {
     "root".to_string()
 }
 
-fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, path: P, workspace_name: &String) -> Result<HashMap<String, ConfigEntryRaw>, String> {
+fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String, predicate: &F, var_map: HashMap<String, String>) -> Option<Sourced<String>>
+where
+F: Fn(&String) -> bool,
+{
+    let Some(config_path) = sourced_path.sources.iter().next().map(PathBuf::from) else {
+        unreachable!("Expected at least one source for sourced_path: {:?}", sourced_path);
+    };
+    let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    // If it is a valid pattern, in $PATH, a valid alias or a valid absolute path: (no need to canonicalize like python3 for example)
+    fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate, var_map, &config_dir).map(|p| PathBuf::from(p).sanitize())
+    // If it is relative path it should work here
+    .or_else (|| std::fs::canonicalize(config_dir.join(sourced_path.value.clone())).map(|p| p.sanitize()).ok().filter(|p| predicate(&p)))
+    .map(|path| Sourced { value: path, sources: sourced_path.sources.clone() })
+}
+
+fn process_paths(
+    entry: &mut ConfigEntryRaw,
+    ws_folders: &HashMap<String, String>,
+    workspace_name: &String,
+){
+    let var_map: HashMap<String, String> = match entry.version.clone() {
+        Some(v) => HashMap::from([(S!("version"), v.value().clone())]),
+        None => HashMap::new(),
+    };
+    entry.odoo_path =  entry.odoo_path.as_ref()
+        .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone()));
+
+    entry.addons_paths = entry.addons_paths.iter_mut()
+        .filter_map(|sourced| {
+            fill_or_canonicalize(sourced, ws_folders, workspace_name, &is_addon_path, var_map.clone())
+        })
+        .collect();
+    entry.python_path = entry.python_path.as_ref()
+        .and_then(|p| {
+            if is_python_path(&p.value) {
+                // If it is already a valid executable like `python` or `python3`, we can just return it
+                Some(p.clone())
+            } else {
+                fill_or_canonicalize(p, ws_folders, workspace_name, &is_python_path, var_map.clone())
+            }
+        });
+}
+
+fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     let path = path.as_ref();
-    let config_dir = path.parent().unwrap_or(Path::new("."));
     let contents = fs::read_to_string(path).map_err(|err| err.to_string())?;
     let raw = toml::from_str::<ConfigFile>(&contents).map_err(|err| err.to_string())?;
 
-    fn fill_or_canonicalize<F>(sourced_path: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String, config_dir: &Path, predicate: F) -> Option<PathBuf>
-    where
-    F: Fn(&String) -> bool,
-    {
-        // If it is a valid pattern, in $PATH, a valid alias or a valid absolute path: (no need to canonicalize like python3 for example)
-        fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate).map(PathBuf::from)
-        // If it is relative path it should work here
-        .or(std::fs::canonicalize(config_dir.join(sourced_path.value)).ok())
-    }
 
     let config = raw.config.into_iter().map(|mut entry| {
         // odoo_path
-        entry.odoo_path = entry.odoo_path
-            .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, config_dir, is_odoo_path))
-            .map(|p| p.sanitize())
-            .filter(|p| is_odoo_path(p))
-            .map(|op| Sourced { value: op, sources: HashSet::from([path.sanitize()])});
+        entry.odoo_path.as_mut().map(|sourced| { sourced.sources.insert(path.sanitize());});
 
         // addons_paths
-        entry.addons_paths = entry.addons_paths.into_iter()
-            .flat_map(|p| fill_or_canonicalize(p, ws_folders, workspace_name, config_dir, is_addon_path))
-            .map(|p| p.sanitize())
-            .filter(|p| is_addon_path(p))
-            .unique()
-            .map(|valid| Sourced { value: valid, sources: HashSet::from([path.sanitize()])})
-            .collect();
+        entry.addons_paths.iter_mut()
+            .for_each(|sourced| {
+                sourced.sources.insert(path.sanitize());
+            });
 
         // additional_stubs
         entry.additional_stubs.iter_mut()
@@ -482,11 +568,7 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, p
             });
 
         // python_path
-        entry.python_path = entry.python_path
-            .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, config_dir, is_python_path))
-            .map(|p| p.sanitize())
-            .filter(|p| is_python_path(p))
-            .map(|op| Sourced { value: op, sources: HashSet::from([path.sanitize()])});
+        entry.python_path.as_mut().map(|sourced| { sourced.sources.insert(path.sanitize());});
 
         // Add initial source to all fields
         entry.addons_merge.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
@@ -497,11 +579,54 @@ fn read_config_from_file<P: AsRef<Path>>(ws_folders: &HashMap<String, String>, p
         entry.ac_filter_model_names.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.auto_save_delay.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.add_workspace_addon_path.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
+        entry.version.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
 
         (entry.name.clone(), entry)
     }).collect();
 
     Ok(config)
+}
+
+fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRaw {
+        let odoo_path = child.odoo_path.clone().or(parent.odoo_path.clone());
+        let python_path = child.python_path.clone().or(parent.python_path.clone());
+        // Simple combination of paths, sources will be merged after paths are processed
+        let addons_paths = match child.addons_merge.clone().unwrap_or_default().value {
+            MergeMethod::Merge => child.addons_paths.clone().into_iter().chain(parent.addons_paths.clone().into_iter()).collect(),
+            MergeMethod::Override => child.addons_paths.clone(),
+        };
+        let additional_stubs = match child.additional_stubs_merge.clone().unwrap_or_default().value {
+            MergeMethod::Merge => child.additional_stubs.clone().into_iter().chain(parent.additional_stubs.clone().into_iter()).collect(),
+            MergeMethod::Override => child.additional_stubs.clone(),
+        };
+        let refresh_mode = child.refresh_mode.clone().or(parent.refresh_mode.clone());
+        let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
+        let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
+        let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
+        let addons_merge = child.addons_merge.clone().or(parent.addons_merge.clone());
+        let additional_stubs_merge = child.additional_stubs_merge.clone().or(parent.additional_stubs_merge.clone());
+        let extends = child.extends.clone().or(parent.extends.clone());
+        let auto_save_delay = child.auto_save_delay.clone().or(parent.auto_save_delay.clone());
+        let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
+        let version = child.version.clone().or(parent.version.clone());
+
+        ConfigEntryRaw {
+            odoo_path,
+            python_path,
+            addons_paths,
+            additional_stubs,
+            refresh_mode,
+            file_cache,
+            diag_missing_imports,
+            ac_filter_model_names,
+            addons_merge,
+            additional_stubs_merge,
+            extends,
+            name: child.name.clone(),
+            auto_save_delay,
+            add_workspace_addon_path,
+            version
+        }
 }
 
 fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>) -> Result<(), String> {
@@ -561,41 +686,13 @@ fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>) -> Result<(), Str
     }
 
     for key in ordered_nodes.iter(){
-        if let Some(entry) = config.get(key).cloned() {
-            if let Some(extends_key) = entry.extends.clone() {
-                if let Some(parent_entry) = config.get(&extends_key).cloned() {
-                    let merged_entry = ConfigEntryRaw {
-                        odoo_path: entry.odoo_path.as_ref().or(parent_entry.odoo_path.as_ref()).cloned(),
-                        python_path: entry.python_path.or(parent_entry.python_path),
-                        addons_paths: match entry.addons_merge.clone().unwrap_or_default().value {
-                            MergeMethod::Merge => parent_entry.addons_paths.clone().into_iter()
-                              .chain(entry.addons_paths.clone())
-                              .unique_by(|v| v.value.clone())
-                              .collect(),
-                            MergeMethod::Override => entry.addons_paths,
-                        },
-                        additional_stubs: match entry.additional_stubs_merge.clone().unwrap_or_default().value {
-                            MergeMethod::Merge => parent_entry.additional_stubs.clone().into_iter()
-                              .chain(entry.additional_stubs.clone())
-                              .unique_by(|v| v.value.clone())
-                              .collect(),
-                            MergeMethod::Override => entry.additional_stubs,
-                        },
-                        refresh_mode: entry.refresh_mode.or(parent_entry.refresh_mode),
-                        file_cache: entry.file_cache.or(parent_entry.file_cache),
-                        diag_missing_imports: entry.diag_missing_imports.or(parent_entry.diag_missing_imports),
-                        ac_filter_model_names: entry.ac_filter_model_names.or(parent_entry.ac_filter_model_names),
-                        addons_merge: entry.addons_merge.or(parent_entry.addons_merge),
-                        additional_stubs_merge: entry.additional_stubs_merge.or(parent_entry.additional_stubs_merge),
-                        extends: entry.extends,
-                        name: entry.name,
-                        auto_save_delay: entry.auto_save_delay.or(parent_entry.auto_save_delay),
-                        add_workspace_addon_path: entry.add_workspace_addon_path.or(parent_entry.add_workspace_addon_path),
-                    };
-                    config.insert(key.clone(), merged_entry);
-                }
-            }
-        }
+        let Some(entry) = config.get(key).cloned() else {
+            continue
+        };
+        let Some(parent_entry) = entry.extends.as_ref().and_then(|key| config.get(key).cloned()) else {
+            continue
+        };
+        config.insert(key.clone(), apply_merge(&entry, &parent_entry));
     }
     Ok(())
 }
@@ -612,53 +709,11 @@ fn merge_configs(
         .collect();
 
     for key in keys {
-        let child_entry = child.get(&key);
-        let parent_entry = parent.get(&key);
-
-        let entry = match (child_entry, parent_entry) {
-            (Some(child), Some(parent)) => {
-                let odoo_path = child.odoo_path.clone().or(parent.odoo_path.clone());
-                let python_path = child.python_path.clone().or(parent.python_path.clone());
-                let addons_paths = match child.addons_merge.clone().unwrap_or_default().value {
-                    MergeMethod::Merge => merge_sourced_iters(parent.addons_paths.clone(), child.addons_paths.clone()).collect(),
-                    MergeMethod::Override => child.addons_paths.clone(),
-                };
-                let additional_stubs = match child.additional_stubs_merge.clone().unwrap_or_default().value {
-                    MergeMethod::Merge => merge_sourced_iters(parent.additional_stubs.clone(), child.additional_stubs.clone()).collect(),
-                    MergeMethod::Override => child.additional_stubs.clone(),
-                };
-                let refresh_mode = child.refresh_mode.clone().or(parent.refresh_mode.clone());
-                let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
-                let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
-                let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
-                let addons_merge = child.addons_merge.clone().or(parent.addons_merge.clone());
-                let additional_stubs_merge = child.additional_stubs_merge.clone().or(parent.additional_stubs_merge.clone());
-                let extends = child.extends.clone().or(parent.extends.clone());
-                let auto_save_delay = child.auto_save_delay.clone().or(parent.auto_save_delay.clone());
-                let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
-
-                ConfigEntryRaw {
-                    odoo_path,
-                    python_path,
-                    addons_paths,
-                    additional_stubs,
-                    refresh_mode,
-                    file_cache,
-                    diag_missing_imports,
-                    ac_filter_model_names,
-                    addons_merge,
-                    additional_stubs_merge,
-                    extends,
-                    name: child.name.clone(),
-                    auto_save_delay,
-                    add_workspace_addon_path,
-                }
-            }
-            (Some(child), None) => child.clone(),
-            (None, Some(parent)) => parent.clone(),
+        let entry = match (child.get(&key), parent.get(&key)) {
+            (Some(child), Some(parent)) => apply_merge(&child, &parent),
+            (Some(entry), None) | (None, Some(entry))=> entry.clone(),
             (None, None) => continue, // unreachable
         };
-
         merged.insert(key, entry);
     }
     merged
@@ -678,7 +733,7 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
 
         let config_path = current_dir.join("odools.toml");
         if config_path.exists() && config_path.is_file() {
-            let current_config = read_config_from_file(ws_folders, &config_path, workspace_name)?;
+            let current_config = read_config_from_file(&config_path)?;
             merged_config = merge_configs(&merged_config, &current_config);
         }
         if let Some(parent) = current_dir.parent() {
@@ -688,6 +743,23 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
         }
     }
     apply_extends(&mut merged_config)?;
+    // Process vars
+    merged_config.iter_mut()
+        .for_each(|(_, entry)| {
+            // apply process_var to all vars
+            entry.version = entry.version.clone().map(|v| process_version(v, ws_folders, workspace_name));
+        });
+    // Process paths in the merged config
+    merged_config.iter_mut()
+        .for_each(|(_, entry)| {
+            process_paths(entry, ws_folders, workspace_name);
+        });
+    // Merge sourced paths
+    merged_config.iter_mut()
+        .for_each(|(_, entry)| {
+            entry.addons_paths = group_sourced_iters(entry.addons_paths.clone()).collect();
+            entry.additional_stubs = group_sourced_iters(entry.additional_stubs.clone()).collect();
+        });
 
     for (_, entry) in merged_config.iter_mut() {
         if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_empty()) && is_addon_path(workspace_path) {
