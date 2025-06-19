@@ -1353,9 +1353,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     // Write odools.toml in temp/18.0/addons/ with $version = "${workspaceFolder}/.."
     let ws18_toml = r#"
         [[config]]
-        name = "root"
         "$version" = "${workspaceFolder}/.."
-        odoo_path = "./${version}/odoo"
     "#;
     ws_18_addons.child("odools.toml").write_str(ws18_toml).unwrap();
 
@@ -1380,9 +1378,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     // Write odools.toml in temp/17.0/addons/ with $version = "${workspaceFolder}/.."
     let ws17_toml = r#"
         [[config]]
-        name = "root"
         "$version" = "${workspaceFolder}/.."
-        odoo_path = "./${version}/odoo"
     "#;
     ws_17_addons.child("odools.toml").write_str(ws17_toml).unwrap();
 
@@ -1396,6 +1392,81 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
         config.odoo_path.as_ref().unwrap(),
         &expected_odoo_path,
         "odoo_path should resolve to 17.0/odoo when workspace is 17.0/addons"
+    );
+}
+
+#[test]
+fn test_odoo_path_with_version_from_manifest_file() {
+    let temp = TempDir::new().unwrap();
+
+    // Write odools.toml in temp with odoo_path using $version
+    let toml_content = r#"
+        [[config]]
+        name = "root"
+        odoo_path = "./${version}/odoo"
+    "#;
+    temp.child("odools.toml").write_str(toml_content).unwrap();
+
+    // Create temp/18.0/odoo/release.py
+    let odoo_18 = temp.child("18.0").child("odoo").child("odoo");
+    odoo_18.create_dir_all().unwrap();
+    odoo_18.child("release.py").touch().unwrap();
+
+    // Create temp/17.0/odoo/release.py
+    let odoo_17 = temp.child("17.0").child("odoo").child("odoo");
+    odoo_17.create_dir_all().unwrap();
+    odoo_17.child("release.py").touch().unwrap();
+
+    // --- 18.0 workspace ---
+    let ws_18_addons = temp.child("18.0").child("addons");
+    let addon1_18 = ws_18_addons.child("addon1");
+    addon1_18.create_dir_all().unwrap();
+    // Write __manifest__.py with version = "18.0.1.0.0"
+    addon1_18.child("__manifest__.py").write_str("{'version': '18.0.1.0.0'}").unwrap();
+
+    // Write odools.toml in temp/18.0/addons/ with $version = "${workspaceFolder}/addon1/__manifest__.py"
+    let ws18_toml = r#"
+        [[config]]
+        "$version" = "${workspaceFolder}/addon1/__manifest__.py"
+    "#;
+    ws_18_addons.child("odools.toml").write_str(ws18_toml).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws18"), ws_18_addons.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
+    assert_eq!(
+        config.odoo_path.as_ref().unwrap(),
+        &expected_odoo_path,
+        "odoo_path should resolve to 18.0/odoo when manifest version is 18.0.1.0.0"
+    );
+
+    // --- 17.0 workspace ---
+    let ws_17_addons = temp.child("17.0").child("addons");
+    let addon1_17 = ws_17_addons.child("addon1");
+    addon1_17.create_dir_all().unwrap();
+    // Write __manifest__.py with version = "17.0.1.0.0"
+    addon1_17.child("__manifest__.py").write_str("{'version': '17.0.1.0.0'}").unwrap();
+
+    // Write odools.toml in temp/17.0/addons/ with $version = "${workspaceFolder}/addon1/__manifest__.py"
+    let ws17_toml = r#"
+        [[config]]
+        "$version" = "${workspaceFolder}/addon1/__manifest__.py"
+    "#;
+    ws_17_addons.child("odools.toml").write_str(ws17_toml).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws17"), ws_17_addons.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    let expected_odoo_path = temp.child("17.0").child("odoo").path().sanitize();
+    assert_eq!(
+        config.odoo_path.as_ref().unwrap(),
+        &expected_odoo_path,
+        "odoo_path should resolve to 17.0/odoo when manifest version is 17.0.1.0.0"
     );
 }
 
