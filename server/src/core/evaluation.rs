@@ -1087,6 +1087,13 @@ impl Evaluation {
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
+                let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                    SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                        parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                    },
+                    _ => {false}
+                };
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
@@ -1105,6 +1112,7 @@ impl Evaluation {
                                 context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.as_mut().unwrap().remove(&S!("range"));
                                 context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
+                                context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
                                 let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
                                 if let Some(hook_result) = hook_result {
                                     match hook_result {
@@ -1119,6 +1127,7 @@ impl Evaluation {
                                     }
                                 }
                                 context.as_mut().unwrap().remove(&S!("args"));
+                                context.as_mut().unwrap().remove(&S!("is_in_validation"));
                                 context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
                             }
                         }
