@@ -931,12 +931,9 @@ impl Evaluation {
                         if base_sym.borrow().evaluations().is_some() {
                             let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
                             let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                                SymType::FILE | SymType::PACKAGE(_) => {
+                                SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
                                     parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
                                 },
-                                SymType::FUNCTION => {
-                                    true //functions are always evaluated at validation step
-                                }
                                 _ => {false}
                             };
                             let call_parent = match base_sym_weak_eval.context.get(&S!("base_attr")){
@@ -959,6 +956,8 @@ impl Evaluation {
                                     ));
                             }
                             context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
+                            context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
+                            context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
                             for eval in base_sym.borrow().evaluations().unwrap().iter() {
                                 let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
                                 evals.push(Evaluation{
@@ -971,6 +970,8 @@ impl Evaluation {
                                 });
                             }
                             context.as_mut().unwrap().remove(&S!("base_call"));
+                            context.as_mut().unwrap().remove(&S!("parameters"));
+                            context.as_mut().unwrap().remove(&S!("is_in_validation"));
                         }
                     }
                 }
@@ -1086,6 +1087,13 @@ impl Evaluation {
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
+                let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                    SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                        parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                    },
+                    _ => {false}
+                };
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
@@ -1104,6 +1112,7 @@ impl Evaluation {
                                 context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value));
                                 let old_range = context.as_mut().unwrap().remove(&S!("range"));
                                 context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
+                                context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
                                 let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
                                 if let Some(hook_result) = hook_result {
                                     match hook_result {
@@ -1118,6 +1127,7 @@ impl Evaluation {
                                     }
                                 }
                                 context.as_mut().unwrap().remove(&S!("args"));
+                                context.as_mut().unwrap().remove(&S!("is_in_validation"));
                                 context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
                             }
                         }

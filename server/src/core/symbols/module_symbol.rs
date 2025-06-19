@@ -41,6 +41,7 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
+    pub xml_ids: HashMap<OYarn, Vec<Weak<RefCell<Symbol>>>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
@@ -79,6 +80,7 @@ impl ModuleSymbol {
             root_path: dir_path.sanitize(),
             loaded: false,
             module_name: OYarn::from(""),
+            xml_ids: HashMap::new(),
             dir_name: OYarn::from(""),
             depends: vec!((OYarn::from("base"), TextRange::default())),
             all_depends: HashSet::new(),
@@ -358,8 +360,8 @@ impl ModuleSymbol {
                 if let Ok(document) = document {
                     file_info.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
                     let root = document.root_element();
-                    let mut xml_builder = XmlArchBuilder::new();
-                    xml_builder.load_arch(session, xml_sym, &mut file_info, &root);
+                    let mut xml_builder = XmlArchBuilder::new(xml_sym);
+                    xml_builder.load_arch(session, &mut file_info, &root);
                     file_info.publish_diagnostics(session); //TODO do it only if diagnostics are not empty, else in validation
                 } else if data.len() > 0 {
                     let mut diagnostics = vec![];
