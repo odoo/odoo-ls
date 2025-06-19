@@ -63,7 +63,7 @@ impl XmlArchBuilder {
                         end: Position::new(node.range().end as u32, 0),
                     },
                     Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS30445"))),
+                    Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
                     Some(EXTENSION_NAME.to_string()),
                     format!("Invalid XML ID '{}'. It should not contain more than one dot", id),
                     None,
@@ -72,23 +72,34 @@ impl XmlArchBuilder {
                 return;
             }
             let id = id_split.last().unwrap().to_string();
-            let already_exists = module.borrow().as_module_package().xml_ids.contains_key(&Sy!(id.clone()));
-            if already_exists {
-                diagnostics.push(Diagnostic::new(
-                    Range {
-                        start: Position::new(node.range().start as u32, 0),
-                        end: Position::new(node.range().end as u32, 0),
-                    },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("XML ID '{}' already exists in module '{}'.", id, module.borrow().as_module_package().name),
-                    None,
-                    None
-                ));
-                return;
+            let mut xml_module = module.clone();
+            if id_split.len() == 2 {
+                let module_name = id_split.first().unwrap().to_string();
+                if let Some(m) = session.sync_odoo.modules.get(&module_name) {
+                    xml_module = m.upgrade().unwrap();
+                }
             }
-            module.borrow_mut().as_module_package_mut().xml_ids.insert(Sy!(id), Rc::downgrade(&self.xml_symbol));
+            let xml_module_bw = xml_module.borrow();
+            let already_existing = xml_module_bw.as_module_package().xml_ids.get(&Sy!(id.clone())).cloned();
+            drop(xml_module_bw);
+            let mut found_one = false;
+            if let Some(existing) = already_existing {
+                //Check that it exists a main xml_id
+                for s in existing.iter() {
+                    if let Some(s) = s.upgrade() {
+                        if Rc::ptr_eq(&s, &xml_module) {
+                            found_one = true;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                xml_module.borrow_mut().as_module_package_mut().xml_ids.insert(Sy!(id.clone()), vec![]);
+            }
+            if !found_one && !Rc::ptr_eq(&xml_module, &module) {
+                // no diagnostic to create.
+            }
+            xml_module.borrow_mut().as_module_package_mut().xml_ids.get_mut(&Sy!(id)).unwrap().push(Rc::downgrade(&self.xml_symbol));
         }
     }
 }

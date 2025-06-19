@@ -41,7 +41,7 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
-    pub xml_ids: HashMap<OYarn, Weak<RefCell<Symbol>>>,
+    pub xml_ids: HashMap<OYarn, Vec<Weak<RefCell<Symbol>>>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,

@@ -318,9 +318,5 @@ This attribute is not valid in a menuitem node
 "Data file should be an XML or a CSV file"
 
 ### OLS30446
-"XML ID already exists in module"
-You have duplicated XML ID in the same module
-
-### OLS30447
 "XML ID should not contain more than one dot"
 An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots

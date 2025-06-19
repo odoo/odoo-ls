@@ -1114,8 +1114,8 @@ impl PythonArchEvalHooks {
         };
         //TODO => csv xml_id
         //TODO check module dependencies
-        //TODO in xml, ref can omit the 'module.' before the xml_id
-        //TODO implement base.module_'nameofmodule'
+        //TODO in xml ONLY, ref can omit the 'module.' before the xml_id
+        //TODO implement base.model_'nameofmodel' - to test
         return None; //TODO implement returned value
     }
 
