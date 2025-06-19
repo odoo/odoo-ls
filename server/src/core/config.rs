@@ -5,12 +5,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
 use itertools::Itertools;
+use ruff_python_ast::{Expr, Mod};
+use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::json;
-use weak_table::weak_value_hash_map;
 
-use crate::core::config;
-use crate::utils::{fill_template, fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
+use crate::utils::{fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
@@ -335,6 +334,33 @@ where
     }
 }
 
+fn parse_manifest_version(contents: String) -> Option<String> {
+    let parsed = ruff_python_parser::parse_unchecked(contents.as_str(), ParseOptions::from(Mode::Module));
+    if !parsed.errors().is_empty() {
+        return None;
+    }
+    let Mod::Module(module) = parsed.into_syntax() else {
+        return None;
+    };
+    if module.body.len() != 1 {
+        return None; // We expect only one statement in the manifest
+    }
+    let Some(dict_expr) = module.body.first()
+    .and_then(|stmt| stmt.as_expr_stmt())
+    .and_then(|expr| expr.value.as_dict_expr()) else {
+        return None; // We expect a single expression that is a dictionary
+    };
+    for item in dict_expr.items.iter() {
+        if !matches!(item.key.as_ref(), Some(Expr::StringLiteral(expr)) if expr.value.to_str() != "version") {
+            continue;
+        }
+        if let Some(value_expr) = item.value.as_string_literal_expr() {
+            return Some(value_expr.value.to_string());
+        }
+    }
+    None
+}
+
 fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String) -> Sourced<String> {
     let Some(config_path) = var.sources.iter().next().map(PathBuf::from) else {
         unreachable!("Expected at least one source for sourced_path: {:?}", var);
@@ -351,21 +377,20 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
                 let f_name = file_name.to_string_lossy();
                 if f_name == "__manifest__.py" {
                     // If it is a manifest file, we can return the version from it
-                    if let Ok(contents) = fs::read_to_string(&var_pb) {
-                        if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&contents) {
-                            if let Some(version) = manifest.get("version") {
-                                let version = version.to_string();
-                                // I want the first two components of the version
-                                let mut parts = version.trim_matches('"').split('.');
-                                let (Some(major), Some(minor)) = (parts.next(), parts.next()) else {
-                                    panic!("Invalid version format in manifest file: {}", version);
-                                };
-                                return Sourced { value: S!(format!("{}.{}", major, minor)), sources: var.sources.clone() };
-                            }
-                        }
+                    if let Some((Some(major), Some(minor))) = fs::read_to_string(&var_pb).ok()
+                    .and_then(|contents| parse_manifest_version(contents.clone()))
+                    .map(|version| {
+                        let mut parts = version.trim_matches('"').split('.');
+                        (parts.next().map(|s| s.to_string()), parts.next().map(|s| s.to_string()))
+                    }) {
+                        return Sourced { value: S!(format!("{}.{}", major, minor)), sources: var.sources.clone() };
                     }
+                    return var;
                 }
             }
+            let Ok(var_pb) = var_pb.canonicalize() else {
+                unreachable!("Failed to canonicalize path {:?}", &filled_path);
+            };
             let Some(suffix) = var_pb.components().last() else {
                 unreachable!("Invalid variable value {:?}", &filled_path);
             };
