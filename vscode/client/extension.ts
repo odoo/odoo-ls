@@ -10,12 +10,10 @@ import {
     commands,
     ExtensionContext,
     ExtensionMode,
-    QuickPickItem,
     StatusBarAlignment,
-    ThemeIcon,
+    ViewColumn,
     workspace,
     window,
-    QuickPickItemKind,
     TextDocument,
     OutputChannel,
     Uri,
@@ -29,7 +27,6 @@ import {
     ServerOptions,
 } from "vscode-languageclient/node";
 import { WelcomeWebView } from "./views/welcome/welcomeWebView";
-import { ConfigurationWebView } from './views/configurations/configurationWebView';
 import { CrashReportWebView } from './views/crash_report/crashReport';
 import { ChangelogWebview } from "./views/changelog/changelogWebview";
 import {
@@ -38,17 +35,23 @@ import {
 import {
     onDidChangePythonInterpreterEvent
 } from "./common/python";
-import { areUniquelyEqual, buildFinalPythonPath, evaluateOdooPath, getCurrentConfig, validateAddonPath } from "./common/utils";
+import { getCurrentConfig } from "./common/utils";
 import { getConfigurationStructure, stateInit } from "./common/validation";
-import { execSync } from "child_process";
 import {
     migrateAfterDelay,
-    migrateConfigToSettings
+    migrateConfigToSettings,
+    migrateShowHome
 } from "./migration/migrateConfig";
 import { SafeLanguageClient } from "./common/safeLanguageClient";
 import { constants } from "fs/promises";
-import { PVSC_EXTENSION_ID } from "@vscode/python-extension";
+import { ThemeIcon } from "vscode";
 
+
+let CONFIG_HTML_MAP: Record<string, string> = {};
+
+function handleSetConfigurationNotification(configs: Record<string, string>) {
+  CONFIG_HTML_MAP = configs || {};
+}
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -203,7 +206,7 @@ function startLangServer(
 
 async function setStatusConfig(context: ExtensionContext) {
     const config = await getCurrentConfig(context);
-    let text = (config ? `Odoo (${config["name"]})` : `Odoo (Disabled)`);
+    let text = (config ? `Odoo (${config})` : `Odoo (Disabled)`);
     global.STATUS_BAR.text = (global.IS_LOADING) ? "$(loading~spin) " + text : text;
 }
 
@@ -216,24 +219,17 @@ function IncrementLastConfigId(context: ExtensionContext) {
     context.globalState.update("Odoo.nextConfigId", lastId + 1);
 }
 
-async function addNewConfiguration(context: ExtensionContext) {
-    const configId = getLastConfigId(context);
-    let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-
-    const newConf = getConfigurationStructure(configId);
-    workspace.getConfiguration().update("Odoo.configurations",
-    {
-        ...configs,
-        [configId]: newConf,
-    },
-    ConfigurationTarget.Global);
-
-    IncrementLastConfigId(context);
-    ConfigurationWebView.render(context, newConf);
-}
-
-async function changeSelectedConfig(context: ExtensionContext, configId: Number) {
-    await workspace.getConfiguration().update("Odoo.selectedConfiguration", configId, ConfigurationTarget.Workspace);
+async function changeSelectedConfig(context: ExtensionContext, configName: string) {
+  try {
+    if (configName == "Disabled"){
+        configName = undefined;
+    }
+    await workspace.getConfiguration().update("Odoo.selectedConfiguration", configName, ConfigurationTarget.Workspace);
+    return true;
+  } catch (err) {
+    window.showErrorMessage(`Failed to change configuration: ${err}`);
+    return false;
+  }
 }
 
 async function findLastLogFile(context: ExtensionContext, pid: number) {
@@ -297,7 +293,6 @@ async function displayCrashMessage(context: ExtensionContext, crashInfo: string,
 async function initLanguageServerClient(context: ExtensionContext, outputChannel: OutputChannel, autoStart = false) {
     let client : SafeLanguageClient;
     try {
-        await updatePythonPath(context);
         if (!workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
             displayDisablePythonLSMessage();
         }
@@ -336,6 +331,7 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
             }),
+            client.onNotification("$Odoo/setConfiguration", handleSetConfigurationNotification),
             client.onNotification("$Odoo/invalid_python_path", async(params) => {
                 await window.showErrorMessage(
                     "The Odoo extension is unable to start Python with the path you provided. Verify your configuration"
@@ -344,6 +340,13 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             client.onNotification("Odoo/displayCrashNotification", async (params) => {
                 await displayCrashMessage(context, params["crashInfo"], params["pid"]);
             }),
+            client.onNotification("$Odoo/restartNeeded", async () => {
+                if (global.LSCLIENT) {
+                    global.LSCLIENT.restart();
+                    global.IS_LOADING = false;
+                    setStatusConfig(context);
+                }
+            })
         );
         global.PATH_VARIABLES = {"userHome" : homedir().replaceAll("\\","/")};
         if (autoStart) {
@@ -387,138 +390,21 @@ function deleteOldFiles(context: ExtensionContext) {
     });
 }
 
-async function checkAddons(context: ExtensionContext): Promise<boolean> {
-    let currentConfig = await getCurrentConfig(context);
-    if (!currentConfig) {
-        return false
-    }
-    const validAddons = [];
-    const invalidAddons = [];
-    for (const addonPath of currentConfig.addons) {
-        const validationResult = await validateAddonPath(addonPath);
-
-        if (validationResult !== null) {
-            validAddons.push(validationResult);
-        } else {
-            invalidAddons.push(addonPath);
-        }
-    }
-    if (invalidAddons.length > 0) {
-        const invalidPathsMessage = invalidAddons.join(", ");
-
-        window.showWarningMessage(
-            `The following addon paths in this configuration seem invalid: (${invalidPathsMessage}). Would you like to change the configuration?`,
-            "Update current configuration",
-            "Ignore"
-        ).then(selection => {
-            switch (selection) {
-                case "Update current configuration":
-                    ConfigurationWebView.render(context, currentConfig);
-                    break;
-            }
-        });
-    }
-    let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-    if (areUniquelyEqual(currentConfig.validatedAddonsPaths, validAddons)){
-        return false
-    }
-    configs[currentConfig.id]["validatedAddonsPaths"] = validAddons;
-    workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-
-    // Check if workspace folders could also be addons folder
-    currentConfig = configs[currentConfig.id];
-    let files = await workspace.findFiles('**/__manifest__.py')
-    let missingFiles = files.filter(file => {
-        return !(
-            currentConfig.addons.some((addon) => file.fsPath.replaceAll("\\", "/").startsWith(addon)) ||
-            file.fsPath.replaceAll("\\", "/").startsWith(currentConfig.odooPath)
-        )
-    })
-    let missingPaths = [...new Set(missingFiles.map(file => {
-        let filePath = file.fsPath.split(path.sep)
-        return filePath.slice(0, filePath.length - 2).join(path.sep)
-    }))]
-    if (missingPaths.length > 0) {
-        global.LSCLIENT.warn("Missing addon paths : " + JSON.stringify(missingPaths))
-        window.showWarningMessage(
-            "We detected addon paths that weren't added in the current configuration. Would you like to add them?",
-            "Update current configuration",
-            "View Paths",
-            "Ignore"
-        ).then(selection => {
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig);
-                    break
-                case ("View Paths"):
-                    global.LSCLIENT.outputChannel.show();
-                    break
-            }
-        });
-    }
-    return true
-}
-
-async function checkOdooPath(context: ExtensionContext): Promise<boolean>{
-    let currentConfig = await getCurrentConfig(context);
-    global.OUTPUT_CHANNEL.appendLine("[INFO] checking odoo path ".concat(currentConfig.rawOdooPath))
-    const odoo = await evaluateOdooPath(currentConfig.rawOdooPath);
-    if (odoo){
-        if (currentConfig.odooPath == odoo.path) return false;
-        let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-        configs[currentConfig.id]["odooPath"] = odoo.path;
-        workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-    }else{
-        window.showWarningMessage(
-            `The odoo path set in this configuration seems invalid. Would you like to change it?`,
-            "Update current configuration",
-            "Ignore"
-        ).then(selection => {
-        switch (selection) {
-            case ("Update current configuration"):
-                ConfigurationWebView.render(context, currentConfig);
-                break
-            }
-        })
-        return false
-    }
-
-
-    let odooFound = currentConfig ? workspace.getWorkspaceFolder(Uri.file(odoo.path)) : true
-    if (!odooFound) {
-        let invalidPath = false
-        for (const f of workspace.workspaceFolders) {
-            if (fs.existsSync(Uri.joinPath(f.uri, 'odoo-bin').fsPath) ||
-                fs.existsSync(Uri.joinPath(Uri.joinPath(f.uri, 'odoo'), 'odoo-bin').fsPath)) {
-                global.OUTPUT_CHANNEL.appendLine("invalid Path ".concat(f.uri.toString()))
-                invalidPath = true;
-                break;
-            }
-        }
-        if (invalidPath) {
-            window.showWarningMessage(
-                `The Odoo configuration selected does not match the odoo path in the workspace. Would you like to change it?`,
-                "Update current configuration",
-                "Ignore"
-            ).then(selection => {
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig);
-                    break
-                }
-            })
-        }
-        return false
-    }
-    return true
-}
-
 async function initStatusBar(context: ExtensionContext): Promise<void> {
     global.STATUS_BAR = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-    global.STATUS_BAR.command = "odoo.clickStatusBar"
+    global.STATUS_BAR.command = "odoo.clickStatusBar";
+    global.STATUS_BAR.tooltip = "Odoo: Change Configuration";
     context.subscriptions.push(global.STATUS_BAR);
     await setStatusConfig(context);
     global.STATUS_BAR.show();
+
+    // Add a restart button to the status bar
+    global.STATUS_BAR_RESTART = window.createStatusBarItem(StatusBarAlignment.Left, 99);
+    global.STATUS_BAR_RESTART.text = "$(refresh)";
+    global.STATUS_BAR_RESTART.tooltip = "Odoo: Restart Language Server";
+    global.STATUS_BAR_RESTART.command = "odoo.restartServer";
+    context.subscriptions.push(global.STATUS_BAR_RESTART);
+    global.STATUS_BAR_RESTART.show();
 }
 
 
@@ -544,28 +430,16 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                     global.CAN_QUEUE_CONFIG_CHANGE = true;
                 }
 
-                const config = await getCurrentConfig(context)
-                if (config) {
-                    let changed = await checkOdooPath(context);
-                    changed ||= await checkAddons(context);
-                    if (!global.IS_PYTHON_EXTENSION_READY){
-                        onDidChangePythonInterpreterEvent.fire(null);
-                    }
-                    let client = global.LSCLIENT;
-                    if (!client) {
-                        global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
-                        client = global.LSCLIENT;
-                    }
-                    if (client.needsStart()) {
-                        await client.start();
-                    } else {
-                        if (changed && client.diagnostics) {
-                            client.diagnostics.clear();
-                        }
-                    }
-                } else {
-                    if (global.LSCLIENT?.isRunning()) await stopClient();
-                    global.IS_LOADING = false;
+                if (!global.IS_PYTHON_EXTENSION_READY){
+                    onDidChangePythonInterpreterEvent.fire(null);
+                }
+                let client = global.LSCLIENT;
+                if (!client) {
+                    global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
+                    client = global.LSCLIENT;
+                }
+                if (client.needsStart()) {
+                    await client.start();
                 }
                 await setStatusConfig(context);
                 if (event.affectsConfiguration("Odoo.disablePythonLanguageServerPopup") && !workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
@@ -578,22 +452,6 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             }
         }),
 
-        extensions.onDidChange(async (_) => {
-            const pyExtWasInstalled = global.IS_PYTHON_EXTENSION_READY === true;
-            const pyExtInstalled = extensions.getExtension(PVSC_EXTENSION_ID) !== undefined;
-            if (pyExtWasInstalled !== pyExtInstalled){
-                if (await updatePythonPath(context, false) && global.LSCLIENT.diagnostics){
-                    global.LSCLIENT.diagnostics.clear();
-                }
-            }
-        }),
-
-        // Listen to changes to Python Interpreter
-        onDidChangePythonInterpreterEvent.event(async (_) => {
-            if (await updatePythonPath(context, false) && global.LSCLIENT.diagnostics){
-                global.LSCLIENT.diagnostics.clear();
-            }
-        }),
 
         // COMMANDS
         commands.registerCommand("odoo.openWelcomeView", async () => {
@@ -627,84 +485,7 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             ChangelogWebview.render(context);
         }),
         commands.registerCommand('odoo.clickStatusBar', async () => {
-            try {
-                const qpick = window.createQuickPick();
-                const configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-                let selectedConfiguration = null;
-                const currentConfig = await getCurrentConfig(context);
-                let currentConfigItem: QuickPickItem;
-                const configMap = new Map();
-                const separator = { kind: QuickPickItemKind.Separator };
-                const addConfigItem = {
-                    label: "$(add) Add new configuration"
-                };
-                const disabledItem = {
-                    label: "Disabled"
-                }
-                const gearIcon = new ThemeIcon("gear");
-
-                for (const configId in configs) {
-                    if ((currentConfig && configId == currentConfig["id"]) || (Object.keys(configs[configId]).length === 0))
-                        continue;
-                    configMap.set({ "label": configs[configId]["name"], "buttons": [{ iconPath: gearIcon }] }, configId)
-                }
-
-                let picks = [disabledItem, ...Array.from(configMap.keys())];
-                if (picks.length)
-                    picks.push(separator);
-
-                if (currentConfig) {
-                    currentConfigItem = { "label": currentConfig["name"], "description": "(current)", "buttons": [{ iconPath: gearIcon }] };
-                    picks.splice(currentConfig["id"] + 1, 0, currentConfigItem);
-                }
-
-                picks.push(addConfigItem);
-                qpick.title = "Select a configuration";
-                qpick.items = picks;
-                qpick.activeItems = currentConfig ? [picks[currentConfig["id"] + 1]] : [picks[0]];
-
-                qpick.onDidChangeSelection(selection => {
-                    selectedConfiguration = selection[0];
-                });
-
-                qpick.onDidTriggerItemButton(async (buttonEvent) => {
-                    if (buttonEvent.button.iconPath == gearIcon) {
-                        const buttonConfigId = (buttonEvent.item == currentConfigItem) ? currentConfig["id"] : configMap.get(buttonEvent.item);
-                        const config = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")))[buttonConfigId]
-                        try {
-                            ConfigurationWebView.render(context, config);
-                        } catch (error) {
-                            global.LSCLIENT.error(error);
-                            await displayCrashMessage(context, error, global.SERVER_PID, 'render.ConfigurationWebView');
-                        }
-                    }
-                });
-
-                qpick.onDidAccept(async () => {
-                    if (selectedConfiguration == addConfigItem) {
-                        try {
-                            await addNewConfiguration(context);
-                        }
-                        catch (error) {
-                            global.LSCLIENT.error(error)
-                            await displayCrashMessage(context, error, global.SERVER_PID, 'render.ConfigurationWebView')
-                        }
-                    }
-                    else if (selectedConfiguration == disabledItem) {
-                        await changeSelectedConfig(context, -1);
-                    }
-                    else if (selectedConfiguration && selectedConfiguration != currentConfigItem) {
-                        await changeSelectedConfig(context, configMap.get(selectedConfiguration));
-                    }
-                    qpick.hide();
-                });
-                qpick.onDidHide(() => qpick.dispose());
-                qpick.show();
-            }
-            catch (error) {
-                global.LSCLIENT.error(error)
-                await displayCrashMessage(context, error, global.SERVER_PID, 'odoo.clickStatusBar')
-            }
+            await showConfigProfileQuickPick(context);
         }),
         commands.registerCommand(
             "odoo.disablePythonLanguageServerCommand", setPythonLSNone
@@ -713,8 +494,13 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
             "odoo.restartServer", async () => {
                 if (global.LSCLIENT) {
                     global.LSCLIENT.restart();
+                    global.IS_LOADING = false;
+                    setStatusConfig(context);
                 }
-        })
+        }),
+        commands.registerCommand("odoo.showServerConfig", async () => {
+            showConfigPreview("__all__");
+        }),
     );
 
     if (context.extensionMode === ExtensionMode.Development) {
@@ -823,6 +609,9 @@ async function initializeCSVSemanticTokenProvider(context: ExtensionContext): Pr
 function handleMigration(context){
     migrateConfigToSettings(context)
     migrateAfterDelay(context)
+    if (isExtensionUpdated(context)) {
+        migrateShowHome(context);
+    }
 }
 
 export async function activate(context: ExtensionContext): Promise<void> {
@@ -856,16 +645,10 @@ export async function activate(context: ExtensionContext): Promise<void> {
         // We update the last used version on every run.
         updateLastRecordedVersion(context);
 
-        const config = await getCurrentConfig(context);
-        if (config) {
-            deleteOldFiles(context)
-            global.LSCLIENT.info('Starting the extension.');
-            await checkOdooPath(context);
-            await checkAddons(context);
-
-            global.STATUS_BAR.text = `Odoo (${config["name"]})`
-            global.LSCLIENT.start();
-        }
+        deleteOldFiles(context);
+        global.LSCLIENT.info('Starting the extension.');
+        setStatusConfig(context);
+        global.LSCLIENT.start();
     }
     catch (error) {
         displayCrashMessage(context, error, global.SERVER_PID, 'odoo.activate');
@@ -898,79 +681,6 @@ export async function deactivate(): Promise<void> {
     }
 }
 
-export async function getStandalonePythonPath(context: ExtensionContext) {
-    const config = await getCurrentConfig(context);
-    const pythonPath = config && config["pythonPath"] ? config["pythonPath"] : "python3";
-    return pythonPath
-}
-
-export async function getStandalonePythonVersion(python_path_from_config: string): Promise<semver.SemVer> {
-    let pythonPath = python_path_from_config
-    if (!python_path_from_config) {
-        OUTPUT_CHANNEL.appendLine("[INFO] pythonPath is not set, defaulting to python3.");
-        pythonPath = "python3"
-    }
-
-    try {
-        const versionString = execSync(`${pythonPath} --version`).toString().replace("Python ", "")
-
-        return semver.parse(versionString)
-    } catch (error) {
-        OUTPUT_CHANNEL.appendLine(`[ERROR] Failed to get python version: ${error}`);
-        return null
-    }
-}
-
-/**
- * Check the version of the given path to Python
- * @param context ExtensionContext
- * @param python_path_from_config path to Python, that can differ from the one in the settings (for example because not yet saved)
- * @returns either valid version or invalid
- */
-export async function checkStandalonePythonVersion(context, python_path_from_config: string): Promise<boolean>{
-    const currentConfig = await getCurrentConfig(context);
-    let pythonVersion = await getStandalonePythonVersion(python_path_from_config);
-    if (!pythonVersion) {
-        return false;
-    }
-    if (semver.lt(pythonVersion, "3.8.0")) {
-        window.showErrorMessage(
-            `You must use python 3.8 or newer. Would you like to change it?`,
-            "Update current configuration",
-            "Ignore"
-        ).then(selection => {
-            switch (selection) {
-                case ("Update current configuration"):
-                    ConfigurationWebView.render(context, currentConfig);
-                    break
-            }
-        });
-        return false
-    }
-    return true
-}
-
-async function updatePythonPath(context, outputLogs: boolean = true): Promise<boolean>{
-	let configs = JSON.parse(JSON.stringify(workspace.getConfiguration().get("Odoo.configurations")));
-	const selectedConfig: number = Number(workspace.getConfiguration().get('Odoo.selectedConfiguration'));
-    // if config is disabled return nothing
-	if (selectedConfig == -1 || !configs[selectedConfig]) {
-		return null;
-	}
-	let config = (Object.keys(configs[selectedConfig]).length !== 0 ? configs[selectedConfig] : null);
-    let pythonPath =  await getStandalonePythonPath(context);
-    let finalPythonPath = await buildFinalPythonPath(context, pythonPath);
-    if (config) {
-        if (config["finalPythonPath"]) {
-            if (config["finalPythonPath"] === finalPythonPath)
-                return false;
-        }
-        config["finalPythonPath"] = finalPythonPath;
-        workspace.getConfiguration().update("Odoo.configurations", configs, ConfigurationTarget.Global);
-    }
-    return true
-}
-
 async function setPythonLSNone() {
     await workspace.getConfiguration('python').update('languageServer', 'None', ConfigurationTarget.Workspace)
         .then(
@@ -1001,4 +711,111 @@ async function displayDisablePythonLSMessage() {
                 await workspace.getConfiguration('Odoo').update("disablePythonLanguageServerPopup", true, ConfigurationTarget.Global)
         }
     });
+}
+
+async function showConfigProfileQuickPick(context: ExtensionContext) {
+  if (!CONFIG_HTML_MAP || Object.keys(CONFIG_HTML_MAP).length === 0) {
+    window.showErrorMessage("No configuration profiles available. Please wait for the server to send configurations.");
+    return;
+  }
+
+  // Remove the special __all__ key for the list, but keep for preview
+  const profiles = Object.keys(CONFIG_HTML_MAP).filter(k => k !== "__all__");
+  if (profiles.length === 0) {
+    window.showErrorMessage("No configuration profiles found.");
+    return;
+  }
+
+  const allConfigsLabel = "$(list-unordered) Show all configurations";
+  const items = [
+    {
+      label: allConfigsLabel,
+      description: "",
+      alwaysShow: true,
+      buttons: [
+        {
+          iconPath: new ThemeIcon("eye"),
+          tooltip: "Preview all configurations",
+        }
+      ]
+    },
+    ...profiles.map((profile) => ({
+      label: profile,
+      description: "",
+      alwaysShow: true,
+      buttons: [
+        {
+          iconPath: new ThemeIcon("eye"),
+          tooltip: "Preview configuration",
+        }
+      ]
+    })),
+    {
+        label: "Disabled",
+        alwaysShow: true,
+    }
+  ];
+
+  const quickPick = window.createQuickPick();
+  quickPick.items = items;
+  quickPick.title = "Select Odoo Configuration Profile";
+  quickPick.matchOnDescription = true;
+  quickPick.matchOnDetail = true;
+  quickPick.canSelectMany = false;
+
+  quickPick.onDidTriggerItemButton(async (e) => {
+    if (e.item.label === allConfigsLabel) {
+      showConfigPreview("__all__");
+    } else {
+      showConfigPreview(e.item.label);
+    }
+  });
+
+  quickPick.onDidAccept(async () => {
+    quickPick.hide();
+    const selection = quickPick.selectedItems[0];
+    if (selection) {
+      if (selection.label === allConfigsLabel) {
+        showConfigPreview("__all__");
+      } else {
+        const ok = await changeSelectedConfig(context, selection.label);
+        if (ok && global.LSCLIENT) {
+            global.LSCLIENT.restart();
+            global.IS_LOADING = false;
+            setStatusConfig(context);
+        }
+      }
+    }
+  });
+
+  quickPick.show();
+}
+
+function showConfigPreview(profileName: string) {
+  if (!CONFIG_HTML_MAP || Object.keys(CONFIG_HTML_MAP).length === 0) {
+    window.showErrorMessage("No configuration profiles available. Please wait for the server to send configurations.");
+    return;
+  }
+  const html = CONFIG_HTML_MAP[profileName];
+  if (!html) {
+    window.showErrorMessage("No config HTML found for this profile.");
+    return;
+  }
+  const panel = window.createWebviewPanel(
+    'odooConfigPreview',
+    'Odoo Config Preview',
+    ViewColumn.Active,
+    {
+      retainContextWhenHidden: true,
+    }
+  );
+  // Replace file:/// links with vscode://file/ links
+  panel.webview.html = html.replace(
+    /href="file:\/\/\/([^"]+)"/g,
+    (match, filePath) => {
+      const decodedPath = decodeURIComponent(filePath);
+      const vscodeUri = `vscode://file/${decodedPath}`;
+      return `href="${vscodeUri}"`;
+    }
+  );
 }

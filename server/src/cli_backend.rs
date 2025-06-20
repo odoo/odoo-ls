@@ -3,6 +3,7 @@ use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
 use lsp_types::{LogMessageParams, PublishDiagnosticsParams};
 use tracing::{error, info};
 
+use crate::core::config::ConfigEntry;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
 use crate::args::Cli;
@@ -10,7 +11,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::fs::File;
 use serde_json::json;
-use crate::core::{config::{Config, DiagMissingImportsMode}, odoo::SyncOdoo};
+use crate::core::{config::{DiagMissingImportsMode}, odoo::SyncOdoo};
 use crate::S;
 
 
@@ -40,19 +41,17 @@ impl CliBackend {
         let workspace_folders = self.cli.tracked_folders.clone().unwrap_or(vec![]);
         info!("Using tracked folders: {:?}", workspace_folders);
 
-        for tracked_folder in workspace_folders {
-            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(PathBuf::from(tracked_folder).sanitize());
+        for (id, tracked_folder) in workspace_folders.into_iter().enumerate() {
+            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(format!("{}", id), PathBuf::from(tracked_folder).sanitize());
         }
 
-        let mut config = Config::new();
-        config.addons = addons_paths;
+        let mut config = ConfigEntry::new();
+        config.addons_paths = addons_paths.into_iter().collect();
         config.odoo_path = community_path;
-        config.python_path = S!("python3");
         config.refresh_mode = crate::core::config::RefreshMode::Off;
         config.diag_missing_imports = DiagMissingImportsMode::All;
-        config.no_typeshed = self.cli.no_typeshed;
-        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]);
-        config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
+        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]).into_iter().collect();
+        // config.stdlib = self.cli.stdlib.clone().unwrap_or(S!(""));
         SyncOdoo::init(&mut session, config);
 
         let output_path = self.cli.output.clone().unwrap_or(S!("output.json"));

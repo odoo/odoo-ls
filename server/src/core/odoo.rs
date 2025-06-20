@@ -1,5 +1,3 @@
-use crate::allocator::ALLOCATED;
-use crate::core::config::Config;
 use crate::core::entry_point::EntryPointType;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
@@ -8,41 +6,42 @@ use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use std::collections::HashMap;
 use std::cell::RefCell;
+use std::ffi::OsStr;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use byteyarn::{yarn, Yarn};
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_python_parser::{Mode, ParseOptions};
-use tracing::{debug, error, warn, info, trace};
+use tracing::{error, warn, info, trace};
 
 use std::collections::HashSet;
 use weak_table::PtrWeakHashSet;
 use std::process::Command;
-use std::str::FromStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
-use std::cmp;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{DiagMissingImportsMode, RefreshMode};
+use super::config::{self, get_configuration, ConfigEntry, ConfigFile, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
-use super::symbols::disk_dir_symbol::DiskDirSymbol;
 use super::symbols::symbol::Symbol;
 use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
-use crate::core::python_odoo_builder::PythonOdooBuilder;
 use crate::core::python_validator::PythonValidator;
 use crate::utils::{PathSanitizer, ToFilePath as _};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
+
+static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap()
+});
+
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
@@ -58,7 +57,8 @@ pub struct SyncOdoo {
     pub version_minor: u32,
     pub version_micro: u32,
     pub full_version: String,
-    pub config: Config,
+    pub config: ConfigEntry,
+    pub config_file: Option<ConfigFile>,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
@@ -94,7 +94,8 @@ impl SyncOdoo {
             version_minor: 0,
             version_micro: 0,
             full_version: "0.0.0".to_string(),
-            config: Config::new(),
+            config: ConfigEntry::new(),
+            config_file: None,
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
             has_main_entry: false,
             has_odoo_main_entry: false,
@@ -123,14 +124,14 @@ impl SyncOdoo {
         sync_odoo
     }
 
-    pub fn reset(session: &mut SessionInfo, config: Config) {
+    pub fn reset(session: &mut SessionInfo, config: ConfigEntry) {
         session.log_message(MessageType::INFO, S!("Resetting Database..."));
         info!("Resetting database...");
         session.sync_odoo.version_major = 0;
         session.sync_odoo.version_minor = 0;
         session.sync_odoo.version_micro = 0;
         session.sync_odoo.full_version = "0.0.0".to_string();
-        session.sync_odoo.config = Config::new();
+        session.sync_odoo.config = ConfigEntry::new();
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
         session.sync_odoo.stubs_dirs = vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
             env::current_dir().unwrap().join("additional_stubs").sanitize()];
@@ -149,20 +150,14 @@ impl SyncOdoo {
         SyncOdoo::init(session, config);
     }
 
-    pub fn init(session: &mut SessionInfo, config: Config) {
+    pub fn init(session: &mut SessionInfo, config: ConfigEntry) {
         info!("Initializing odoo");
         let start_time = Instant::now();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
-        if session.sync_odoo.config.no_typeshed {
-            session.sync_odoo.stubs_dirs.clear();
-        }
         for stub in session.sync_odoo.config.additional_stubs.iter() {
             session.sync_odoo.stubs_dirs.push(PathBuf::from(stub.clone()).sanitize());
-        }
-        if !session.sync_odoo.config.stdlib.is_empty() {
-            session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib.clone()).sanitize();
         }
         info!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
         for stub in session.sync_odoo.stubs_dirs.iter() {
@@ -264,8 +259,7 @@ impl SyncOdoo {
         };
         for line in release_file.lines() {
             if line.starts_with("version_info = (") {
-                let re = Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap();
-                let result = re.captures(line);
+                let result = VERSION_REGEX.captures(line);
                 match result {
                     Some(result) => {
                         let version_info = result.get(1).unwrap().as_str();
@@ -380,7 +374,7 @@ impl SyncOdoo {
         } else {
             session.log_message(MessageType::WARNING, format!("Unable to find odoo addons path at {}. You can ignore this message if you use a nightly build or if your community addons are in another addon paths.", odoo_addon_path.sanitize()));
         }
-        for addon in session.sync_odoo.config.addons.clone().iter() {
+        for addon in session.sync_odoo.config.addons_paths.clone().iter() {
             let addon_path = PathBuf::from(addon);
             if addon_path.exists() {
                 addon_symbol.borrow_mut().add_path(
@@ -911,8 +905,8 @@ pub struct Odoo {}
 
 impl Odoo {
 
-    fn update_configuration(session: &mut SessionInfo) -> Result<Config, String> {
-        let configuration_item = ConfigurationItem{
+    pub fn read_selected_configuration(session: &mut SessionInfo) -> Result<Option<String>, String> {
+        let configuration_item = ConfigurationItem {
             scope_uri: None,
             section: Some("Odoo".to_string()),
         };
@@ -926,146 +920,68 @@ impl Odoo {
             }
         };
         let config = config.get(0);
-        if !config.is_some() {
+        if config.is_none() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
-            return Err(S!("no config found for Odoo"));
+            return Err(S!("No config found for Odoo"));
         }
-        let config = config.unwrap();
-        //values for sync block
-        let mut _refresh_mode : RefreshMode = RefreshMode::OnSave;
-        let mut _auto_save_delay : u64 = 2000;
-        let mut _ac_filter_model_names : bool = true;
-        let mut _diag_missing_imports : DiagMissingImportsMode = DiagMissingImportsMode::All;
-        let mut _file_cache = false;
-        let mut selected_configuration: String = S!("");
-        let mut configurations = serde_json::Map::new();
-        if let Some(map) = config.as_object() {
-            for (key, value) in map {
-                match key.as_str() {
-                    "autoRefresh" => {
-                        if let Some(refresh_mode) = value.as_str() {
-                            _refresh_mode = match RefreshMode::from_str(refresh_mode) {
-                                Ok(mode) => mode,
-                                Err(_) => {
-                                    session.log_message(MessageType::ERROR, String::from("Unable to parse RefreshMode. Setting it to onSave"));
-                                    RefreshMode::OnSave
-                                }
-                            };
-                        }
-                    },
-                    "autoRefreshDelay" => {
-                        if let Some(refresh_delay) = value.as_u64() {
-                            _auto_save_delay = std::cmp::max(refresh_delay, 1000);
-                        } else {
-                            session.log_message(MessageType::ERROR, String::from("Unable to parse auto_save_delay. Setting it to 2000"));
-                            _auto_save_delay = 2000
-                        }
-                    },
-                    "autocompletion" => {
-                        if let Some(autocompletion_config) = value.as_object() {
-                            for (key, value) in autocompletion_config {
-                                match key.as_str() {
-                                    "filterModelNames" =>{
-                                        if let Some(ac_filter_model_names) = value.as_bool() {
-                                            _ac_filter_model_names = ac_filter_model_names;
-                                        } else {
-                                            session.log_message(MessageType::ERROR, String::from("Unable to parse autocompletion.ac_filter_model_names . Setting it to true"));
-                                        }
-                                    }
-                                    _ => {
-                                        session.log_message(MessageType::ERROR, format!("Unknown autocompletion config key: autocompletion.{}", key));
-                                    },
-                                }
-                            }
-                        } else {
-                            session.log_message(MessageType::ERROR, String::from("Unable to parse autocompletion_config"));
-                        }
-                    },
-                    "fileCache" => {
-                        if let Some(file_cache) = value.as_bool() {
-                            _file_cache = file_cache
-                        } else {
-                            session.log_message(MessageType::ERROR, String::from("Unable to parse file_cache"));
-                        }
-                    },
-                    "diagMissingImportLevel" => {
-                        if let Some(diag_import_level) = value.as_str() {
-                            _diag_missing_imports = match DiagMissingImportsMode::from_str(diag_import_level) {
-                                Ok(mode) => mode,
-                                Err(_) => {
-                                    session.log_message(MessageType::ERROR, String::from("Unable to parse diag_import_level. Setting it to all"));
-                                    DiagMissingImportsMode::All
-                                }
-                            };
-                        }
-                    },
-                    "configurations" => {
-                        if let Some(values)= value.as_object() {
-                            configurations = values.clone();
-                        }
-                    },
-                    "selectedConfiguration" => {
-                        if let Some(value_str) = value.as_str() {
-                            selected_configuration = value_str.to_string();
-                        }
-                    },
-                    "serverLogLevel" | "disablePythonLanguageServerPopup" => {
-                        // Too late, set it with command line
-                        // disablePythonLanguageServerPopup, does not affect us, pass
-                    },
-                    _ => {
-                        session.log_message(MessageType::ERROR, format!("Unknown config key: {}", key));
-                    },
-                }
-            }
-        }
-        debug!("configurations: {:?}", configurations);
-        debug!("selected_configuration: {:?}", selected_configuration);
-        let mut config = Config::new();
-        if configurations.contains_key(&selected_configuration) {
-            let odoo_conf = configurations.get(&selected_configuration).unwrap();
-            let odoo_conf = odoo_conf.as_object().unwrap();
-            config.addons = odoo_conf.get("validatedAddonsPaths").expect("An odoo config must contains a addons value")
-                .as_array().expect("the addons value must be an array")
-                .into_iter().map(|v| v.as_str().unwrap().to_string()).collect();
-            let odoo_path = odoo_conf.get("odooPath");
-            if let Some(odoo_path) = odoo_path {
-                config.odoo_path = Some(odoo_path.as_str().expect("odooPath must be a String").to_string());
-            }
-            if let Some(python_path) = odoo_conf.get("finalPythonPath") {
-                if python_path.is_string() {
-                    config.python_path = python_path.as_str().unwrap().to_string();
-                } else {
-                    session.log_message(MessageType::ERROR, String::from("pythonPath must be a string, using 'python' as pythonPath"));
-                    config.python_path = S!("python");
-                }
-            } else {
-                session.log_message(MessageType::ERROR, String::from("pythonPath must be defined, using 'python' as pythonPath"));
-                config.python_path = S!("python");
-            }
-            if let Some(additional_stubs) = odoo_conf.get("additional_stubs"){
-                config.additional_stubs = additional_stubs.as_array().expect("additional_stubs must be an Array")
-                .into_iter().map(|v| v.as_str().expect("additional_stubs values must be strings").to_string()).collect();
-            }
-        } else {
-            config.addons = vec![];
-            config.odoo_path = None;
-            session.log_message(MessageType::ERROR, S!("Unable to find selected configuration. No odoo path has been found."));
-        }
-        config.file_cache = _file_cache;
-        config.refresh_mode = _refresh_mode;
-        config.auto_save_delay = _auto_save_delay;
-        config.ac_filter_model_names = _ac_filter_model_names;
-        config.diag_missing_imports = _diag_missing_imports;
+        let value = config
+            .and_then(|c| c.as_object())
+            .and_then(|c| c.get("selectedConfiguration"))
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string());
+        return Ok(value);
+    }
 
-        debug!("Final config: {:?}", config);
-        Ok(config)
+    pub fn send_all_configurations(session: &mut SessionInfo) {
+        if let Some(ref config_file) = session.sync_odoo.config_file {
+            let mut configs_map = serde_json::Map::new();
+            for entry in &config_file.config {
+                let html = crate::core::config::ConfigFile { config: vec![entry.clone()] }.to_html_string();
+                configs_map.insert(entry.name.clone(), serde_json::Value::String(html));
+            }
+
+            configs_map.insert(
+                "__all__".to_string(),
+                serde_json::Value::String(config_file.to_html_string())
+            );
+            session.send_notification(
+                "$Odoo/setConfiguration",
+                serde_json::Value::Object(configs_map)
+            );
+        }
     }
 
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
-        let config = Odoo::update_configuration(session);
+        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders());
+        if let Ok((_, config_file)) = &config {
+            session.sync_odoo.config_file = Some(config_file.clone());
+            Odoo::send_all_configurations(session);
+        }
+        let maybe_selected_config = match Odoo::read_selected_configuration(session){
+            Ok(config) => config,
+            Err(e) => {
+                session.show_message(MessageType::ERROR, format!("Unable to read selected configuration: {}  \n\nPlease select a correct profile or fix the issues in the config", e));
+                error!(e);
+                return;
+            }
+        };
+        let selected_config = match maybe_selected_config {
+            None => {
+                session.show_message(MessageType::INFO, String::from("No Odoo configuration selected. Please select a configuration in the settings."));
+                return;
+            }
+            Some(c) if c == "" => {
+                session.show_message(MessageType::INFO, String::from("No Odoo configuration selected. Please select a configuration in the settings."));
+                return;
+            }
+            Some(config) => config,
+        };
+        let config = config.and_then(|(ce, _)|{
+            let config_name = selected_config;
+            ce.get(&config_name).cloned().ok_or(format!("Unable to find selected configuration \"{config_name}\""))
+        });
         match config {
             Ok(config) => {
                 SyncOdoo::init(session, config);
@@ -1074,7 +990,7 @@ impl Odoo {
                     session.sync_odoo.modules.len()))
             },
             Err(e) => {
-                session.log_message(MessageType::ERROR, format!("Unable to load config: {}", e));
+                session.show_message(MessageType::ERROR, format!("Unable to load config: {}  \n\nPlease select a correct profile or fix the issues in the config", e));
                 error!(e);
             }
         }
@@ -1210,37 +1126,14 @@ impl Odoo {
     }
 
     pub fn handle_did_change_configuration(session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
-        let old_config = session.sync_odoo.config.clone();
-        match Odoo::update_configuration(session) {
-            Ok (config) => {
-                session.sync_odoo.config = config.clone();
-                if config.odoo_path != old_config.odoo_path ||
-                    config.addons != old_config.addons ||
-                    config.additional_stubs != old_config.additional_stubs ||
-                    config.stdlib != old_config.stdlib ||
-                    config.python_path != old_config.python_path {
-                        SyncOdoo::reset(session, config);
-                } else {
-                    if old_config.diag_missing_imports != session.sync_odoo.config.diag_missing_imports {
-                        SyncOdoo::refresh_evaluations(session);
-                    }
-                    if old_config.auto_save_delay != session.sync_odoo.config.auto_save_delay {
-                        session.update_auto_refresh_delay(session.sync_odoo.config.auto_save_delay);
-                    }
-                }
-            },
-            Err(e) => {
-                session.log_message(MessageType::ERROR, format!("Unable to update config: {}", e));
-                error!("Unable to update configuration: {}", e);
-            }
-        }
+        return;
     }
 
     pub fn handle_did_change_workspace_folders(session: &mut SessionInfo, params: DidChangeWorkspaceFoldersParams) {
         let file_mgr = session.sync_odoo.get_file_mgr();
         let mut file_mgr = file_mgr.borrow_mut();
         for added in params.event.added {
-            file_mgr.add_workspace_folder(added.uri.to_string());
+            file_mgr.add_workspace_folder(added.name.clone(),added.uri.to_string());
         }
         for removed in params.event.removed {
             file_mgr.remove_workspace_folder(removed.uri.to_string());
@@ -1285,6 +1178,9 @@ impl Odoo {
         }
         for uri in file_uris.iter() {
             let path = uri.to_file_path().unwrap();
+            if Odoo::check_handle_config_file_update(session, &path) {
+                continue; //config file update, handled by the config file handler
+            }
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
             let (valid, updated) = Odoo::update_file_cache(session, path.clone(), None, -100);
             if valid && updated {
@@ -1479,6 +1375,9 @@ impl Odoo {
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
         let path = params.text_document.uri.to_file_path().unwrap();
+        if Odoo::check_handle_config_file_update(session, &path) {
+            return; //config file update, handled by the config file handler
+        }
         session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
         if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave || session.sync_odoo.state_init == InitState::NOT_READY {
             return
@@ -1504,7 +1403,7 @@ impl Odoo {
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
     fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> (bool, bool) {
-        if path.extension().is_some() && (["py", "xml", "csv"] .contains(&path.extension().unwrap().to_str().unwrap())) {
+        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
@@ -1514,7 +1413,7 @@ impl Odoo {
     }
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
-        if path.extension().is_some() && (["py", "xml", "csv"] .contains(&path.extension().unwrap().to_str().unwrap())) {
+        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
             SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
         }
     }
@@ -1535,6 +1434,56 @@ impl Odoo {
             }
         }
         Ok(None)
+    }
+    /// Checks if the given path is a configuration file under one of the workspace folders.
+    fn is_config_workspace_file(session: &mut SessionInfo, path: &PathBuf) -> bool {
+        for (_, ws_dir) in session.sync_odoo.get_file_mgr().borrow().get_workspace_folders().iter() {
+            if path.starts_with(ws_dir) && path.ends_with("odools.toml") {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Checks if the given path is a configuration file and handles the update accordingly.
+    /// Returns true if the path is a configuration file and was handled, false otherwise.
+    fn check_handle_config_file_update(session: &mut SessionInfo, path: &PathBuf) -> bool {
+        // Check if the change is affecting a config file
+        if Odoo::is_config_workspace_file(session, path) {
+            let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders())
+                .and_then(|(cfg_map, cfg_file)| {
+                    let Some(config_name) = Odoo::read_selected_configuration(session)? else {
+                      return Err(S!("No configuration selected"));
+                    };
+                    cfg_map.get(&config_name)
+                        .cloned()
+                        .ok_or_else(|| format!("Unable to find selected configuration \"{config_name}\""))
+                        .map(|config| (config, cfg_file))
+                });
+
+            match config_result {
+                Ok((new_config, cfg_file)) => {
+                    if config::needs_restart(&session.sync_odoo.config, &new_config) {
+                        // Changes require a restart, ask the client to restart the server
+                        session.send_notification("$Odoo/restartNeeded", ());
+                    } else {
+                        // Changes can be applied without restart
+                        session.sync_odoo.config_file = Some(cfg_file);
+                        session.sync_odoo.config = new_config;
+                    }
+                }
+                Err(err) => {
+                    // Invalid config, send a notification to the user and add the error to the logs
+                    let msg = format!("Invalid configuration file: {err}.");
+                    error!("{msg}");
+                    session.show_message(MessageType::ERROR, msg);
+                }
+            }
+            true
+        }
+        else {
+            false
+        }
     }
 
 }

@@ -44,6 +44,15 @@ impl <'a> SessionInfo<'a> {
         ).unwrap();
     }
 
+    pub fn show_message(&self, msg_type: MessageType, msg: String) {
+        self.sender.send(
+            Message::Notification(lsp_server::Notification{
+                method: ShowMessage::METHOD.to_string(),
+                params: serde_json::to_value(&ShowMessageParams{typ: msg_type, message: msg}).unwrap()
+            })
+        ).unwrap();
+    }
+
     pub fn send_request<T: Serialize, U: DeserializeOwned>(&self, method: &str, params: T) -> Result<Option<U>, ServerError> {
         let param = serde_json::to_value(params)?;
         self.sender.send(Message::Request(lsp_server::Request{

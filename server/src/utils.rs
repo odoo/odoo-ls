@@ -1,8 +1,15 @@
-use std::{fs, path::{Path, PathBuf}, str::FromStr};
+use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 use path_slash::{PathBufExt, PathExt};
+use regex::Regex;
 use ruff_text_size::TextSize;
+use std::process::Command;
 
 use crate::{constants::Tree, oyarn};
+
+static TEMPLATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\$\{([^}]+)\}").unwrap()
+});
+static HOME_DIR: LazyLock<Option<String>> = LazyLock::new(|| dirs::home_dir().map(|buf| buf.sanitize()));
 
 #[macro_export]
 macro_rules! S {
@@ -120,6 +127,12 @@ impl PathSanitizer for PathBuf {
 
         #[cfg(windows)]
         {
+            // check if path begins with //?/ if yes remove it
+            // to handle extended-length path prefix
+            // https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+            if path.starts_with("\\\\?\\") {
+                path = path[4..].to_string();
+            }
             // Check if path begin with a letter + ':'
             if path.len() > 2 && path.chars().nth(1) == Some(':') {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
@@ -160,6 +173,9 @@ impl PathSanitizer for Path {
 
         #[cfg(windows)]
         {
+            if path.starts_with("\\\\?\\") {
+                path = path[4..].to_string();
+            }
             // Check if path begin with a letter + ':'
             if path.len() > 2 && path.chars().nth(1) == Some(':') {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
@@ -199,3 +215,90 @@ pub trait MaxTextSize {
 impl MaxTextSize for TextSize {
     const MAX: TextSize = TextSize::new(u32::MAX);
 }
+
+
+pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Option<String> {
+    let mut invalid = false;
+
+    let result = TEMPLATE_REGEX.replace_all(template, |captures: &regex::Captures| -> String{
+        let key = captures[1].to_string();
+        if let Some(value) = vars.get(&key) {
+            value.clone()
+        } else {
+            invalid = true;
+            S!("")
+        }
+    });
+    if invalid {None} else {Some(S!(result))}
+}
+
+
+pub fn build_pattern_map(ws_folders: &HashMap<String, String>) -> HashMap<String, String> {
+    // TODO: Maybe cache this
+    let mut pattern_map = HashMap::new();
+    if let Some(home_dir) = HOME_DIR.as_ref() {
+        pattern_map.insert(S!("userHome"), home_dir.clone());
+    }
+    for (ws_name, ws_path) in ws_folders.iter(){
+        pattern_map.insert(format!("workspaceFolder:{}", ws_name.clone()), ws_path.clone());
+    }
+    pattern_map
+}
+
+
+/// Fill the template with the given pattern map.
+/// While also checking it with the predicate function.
+/// pass `|_| true` to skip the predicate check.
+/// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
+pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: &String, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Option<String>
+where
+    F: Fn(&String) -> bool,
+    P: AsRef<Path>
+{
+        let mut pattern_map: HashMap<String, String> = build_pattern_map(ws_folders).into_iter().chain(var_map.into_iter()).collect();
+        if let Some(path) = ws_folders.get(workspace_name) {
+            pattern_map.insert(S!("workspaceFolder"), path.clone());
+            if let Some(path) = fill_template(template, &pattern_map) {
+                if predicate(&path) {
+                    return Some(path);
+                }
+                // Attempt to convert the path to an absolute path
+                if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
+                    let abs_path    = abs_path.sanitize();
+                    if predicate(&abs_path) {
+                        return Some(abs_path);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+fn is_really_module(directory_path: &str, entry: &DirEntry) -> bool {
+    let module_name = entry.file_name();
+    let full_path = Path::new(directory_path).join(module_name).join("__manifest__.py");
+
+    // Check if the file exists and is a regular file
+    full_path.exists() && full_path.is_file()
+}
+
+pub fn is_addon_path(directory_path: &String) -> bool {
+    fs::read_dir(directory_path)
+    .into_iter()
+    .flatten()
+    .flatten()
+    .any(|entry| is_really_module(directory_path, &entry))
+}
+
+pub fn is_odoo_path(directory_path: &String) -> bool {
+    let odoo_release_path = Path::new(directory_path).join("odoo").join("release.py");
+    odoo_release_path.exists() && odoo_release_path.is_file()
+}
+
+pub fn is_python_path(path: &String) -> bool {
+    match Command::new(path).arg("--version").output() {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
