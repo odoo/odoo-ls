@@ -351,7 +351,7 @@ fn parse_manifest_version(contents: String) -> Option<String> {
         return None; // We expect a single expression that is a dictionary
     };
     for item in dict_expr.items.iter() {
-        if !matches!(item.key.as_ref(), Some(Expr::StringLiteral(expr)) if expr.value.to_str() != "version") {
+        if !matches!(item.key.as_ref(), Some(Expr::StringLiteral(expr)) if expr.value.to_str() == "version") {
             continue;
         }
         if let Some(value_expr) = item.value.as_string_literal_expr() {
@@ -416,14 +416,14 @@ pub struct ConfigEntryRaw {
     #[serde(default, serialize_with = "serialize_option_as_default")]
     addons_merge: Option<Sourced<MergeMethod>>,
 
-    #[serde(default)]
-    addons_paths: Vec<Sourced<String>>,
+    #[serde(default, serialize_with = "serialize_option_as_default")]
+    addons_paths: Option<Vec<Sourced<String>>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
     python_path: Option<Sourced<String>>,
 
-    #[serde(default)]
-    additional_stubs: Vec<Sourced<String>>,
+    #[serde(default, serialize_with = "serialize_option_as_default")]
+    additional_stubs: Option<Vec<Sourced<String>>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
     additional_stubs_merge: Option<Sourced<MergeMethod>>,
@@ -457,9 +457,9 @@ impl ConfigEntryRaw {
             extends: None,
             odoo_path: None,
             addons_merge: None,
-            addons_paths: vec![],
+            addons_paths: None,
             python_path: None,
-            additional_stubs: vec![],
+            additional_stubs: None,
             additional_stubs_merge: None,
             refresh_mode: None,
             file_cache: None,
@@ -480,7 +480,7 @@ impl ConfigEntryRaw {
     pub fn auto_save_delay_sourced(&self) -> Option<&Sourced<u64>> {
         self.auto_save_delay.as_ref()
     }
-    pub fn addons_paths_sourced(&self) -> &Vec<Sourced<String>> {
+    pub fn addons_paths_sourced(&self) -> &Option<Vec<Sourced<String>>> {
         &self.addons_paths
     }
 }
@@ -554,11 +554,11 @@ fn process_paths(
     entry.odoo_path =  entry.odoo_path.as_ref()
         .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone()));
 
-    entry.addons_paths = entry.addons_paths.iter_mut()
-        .filter_map(|sourced| {
+    entry.addons_paths = entry.addons_paths.as_ref().map(|paths|
+        paths.iter().filter_map(|sourced| {
             fill_or_canonicalize(sourced, ws_folders, workspace_name, &is_addon_path, var_map.clone())
-        })
-        .collect();
+        }).collect()
+    );
     entry.python_path = entry.python_path.as_ref()
         .and_then(|p| {
             if is_python_path(&p.value) {
@@ -581,16 +581,18 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         entry.odoo_path.as_mut().map(|sourced| { sourced.sources.insert(path.sanitize());});
 
         // addons_paths
-        entry.addons_paths.iter_mut()
-            .for_each(|sourced| {
+        entry.addons_paths.as_mut().map(|paths| {
+            paths.iter_mut().for_each(|sourced| {
                 sourced.sources.insert(path.sanitize());
             });
+        });
 
         // additional_stubs
-        entry.additional_stubs.iter_mut()
-            .for_each(|sourced| {
+        entry.additional_stubs.as_mut().map(|stubs| {
+            stubs.iter_mut().for_each(|sourced| {
                 sourced.sources.insert(path.sanitize());
             });
+        });
 
         // python_path
         entry.python_path.as_mut().map(|sourced| { sourced.sources.insert(path.sanitize());});
@@ -617,11 +619,23 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         let python_path = child.python_path.clone().or(parent.python_path.clone());
         // Simple combination of paths, sources will be merged after paths are processed
         let addons_paths = match child.addons_merge.clone().unwrap_or_default().value {
-            MergeMethod::Merge => child.addons_paths.clone().into_iter().chain(parent.addons_paths.clone().into_iter()).collect(),
+            MergeMethod::Merge => match (child.addons_paths.clone(), parent.addons_paths.clone()) {
+                (Some(existing), Some(new)) => {
+                    Some(existing.into_iter().chain(new.into_iter()).collect())
+                }
+                (Some(paths), None) | (None, Some(paths)) => Some(paths),
+                (None, None) => None,
+            },
             MergeMethod::Override => child.addons_paths.clone(),
         };
         let additional_stubs = match child.additional_stubs_merge.clone().unwrap_or_default().value {
-            MergeMethod::Merge => child.additional_stubs.clone().into_iter().chain(parent.additional_stubs.clone().into_iter()).collect(),
+            MergeMethod::Merge => match (child.addons_paths.clone(), parent.addons_paths.clone()) {
+                (Some(existing), Some(new)) => {
+                    Some(existing.into_iter().chain(new.into_iter()).collect())
+                }
+                (Some(paths), None) | (None, Some(paths)) => Some(paths),
+                (None, None) => None,
+            },
             MergeMethod::Override => child.additional_stubs.clone(),
         };
         let refresh_mode = child.refresh_mode.clone().or(parent.refresh_mode.clone());
@@ -782,13 +796,17 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
     // Merge sourced paths
     merged_config.iter_mut()
         .for_each(|(_, entry)| {
-            entry.addons_paths = group_sourced_iters(entry.addons_paths.clone()).collect();
-            entry.additional_stubs = group_sourced_iters(entry.additional_stubs.clone()).collect();
+            entry.addons_paths = entry.addons_paths.clone().map(|paths| group_sourced_iters(paths).collect());
+            entry.additional_stubs = entry.additional_stubs.clone().map(|stubs| group_sourced_iters(stubs).collect());
         });
 
     for (_, entry) in merged_config.iter_mut() {
-        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_empty()) && is_addon_path(workspace_path) {
-            entry.addons_paths.push(Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]) });
+        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
+            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]) };
+            match entry.addons_paths {
+                Some(ref mut paths) => paths.push(addon_path),
+                None => entry.addons_paths = Some(vec![addon_path]),
+            }
         }
     }
 
@@ -825,8 +843,20 @@ fn merge_all_workspaces(
                 key.clone(),
                 "python_path".to_string(),
             )?;
-            merged_entry.addons_paths = merge_sourced_iters(merged_entry.addons_paths.clone(), raw_entry.addons_paths.clone()).collect();
-            merged_entry.additional_stubs = merge_sourced_iters(merged_entry.additional_stubs.clone(), raw_entry.additional_stubs.clone()).collect();
+            merged_entry.addons_paths = match (merged_entry.addons_paths.clone(), raw_entry.addons_paths.clone()) {
+                (Some(existing), Some(new)) => {
+                    Some(merge_sourced_iters(existing, new).collect())
+                }
+                (Some(paths), None) | (None, Some(paths)) => Some(paths),
+                (None, None) => None,
+            };
+            merged_entry.additional_stubs = match (merged_entry.additional_stubs.clone(), raw_entry.additional_stubs.clone()) {
+                (Some(existing), Some(new)) => {
+                    Some(merge_sourced_iters(existing, new).collect())
+                }
+                (Some(paths), None) | (None, Some(paths)) => Some(paths),
+                (None, None) => None,
+            };
             merged_entry.refresh_mode = merge_sourced_options(
                 merged_entry.refresh_mode.clone(),
                 raw_entry.refresh_mode.clone(),
@@ -884,9 +914,9 @@ fn merge_all_workspaces(
             key,
             ConfigEntry {
                 odoo_path: raw_entry.odoo_path.map(|op| op.value),
-                addons_paths: raw_entry.addons_paths.into_iter().map(|op| op.value).collect(),
+                addons_paths: raw_entry.addons_paths.into_iter().flatten().map(|op| op.value).collect(),
                 python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!("python3")),
-                additional_stubs: raw_entry.additional_stubs.into_iter().map(|op| op.value).collect(),
+                additional_stubs: raw_entry.additional_stubs.into_iter().flatten().map(|op| op.value).collect(),
                 refresh_mode: raw_entry.refresh_mode.map(|op| op.value).unwrap_or_default(),
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
