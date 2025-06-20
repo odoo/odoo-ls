@@ -405,8 +405,8 @@ fn test_config_file_sources_template_variable_workspacefolder() {
 
     // Both ws1 and ws2 should be present in addons_paths, each sourced from ws1_odools
     let addons_paths = config_entry.addons_paths_sourced();
-    assert!(addons_paths.iter().any(|s| s.value() == &ws1.path().sanitize() && s.sources().contains(&ws1_odools.path().sanitize())));
-    assert!(addons_paths.iter().any(|s| s.value() == &ws2.path().sanitize() && s.sources().contains(&ws1_odools.path().sanitize())));
+    assert!(addons_paths.iter().flatten().any(|s| s.value() == &ws1.path().sanitize() && s.sources().contains(&ws1_odools.path().sanitize())));
+    assert!(addons_paths.iter().flatten().any(|s| s.value() == &ws2.path().sanitize() && s.sources().contains(&ws1_odools.path().sanitize())));
 }
 
 #[test]
@@ -684,6 +684,7 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
         .unwrap()
         .addons_paths_sourced()
         .iter()
+        .flatten()
         .filter(|s| s.value() == &shared_addons.path().sanitize())
         .flat_map(|s| s.sources())
         .cloned()
@@ -1470,3 +1471,146 @@ fn test_odoo_path_with_version_from_manifest_file() {
     );
 }
 
+#[test]
+fn test_addons_paths_unset_vs_empty_behavior() {
+    let temp = TempDir::new().unwrap();
+    let ws = temp.child("ws");
+    ws.create_dir_all().unwrap();
+
+    // Make ws a valid addons path (contains a module)
+    let addon = ws.child("mod1");
+    addon.create_dir_all().unwrap();
+    addon.child("__manifest__.py").touch().unwrap();
+
+    // Case 1: addons_paths is unset (should add workspace if valid)
+    let toml_unset = r#"
+        [[config]]
+        name = "root"
+    "#;
+    ws.child("odools.toml").write_str(toml_unset).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    assert!(config.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when addons_paths is unset");
+
+    // Case 2: addons_paths is set to empty list (should NOT add workspace)
+    let toml_empty = r#"
+        [[config]]
+        name = "root"
+        addons_paths = []
+    "#;
+    ws.child("odools.toml").write_str(toml_empty).unwrap();
+
+    let (config_map2, _) = get_configuration(&ws_folders).unwrap();
+    let config2 = config_map2.get("root").unwrap();
+    assert!(!config2.addons_paths.contains(&ws.path().sanitize()), "Workspace should NOT be added to addons_paths when addons_paths is set to []");
+
+    // Case 3: addons_paths is set to empty list  but add_workspace_addon_path to true (should add workspace)
+    let toml_empty = r#"
+        [[config]]
+        name = "root"
+        addons_paths = []
+        add_workspace_addon_path = true
+    "#;
+    ws.child("odools.toml").write_str(toml_empty).unwrap();
+
+    let (config_map3, _) = get_configuration(&ws_folders).unwrap();
+    let config3 = config_map3.get("root").unwrap();
+    assert!(config3.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when add_workspace_addon_path is true");
+}
+
+
+#[test]
+fn test_addons_merge_override_cases() {
+    let temp = TempDir::new().unwrap();
+    let ws = temp.child("ws");
+    ws.create_dir_all().unwrap();
+
+    // Parent: parent_addons/mod1/__manifest__.py
+    let parent_addons = temp.child("parent_addons");
+    let parent_mod1 = parent_addons.child("mod1");
+    parent_mod1.create_dir_all().unwrap();
+    parent_mod1.child("__manifest__.py").touch().unwrap();
+
+    // Child: ws_addons/mod2/__manifest__.py
+    let ws_addons = ws.child("ws_addons");
+    let ws_mod2 = ws_addons.child("mod2");
+    ws_mod2.create_dir_all().unwrap();
+    ws_mod2.child("__manifest__.py").touch().unwrap();
+
+    // --- Case 1: Parent gives one valid addons path, child gives another valid addons with addons_merge = override ---
+    let parent_toml = format!(
+        r#"
+        [[config]]
+        name = "root"
+        addons_paths = [
+            "{}"
+        ]
+    "#,
+        parent_addons.path().sanitize()
+    );
+    temp.child("odools.toml").write_str(&parent_toml).unwrap();
+
+    let child_toml = format!(
+        r#"
+        [[config]]
+        name = "root"
+        addons_paths = [
+            "{}"
+        ]
+        addons_merge = "override"
+    "#,
+        ws_addons.path().sanitize()
+    );
+    ws.child("odools.toml").write_str(&child_toml).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
+
+    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let config = config_map.get("root").unwrap();
+    assert_eq!(
+        config.addons_paths,
+        vec![ws_addons.path().sanitize()].into_iter().collect(),
+        "With addons_merge=override, only child addons_paths should be present"
+    );
+
+    // --- Case 2: Child sets addons_merge = override, but does not set addons_paths, should add ws as addons_path if valid ---
+    let child_toml2 = r#"
+        [[config]]
+        name = "root"
+        addons_merge = "override"
+    "#;
+    ws.child("odools.toml").write_str(child_toml2).unwrap();
+
+    // Make ws itself a valid addons path
+    let ws_mod3 = ws.child("mod3");
+    ws_mod3.create_dir_all().unwrap();
+    ws_mod3.child("__manifest__.py").touch().unwrap();
+
+    let (config_map2, _) = get_configuration(&ws_folders).unwrap();
+    let config2 = config_map2.get("root").unwrap();
+    assert!(
+        config2.addons_paths.contains(&ws.path().sanitize()),
+        "With addons_merge=override and no addons_paths, workspace should be added if valid"
+    );
+
+    // --- Case 3: Child sets addons_merge = override and sets addons_paths as [] ---
+    let child_toml3 = r#"
+        [[config]]
+        name = "root"
+        addons_paths = []
+        addons_merge = "override"
+    "#;
+    ws.child("odools.toml").write_str(child_toml3).unwrap();
+
+    let (config_map3, _) = get_configuration(&ws_folders).unwrap();
+    let config3 = config_map3.get("root").unwrap();
+    assert!(
+        config3.addons_paths.is_empty(),
+        "With addons_merge=override and addons_paths=[], no addons paths should be present"
+    );
+}
