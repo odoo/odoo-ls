@@ -7,6 +7,7 @@ class BaseTestModel(models.Model):
     _description = "Base Test Model"
 
     test_int = fields.Integer()
+    partner_id = fields.Many2one("res.partner")
 
     def get_test_int(self):
         self.ensure_one()
@@ -18,6 +19,15 @@ class BaseTestModel(models.Model):
     def for_func(self):
         for var in self:
             print(var)
+
+    @api.onchange("test_int")
+    def onchange_test_int(self):
+        pass
+
+    @api.depends("partner_id.country_id.code")
+    def compute_something(self):
+        self.env["res.partner"]
+        self.env["pygls.tests.base_test_model"]
 
 BaseOtherName = BaseTestModel
 baseInstance1 = BaseTestModel()
