@@ -2027,7 +2027,7 @@ impl Symbol {
         let mut res = VecDeque::new();
         let symbol = &*symbol_rc.borrow();
         if !stop_on_type {
-            if let Some(base_attr) = symbol_context.get(&S!("base_attr")).or_else(|| symbol_context.get(&S!("field_parent"))) {
+            if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
                 let base_attr = base_attr.as_symbol().upgrade();
                 if let Some(base_attr) = base_attr {
                     let attribute_type_sym = symbol;
