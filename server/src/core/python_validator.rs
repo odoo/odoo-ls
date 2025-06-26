@@ -511,7 +511,7 @@ impl PythonValidator {
                         );
                         let method_found = symbols.iter().any(|symbol| symbol.borrow().typ() == SymType::FUNCTION);
                         if !method_found{
-                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
                             add_diagnostic(&mut self.diagnostics, Diagnostic::new(

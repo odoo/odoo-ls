@@ -804,29 +804,6 @@ impl PythonArchEvalHooks {
         })
     }
 
-    fn find_special_method_arguments(
-        session: &mut SessionInfo,
-        parameters: &Arguments,
-        parent: Rc<RefCell<Symbol>>,
-    ) -> Context{
-        let mut context = HashMap::new();
-        for kw_arg in parameters.keywords.iter(){
-            let Some(kw_arg_name) = kw_arg.arg.as_ref().map(|kw_id| kw_id.id.as_str()) else {
-                continue;
-            };
-            if !["compute", "inverse", "search"].contains(&kw_arg_name){
-                continue;
-            }
-            let maybe_related_string = Evaluation::expr_to_str(session, &kw_arg.value, parent.clone(), &parameters.range.start(), &mut vec![]).0;
-            let Some(related_string) = maybe_related_string else {
-                continue;
-            };
-            context.insert(S!(kw_arg_name), ContextValue::STRING(related_string));
-            context.insert(format!("{kw_arg_name}_range"), ContextValue::RANGE(kw_arg.range()));
-        }
-        context
-    }
-
     fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>, relational: bool) -> Option<EvaluationSymbolPtr>
     {
         let Some(context) = maybe_context else {return None};
@@ -838,7 +815,7 @@ impl PythonArchEvalHooks {
             context.get(&S!("range")).unwrap().as_text_range().start().to_u32(),
             false
         );
-        let mut context = PythonArchEvalHooks::find_special_method_arguments(session, &parameters, parent.clone());
+        let mut context = HashMap::new();
 
         let mut contexts_to_add = HashMap::new();
         if relational {
