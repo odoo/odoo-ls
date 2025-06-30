@@ -323,15 +323,47 @@ impl FeaturesUtils {
                 let str = expr.value.to_string();
                 let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
                 if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
-                    let special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
+                    let mut special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
+                    // Inject `base_attr` to get descriptor type on follow_ref in features
                     if special_string_syms.len() >= 1{
+                        special_string_syms.iter_mut().for_each(|sym_rc| {
+                            sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
+                                match eval.symbol.get_mut_symbol_ptr() {
+                                    EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                        if let Some(field_parent) = weak.context.get(&Sy!("field_parent")) {
+                                            if !weak.context.contains_key(&Sy!("base_attr")) {
+                                                weak.context.insert(Sy!("base_attr"), field_parent.clone());
+                                                weak.context.insert(Sy!("base_attr_inserted"), ContextValue::BOOLEAN(true));
+                                            }
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            });
+                        });
                         // restart with replacing current index evaluation with field evaluations
                         let string_domain_fields_evals: Vec<Evaluation> = special_string_syms.iter()
                             .map(|sym| Evaluation::eval_from_symbol(&Rc::downgrade(sym), Some(true)))
                             .chain(evals.iter().take(index).cloned())
                             .chain(evals.iter().skip(index + 1).cloned())
                             .collect();
-                        return FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset))
+                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset));
+                        // remove the injected `base_attr` context value
+                        special_string_syms.iter_mut().for_each(|sym_rc| {
+                            sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
+                                match eval.symbol.get_mut_symbol_ptr() {
+                                    EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                        if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(&Sy!("base_attr_inserted")) {
+                                            // If we found a field parent, we can use it
+                                            weak.context.remove(&Sy!("base_attr"));
+                                            weak.context.remove(&Sy!("base_attr_inserted"));
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            });
+                        });
+                        return r;
                     }
                 }
                 if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
