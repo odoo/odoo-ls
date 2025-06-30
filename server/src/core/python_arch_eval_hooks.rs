@@ -846,18 +846,15 @@ impl PythonArchEvalHooks {
             }
         }
 
-        if !context.is_empty(){
-            context.extend([
-                (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
-            ]);
-            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
-                weak: evaluation_sym.get_weak().weak.clone(),
-                context,
-                instance: Some(true),
-                is_super: false
-            }));
-        }
-        None
+        context.extend([
+            (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
+        ]);
+        return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
+            weak: evaluation_sym.get_weak().weak.clone(),
+            context,
+            instance: Some(true),
+            is_super: false
+        }));
     }
 
     fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr> {
