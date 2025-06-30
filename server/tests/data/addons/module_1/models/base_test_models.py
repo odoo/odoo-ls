@@ -6,8 +6,9 @@ class BaseTestModel(models.Model):
     _inherit = []
     _description = "Base Test Model"
 
-    test_int = fields.Integer()
+    test_int = fields.Integer(compute="_compute_something")
     partner_id = fields.Many2one("res.partner")
+    partner_country_phone_code = fields.Integer(related="partner_id.country_id.phone_code", store=True)
 
     def get_test_int(self):
         self.ensure_one()
@@ -25,9 +26,10 @@ class BaseTestModel(models.Model):
         pass
 
     @api.depends("partner_id.country_id.code")
-    def compute_something(self):
+    def _compute_something(self):
         self.env["res.partner"]
         self.env["pygls.tests.base_test_model"]
+        self.search([("partner_id.country_id.code", ">", 0)])
 
 BaseOtherName = BaseTestModel
 baseInstance1 = BaseTestModel()
