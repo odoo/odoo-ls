@@ -363,6 +363,12 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("mapped")]),
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")]),
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
