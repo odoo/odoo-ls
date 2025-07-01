@@ -555,6 +555,10 @@ impl PythonArchEvalHooks {
                 match arg {
                     ContextValue::STRING(s) => {
                         let model = session.sync_odoo.models.get(&oyarn!("{}", s));
+                        let mut has_class_in_parents = false;
+                        if let Some(scope) = scope.as_ref() {
+                            has_class_in_parents = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some();
+                        }
                         if let Some(model) = model {
                             let module = context.get(&S!("module"));
                             let from_module;
@@ -581,7 +585,7 @@ impl PythonArchEvalHooks {
                                     }
                                 }
                             } else {
-                                if from_module.is_some() {
+                                if from_module.is_some() && has_class_in_parents { //we don't want to show error for functions outside of a model body
                                     //retry without from_module to see if model exists elsewhere
                                     let symbols = model.get_main_symbols(session, None);
                                     if symbols.is_empty() {
@@ -611,7 +615,7 @@ impl PythonArchEvalHooks {
                                             )
                                         , &session.current_noqa);
                                     }
-                                } else {
+                                } else if has_class_in_parents {
                                     let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                                     add_diagnostic(diagnostics, Diagnostic::new(range,
                                         Some(DiagnosticSeverity::ERROR),
@@ -623,7 +627,7 @@ impl PythonArchEvalHooks {
                                     ), &session.current_noqa);
                                 }
                             }
-                        } else {
+                        } else if has_class_in_parents {
                             let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                             add_diagnostic(diagnostics, Diagnostic::new(range,
                                 Some(DiagnosticSeverity::ERROR),
