@@ -954,6 +954,10 @@ impl Odoo {
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
+        if session.sync_odoo.get_file_mgr().borrow().has_repeated_workspace_folders() {
+            session.show_message(MessageType::ERROR, String::from("There are repeated workspace folders names, which is not supported by OdooLS. Please remove the repeated folders and restart the server."));
+            return;
+        }
         let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders());
         if let Ok((_, config_file)) = &config {
             session.sync_odoo.config_file = Some(config_file.clone());

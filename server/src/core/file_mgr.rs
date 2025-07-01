@@ -376,7 +376,8 @@ impl FileInfo {
 #[derive(Debug)]
 pub struct FileMgr {
     pub files: HashMap<String, Rc<RefCell<FileInfo>>>,
-    workspace_folder: HashMap<String, String>,
+    workspace_folders: HashMap<String, String>,
+    has_repeated_workspace_folders: bool,
 }
 
 impl FileMgr {
@@ -384,7 +385,8 @@ impl FileMgr {
     pub fn new() -> Self {
         Self {
             files: HashMap::new(),
-            workspace_folder: HashMap::new(),
+            workspace_folders: HashMap::new(),
+            has_repeated_workspace_folders: false,
         }
     }
 
@@ -482,20 +484,28 @@ impl FileMgr {
     }
 
     pub fn add_workspace_folder(&mut self, name: String, path: String) {
+        if self.workspace_folders.contains_key(&name) {
+            warn!("Workspace folder with name {} already exists", name);
+            self.has_repeated_workspace_folders = true;
+        }
         let sanitized = PathBuf::from(path).sanitize();
-        self.workspace_folder.insert(name, sanitized);
+        self.workspace_folders.insert(name, sanitized);
     }
 
     pub fn remove_workspace_folder(&mut self, name: String) {
-        self.workspace_folder.remove(&name);
+        self.workspace_folders.remove(&name);
+    }
+
+    pub fn has_repeated_workspace_folders(&self) -> bool {
+        self.has_repeated_workspace_folders
     }
 
     pub fn get_workspace_folders(&self) -> &HashMap<String, String> {
-        &self.workspace_folder
+        &self.workspace_folders
     }
 
     pub fn is_in_workspace(&self, path: &str) -> bool {
-        for p in self.workspace_folder.values() {
+        for p in self.workspace_folders.values() {
             if path.starts_with(p) {
                 return true;
             }
