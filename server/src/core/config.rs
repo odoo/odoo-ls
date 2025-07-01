@@ -496,6 +496,8 @@ pub struct ConfigEntry {
     pub diag_missing_imports: DiagMissingImportsMode,
     pub ac_filter_model_names: bool,
     pub auto_save_delay: u64,
+    pub stdlib: String,
+    pub no_typeshed: bool,
 }
 
 impl Default for ConfigEntry {
@@ -510,6 +512,8 @@ impl Default for ConfigEntry {
             diag_missing_imports: DiagMissingImportsMode::default(),
             ac_filter_model_names: true,
             auto_save_delay: 1000,
+            stdlib: S!(""),
+            no_typeshed: false,
         }
     }
 }
@@ -922,6 +926,7 @@ fn merge_all_workspaces(
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
                 auto_save_delay: clamp_auto_save_delay(raw_entry.auto_save_delay.map(|op| op.value).unwrap_or(1000)),
+                ..Default::default()
             },
         );
     }

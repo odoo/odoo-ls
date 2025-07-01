@@ -156,8 +156,14 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
+        if session.sync_odoo.config.no_typeshed {
+            session.sync_odoo.stubs_dirs.clear();
+        }
         for stub in session.sync_odoo.config.additional_stubs.iter() {
             session.sync_odoo.stubs_dirs.push(PathBuf::from(stub.clone()).sanitize());
+        }
+        if !session.sync_odoo.config.stdlib.is_empty() {
+            session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib.clone()).sanitize();
         }
         info!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
         for stub in session.sync_odoo.stubs_dirs.iter() {
