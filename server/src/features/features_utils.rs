@@ -330,10 +330,10 @@ impl FeaturesUtils {
                             sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
                                 match eval.symbol.get_mut_symbol_ptr() {
                                     EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                        if let Some(field_parent) = weak.context.get(&Sy!("field_parent")) {
-                                            if !weak.context.contains_key(&Sy!("base_attr")) {
-                                                weak.context.insert(Sy!("base_attr"), field_parent.clone());
-                                                weak.context.insert(Sy!("base_attr_inserted"), ContextValue::BOOLEAN(true));
+                                        if let Some(field_parent) = weak.context.get(&S!("field_parent")) {
+                                            if !weak.context.contains_key(&S!("base_attr")) {
+                                                weak.context.insert(S!("base_attr"), field_parent.clone());
+                                                weak.context.insert(S!("base_attr_inserted"), ContextValue::BOOLEAN(true));
                                             }
                                         }
                                     },
@@ -353,10 +353,10 @@ impl FeaturesUtils {
                             sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
                                 match eval.symbol.get_mut_symbol_ptr() {
                                     EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                        if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(&Sy!("base_attr_inserted")) {
+                                        if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(&S!("base_attr_inserted")) {
                                             // If we found a field parent, we can use it
-                                            weak.context.remove(&Sy!("base_attr"));
-                                            weak.context.remove(&Sy!("base_attr_inserted"));
+                                            weak.context.remove(&S!("base_attr"));
+                                            weak.context.remove(&S!("base_attr_inserted"));
                                         }
                                     },
                                     _ => {}
