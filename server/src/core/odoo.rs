@@ -950,9 +950,14 @@ impl Odoo {
                 "__all__".to_string(),
                 serde_json::Value::String(config_file.to_html_string())
             );
+            // Send both the HTML map and the config file as JSON
+            let payload = serde_json::json!({
+                "html": serde_json::Value::Object(configs_map),
+                "configFile": config_file,
+            });
             session.send_notification(
                 "$Odoo/setConfiguration",
-                serde_json::Value::Object(configs_map)
+                payload
             );
         }
     }

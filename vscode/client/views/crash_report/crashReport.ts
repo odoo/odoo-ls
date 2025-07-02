@@ -1,5 +1,6 @@
 import { Disposable, Webview, WebviewPanel, window, Uri } from "vscode";
 import { getUri, getNonce, getCurrentConfig } from "../../common/utils";
+import { getCurrentConfigFromConfigFile } from "../../extension"; // <-- add this import
 import { getPythonVersion } from "../../common/python";
 import axios from 'axios';
 import * as ejs from "ejs";
@@ -134,7 +135,7 @@ export class CrashReportWebView {
 
             switch (command) {
                 case "send_report":
-                    const config = await getCurrentConfig(this._context);
+                    let config = getCurrentConfigFromConfigFile(this._context);
                     let version = "not_provided";
                     try {
                         let version_info = await getPythonVersion();
@@ -143,7 +144,7 @@ export class CrashReportWebView {
                     let configString = "";
                     if (config) {
                         configString += `Path: ${config.odooPath}\n`;
-                        configString += `Addons:\n${config.addons.map(i => `  - ${i}`).join('\n')}`;
+                        configString += `Addons:\n${(config.addons || []).map((i: string) => `  - ${i}`).join('\n')}`;
                     } else {
                         configString += "Path: None\nAddons: None";
                     }
@@ -162,7 +163,7 @@ export class CrashReportWebView {
                             version: this._context.extension.packageJSON.version,
                             python_version: version,
                             configuration: configString,
-                            command: this._command, 
+                            command: this._command,
                         }
                     });
                     this.dispose();

@@ -48,9 +48,11 @@ import { ThemeIcon } from "vscode";
 
 
 let CONFIG_HTML_MAP: Record<string, string> = {};
+let CONFIG_FILE: any = undefined;
 
-function handleSetConfigurationNotification(configs: Record<string, string>) {
-  CONFIG_HTML_MAP = configs || {};
+function handleSetConfigurationNotification(payload: { html: Record<string, string>, configFile: any }) {
+    CONFIG_HTML_MAP = payload.html || {};
+    CONFIG_FILE = payload.configFile;
 }
 
 function getClientOptions(): LanguageClientOptions {
@@ -612,6 +614,24 @@ function handleMigration(context){
     if (isExtensionUpdated(context)) {
         migrateShowHome(context);
     }
+}
+
+export function getCurrentConfigEntry(context: ExtensionContext): any | undefined {
+    if (!CONFIG_FILE || !CONFIG_FILE.config) return undefined;
+    const selected = workspace.getConfiguration().get("Odoo.selectedConfiguration") as string;
+    const configName = selected && selected !== "" ? selected : "root";
+    return CONFIG_FILE.config.find((c: any) => c.name === configName);
+}
+
+export function getCurrentConfigFromConfigFile(context: ExtensionContext): { odooPath?: string, addons?: string[] } | undefined {
+    const entry = getCurrentConfigEntry(context);
+    if (!entry) return undefined;
+    const odooPath = entry.odoo_path?.value || entry.odoo_path;
+    let addons: string[] = [];
+    if (Array.isArray(entry.addons_paths)) {
+        addons = entry.addons_paths.map((a: any) => a.value || a).filter(Boolean);
+    }
+    return { odooPath, addons };
 }
 
 export async function activate(context: ExtensionContext): Promise<void> {
