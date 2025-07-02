@@ -744,6 +744,9 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
+        if class_def.body.is_empty() {
+            return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
+        }
         let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
             session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
