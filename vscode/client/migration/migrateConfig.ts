@@ -24,6 +24,7 @@ export async function migrateShowHome(context: ExtensionContext) {
     const lastRecordedSemVer = semver.parse(context.globalState.get("Odoo.lastRecordedVersion", ""));
     const targetSemVer = semver.parse("0.8.0");
     if (currentSemVer >= targetSemVer && lastRecordedSemVer && lastRecordedSemVer < targetSemVer) {
-        context.globalState.update('Odoo.displayWelcomeView', undefined);
+        context.globalState.update("Odoo.displayWelcomeView", undefined);
+        context.globalState.update("Odoo.selectedConfiguration", undefined);
     }
 }
