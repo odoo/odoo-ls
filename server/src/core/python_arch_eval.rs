@@ -693,7 +693,7 @@ impl PythonArchEval {
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
         let Some(class_sym_rc) = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(class_stmt.name.to_string()), &class_stmt.range) else {
-            panic!("Class not found");
+            return;
         };
         self.load_base_classes(session, &class_sym_rc, class_stmt);
         let old_noqa = session.current_noqa.clone();
@@ -711,7 +711,7 @@ impl PythonArchEval {
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
         let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(func_stmt.name.to_string()), &func_stmt.range);
         let Some(function_sym) = variable else {
-            panic!("Function symbol not found");
+            return; // can be not found if AST is incomplete
         };
         {
             if function_sym.borrow_mut().as_func_mut().can_be_in_class() || !(self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS){

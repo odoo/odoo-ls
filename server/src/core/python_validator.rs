@@ -206,8 +206,6 @@ impl PythonValidator {
                             panic!("cyclic validation detected... Aborting");
                         }
                         self.diagnostics.extend(sym.borrow_mut().as_func_mut().diagnostics.values().flat_map(|v| v.clone()));
-                    } else {
-                        panic!("function '{}' not found", f.name.id);
                     }
                 },
                 Stmt::ClassDef(c) => {
@@ -283,8 +281,6 @@ impl PythonValidator {
             self.validate_body(session, &c.body);
             self.sym_stack.pop();
             session.current_noqa = old_noqa;
-        } else {
-            //TODO panic!("symbol not found.");
         }
     }
 
