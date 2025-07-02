@@ -636,6 +636,9 @@ impl PythonArchBuilder {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
+        if func_def.body.is_empty() {
+            return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
+        }
         let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
@@ -660,7 +663,7 @@ impl PythonArchBuilder {
                 }
             }
         }
-        if func_def.body.len() > 0 && func_def.body[0].is_expr_stmt() {
+        if func_def.body[0].is_expr_stmt() {
             let expr: &ruff_python_ast::StmtExpr = func_def.body[0].as_expr_stmt().unwrap();
             if let Some(s) = expr.value.as_string_literal_expr() {
                 func_sym.doc_string = Some(s.value.to_string())
