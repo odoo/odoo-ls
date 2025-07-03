@@ -78,7 +78,7 @@ fn test_single_odools_toml_config() {
         name = "default"
         python_path = 'python'
         file_cache = false
-        auto_save_delay = 1234
+        auto_refresh_delay = 1234
     "#;
     ws_folder.child("odools.toml").write_str(toml_content).unwrap();
 
@@ -90,7 +90,7 @@ fn test_single_odools_toml_config() {
 
     assert_eq!(config.python_path, "python");
     assert_eq!(config.file_cache, false);
-    assert_eq!(config.auto_save_delay, 1234);
+    assert_eq!(config.auto_refresh_delay, 1234);
 
     // Check config_file serialization matches
     let config_file_str = config_file.to_html_string();
@@ -111,7 +111,7 @@ fn test_multiple_odools_toml_shadowing() {
         name = "default"
         python_path = "python3"
         file_cache = true
-        auto_save_delay = 1111
+        auto_refresh_delay = 1111
     "#;
     temp.child("odools.toml").write_str(parent_toml).unwrap();
 
@@ -133,8 +133,8 @@ fn test_multiple_odools_toml_shadowing() {
     // ws_folder/odools.toml should take priority
     assert_eq!(config.python_path, "python");
     assert_eq!(config.file_cache, false);
-    // auto_save_delay should fall back to parent
-    assert_eq!(config.auto_save_delay, 1111);
+    // auto_refresh_delay should fall back to parent
+    assert_eq!(config.auto_refresh_delay, 1111);
 
     let config_file_str = config_file.to_html_string();
     assert!(config_file_str.contains("python"));
@@ -154,7 +154,7 @@ fn test_extends_and_shadowing() {
         name = "base"
         python_path = "python3"
         file_cache = true
-        auto_save_delay = 2222
+        auto_refresh_delay = 2222
 
         [[config]]
         name = "default"
@@ -163,11 +163,11 @@ fn test_extends_and_shadowing() {
     "#;
     temp.child("odools.toml").write_str(parent_toml).unwrap();
 
-    // Workspace odools.toml overrides auto_save_delay
+    // Workspace odools.toml overrides auto_refresh_delay
     let ws_toml = r#"
         [[config]]
         name = "default"
-        auto_save_delay = 3333
+        auto_refresh_delay = 3333
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml).unwrap();
 
@@ -177,10 +177,10 @@ fn test_extends_and_shadowing() {
     let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("default").unwrap();
 
-    // Should extend from base, but shadow python_path and auto_save_delay
+    // Should extend from base, but shadow python_path and auto_refresh_delay
     assert_eq!(config.python_path, "python");
     assert_eq!(config.file_cache, true);
-    assert_eq!(config.auto_save_delay, 3333);
+    assert_eq!(config.auto_refresh_delay, 3333);
 
     let config_file_str = config_file.to_html_string();
     assert!(config_file_str.contains("python"));
@@ -300,7 +300,7 @@ fn test_config_file_sources_single_file() {
         name = "default"
         python_path = "python"
         file_cache = false
-        auto_save_delay = 1234
+        auto_refresh_delay = 1234
     "#;
     let odools_path = ws_folder.child("odools.toml");
     odools_path.write_str(toml_content).unwrap();
@@ -317,8 +317,8 @@ fn test_config_file_sources_single_file() {
     assert!(config_entry.python_path_sourced().unwrap().sources().contains(&odools_src));
     assert_eq!(config_entry.file_cache_sourced().unwrap().sources().len(), 1);
     assert!(config_entry.file_cache_sourced().unwrap().sources().contains(&odools_src));
-    assert_eq!(config_entry.auto_save_delay_sourced().unwrap().sources().len(), 1);
-    assert!(config_entry.auto_save_delay_sourced().unwrap().sources().contains(&odools_src));
+    assert_eq!(config_entry.auto_refresh_delay_sourced().unwrap().sources().len(), 1);
+    assert!(config_entry.auto_refresh_delay_sourced().unwrap().sources().contains(&odools_src));
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn test_config_file_sources_multiple_files_and_extends() {
         name = "base"
         python_path = "python3"
         file_cache = true
-        auto_save_delay = 2222
+        auto_refresh_delay = 2222
 
         [[config]]
         name = "default"
@@ -343,11 +343,11 @@ fn test_config_file_sources_multiple_files_and_extends() {
     let parent_odools = temp.child("odools.toml");
     parent_odools.write_str(parent_toml).unwrap();
 
-    // Workspace odools.toml overrides auto_save_delay
+    // Workspace odools.toml overrides auto_refresh_delay
     let ws_toml = r#"
         [[config]]
         name = "default"
-        auto_save_delay = 3333
+        auto_refresh_delay = 3333
     "#;
     let ws_odools = ws_folder.child("odools.toml");
     ws_odools.write_str(ws_toml).unwrap();
@@ -362,8 +362,8 @@ fn test_config_file_sources_multiple_files_and_extends() {
     assert!(config_entry.python_path_sourced().unwrap().sources().contains(&parent_odools.path().sanitize()));
     // file_cache should be sourced from parent odools.toml (base config, via extends)
     assert!(config_entry.file_cache_sourced().unwrap().sources().contains(&parent_odools.path().sanitize()));
-    // auto_save_delay should be sourced from ws odools.toml (overrides parent)
-    assert!(config_entry.auto_save_delay_sourced().unwrap().sources().contains(&ws_odools.path().sanitize()));
+    // auto_refresh_delay should be sourced from ws odools.toml (overrides parent)
+    assert!(config_entry.auto_refresh_delay_sourced().unwrap().sources().contains(&ws_odools.path().sanitize()));
 }
 
 #[test]
@@ -927,7 +927,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
 
         [[config]]
         name = "base"
-        auto_save_delay = 1111
+        auto_refresh_delay = 1111
         ac_filter_model_names = false
 
         [[config]]
@@ -951,9 +951,9 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("default").unwrap();
 
-    // Should inherit file_cache from mid, auto_save_delay from base, diag_missing_imports from root, ac_filter_model_names from workspace
+    // Should inherit file_cache from mid, auto_refresh_delay from base, diag_missing_imports from root, ac_filter_model_names from workspace
     assert_eq!(config.file_cache, false);
-    assert_eq!(config.auto_save_delay, 1111);
+    assert_eq!(config.auto_refresh_delay, 1111);
     assert_eq!(format!("{:?}", config.diag_missing_imports).to_lowercase(), "onlyodoo");
     assert_eq!(config.ac_filter_model_names, true);
 
@@ -961,7 +961,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let parent_toml_swapped = r#"
         [[config]]
         name = "base"
-        auto_save_delay = 1111
+        auto_refresh_delay = 1111
         ac_filter_model_names = false
 
         [[config]]
@@ -979,7 +979,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
     let config2 = config_map2.get("default").unwrap();
     assert_eq!(config2.file_cache, false);
-    assert_eq!(config2.auto_save_delay, 1111);
+    assert_eq!(config2.auto_refresh_delay, 1111);
     assert_eq!(format!("{:?}", config2.diag_missing_imports).to_lowercase(), "onlyodoo");
     assert_eq!(config2.ac_filter_model_names, true);
 
@@ -987,7 +987,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let ws_toml_base = r#"
         [[config]]
         name = "base"
-        auto_save_delay = 1111
+        auto_refresh_delay = 1111
         ac_filter_model_names = false
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml_base).unwrap();
@@ -1008,7 +1008,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let config3 = config_map3.get("default").unwrap();
     // Should still resolve the chain correctly
     assert_eq!(config3.file_cache, false);
-    assert_eq!(config3.auto_save_delay, 1111);
+    assert_eq!(config3.auto_refresh_delay, 1111);
     assert_eq!(format!("{:?}", config3.diag_missing_imports).to_lowercase(), "onlyodoo");
     assert_eq!(config3.ac_filter_model_names, false);
 }
@@ -1024,7 +1024,7 @@ fn test_extends_cycle_detection() {
         [[config]]
         name = "base"
         extends = "mid"
-        auto_save_delay = 111
+        auto_refresh_delay = 111
 
         [[config]]
         name = "mid"
@@ -1264,7 +1264,7 @@ fn test_relative_addons_paths_in_parent_config() {
 }
 
 #[test]
-fn test_auto_save_delay_boundaries() {
+fn test_auto_refresh_delay_boundaries() {
     let temp = TempDir::new().unwrap();
     let ws_folder = temp.child("workspace1");
     ws_folder.create_dir_all().unwrap();
@@ -1273,7 +1273,7 @@ fn test_auto_save_delay_boundaries() {
     let toml_content_min = r#"
         [[config]]
         name = "default"
-        auto_save_delay = 500
+        auto_refresh_delay = 500
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_min).unwrap();
 
@@ -1282,31 +1282,31 @@ fn test_auto_save_delay_boundaries() {
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("default").unwrap();
-    assert_eq!(config.auto_save_delay, 1000);
+    assert_eq!(config.auto_refresh_delay, 1000);
 
     // Above maximum (should clamp to 15000)
     let toml_content_max = r#"
         [[config]]
         name = "default"
-        auto_save_delay = 20000
+        auto_refresh_delay = 20000
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_max).unwrap();
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("default").unwrap();
-    assert_eq!(config.auto_save_delay, 15000);
+    assert_eq!(config.auto_refresh_delay, 15000);
 
     // Within bounds (should keep value)
     let toml_content_ok = r#"
         [[config]]
         name = "default"
-        auto_save_delay = 1234
+        auto_refresh_delay = 1234
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_ok).unwrap();
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("default").unwrap();
-    assert_eq!(config.auto_save_delay, 1234);
+    assert_eq!(config.auto_refresh_delay, 1234);
 }
 
 #[test]

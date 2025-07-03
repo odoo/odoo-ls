@@ -188,7 +188,7 @@ pub enum DelayedProcessingMessage {
 
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
-    let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_save_delay, MAX_DELAY));
+    let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay, MAX_DELAY));
     let check_reset =  |msg: Option<&DelayedProcessingMessage>| {
         let length = sync_odoo.lock().unwrap().watched_file_updates.load(Ordering::SeqCst);
         if length > 10 {
