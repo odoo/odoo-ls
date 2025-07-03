@@ -932,7 +932,7 @@ impl Odoo {
         }
         let value = config
             .and_then(|c| c.as_object())
-            .and_then(|c| c.get("selectedConfiguration"))
+            .and_then(|c| c.get("selectedProfile"))
             .and_then(|v| v.as_str())
             .map(|v| v.to_string());
         return Ok(value);
