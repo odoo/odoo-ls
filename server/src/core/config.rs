@@ -225,7 +225,7 @@ impl ConfigFile {
                     "name", "extends", "odoo_path", "abstract", "addons_paths", "addons_merge",
                     "python_path", "additional_stubs", "additional_stubs_merge",
                     "refresh_mode", "file_cache", "diag_missing_imports",
-                    "ac_filter_model_names", "auto_save_delay", "add_workspace_addon_path",
+                    "ac_filter_model_names", "auto_refresh_delay", "add_workspace_addon_path",
                 ];
                 for key in order {
                     if let Some(val) = map.get(key) {
@@ -451,7 +451,7 @@ pub struct ConfigEntryRaw {
     ac_filter_model_names: Option<Sourced<bool>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
-    auto_save_delay: Option<Sourced<u64>>,
+    auto_refresh_delay: Option<Sourced<u64>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
     add_workspace_addon_path: Option<Sourced<bool>>,
@@ -478,7 +478,7 @@ impl Default for ConfigEntryRaw {
             file_cache: None,
             diag_missing_imports: None,
             ac_filter_model_names: None,
-            auto_save_delay: None,
+            auto_refresh_delay: None,
             add_workspace_addon_path: None,
             version: None,
             abstract_: false,
@@ -497,8 +497,8 @@ impl ConfigEntryRaw {
     pub fn file_cache_sourced(&self) -> Option<&Sourced<bool>> {
         self.file_cache.as_ref()
     }
-    pub fn auto_save_delay_sourced(&self) -> Option<&Sourced<u64>> {
-        self.auto_save_delay.as_ref()
+    pub fn auto_refresh_delay_sourced(&self) -> Option<&Sourced<u64>> {
+        self.auto_refresh_delay.as_ref()
     }
     pub fn addons_paths_sourced(&self) -> &Option<Vec<Sourced<String>>> {
         &self.addons_paths
@@ -518,7 +518,7 @@ pub struct ConfigEntry {
     pub file_cache: bool,
     pub diag_missing_imports: DiagMissingImportsMode,
     pub ac_filter_model_names: bool,
-    pub auto_save_delay: u64,
+    pub auto_refresh_delay: u64,
     pub stdlib: String,
     pub no_typeshed: bool,
     pub abstract_: bool,
@@ -535,7 +535,7 @@ impl Default for ConfigEntry {
             file_cache: true,
             diag_missing_imports: DiagMissingImportsMode::default(),
             ac_filter_model_names: true,
-            auto_save_delay: 1000,
+            auto_refresh_delay: 1000,
             stdlib: S!(""),
             no_typeshed: false,
             abstract_: false,
@@ -641,7 +641,7 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         entry.file_cache.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.diag_missing_imports.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.ac_filter_model_names.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
-        entry.auto_save_delay.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
+        entry.auto_refresh_delay.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.add_workspace_addon_path.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.version.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
 
@@ -682,7 +682,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         let addons_merge = child.addons_merge.clone().or(parent.addons_merge.clone());
         let additional_stubs_merge = child.additional_stubs_merge.clone().or(parent.additional_stubs_merge.clone());
         let extends = child.extends.clone().or(parent.extends.clone());
-        let auto_save_delay = child.auto_save_delay.clone().or(parent.auto_save_delay.clone());
+        let auto_refresh_delay = child.auto_refresh_delay.clone().or(parent.auto_refresh_delay.clone());
         let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
         let version = child.version.clone().or(parent.version.clone());
 
@@ -699,7 +699,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
             additional_stubs_merge,
             extends,
             name: child.name.clone(),
-            auto_save_delay,
+            auto_refresh_delay,
             add_workspace_addon_path,
             version,
             ..Default::default()
@@ -966,11 +966,11 @@ fn merge_all_workspaces(
                 key.clone(),
                 "ac_filter_model_names".to_string(),
             )?;
-            merged_entry.auto_save_delay = merge_sourced_options(
-                merged_entry.auto_save_delay.clone(),
-                raw_entry.auto_save_delay.clone(),
+            merged_entry.auto_refresh_delay = merge_sourced_options(
+                merged_entry.auto_refresh_delay.clone(),
+                raw_entry.auto_refresh_delay.clone(),
                 key.clone(),
-                "auto_save_delay".to_string(),
+                "auto_refresh_delay".to_string(),
             )?;
             merged_entry.abstract_ = merged_entry.abstract_ || raw_entry.abstract_;
         }
@@ -1007,7 +1007,7 @@ fn merge_all_workspaces(
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
-                auto_save_delay: clamp_auto_save_delay(raw_entry.auto_save_delay.map(|op| op.value).unwrap_or(1000)),
+                auto_refresh_delay: clamp_auto_refresh_delay(raw_entry.auto_refresh_delay.map(|op| op.value).unwrap_or(1000)),
                 abstract_: raw_entry.abstract_,
                 ..Default::default()
             },
@@ -1031,7 +1031,7 @@ pub fn needs_restart(old: &ConfigEntry, new: &ConfigEntry) -> bool {
     old.additional_stubs != new.additional_stubs
 }
 
-fn clamp_auto_save_delay(val: u64) -> u64 {
+fn clamp_auto_refresh_delay(val: u64) -> u64 {
     if val < 1000 {
         1000
     } else if val > 15000 {
