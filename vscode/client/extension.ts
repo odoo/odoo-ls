@@ -212,21 +212,13 @@ async function setStatusConfig(context: ExtensionContext) {
     global.STATUS_BAR.text = (global.IS_LOADING) ? "$(loading~spin) " + text : text;
 }
 
-function getLastConfigId(context: ExtensionContext): number | undefined {
-    return context.globalState.get("Odoo.nextConfigId");
-}
-
-function IncrementLastConfigId(context: ExtensionContext) {
-    const lastId: number = context.globalState.get("Odoo.nextConfigId");
-    context.globalState.update("Odoo.nextConfigId", lastId + 1);
-}
 
 async function changeSelectedConfig(context: ExtensionContext, configName: string) {
   try {
     if (configName == "Disabled"){
         configName = undefined;
     }
-    await workspace.getConfiguration().update("Odoo.selectedConfiguration", configName, ConfigurationTarget.Workspace);
+    await workspace.getConfiguration().update("Odoo.selectedProfile", configName, ConfigurationTarget.Workspace);
     return true;
   } catch (err) {
     window.showErrorMessage(`Failed to change configuration: ${err}`);
@@ -618,7 +610,7 @@ function handleMigration(context){
 
 export function getCurrentConfigEntry(context: ExtensionContext): any | undefined {
     if (!CONFIG_FILE || !CONFIG_FILE.config) return undefined;
-    const selected = workspace.getConfiguration().get("Odoo.selectedConfiguration") as string;
+    const selected = workspace.getConfiguration().get("Odoo.selectedProfile") as string;
     const configName = selected && selected !== "" ? selected : "root";
     return CONFIG_FILE.config.find((c: any) => c.name === configName);
 }
