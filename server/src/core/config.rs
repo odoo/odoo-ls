@@ -553,7 +553,7 @@ pub type ConfigNew = HashMap<String, ConfigEntry>;
 
 
 fn default_name() -> String {
-    "root".to_string()
+    "default".to_string()
 }
 
 fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String, predicate: &F, var_map: HashMap<String, String>) -> Option<Sourced<String>>
@@ -801,7 +801,7 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
     let mut current_dir = PathBuf::from(workspace_path);
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
-    merged_config.insert("root".to_string(), ConfigEntryRaw::new());
+    merged_config.insert("default".to_string(), ConfigEntryRaw::new());
 
     loop {
         if !visited_dirs.insert(current_dir.clone()) {

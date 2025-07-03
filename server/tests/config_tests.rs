@@ -20,7 +20,7 @@ fn test_config_entry_single_workspace_with_addons_path() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     assert!(config.addons_paths.iter().any(|p| p == &ws_folder.path().sanitize()));
 }
@@ -43,7 +43,7 @@ fn test_config_entry_multiple_workspaces_with_various_addons() {
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     assert!(config.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(!config.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
@@ -61,7 +61,7 @@ fn test_config_entry_with_odoo_path_detection() {
     ws_folders.insert(S!("odoo_ws"), ws_folder.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     assert!(config.odoo_path.as_ref().map(|p| p == &ws_folder.path().sanitize()).unwrap_or(false));
 }
@@ -75,7 +75,7 @@ fn test_single_odools_toml_config() {
     // Write odools.toml
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         python_path = 'python'
         file_cache = false
         auto_save_delay = 1234
@@ -86,7 +86,7 @@ fn test_single_odools_toml_config() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     assert_eq!(config.python_path, "python");
     assert_eq!(config.file_cache, false);
@@ -108,7 +108,7 @@ fn test_multiple_odools_toml_shadowing() {
     // Parent odools.toml
     let parent_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         python_path = "python3"
         file_cache = true
         auto_save_delay = 1111
@@ -118,7 +118,7 @@ fn test_multiple_odools_toml_shadowing() {
     // Workspace odools.toml (should shadow parent)
     let ws_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         python_path = "python"
         file_cache = false
     "#;
@@ -128,7 +128,7 @@ fn test_multiple_odools_toml_shadowing() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // ws_folder/odools.toml should take priority
     assert_eq!(config.python_path, "python");
@@ -157,7 +157,7 @@ fn test_extends_and_shadowing() {
         auto_save_delay = 2222
 
         [[config]]
-        name = "root"
+        name = "default"
         extends = "base"
         python_path = "python"
     "#;
@@ -166,7 +166,7 @@ fn test_extends_and_shadowing() {
     // Workspace odools.toml overrides auto_save_delay
     let ws_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         auto_save_delay = 3333
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml).unwrap();
@@ -175,7 +175,7 @@ fn test_extends_and_shadowing() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // Should extend from base, but shadow python_path and auto_save_delay
     assert_eq!(config.python_path, "python");
@@ -207,7 +207,7 @@ fn test_workspacefolder_template_variable_variations() {
     // Test all template variable forms
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "${workspaceFolder}",
             "${workspaceFolder:ws1}",
@@ -222,7 +222,7 @@ fn test_workspacefolder_template_variable_variations() {
     ws_folders.insert(S!("ws2"), ws2_folder.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // "${workspaceFolder}" should resolve to ws1 (the current workspace)
     assert!(config.addons_paths.iter().any(|p| p == &ws_folder.path().sanitize()));
@@ -255,7 +255,7 @@ fn test_workspacefolder_template_ws2_in_ws1_add_workspace_addon_path_behavior() 
     // odools.toml in ws1 only references ws2 via template
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "${workspaceFolder:ws2}"
         ]
@@ -268,14 +268,14 @@ fn test_workspacefolder_template_ws2_in_ws1_add_workspace_addon_path_behavior() 
 
     // By default, ws1 should NOT be added as an addon path, only ws2
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert!(!config.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(config.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
 
     // Now set add_workspace_addon_path = true, ws1 should be added as well
     let toml_content_with_flag = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "${workspaceFolder:ws2}"
         ]
@@ -284,7 +284,7 @@ fn test_workspacefolder_template_ws2_in_ws1_add_workspace_addon_path_behavior() 
     ws1.child("odools.toml").write_str(toml_content_with_flag).unwrap();
 
     let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
-    let config2 = config_map2.get("root").unwrap();
+    let config2 = config_map2.get("default").unwrap();
     assert!(config2.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(config2.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
 }
@@ -297,7 +297,7 @@ fn test_config_file_sources_single_file() {
 
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         python_path = "python"
         file_cache = false
         auto_save_delay = 1234
@@ -336,7 +336,7 @@ fn test_config_file_sources_multiple_files_and_extends() {
         auto_save_delay = 2222
 
         [[config]]
-        name = "root"
+        name = "default"
         extends = "base"
         python_path = "python"
     "#;
@@ -346,7 +346,7 @@ fn test_config_file_sources_multiple_files_and_extends() {
     // Workspace odools.toml overrides auto_save_delay
     let ws_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         auto_save_delay = 3333
     "#;
     let ws_odools = ws_folder.child("odools.toml");
@@ -356,7 +356,7 @@ fn test_config_file_sources_multiple_files_and_extends() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
-    let config_entry = config_file.config.iter().find(|c| c.name == "root").unwrap();
+    let config_entry = config_file.config.iter().find(|c| c.name == "default").unwrap();
 
     // python_path should be sourced from parent odools.toml (root config)
     assert!(config_entry.python_path_sourced().unwrap().sources().contains(&parent_odools.path().sanitize()));
@@ -387,7 +387,7 @@ fn test_config_file_sources_template_variable_workspacefolder() {
     // odools.toml in ws1 references both ws1 and ws2 via template
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "${workspaceFolder}",
             "${workspaceFolder:ws2}"
@@ -401,7 +401,7 @@ fn test_config_file_sources_template_variable_workspacefolder() {
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
     let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
-    let config_entry = config_file.config.iter().find(|c| c.name == "root").unwrap();
+    let config_entry = config_file.config.iter().find(|c| c.name == "default").unwrap();
 
     // Both ws1 and ws2 should be present in addons_paths, each sourced from ws1_odools
     let addons_paths = config_entry.addons_paths_sourced();
@@ -437,7 +437,7 @@ fn test_config_file_sources_multiple_workspace_folders_and_shadowing() {
     // ws1 odools.toml
     let ws1_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         python_path = "python"
     "#;
     let ws1_odools = ws1.child("odools.toml");
@@ -446,7 +446,7 @@ fn test_config_file_sources_multiple_workspace_folders_and_shadowing() {
     // ws2 odools.toml
     let ws2_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         python_path = "python"
     "#;
     let ws2_odools = ws2.child("odools.toml");
@@ -458,8 +458,8 @@ fn test_config_file_sources_multiple_workspace_folders_and_shadowing() {
 
     let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
 
-    // There should be only one config entry for "root" (merged)
-    let root_entry = config_file.config.iter().find(|c| c.name == "root").unwrap();
+    // There should be only one config entry for "default" (merged)
+    let root_entry = config_file.config.iter().find(|c| c.name == "default").unwrap();
 
     // The merged python_path should be "python" (from ws1, as it is merged in order)
     assert_eq!(root_entry.python_path_sourced().as_ref().unwrap().value(), "python");
@@ -481,7 +481,7 @@ fn test_config_file_sources_json_serialization() {
 
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
     "#;
     ws1.child("odools.toml").write_str(toml_content).unwrap();
 
@@ -493,7 +493,7 @@ fn test_config_file_sources_json_serialization() {
     // Serialize to JSON and check sources for python_path and addons_paths
     let json = serde_json::to_value(&config_file).unwrap();
     let config_arr = json.get("config").unwrap().as_array().unwrap();
-    let root = config_arr.iter().find(|c| c.get("name").unwrap() == "root").unwrap();
+    let root = config_arr.iter().find(|c| c.get("name").unwrap() == "default").unwrap();
 
     // python_path should have $default in sources
     let python_path = root.get("python_path").unwrap();
@@ -546,7 +546,7 @@ fn test_no_conflict_when_config_files_point_to_same_odoo_path() {
     let ws1_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         odoo_path = "{}"
     "#, ws1.path().sanitize());
     ws1.child("odools.toml").write_str(&ws1_toml).unwrap();
@@ -560,7 +560,7 @@ fn test_no_conflict_when_config_files_point_to_same_odoo_path() {
     let result = get_configuration(&ws_folders);
     assert!(result.is_ok());
     let (config_map, _config_file) = result.unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(config.odoo_path.as_ref().unwrap(), &ws1.path().sanitize());
 }
 
@@ -575,7 +575,7 @@ fn test_conflict_between_config_files_on_refresh_mode() {
     // ws1 config: refresh_mode = "onSave"
     let ws1_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         refresh_mode = "on_save"
     "#;
     ws1.child("odools.toml").write_str(ws1_toml).unwrap();
@@ -583,7 +583,7 @@ fn test_conflict_between_config_files_on_refresh_mode() {
     // ws2 config: refresh_mode = "adaptive"
     let ws2_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         refresh_mode = "adaptive"
     "#;
     ws2.child("odools.toml").write_str(ws2_toml).unwrap();
@@ -629,7 +629,7 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
     let ws1_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         odoo_path = "{}"
         addons_paths = [
             "{}",
@@ -643,7 +643,7 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
     let ws2_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         odoo_path = "{}"
         addons_paths = [
             "{}",
@@ -664,7 +664,7 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
     let result = get_configuration(&ws_folders);
     assert!(result.is_ok());
     let (config_map, config_file) = result.unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
 
     // addons_paths should include shared_addons, ws1_addons, ws2_addons (order not guaranteed, but all present)
@@ -680,7 +680,7 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
     let shared_addons_sources: Vec<_> = config_file
         .config
         .iter()
-        .find(|c| c.name == "root")
+        .find(|c| c.name == "default")
         .unwrap()
         .addons_paths_sourced()
         .iter()
@@ -719,7 +719,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     let parent_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}",
             "{}"
@@ -733,7 +733,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     let ws_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}"
         ]
@@ -748,7 +748,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
 
     // With override, only workspace's addons_paths should be present
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(config.addons_paths, vec![ws_addons.path().sanitize()].into_iter().collect::<HashSet<_>>());
 
     // Now test with merge: both parent and workspace addons_paths should be present
@@ -756,7 +756,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     let ws_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}"
         ]
@@ -767,7 +767,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
 
     // Re-run config
     let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
-    let config2 = config_map2.get("root").unwrap();
+    let config2 = config_map2.get("default").unwrap();
     let expected = vec![
         parent_addons1.path().sanitize(),
         parent_addons2.path().sanitize(),
@@ -788,12 +788,12 @@ fn test_conflict_and_merge_of_boolean_fields() {
     // --- Conflict: file_cache differs between workspaces ---
     let ws1_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         file_cache = true
     "#;
     let ws2_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         file_cache = false
     "#;
     ws1.child("odools.toml").write_str(ws1_toml).unwrap();
@@ -810,7 +810,7 @@ fn test_conflict_and_merge_of_boolean_fields() {
     // --- Merge: file_cache set in parent, not in workspace ---
     let parent_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         file_cache = false
         ac_filter_model_names = false
     "#;
@@ -818,7 +818,7 @@ fn test_conflict_and_merge_of_boolean_fields() {
 
     let ws1_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         # file_cache not set, should inherit from parent
         ac_filter_model_names = true
     "#;
@@ -828,7 +828,7 @@ fn test_conflict_and_merge_of_boolean_fields() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(config.file_cache, false); // inherited from parent
     assert_eq!(config.ac_filter_model_names, true); // overridden by workspace
 }
@@ -851,7 +851,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     let toml_content = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}",
             "{}"
@@ -867,7 +867,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_lowercase());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // Should only have one normalized path for the addon
     let mut normalized_addon = ws_folder.path().sanitize();
@@ -881,7 +881,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     let toml_content_slash = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}"
         ]
@@ -891,14 +891,14 @@ fn test_path_case_and_trailing_slash_normalization() {
     ws_folder.child("odools.toml").write_str(&toml_content_slash).unwrap();
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert!(config.addons_paths.iter().any(|p| p == &normalized_addon));
 
     // Now test with only the non-slash version
     let toml_content_noslash = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}"
         ]
@@ -908,7 +908,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     ws_folder.child("odools.toml").write_str(&toml_content_noslash).unwrap();
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert!(config.addons_paths.iter().any(|p| p == &normalized_addon));
 }
 
@@ -931,7 +931,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
         ac_filter_model_names = false
 
         [[config]]
-        name = "root"
+        name = "default"
         extends = "mid"
         diag_missing_imports = "only_odoo"
     "#;
@@ -940,7 +940,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     // Workspace odools.toml: overrides only root
     let ws_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         ac_filter_model_names = true
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml).unwrap();
@@ -949,7 +949,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // Should inherit file_cache from mid, auto_save_delay from base, diag_missing_imports from root, ac_filter_model_names from workspace
     assert_eq!(config.file_cache, false);
@@ -970,14 +970,14 @@ fn test_extends_chain_multiple_profiles_and_order() {
         file_cache = false
 
         [[config]]
-        name = "root"
+        name = "default"
         extends = "mid"
         diag_missing_imports = "only_odoo"
     "#;
     temp.child("odools.toml").write_str(parent_toml_swapped).unwrap();
 
     let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
-    let config2 = config_map2.get("root").unwrap();
+    let config2 = config_map2.get("default").unwrap();
     assert_eq!(config2.file_cache, false);
     assert_eq!(config2.auto_save_delay, 1111);
     assert_eq!(format!("{:?}", config2.diag_missing_imports).to_lowercase(), "onlyodoo");
@@ -998,14 +998,14 @@ fn test_extends_chain_multiple_profiles_and_order() {
         file_cache = false
 
         [[config]]
-        name = "root"
+        name = "default"
         extends = "mid"
         diag_missing_imports = "only_odoo"
     "#;
     temp.child("odools.toml").write_str(parent_toml_mid_root).unwrap();
 
     let (config_map3, _config_file3) = get_configuration(&ws_folders).unwrap();
-    let config3 = config_map3.get("root").unwrap();
+    let config3 = config_map3.get("default").unwrap();
     // Should still resolve the chain correctly
     assert_eq!(config3.file_cache, false);
     assert_eq!(config3.auto_save_delay, 1111);
@@ -1032,7 +1032,7 @@ fn test_extends_cycle_detection() {
         file_cache = false
 
         [[config]]
-        name = "root"
+        name = "default"
         extends = "mid"
         diag_missing_imports = "only_odoo"
     "#;
@@ -1040,7 +1040,7 @@ fn test_extends_cycle_detection() {
 
     let ws_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         ac_filter_model_names = true
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml).unwrap();
@@ -1062,7 +1062,7 @@ fn test_extends_nonexistent_profile_error() {
     // Parent odools.toml: root extends a non-existent profile "doesnotexist"
     let parent_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         extends = "doesnotexist"
         file_cache = false
     "#;
@@ -1085,7 +1085,7 @@ fn test_invalid_toml_config() {
     // Invalid TOML: missing closing quote
     let invalid_toml = r#"
         [[config]]
-        name = "root"
+        name = "default"
         file_cache = true
         python_path = "python
     "#;
@@ -1105,7 +1105,7 @@ fn test_malformed_config_missing_required_fields() {
     let ws_folder = temp.child("workspace1");
     ws_folder.create_dir_all().unwrap();
 
-    // Malformed config: missing 'name' field, but should default to "root"
+    // Malformed config: missing 'name' field, but should default to "default"
     let toml_missing_name = r#"
         [[config]]
         file_cache = true
@@ -1115,11 +1115,11 @@ fn test_malformed_config_missing_required_fields() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    // Should not error, should default name to "root"
+    // Should not error, should default name to "default"
     let result = get_configuration(&ws_folders);
     assert!(result.is_ok());
     let (config_map, _) = result.unwrap();
-    assert!(config_map.contains_key("root"));
+    assert!(config_map.contains_key("default"));
 
     // Malformed config: completely empty config
     let empty_toml = "";
@@ -1128,8 +1128,8 @@ fn test_malformed_config_missing_required_fields() {
     let result = get_configuration(&ws_folders);
     assert!(result.is_ok());
     let (config_map, _) = result.unwrap();
-    // Should still have a default "root" config entry
-    assert!(config_map.contains_key("root"));
+    // Should still have a default "default" config entry
+    assert!(config_map.contains_key("default"));
 }
 
 #[test]
@@ -1153,7 +1153,7 @@ fn test_template_variable_expansion_userhome_and_workspacefolder() {
     let toml_content = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "${{userHome}}/my_home_addons",
             "${{workspaceFolder:ws1}}"
@@ -1166,7 +1166,7 @@ fn test_template_variable_expansion_userhome_and_workspacefolder() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // Both expanded paths should be present in addons_paths
     let expected_home_addon = user_home.join("my_home_addons").sanitize();
@@ -1197,7 +1197,7 @@ fn test_config_with_relative_addons_paths() {
     // Write odools.toml with relative paths
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "./addons1",
             "./addons2"
@@ -1209,7 +1209,7 @@ fn test_config_with_relative_addons_paths() {
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // The expected absolute, sanitized paths
     let expected1 = ws.child("addons1").path().sanitize();
@@ -1240,7 +1240,7 @@ fn test_relative_addons_paths_in_parent_config() {
     // Write odools.toml in parent directory (temp), with relative paths
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "./addons1",
             "./addons2"
@@ -1253,7 +1253,7 @@ fn test_relative_addons_paths_in_parent_config() {
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
 
     // The expected absolute, sanitized paths
     let expected1 = addons1.path().sanitize();
@@ -1272,7 +1272,7 @@ fn test_auto_save_delay_boundaries() {
     // Below minimum (should clamp to 1000)
     let toml_content_min = r#"
         [[config]]
-        name = "root"
+        name = "default"
         auto_save_delay = 500
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_min).unwrap();
@@ -1281,31 +1281,31 @@ fn test_auto_save_delay_boundaries() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(config.auto_save_delay, 1000);
 
     // Above maximum (should clamp to 15000)
     let toml_content_max = r#"
         [[config]]
-        name = "root"
+        name = "default"
         auto_save_delay = 20000
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_max).unwrap();
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(config.auto_save_delay, 15000);
 
     // Within bounds (should keep value)
     let toml_content_ok = r#"
         [[config]]
-        name = "root"
+        name = "default"
         auto_save_delay = 1234
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_ok).unwrap();
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(config.auto_save_delay, 1234);
 }
 
@@ -1326,7 +1326,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     // Write odools.toml in temp with odoo_path using $version
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         "$version" = "18.0"
         odoo_path = "./${version}/odoo"
     "#;
@@ -1337,7 +1337,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     ws_folders.insert(S!("ws"), temp.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
     assert_eq!(
         config.odoo_path.as_ref().unwrap(),
@@ -1362,7 +1362,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     ws_folders.insert(S!("ws18"), ws_18_addons.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
     assert_eq!(
         config.odoo_path.as_ref().unwrap(),
@@ -1387,7 +1387,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     ws_folders.insert(S!("ws17"), ws_17_addons.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("17.0").child("odoo").path().sanitize();
     assert_eq!(
         config.odoo_path.as_ref().unwrap(),
@@ -1403,7 +1403,7 @@ fn test_odoo_path_with_version_from_manifest_file() {
     // Write odools.toml in temp with odoo_path using $version
     let toml_content = r#"
         [[config]]
-        name = "root"
+        name = "default"
         odoo_path = "./${version}/odoo"
     "#;
     temp.child("odools.toml").write_str(toml_content).unwrap();
@@ -1436,7 +1436,7 @@ fn test_odoo_path_with_version_from_manifest_file() {
     ws_folders.insert(S!("ws18"), ws_18_addons.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
     assert_eq!(
         config.odoo_path.as_ref().unwrap(),
@@ -1462,7 +1462,7 @@ fn test_odoo_path_with_version_from_manifest_file() {
     ws_folders.insert(S!("ws17"), ws_17_addons.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("17.0").child("odoo").path().sanitize();
     assert_eq!(
         config.odoo_path.as_ref().unwrap(),
@@ -1485,7 +1485,7 @@ fn test_addons_paths_unset_vs_empty_behavior() {
     // Case 1: addons_paths is unset (should add workspace if valid)
     let toml_unset = r#"
         [[config]]
-        name = "root"
+        name = "default"
     "#;
     ws.child("odools.toml").write_str(toml_unset).unwrap();
 
@@ -1493,32 +1493,32 @@ fn test_addons_paths_unset_vs_empty_behavior() {
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert!(config.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when addons_paths is unset");
 
     // Case 2: addons_paths is set to empty list (should NOT add workspace)
     let toml_empty = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = []
     "#;
     ws.child("odools.toml").write_str(toml_empty).unwrap();
 
     let (config_map2, _) = get_configuration(&ws_folders).unwrap();
-    let config2 = config_map2.get("root").unwrap();
+    let config2 = config_map2.get("default").unwrap();
     assert!(!config2.addons_paths.contains(&ws.path().sanitize()), "Workspace should NOT be added to addons_paths when addons_paths is set to []");
 
     // Case 3: addons_paths is set to empty list  but add_workspace_addon_path to true (should add workspace)
     let toml_empty = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = []
         add_workspace_addon_path = true
     "#;
     ws.child("odools.toml").write_str(toml_empty).unwrap();
 
     let (config_map3, _) = get_configuration(&ws_folders).unwrap();
-    let config3 = config_map3.get("root").unwrap();
+    let config3 = config_map3.get("default").unwrap();
     assert!(config3.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when add_workspace_addon_path is true");
 }
 
@@ -1545,7 +1545,7 @@ fn test_addons_merge_override_cases() {
     let parent_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}"
         ]
@@ -1557,7 +1557,7 @@ fn test_addons_merge_override_cases() {
     let child_toml = format!(
         r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = [
             "{}"
         ]
@@ -1571,7 +1571,7 @@ fn test_addons_merge_override_cases() {
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
     let (config_map, _) = get_configuration(&ws_folders).unwrap();
-    let config = config_map.get("root").unwrap();
+    let config = config_map.get("default").unwrap();
     assert_eq!(
         config.addons_paths,
         vec![ws_addons.path().sanitize()].into_iter().collect(),
@@ -1581,7 +1581,7 @@ fn test_addons_merge_override_cases() {
     // --- Case 2: Child sets addons_merge = override, but does not set addons_paths, should add ws as addons_path if valid ---
     let child_toml2 = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_merge = "override"
     "#;
     ws.child("odools.toml").write_str(child_toml2).unwrap();
@@ -1592,7 +1592,7 @@ fn test_addons_merge_override_cases() {
     ws_mod3.child("__manifest__.py").touch().unwrap();
 
     let (config_map2, _) = get_configuration(&ws_folders).unwrap();
-    let config2 = config_map2.get("root").unwrap();
+    let config2 = config_map2.get("default").unwrap();
     assert!(
         config2.addons_paths.contains(&ws.path().sanitize()),
         "With addons_merge=override and no addons_paths, workspace should be added if valid"
@@ -1601,14 +1601,14 @@ fn test_addons_merge_override_cases() {
     // --- Case 3: Child sets addons_merge = override and sets addons_paths as [] ---
     let child_toml3 = r#"
         [[config]]
-        name = "root"
+        name = "default"
         addons_paths = []
         addons_merge = "override"
     "#;
     ws.child("odools.toml").write_str(child_toml3).unwrap();
 
     let (config_map3, _) = get_configuration(&ws_folders).unwrap();
-    let config3 = config_map3.get("root").unwrap();
+    let config3 = config_map3.get("default").unwrap();
     assert!(
         config3.addons_paths.is_empty(),
         "With addons_merge=override and addons_paths=[], no addons paths should be present"

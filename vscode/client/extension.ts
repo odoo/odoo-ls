@@ -611,7 +611,7 @@ function handleMigration(context){
 export function getCurrentConfigEntry(context: ExtensionContext): any | undefined {
     if (!CONFIG_FILE || !CONFIG_FILE.config) return undefined;
     const selected = workspace.getConfiguration().get("Odoo.selectedProfile") as string;
-    const configName = selected && selected !== "" ? selected : "root";
+    const configName = selected && selected !== "" ? selected : "default";
     return CONFIG_FILE.config.find((c: any) => c.name === configName);
 }
 
