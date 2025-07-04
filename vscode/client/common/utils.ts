@@ -28,5 +28,5 @@ export function getNonce() {
 // Config related utils
 
 export async function getCurrentConfig(context: ExtensionContext) {
-	return workspace.getConfiguration().get('Odoo.selectedConfiguration');
+	return workspace.getConfiguration().get('Odoo.selectedProfile');
 }
