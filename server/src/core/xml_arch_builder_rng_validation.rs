@@ -62,12 +62,12 @@ impl XmlArchBuilder {
 
     fn load_menuitem(&mut self, session: &mut SessionInfo, node: &Node, is_submenu: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "menuitem" { return false; }
-        let mut found_id = false;
+        let mut found_id = None;
         let has_parent = node.attribute("parent").is_some();
         for attr in node.attributes() {
             match attr.name() {
                 "id" => {
-                    found_id = true;
+                    found_id = Some(attr.value().to_string());
                 },
                 "sequence" => {
                     if attr.value().parse::<i32>().is_err() {
@@ -133,7 +133,7 @@ impl XmlArchBuilder {
                 }
             }
         }
-        if !found_id {
+        if found_id.is_none() {
             diagnostics.push(Diagnostic::new(
                 Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                 Some(DiagnosticSeverity::ERROR),
@@ -158,16 +158,17 @@ impl XmlArchBuilder {
                 self.load_menuitem(session, &child, true, diagnostics);
             }
         }
+        self.on_operation_creation(session, found_id, node, diagnostics);
         true
     }
 
     fn load_record(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "record" { return false; }
         let mut found_model = false;
-
+        let mut found_id = None;
         for attr in node.attributes() {
             match attr.name() {
-                "id" => {},
+                "id" => {found_id = Some(attr.value().to_string());},
                 "forcecreate" => {},
                 "model" => {found_model = true;},
                 "uid" => {},
@@ -209,6 +210,7 @@ impl XmlArchBuilder {
                     None));
             }
         }
+        self.on_operation_creation(session, found_id, node, diagnostics);
         true
     }
 
@@ -456,6 +458,8 @@ impl XmlArchBuilder {
     fn load_template(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
+        let found_id = node.attribute("id").map(|s| s.to_string());
+        self.on_operation_creation(session, found_id, node, diagnostics);
         true
     }
 
@@ -471,9 +475,9 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
-        let has_id = node.attribute("id").is_some();
+        let found_id = node.attribute("id").map(|s| s.to_string());
         let has_search = node.attribute("search").is_some();
-        if has_id && has_search {
+        if found_id.is_some() && has_search {
             diagnostics.push(Diagnostic::new(
                 Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                 Some(DiagnosticSeverity::ERROR),
@@ -483,7 +487,7 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
-        if !has_id && !has_search {
+        if found_id.is_none() && !has_search {
             diagnostics.push(Diagnostic::new(
                 Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                 Some(DiagnosticSeverity::ERROR),
@@ -493,11 +497,13 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
+        self.on_operation_creation(session, found_id, node, diagnostics);
         true
     }
 
     fn load_act_window(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "act_window" { return false; }
+        let mut found_id = None;
         for attr in ["id", "name", "res_model"] {
             if node.attribute(attr).is_none() {
                 diagnostics.push(Diagnostic::new(
@@ -508,6 +514,9 @@ impl XmlArchBuilder {
                     format!("act_window node must contain a {} attribute", attr),
                     None,
                     None));
+            }
+            if attr == "id" {
+                found_id = Some(node.attribute(attr).unwrap().to_string());
             }
         }
         for attr in node.attributes() {
@@ -562,11 +571,13 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
+        self.on_operation_creation(session, found_id, node, diagnostics);
         true
     }
 
     fn load_report(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "report" { return false; }
+        let mut found_id = None;
         for attr in ["string", "model", "name"] {
             if node.attribute(attr).is_none() {
                 diagnostics.push(Diagnostic::new(
@@ -581,7 +592,8 @@ impl XmlArchBuilder {
         }
         for attr in node.attributes() {
             match attr.name() {
-                "id" | "print_report_name" | "report_type" | "multi"| "menu" | "keyword" | "file" |
+                "id" => { found_id = Some(attr.value().to_string()); },
+                "print_report_name" | "report_type" | "multi"| "menu" | "keyword" | "file" |
                 "xml" | "parser" | "auto" | "header" | "attachment" | "attachment_use" | "groups" | "paperformat" | "usage" => {},
                 _ => {
                     diagnostics.push(Diagnostic::new(
@@ -605,6 +617,7 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
+        self.on_operation_creation(session, found_id, node, diagnostics);
         true
     }
 

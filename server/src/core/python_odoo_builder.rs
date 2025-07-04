@@ -6,6 +6,7 @@ use lsp_types::MessageType;
 use ruff_python_ast::Expr;
 use lsp_types::{Diagnostic, ShowMessageParams, notification::Notification};
 use tracing::error;
+use weak_table::PtrWeakHashSet;
 
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
@@ -49,6 +50,13 @@ impl PythonOdooBuilder {
             Some(model) => model.borrow_mut().add_symbol(session, sym.clone()),
             None => {
                 let model = Model::new(model_name.clone(), sym.clone());
+                session.sync_odoo.modules.get("base").map(|module| {
+                    let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
+                    let module = module.upgrade().unwrap();
+                    let mut module = module.borrow_mut();
+                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name).or_insert(PtrWeakHashSet::new());
+                    set.insert(sym.clone());
+                });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
@@ -294,17 +302,29 @@ impl PythonOdooBuilder {
         let symbol = &self.symbol.clone();
         let odoo_symbol_tree = symbol.borrow().get_main_entry_tree(session);
         let mut sym = symbol.borrow_mut();
-        if odoo_symbol_tree.0.len() == 2 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "models" &&
+        if session.sync_odoo.full_version < S!("18.1") && odoo_symbol_tree.0.len() == 2 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "models" &&
             (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel") {
-            //we don't want to compare these classes with themselves
+            //we don't want to compare these classes with themselves (<18.1)
             return false;
-        } else {
+        } else if session.sync_odoo.full_version >= S!("18.1") && odoo_symbol_tree.0.len() == 3 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "orm" && odoo_symbol_tree.0[2] == "models" &&
+            (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel") {
+            //we don't want to compare these classes with themselves (> 18.1)
+            return false;
+        }else {
             if sym.as_class_sym().bases.is_empty() {
                 return false;
             }
-            let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]), u32::MAX);
-            let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]), u32::MAX);
-            let transient = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]), u32::MAX);
+            let mut base_model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]);
+            let mut model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]);
+            let mut transient_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]);
+            if session.sync_odoo.full_version >= S!("18.1") {
+                base_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]);
+                model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("Model")]);
+                transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("TransientModel")]);
+            }
+            let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
+            let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &model_tree, u32::MAX);
+            let transient = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &transient_tree, u32::MAX);
             if base_model.is_empty() || model.is_empty() || transient.is_empty() {
                 //one of them is not already loaded, but that's not really an issue, as now odoo step has been merged
                 //with arch eval step, some files will be odooed before loading the orm fully. In this case we should
