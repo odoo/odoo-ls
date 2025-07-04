@@ -2477,10 +2477,36 @@ impl Symbol {
 
     pub fn is_field_class(&self, session: &mut SessionInfo) -> bool {
         let tree = flatten_tree(&self.get_main_entry_tree(session));
-        if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-            if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
-        "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
-                return true;
+        if session.sync_odoo.full_version <= S!("18.0") {
+            if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+                if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+            "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+                    return true;
+                }
+            }
+        } else {
+            if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" {
+                return tree[2] == "fields_misc" && tree[3] == "Boolean" ||
+                    tree[2] == "fields_numeric" && tree[3] == "Integer" ||
+                    tree[2] == "fields_numeric" && tree[3] == "Float" ||
+                    tree[2] == "fields_numeric" && tree[3] == "Monetary" ||
+                    tree[2] == "fields_textual" && tree[3] == "Char" ||
+                    tree[2] == "fields_textual" && tree[3] == "Text" ||
+                    tree[2] == "fields_textual" && tree[3] == "Html" ||
+                    tree[2] == "fields_temporal" && tree[3] == "Date" ||
+                    tree[2] == "fields_temporal" && tree[3] == "Datetime" ||
+                    tree[2] == "fields_binary" && tree[3] == "Binary" ||
+                    tree[2] == "fields_binary" && tree[3] == "Image" ||
+                    tree[2] == "fields_selection" && tree[3] == "Selection" ||
+                    tree[2] == "fields_reference" && tree[3] == "Reference" ||
+                    tree[2] == "fields_relational" && tree[3] == "Many2one" ||
+                    tree[2] == "fields_reference" && tree[3] == "Many2oneReference" ||
+                    tree[2] == "fields_misc" && tree[3] == "Json" ||
+                    tree[2] == "fields_properties" && tree[3] == "Properties" ||
+                    tree[2] == "fields_properties" && tree[3] == "PropertiesDefinition" ||
+                    tree[2] == "fields_relational" && tree[3] == "One2many" ||
+                    tree[2] == "fields_relational" && tree[3] == "Many2many" ||
+                    tree[2] == "fields_misc" && tree[3] == "Id";
             }
         }
         false
@@ -2488,12 +2514,9 @@ impl Symbol {
 
     pub fn is_specific_field_class(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
         let tree = flatten_tree(&self.get_main_entry_tree(session));
-        if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-            if field_names.contains(&tree[2].as_str()) {
-                return true;
-            }
-        }
-        false
+        return self.is_field_class(session) && field_names.iter().any(|&name| {
+            tree.last().unwrap() == name
+        })
     }
 
     pub fn is_specific_field(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {

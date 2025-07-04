@@ -781,7 +781,7 @@ impl PythonArchBuilder {
         if add_noqa {
             session.noqas_stack.pop();
         }
-        PythonArchBuilderHooks::on_class_def(session, sym);
+        PythonArchBuilderHooks::on_class_def(session, &self.entry_point, sym);
         Ok(())
     }
 

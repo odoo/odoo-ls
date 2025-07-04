@@ -266,6 +266,18 @@ For compute, search, inverse arguments, this error is shown when the method is n
 The compute method is set to modify a certain field(s).
 Consider marking the modified field with the compute method
 
+### OLS30329
+"Unknown XML ID"
+The XML ID you referenced has not been found in any XML in this module or its dependencies
+
+### OLS30330
+"Unspecified module. Add the module name before the XML ID: 'module.xml_id'"
+You provided an XML ID that has no module specified. Specify the module which XML_ID belong to with 'module.xml_id'
+
+### OLS30331
+"Unknown module"
+The given module is unknown
+
 ### OLS30400
 "Invalid attribute"
 odoo, openerp and data nodes can not contain this attribute.
@@ -304,3 +316,7 @@ This attribute is not valid in a menuitem node
 
 ### OLS30445
 "Data file should be an XML or a CSV file"
+
+### OLS30446
+"XML ID should not contain more than one dot"
+An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
