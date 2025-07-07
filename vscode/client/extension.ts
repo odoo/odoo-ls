@@ -740,7 +740,15 @@ async function showConfigProfileQuickPick(context: ExtensionContext) {
   }
 
   // Remove the special __all__ key for the list, but keep for preview
-  const profiles = Object.keys(CONFIG_HTML_MAP).filter(k => k !== "__all__");
+  let profiles = Object.keys(CONFIG_HTML_MAP).filter(k => k !== "__all__");
+  // Filter out profiles that are abstract (abstract === true)
+  if (CONFIG_FILE && Array.isArray(CONFIG_FILE.config)) {
+    const abstractProfiles = new Set(
+      CONFIG_FILE.config.filter((c: any) => c.abstract === true).map((c: any) => c.name)
+    );
+    profiles = profiles.filter(name => !abstractProfiles.has(name));
+  }
+
   if (profiles.length === 0) {
     window.showErrorMessage("No configuration profiles found.");
     return;

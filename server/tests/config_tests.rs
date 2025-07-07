@@ -1614,3 +1614,60 @@ fn test_addons_merge_override_cases() {
         "With addons_merge=override and addons_paths=[], no addons paths should be present"
     );
 }
+
+
+#[test]
+fn test_detect_version_variable_creates_profiles_for_each_version() {
+    let temp = TempDir::new().unwrap();
+    let ws1 = temp.child("ws1");
+    ws1.create_dir_all().unwrap();
+
+    // Create ws1/17.0/addon17/__manifest__.py
+    let v17 = ws1.child("17.0");
+    let addon17 = v17.child("addon17");
+    addon17.create_dir_all().unwrap();
+    addon17.child("__manifest__.py").touch().unwrap();
+
+    // Create ws1/18.0/addon18/__manifest__.py
+    let v18 = ws1.child("18.0");
+    let addon18 = v18.child("addon18");
+    addon18.create_dir_all().unwrap();
+    addon18.child("__manifest__.py").touch().unwrap();
+
+    // Write odools.toml in ws1 with $version = "${workspaceFolder}${detectVersion}"
+    let toml_content = r#"
+        [[config]]
+        name = "root"
+        "$version" = "${workspaceFolder}/${detectVersion}"
+        addons_paths = [
+            "./${version}"
+        ]
+    "#;
+    ws1.child("odools.toml").write_str(toml_content).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
+
+    let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
+
+    // There should be three profiles: "root" (abstract), "root-17.0", "root-18.0"
+    assert!(config_map.contains_key("root"), "Should contain abstract root profile");
+    assert!(config_map.contains_key("root-17.0"), "Should contain root-17.0 profile");
+    assert!(config_map.contains_key("root-18.0"), "Should contain root-18.0 profile");
+
+    // The abstract profile should be marked as abstract
+    let abstract_entry = config_file.config.iter().find(|c| c.name == "root").unwrap();
+    assert!(abstract_entry.is_abstract(), "Abstract profile should be marked as abstract");
+
+    // The versioned profiles should not be abstract and should have correct version
+    let v17_entry = config_file.config.iter().find(|c| c.name == "root-17.0").unwrap();
+    let v18_entry = config_file.config.iter().find(|c| c.name == "root-18.0").unwrap();
+    assert!(!v17_entry.is_abstract(), "root-17.0 should not be abstract");
+    assert!(!v18_entry.is_abstract(), "root-18.0 should not be abstract");
+
+    // The addons_paths for each versioned profile should point to the correct version folder
+    let v17_path = v17.path().sanitize();
+    let v18_path = v18.path().sanitize();
+    assert!(v17_entry.addons_paths_sourced().as_ref().unwrap().iter().any(|s| s.value() == &v17_path));
+    assert!(v18_entry.addons_paths_sourced().as_ref().unwrap().iter().any(|s| s.value() == &v18_path));
+}

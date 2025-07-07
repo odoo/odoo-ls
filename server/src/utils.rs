@@ -216,6 +216,9 @@ impl MaxTextSize for TextSize {
     const MAX: TextSize = TextSize::new(u32::MAX);
 }
 
+pub fn has_template(template: &str) -> bool {
+    TEMPLATE_REGEX.is_match(template)
+}
 
 pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Option<String> {
     let mut invalid = false;

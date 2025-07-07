@@ -5,12 +5,18 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
 use itertools::Itertools;
+use regex::Regex;
 use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::utils::{fill_validate_path, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
+use crate::utils::{fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
+
+
+static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r#"^(\D+~)?\d+\.\d+$"#).unwrap()
+});
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -216,7 +222,7 @@ impl ConfigFile {
             entry_html.push_str("<div class=\"toml-row\"><div class=\"toml-left\"><b>[[config]]</b></div><div class=\"toml-right\"></div></div>\n");
             if let serde_json::Value::Object(map) = entry_val {
                 let order = [
-                    "name", "extends", "odoo_path", "addons_paths", "addons_merge",
+                    "name", "extends", "odoo_path", "abstract", "addons_paths", "addons_merge",
                     "python_path", "additional_stubs", "additional_stubs_merge",
                     "refresh_mode", "file_cache", "diag_missing_imports",
                     "ac_filter_model_names", "auto_save_delay", "add_workspace_addon_path",
@@ -240,6 +246,7 @@ impl ConfigFile {
 pub struct Sourced<T> {
     value: T,
     sources: HashSet<String>,
+    info: String,
 }
 
 impl<T> Sourced<T> {
@@ -256,6 +263,7 @@ impl<'a, T: Default> Default for Sourced<T> {
         Sourced {
             value: T::default(),
             sources: HashSet::from([S!("$default")]),
+            info: String::new(),
         }
     }
 }
@@ -267,6 +275,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Sourced<T> {
         Ok(Sourced {
             value,
             sources: HashSet::new(),
+            info: String::new(),
         })
     }
 }
@@ -275,7 +284,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Sourced<T> {
 /// By adding only unique values to the source set values but combining the source
 fn merge_sourced_iters<T, I>(iter1: I, iter2: I) -> impl Iterator<Item = Sourced<T>>
 where
-    T: Clone + Eq + Hash,
+    T: Clone + Eq + Hash + Default,
     I: IntoIterator<Item = Sourced<T>>,
 {
     group_sourced_iters(
@@ -287,7 +296,7 @@ where
 /// Groups `Sourced<T>` items by their value, merging their sources into a single `Sourced<T>`.
 fn group_sourced_iters<T, I>(iter: I) -> impl Iterator<Item = Sourced<T>>
 where
-    T: Clone + Eq + Hash,
+    T: Clone + Eq + Hash + Default,
     I: IntoIterator<Item = Sourced<T>>,
 {
     iter.into_iter()
@@ -299,6 +308,7 @@ where
             .into_iter()
             .flat_map(|s| s.sources)
             .collect::<HashSet<_>>(),
+        ..Default::default()
     })
 }
 
@@ -383,7 +393,7 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
                         let mut parts = version.trim_matches('"').split('.');
                         (parts.next().map(|s| s.to_string()), parts.next().map(|s| s.to_string()))
                     }) {
-                        return Sourced { value: S!(format!("{}.{}", major, minor)), sources: var.sources.clone() };
+                        return Sourced { value: S!(format!("{}.{}", major, minor)), sources: var.sources.clone(), ..Default::default() };
                     }
                     return var;
                 }
@@ -394,7 +404,7 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
             let Some(suffix) = var_pb.components().last() else {
                 unreachable!("Invalid variable value {:?}", &filled_path);
             };
-            Sourced { value: S!(suffix.as_os_str().to_string_lossy()), sources: var.sources.clone() }
+            Sourced { value: S!(suffix.as_os_str().to_string_lossy()), sources: var.sources.clone(), ..Default::default() }
         },
         // Not a valid path, just return the variable as is
         None => var,
@@ -448,10 +458,13 @@ pub struct ConfigEntryRaw {
 
     #[serde(default, rename(serialize = "$version", deserialize = "$version"), serialize_with = "serialize_option_as_default")]
     version: Option<Sourced<String>>,
+
+    #[serde(skip_deserializing, rename(serialize = "abstract"))]
+    abstract_: bool
 }
 
-impl ConfigEntryRaw {
-    pub fn new() -> Self {
+impl Default for ConfigEntryRaw {
+    fn default() -> Self {
         Self {
             name: default_name(),
             extends: None,
@@ -468,7 +481,14 @@ impl ConfigEntryRaw {
             auto_save_delay: None,
             add_workspace_addon_path: None,
             version: None,
+            abstract_: false,
         }
+    }
+}
+
+impl ConfigEntryRaw {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn python_path_sourced(&self) -> Option<&Sourced<String>> {
@@ -482,6 +502,9 @@ impl ConfigEntryRaw {
     }
     pub fn addons_paths_sourced(&self) -> &Option<Vec<Sourced<String>>> {
         &self.addons_paths
+    }
+    pub fn is_abstract(&self) -> bool {
+        self.abstract_
     }
 }
 
@@ -498,6 +521,7 @@ pub struct ConfigEntry {
     pub auto_save_delay: u64,
     pub stdlib: String,
     pub no_typeshed: bool,
+    pub abstract_: bool,
 }
 
 impl Default for ConfigEntry {
@@ -514,6 +538,7 @@ impl Default for ConfigEntry {
             auto_save_delay: 1000,
             stdlib: S!(""),
             no_typeshed: false,
+            abstract_: false,
         }
     }
 }
@@ -539,11 +564,20 @@ F: Fn(&String) -> bool,
         unreachable!("Expected at least one source for sourced_path: {:?}", sourced_path);
     };
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    // If it is a valid pattern, in $PATH, a valid alias or a valid absolute path: (no need to canonicalize like python3 for example)
-    fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate, var_map, &config_dir).map(|p| PathBuf::from(p).sanitize())
-    // If it is relative path it should work here
-    .or_else (|| std::fs::canonicalize(config_dir.join(sourced_path.value.clone())).map(|p| p.sanitize()).ok().filter(|p| predicate(&p)))
-    .map(|path| Sourced { value: path, sources: sourced_path.sources.clone() })
+    if has_template(&sourced_path.value) {
+        return fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate, var_map, &config_dir)
+        .map(|p| PathBuf::from(p).sanitize())
+        .map(|path| Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default()});
+    }
+    let mut path = PathBuf::from(&sourced_path.value);
+    if path.is_relative() {
+        path = config_dir.join(sourced_path.value.clone());
+    }
+    std::fs::canonicalize(path)
+    .map(|p| p.sanitize())
+    .ok()
+    .filter(|p| predicate(&p))
+    .map(|path| Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default()})
 }
 
 fn process_paths(
@@ -566,7 +600,6 @@ fn process_paths(
     entry.python_path = entry.python_path.as_ref()
         .and_then(|p| {
             if is_python_path(&p.value) {
-                // If it is already a valid executable like `python` or `python3`, we can just return it
                 Some(p.clone())
             } else {
                 fill_or_canonicalize(p, ws_folders, workspace_name, &is_python_path, var_map.clone())
@@ -633,7 +666,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
             MergeMethod::Override => child.addons_paths.clone(),
         };
         let additional_stubs = match child.additional_stubs_merge.clone().unwrap_or_default().value {
-            MergeMethod::Merge => match (child.addons_paths.clone(), parent.addons_paths.clone()) {
+            MergeMethod::Merge => match (child.additional_stubs.clone(), parent.additional_stubs.clone()) {
                 (Some(existing), Some(new)) => {
                     Some(existing.into_iter().chain(new.into_iter()).collect())
                 }
@@ -668,7 +701,8 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
             name: child.name.clone(),
             auto_save_delay,
             add_workspace_addon_path,
-            version
+            version,
+            ..Default::default()
         }
 }
 
@@ -786,27 +820,74 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
         }
     }
     apply_extends(&mut merged_config)?;
+    let mut new_configs = vec![];
+    for config in merged_config.values_mut() {
+        // If the config has no odoo_path, try to infer it from workspace folders
+        let Some(version_var) = config.version.clone() else {
+            continue;
+        };
+        let version_path = PathBuf::from(version_var.value());
+        if version_path.components().last().map(|c| c.as_os_str().to_string_lossy() == "${detectVersion}").unwrap_or(false) {
+            config.abstract_ = true;
+            let Some(parent_dir) = version_path.parent()  else {
+                continue;
+            };
+            let Some(parent_dir) = fill_or_canonicalize(
+                &{Sourced { value: parent_dir.sanitize(), sources: version_var.sources.clone(), ..Default::default() }},
+                ws_folders,
+                workspace_name,
+                &|p| PathBuf::from(p).is_dir(),
+                HashMap::new(),
+            ) else {
+                continue;
+            };
+            let parent_dir = PathBuf::from(parent_dir.value());
+            for entry in fs::read_dir(parent_dir).into_iter().flatten().flatten() {
+                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let dir_name = entry.file_name();
+                let dir_name_str = dir_name.to_string_lossy();
+                if VERSION_REGEX.is_match(&dir_name_str) {
+                    let mut new_entry = config.clone();
+                    new_entry.name = format!("{}-{}", config.name, dir_name_str);
+                    new_entry.abstract_ = false;
+                    new_entry.version = Some(Sourced { value: dir_name_str.to_string(), ..Default::default() });
+                    new_entry.extends = Some(config.name.clone());
+                    new_configs.push(new_entry);
+                }
+            }
+        }
+    }
+    for new_entry in new_configs {
+        merged_config.insert(new_entry.name.clone(), new_entry);
+    }
+
     // Process vars
-    merged_config.iter_mut()
-        .for_each(|(_, entry)| {
+    merged_config.values_mut()
+        .for_each(|entry| {
             // apply process_var to all vars
+            if entry.abstract_ { return; }
             entry.version = entry.version.clone().map(|v| process_version(v, ws_folders, workspace_name));
         });
     // Process paths in the merged config
-    merged_config.iter_mut()
-        .for_each(|(_, entry)| {
+    merged_config.values_mut()
+        .for_each(|entry| {
+            if entry.abstract_ { return; }
             process_paths(entry, ws_folders, workspace_name);
         });
     // Merge sourced paths
-    merged_config.iter_mut()
-        .for_each(|(_, entry)| {
+    merged_config.values_mut()
+        .for_each(|entry| {
+            if entry.abstract_ { return; }
             entry.addons_paths = entry.addons_paths.clone().map(|paths| group_sourced_iters(paths).collect());
             entry.additional_stubs = entry.additional_stubs.clone().map(|stubs| group_sourced_iters(stubs).collect());
         });
 
-    for (_, entry) in merged_config.iter_mut() {
+    for entry in merged_config.values_mut() {
+        if entry.abstract_ { continue; }
         if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
-            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]) };
+            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]), ..Default::default()};
             match entry.addons_paths {
                 Some(ref mut paths) => paths.push(addon_path),
                 None => entry.addons_paths = Some(vec![addon_path]),
@@ -891,6 +972,7 @@ fn merge_all_workspaces(
                 key.clone(),
                 "auto_save_delay".to_string(),
             )?;
+            merged_entry.abstract_ = merged_entry.abstract_ || raw_entry.abstract_;
         }
     }
     // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
@@ -903,7 +985,7 @@ fn merge_all_workspaces(
                             S!("More than one workspace folder is a valid odoo_path\nPlease set the odoo_path in the config file.")
                         );
                     }
-                    entry.odoo_path = Some(Sourced { value: path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{name}"))]) });
+                    entry.odoo_path = Some(Sourced { value: path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()});
                 }
             }
         }
@@ -926,6 +1008,7 @@ fn merge_all_workspaces(
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
                 auto_save_delay: clamp_auto_save_delay(raw_entry.auto_save_delay.map(|op| op.value).unwrap_or(1000)),
+                abstract_: raw_entry.abstract_,
                 ..Default::default()
             },
         );
