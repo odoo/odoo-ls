@@ -994,11 +994,14 @@ impl Odoo {
             Some(config) => config,
         };
         let config = config.and_then(|(ce, _)|{
-            let config_name = selected_config;
-            ce.get(&config_name).cloned().ok_or(format!("Unable to find selected configuration \"{config_name}\""))
+            ce.get(&selected_config).cloned().ok_or(format!("Unable to find selected configuration \"{}\"", &selected_config))
         });
         match config {
             Ok(config) => {
+                if config.abstract_ {
+                    session.show_message(MessageType::ERROR, format!("Selected configuration ({}) is abstract. Please select a valid configuration and restart.", selected_config));
+                    return;
+                }
                 SyncOdoo::init(session, config);
                 session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
                     (std::time::Instant::now() - start).as_secs(),

@@ -536,8 +536,6 @@ impl XmlArchBuilder {
                     }
                 },
                 "binding_views" => {
-                    let pattern = r"^([a-z]+(,[a-z]+)*)?$";
-                    let re = Regex::new(pattern).unwrap();
                     if !BINDING_VIEWS_RE.is_match(attr.value()) {
                         diagnostics.push(Diagnostic::new(
                             Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
