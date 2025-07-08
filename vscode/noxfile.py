@@ -61,32 +61,100 @@ def _setup_template_environment(session: nox.Session) -> None:
 def copy_dir(session: nox.Session, from_path, to_path):
     session.run("python3", "-c", "from dirsync import sync; sync(\'" + from_path + "\', \'" + to_path + "\', \'sync\', purge=True, create=True)")
 
+def build_specific_target(session: nox.Session, target: str, debug: bool) -> None:
+    status = "debug" if debug else "release"
+    print(f"Building {target} package in {status} mode")
+    rust_target = "unknown"
+    file_name = "odoo_ls_server"
+    take_pdb = False
+    if target == "win32-x64":
+        rust_target = "x86_64-pc-windows-msvc"
+        file_name = "odoo_ls_server.exe"
+        take_pdb = True
+    elif target == "win32-arm64":
+        rust_target = "aarch64-pc-windows-msvc"
+        file_name = "odoo_ls_server.exe"
+        take_pdb = True
+    elif target == "linux-x64":
+        rust_target = "x86_64-unknown-linux-gnu"
+    elif target == "linux-arm64":
+        rust_target = "aarch64-unknown-linux-gnu"
+    elif target == "alpine-x64":
+        rust_target = "x86_64-unknown-linux-musl"
+    elif target == "alpine-arm64":
+        rust_target = "aarch64-unknown-linux-musl"
+    elif target == "darwin-x64":
+        rust_target = "x86_64-apple-darwin"
+    elif target == "darwin-arm64":
+        rust_target = "aarch64-apple-darwin"
+    else:
+        print(f"Unknown target: {target}")
+        return
+    if not Path(f"../server/target/{rust_target}/{status}/{file_name}").is_file():
+        print(f"Unable to find odoo_ls_server binary for {target}, please build the server first.")
+        return
+    session.run("cp", f"../server/target/{rust_target}/{status}/{file_name}", file_name, external=True)
+    if take_pdb:
+        if Path(f"../server/target/{rust_target}/{status}/odoo_ls_server.pdb").is_file():
+            session.run("cp", f"../server/target/{rust_target}/{status}/odoo_ls_server.pdb", "odoo_ls_server.pdb", external=True)
+        else:
+            print(f"Unable to find odoo_ls_server.pdb for {target}, please build the server first.")
+            return
+    if debug:
+        session.run("vsce", "package", "--pre-release", "--target", target, external=True)
+    else:
+        session.run("vsce", "package", "--target", target, external=True)
+    session.run("rm", "-r", file_name, external=True)
+    if take_pdb:
+        session.run("rm", "-r", "odoo_ls_server.pdb", external=True)
+    print(f"Finished building {target} package")
+
+def get_targets(session: nox.Session) -> List[str]:
+    """Returns the list of targets to build."""
+    res = []
+    for arg in session.posargs:
+        if arg == "all":
+            if len(res) > 0:
+                print("You can't use all if specific targets are already specified.")
+                continue
+            res = [
+                "win32-x64",
+                "win32-arm64",
+                "linux-x64",
+                "linux-arm64",
+                "alpine-x64",
+                "alpine-arm64",
+                "darwin-x64",
+                "darwin-arm64",
+            ]
+            break
+        elif arg in [
+            "win32-x64",
+            "win32-arm64",
+            "linux-x64",
+            "linux-arm64",
+            "alpine-x64",
+            "alpine-arm64",
+            "darwin-x64",
+            "darwin-arm64",
+        ]:
+            res.append(arg)
+        else:
+            print(f"Unknown target: {arg}")
+            session.error(f"Unknown target: {arg}")
+    return res
 
 @nox.session()
 def build_package(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
+    targets = get_targets(session)
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
     copy_dir(session, "../server/typeshed", "typeshed")
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
-    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
-        session.run("cp", "../server/target/release/odoo_ls_server", "linux_odoo_ls_server", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.exe").is_file():
-        session.run("cp", "../server/target/release/odoo_ls_server.exe", "odoo_ls_server.exe", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.pdb").is_file():
-        session.run("cp", "../server/target/release/odoo_ls_server.pdb", "odoo_ls_server.pdb", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/mac_odoo_ls_server").is_file():
-        session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
     session.run("cp", "../changelog.md", "changelog.md", external=True)
-    session.run("vsce", "package", external=True)
-    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux_odoo_ls_server").is_file():
-        session.run("rm", "-r", "linux_odoo_ls_server", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("odoo_ls_server.exe").is_file():
-        session.run("rm", "-r", "odoo_ls_server.exe", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("odoo_ls_server.pdb").is_file():
-        session.run("rm", "-r", "odoo_ls_server.pdb", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("macos_odoo_ls_server").is_file():
-        session.run("rm", "-r", "macos_odoo_ls_server", external=True)
+    for target in targets:
+        build_specific_target(session, target, False)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "changelog.md", external=True)
@@ -94,28 +162,14 @@ def build_package(session: nox.Session) -> None:
 @nox.session()
 def build_package_prerelease(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
+    targets = get_targets(session)
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
     copy_dir(session, "../server/typeshed", "typeshed")
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
-    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server").is_file():
-        session.run("cp", "../server/target/release/odoo_ls_server", "linux_odoo_ls_server", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.exe").is_file():
-        session.run("cp", "../server/target/release/odoo_ls_server.exe", "odoo_ls_server.exe", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("../server/target/release/odoo_ls_server.pdb").is_file():
-        session.run("cp", "../server/target/release/odoo_ls_server.pdb", "odoo_ls_server.pdb", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("../server/target/release/mac_odoo_ls_server").is_file():
-        session.run("cp", "../server/target/release/mac_odoo_ls_server", "macos_odoo_ls_server", external=True)
     session.run("cp", "../changelog.md", "changelog.md", external=True)
-    session.run("vsce", "package", "--pre-release", external=True)
-    if (os.name == 'posix' and 'microsoft' not in platform.uname()[2].lower()) or Path("linux_odoo_ls_server").is_file():
-        session.run("rm", "-r", "linux_odoo_ls_server", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("odoo_ls_server.exe").is_file():
-        session.run("rm", "-r", "odoo_ls_server.exe", external=True)
-    if (os.name =='nt' or 'microsoft' in platform.uname()[2].lower()) or Path("odoo_ls_server.pdb").is_file():
-        session.run("rm", "-r", "odoo_ls_server.pdb", external=True)
-    if (os.name =='posix' and 'Darwin' in platform.uname()[0].lower()) or Path("macos_odoo_ls_server").is_file():
-        session.run("rm", "-r", "macos_odoo_ls_server", external=True)
+    for target in targets:
+        build_specific_target(session, target, False)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "changelog.md", external=True)
