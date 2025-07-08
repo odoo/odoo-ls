@@ -1,0 +1,11 @@
+[target.x86_64-pc-windows-msvc]
+image = "ghcr.io/cross-rs/x86_64-pc-windows-msvc-cross:local"
+
+[target.aarch64-pc-windows-msvc]
+image = "ghcr.io/cross-rs/aarch64-pc-windows-msvc-cross:local"
+
+[target.aarch64-apple-darwin]
+image = "ghcr.io/cross-rs/aarch64-apple-darwin-cross:local"
+
+[target.x86_64-apple-darwin]
+image = "ghcr.io/cross-rs/x86_64-apple-darwin-cross:local"

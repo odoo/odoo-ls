@@ -7,6 +7,7 @@ client/server
 server/libs/
 server/target/
 server/logs/
+server/cross/
 env
 *.pyc
 *.log
