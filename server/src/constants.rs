@@ -119,3 +119,5 @@ pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "un
 "pwd", "grp", "termios", "tty", "pty", "fcntl", "resource", "syslog", "aifc", "asynchat", "asyncore", "audioop",
 "cgi", "cgitb", "chunk", "crypt", "imghdr", "imp", "mailcap", "msilib", "nis", "nntplib", "optparse", "ossaudiodev",
 "pipes", "smtpd", "sndhdr", "spwd", "sunau", "telnetlib", "uu", "xdrlib", "struct", "codecs"];
+
+pub const DEFAULT_PYTHON: &str  = "python3";

@@ -10,6 +10,7 @@ use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::constants::DEFAULT_PYTHON;
 use crate::utils::{fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
@@ -344,6 +345,50 @@ where
     }
 }
 
+pub fn serialize_python_path<T, S>(opt: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + Default,
+    S: Serializer,
+{
+    match opt {
+        Some(val) => val.serialize(serializer),
+        None => (Sourced { value: S!(DEFAULT_PYTHON), ..Default::default() }).serialize(serializer),
+    }
+}
+
+pub fn serialize_file_cache<T, S>(opt: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + Default,
+    S: Serializer,
+{
+    match opt {
+        Some(val) => val.serialize(serializer),
+        None => (Sourced { value: true, ..Default::default() }).serialize(serializer),
+    }
+}
+
+pub fn serialize_ac_filter_model_names<T, S>(opt: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + Default,
+    S: Serializer,
+{
+    match opt {
+        Some(val) => val.serialize(serializer),
+        None => (Sourced { value: true, ..Default::default() }).serialize(serializer),
+    }
+}
+
+pub fn serialize_auto_refresh_delay<T, S>(opt: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + Default,
+    S: Serializer,
+{
+    match opt {
+        Some(val) => val.serialize(serializer),
+        None => (Sourced { value: 1000, ..Default::default() }).serialize(serializer),
+    }
+}
+
 fn parse_manifest_version(contents: String) -> Option<String> {
     let parsed = ruff_python_parser::parse_unchecked(contents.as_str(), ParseOptions::from(Mode::Module));
     if !parsed.errors().is_empty() {
@@ -429,7 +474,7 @@ pub struct ConfigEntryRaw {
     #[serde(default, serialize_with = "serialize_option_as_default")]
     addons_paths: Option<Vec<Sourced<String>>>,
 
-    #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[serde(default, serialize_with = "serialize_python_path")]
     python_path: Option<Sourced<String>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
@@ -441,16 +486,16 @@ pub struct ConfigEntryRaw {
     #[serde(default, serialize_with = "serialize_option_as_default")]
     refresh_mode: Option<Sourced<RefreshMode>>,
 
-    #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[serde(default, serialize_with = "serialize_file_cache")]
     file_cache: Option<Sourced<bool>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
     diag_missing_imports: Option<Sourced<DiagMissingImportsMode>>,
 
-    #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[serde(default, serialize_with = "serialize_ac_filter_model_names")]
     ac_filter_model_names: Option<Sourced<bool>>,
 
-    #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[serde(default, serialize_with = "serialize_auto_refresh_delay")]
     auto_refresh_delay: Option<Sourced<u64>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
@@ -529,7 +574,7 @@ impl Default for ConfigEntry {
         Self {
             odoo_path: None,
             addons_paths: HashSet::new(),
-            python_path: S!("python3"),
+            python_path: S!(DEFAULT_PYTHON),
             additional_stubs: HashSet::new(),
             refresh_mode: RefreshMode::default(),
             file_cache: true,
@@ -1001,7 +1046,7 @@ fn merge_all_workspaces(
             ConfigEntry {
                 odoo_path: raw_entry.odoo_path.map(|op| op.value),
                 addons_paths: raw_entry.addons_paths.into_iter().flatten().map(|op| op.value).collect(),
-                python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!("python3")),
+                python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!(DEFAULT_PYTHON)),
                 additional_stubs: raw_entry.additional_stubs.into_iter().flatten().map(|op| op.value).collect(),
                 refresh_mode: raw_entry.refresh_mode.map(|op| op.value).unwrap_or_default(),
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
