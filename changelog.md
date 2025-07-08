@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.8.0 - 2025/04/07 - Configuration files and XML Support (part 1)
+
+This update introduces two new big changes in OdooLS.
+
+First, we updated the way OdooLS is configured for a more porwerful, flexible, and IDE-independant way. Unfortunately, it implies that all your existing configurations are lost with this update. We are sorry for that, but we hope you will love way more the new system when you'll have adopted it ! Do not hesitate to give us your feedback, questions or anything you want to say about it on our [github](https://github.com/odoo/odoo-ls/discussions). As it is quite different, you can get lost at the first time. Do not hesitate to read our wiki about [configuration files](https://github.com/odoo/odoo-ls/wiki/Configuration-files).
+
+Secondly, the update introduces all the basic parsing for XML files. This part 1 only includes XML loading, parsing and validation against Odoo RNG file. There is features about XML files here (no hover, gotodefinition, etc...) as it will be released in part 2. This update focus on including XML and CSV files in the server cache and ensure that everything is running fine now that we have different file extensions and language. As always, we would be really happy if you can send us any error or issue you encounter with these new features.
+
+Let's go with this update more in detail now!
+
+### Server
+
+- New configuration system. Configurations are not stored in settings.json anymore, but in configuration files on disk.
+- OdooLS can now detect Odoo and run even without any configuration file.
+- When loading a manifest, search and load data files (csv/xml). If not found, raise a diagnostic.
+- When loading an XML file, display diagnostic on syntax errors
+- Validate XML files against RelaxNG file. This validation is not using the file actively but is hardcoded in the server. We did this as
+there is no real implementation of RelaxNG in Rust and that we included a lot of hooks and additional checks on the validation based on the python code of Odoo too (more will come in part 2).
+- New structure to support dynamic member variable declaration, like in
+```python
+class cl:
+    pass
+cl.new_variable = 5
+```
+This is actually mainly used for new Odoo changes on master, and is not dynamically supported in custom code.
+- Support for invalid AST. Now an invalid AST should not prevent the server from providing features as definition, hover, etc...
+- Allow hooks to applied on some version of odoo only. Fix most of the issues related to hooks for branches > 18.1 of Odoo.
+- Various small optimization updates.
+
+### VsCode
+
+- Update the interface to not show configurations but give a way to change active profile.
+- Provide Semantic token for CSV file. If you don't have the RainbowCsv extension installed, OdooLS will colorize your csv files for you.
+
+### Fixs
+
+- Fix import of multi-level elements, as in `import a.b.c`
+- Allow name completion in some nested expressions.
+- Autocompletion is now better localized, and can not suggest variables declared later in a bloc.
+- Fix various borrow errors.
+
 ## 0.6.3 - 2025/23/05 - Bugfixs
 
 ### Fixs
