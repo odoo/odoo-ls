@@ -9,9 +9,10 @@ use ruff_python_ast::{Alias, Arguments, Expr, ExprNamed, FStringPart, Identifier
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
 use tracing::{debug, trace, warn};
 
+use crate::core::entry_point::EntryPointType;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::odoo::SyncOdoo;
+use crate::core::odoo::{InitState, SyncOdoo};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
@@ -701,7 +702,7 @@ impl PythonArchEval {
         self.sym_stack.push(class_sym_rc.clone());
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
-        if !self.sym_stack[0].borrow().is_external() {
+        if !self.sym_stack[0].borrow().is_external() && self.sym_stack[0].borrow().get_entry().is_some_and(|e| e.borrow().typ == EntryPointType::MAIN) && session.sync_odoo.state_init == InitState::ODOO_READY {
             let odoo_builder_diags = PythonOdooBuilder::new(class_sym_rc).load(session);
             self.diagnostics.extend(odoo_builder_diags);
         }
