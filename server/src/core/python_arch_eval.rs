@@ -702,7 +702,7 @@ impl PythonArchEval {
         self.sym_stack.push(class_sym_rc.clone());
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
-        if !self.sym_stack[0].borrow().is_external() && self.sym_stack[0].borrow().get_entry().is_some_and(|e| e.borrow().typ == EntryPointType::MAIN) && session.sync_odoo.state_init == InitState::ODOO_READY {
+        if !self.sym_stack[0].borrow().is_external() && self.sym_stack[0].borrow().get_entry().is_some_and(|e| e.borrow().typ == EntryPointType::MAIN) {
             let odoo_builder_diags = PythonOdooBuilder::new(class_sym_rc).load(session);
             self.diagnostics.extend(odoo_builder_diags);
         }
