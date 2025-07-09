@@ -1,8 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::{Rc, Weak}};
 
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use regex::Regex;
-use roxmltree::Node;
+use roxmltree::{Attribute, Node};
 use tracing::{error, warn};
 use weak_table::PtrWeakHashSet;
 
@@ -100,5 +100,48 @@ impl XmlArchBuilder {
             }
             xml_module.borrow_mut().as_module_package_mut().xml_ids.get_mut(&Sy!(id)).unwrap().insert(self.xml_symbol.clone());
         }
+    }
+
+    pub fn get_xml_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut res = vec![];
+        if !self.is_in_main_ep {
+            return res;
+        }
+        let id_split = xml_id.split(".").collect::<Vec<&str>>();
+        let mut module = None;
+        if id_split.len() == 1 {
+            // If no module name, we are in the current module
+            module = self.xml_symbol.borrow().find_module();
+        } else if id_split.len() == 2 {
+            // Try to find the module by name
+            if let Some(m) = session.sync_odoo.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
+                module = m.upgrade();
+            }
+        } else if id_split.len() > 2 {
+            diagnostics.push(Diagnostic::new(
+                Range {
+                    start: Position::new(attr.range().start as u32, 0),
+                    end: Position::new(attr.range().end as u32, 0),
+                },
+                Some(DiagnosticSeverity::ERROR),
+                Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
+                Some(EXTENSION_NAME.to_string()),
+                format!("Invalid XML ID '{}'. It should not contain more than one dot", xml_id),
+                None,
+                None
+            ));
+            return res;
+        }
+        if module.is_none() {
+            warn!("Module not found for id: {}", xml_id);
+            return res;
+        }
+        let module = module.unwrap();
+        for module in module.borrow().as_module_package().this_and_dependencies(session).iter() {
+            if let Some(xml) = module.borrow().as_module_package().xml_ids.get(&oyarn!("{}", id_split.last().unwrap())) {
+                res.extend(xml.iter());
+            }
+        }
+        res
     }
 }

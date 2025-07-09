@@ -107,6 +107,18 @@ impl XmlArchBuilder {
                             format!("parent attribute is not allowed in submenuitems"),
                             None,
                             None));
+                    } else {
+                        //check that parent exists
+                        if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                            diagnostics.push(Diagnostic::new(
+                                Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(lsp_types::NumberOrString::String(S!("OLS30447"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Parent menuitem with id '{}' does not exist", attr.value()),
+                                None,
+                                None));
+                        }
                     }
                 }
                 "web_icon" => {
