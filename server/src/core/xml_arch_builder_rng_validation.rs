@@ -89,7 +89,16 @@ impl XmlArchBuilder {
                             }
                         }
                     }
-                },
+                    //check that action exists
+                    if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
+                    }
+                }
                 "parent" => {
                     if is_submenu {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05012, &[]) {
