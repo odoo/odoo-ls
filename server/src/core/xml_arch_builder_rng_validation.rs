@@ -94,7 +94,19 @@ impl XmlArchBuilder {
                                 format!("submenuitems are not allowed when Action attribute and parent are specified"),
                                 None,
                                 None));
+                            continue;
                         }
+                    }
+                    //check that action exists
+                    if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                        diagnostics.push(Diagnostic::new(
+                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            Some(DiagnosticSeverity::ERROR),
+                            Some(lsp_types::NumberOrString::String(S!("OLS30448"))),
+                            Some(EXTENSION_NAME.to_string()),
+                            format!("Action with id '{}' does not exist", attr.value()),
+                            None,
+                            None));
                     }
                 }
                 "parent" => {
