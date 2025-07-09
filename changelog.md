@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1 - 2025/09/07 - Quick fix
+
+### Fix
+
+- Fix an issue that prevent OdooLS to correctly detect Odoo Models on some version.
+
 ## 0.8.0 - 2025/04/07 - Configuration files and XML Support (part 1)
 
 This update introduces two new big changes in OdooLS.
