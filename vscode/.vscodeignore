@@ -27,6 +27,7 @@ node_modules/
 **/requirements.in
 **/venv/
 **/__pycache__/
+build/
 
 !node_modules/@vscode-elements/elements/**
 !node_modules/@vscode/codicons/**
