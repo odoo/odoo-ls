@@ -11,6 +11,7 @@ use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::constants::DEFAULT_PYTHON;
+use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting};
 use crate::utils::{fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
@@ -87,6 +88,7 @@ impl Default for MergeMethod {
         MergeMethod::Merge
     }
 }
+
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct ConfigFile {
@@ -457,6 +459,7 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
 }
 
 // Raw structure for initial deserialization
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConfigEntryRaw {
     #[serde(default = "default_name")]
@@ -504,6 +507,9 @@ pub struct ConfigEntryRaw {
     #[serde(default, rename(serialize = "$version", deserialize = "$version"), serialize_with = "serialize_option_as_default")]
     version: Option<Sourced<String>>,
 
+    #[serde(default)]
+    diagnostic_settings: HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
+
     #[serde(skip_deserializing, rename(serialize = "abstract"))]
     abstract_: bool
 }
@@ -526,6 +532,7 @@ impl Default for ConfigEntryRaw {
             auto_refresh_delay: None,
             add_workspace_addon_path: None,
             version: None,
+            diagnostic_settings: Default::default(),
             abstract_: false,
         }
     }
@@ -553,6 +560,7 @@ impl ConfigEntryRaw {
     }
 }
 
+
 #[derive(Debug, Clone)]
 pub struct ConfigEntry {
     pub odoo_path: Option<String>,
@@ -567,6 +575,7 @@ pub struct ConfigEntry {
     pub stdlib: String,
     pub no_typeshed: bool,
     pub abstract_: bool,
+    pub diagnostic_settings: HashMap<DiagnosticCode, DiagnosticSetting>,
 }
 
 impl Default for ConfigEntry {
@@ -584,6 +593,7 @@ impl Default for ConfigEntry {
             stdlib: S!(""),
             no_typeshed: false,
             abstract_: false,
+            diagnostic_settings: Default::default(),
         }
     }
 }
@@ -695,60 +705,94 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
 
     Ok(config)
 }
+/// Merge two HashMap<DiagnosticCode, Sourced<DiagnosticSetting>> for diagnostic_settings, combining sources for identical values.
+fn merge_sourced_diagnostic_setting_map(
+    child: &HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
+    parent: &HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
+) -> HashMap<DiagnosticCode, Sourced<DiagnosticSetting>> {
+    let child_keys: HashSet<&DiagnosticCode> = child.keys().collect();
+    let parent_keys: HashSet<&DiagnosticCode> = parent.keys().collect();
+    let intersection = child_keys.intersection(&parent_keys).cloned().collect::<HashSet<_>>();
+    let child_diff = child_keys.difference(&parent_keys).cloned().collect::<HashSet<_>>();
+    let parent_diff = parent_keys.difference(&child_keys).cloned().collect::<HashSet<_>>();
+    // For each key in the intersection, combine sources for repeated values
+    // Otherwise take it from child
+    // Then chain the set differences
+    intersection.into_iter().map(|key| {
+        let child_value = child.get(key).unwrap();
+        let parent_value = parent.get(key).unwrap();
+        if child_value.value == parent_value.value {
+            (key.clone(), Sourced {
+                value: child_value.value.clone(),
+                sources: child_value.sources.clone().union(&parent_value.sources).cloned().collect(),
+                info: String::new(),
+            })
+        } else {
+            (key.clone(), child_value.clone())
+        }
+    }).chain(child_diff.into_iter().map(|key| {
+        (key.clone(), child.get(key).unwrap().clone())
+    })).chain(parent_diff.into_iter().map(|key| {
+        (key.clone(), parent.get(key).unwrap().clone())
+    })).collect::<HashMap<_, _>>()
+}
+
 
 fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRaw {
-        let odoo_path = child.odoo_path.clone().or(parent.odoo_path.clone());
-        let python_path = child.python_path.clone().or(parent.python_path.clone());
-        // Simple combination of paths, sources will be merged after paths are processed
-        let addons_paths = match child.addons_merge.clone().unwrap_or_default().value {
-            MergeMethod::Merge => match (child.addons_paths.clone(), parent.addons_paths.clone()) {
-                (Some(existing), Some(new)) => {
-                    Some(existing.into_iter().chain(new.into_iter()).collect())
-                }
-                (Some(paths), None) | (None, Some(paths)) => Some(paths),
-                (None, None) => None,
-            },
-            MergeMethod::Override => child.addons_paths.clone(),
-        };
-        let additional_stubs = match child.additional_stubs_merge.clone().unwrap_or_default().value {
-            MergeMethod::Merge => match (child.additional_stubs.clone(), parent.additional_stubs.clone()) {
-                (Some(existing), Some(new)) => {
-                    Some(existing.into_iter().chain(new.into_iter()).collect())
-                }
-                (Some(paths), None) | (None, Some(paths)) => Some(paths),
-                (None, None) => None,
-            },
-            MergeMethod::Override => child.additional_stubs.clone(),
-        };
-        let refresh_mode = child.refresh_mode.clone().or(parent.refresh_mode.clone());
-        let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
-        let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
-        let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
-        let addons_merge = child.addons_merge.clone().or(parent.addons_merge.clone());
-        let additional_stubs_merge = child.additional_stubs_merge.clone().or(parent.additional_stubs_merge.clone());
-        let extends = child.extends.clone().or(parent.extends.clone());
-        let auto_refresh_delay = child.auto_refresh_delay.clone().or(parent.auto_refresh_delay.clone());
-        let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
-        let version = child.version.clone().or(parent.version.clone());
+    let odoo_path = child.odoo_path.clone().or(parent.odoo_path.clone());
+    let python_path = child.python_path.clone().or(parent.python_path.clone());
+    // Simple combination of paths, sources will be merged after paths are processed
+    let addons_paths = match child.addons_merge.clone().unwrap_or_default().value {
+        MergeMethod::Merge => match (child.addons_paths.clone(), parent.addons_paths.clone()) {
+            (Some(existing), Some(new)) => {
+                Some(existing.into_iter().chain(new.into_iter()).collect())
+            }
+            (Some(paths), None) | (None, Some(paths)) => Some(paths),
+            (None, None) => None,
+        },
+        MergeMethod::Override => child.addons_paths.clone(),
+    };
+    let additional_stubs = match child.additional_stubs_merge.clone().unwrap_or_default().value {
+        MergeMethod::Merge => match (child.additional_stubs.clone(), parent.additional_stubs.clone()) {
+            (Some(existing), Some(new)) => {
+                Some(existing.into_iter().chain(new.into_iter()).collect())
+            }
+            (Some(paths), None) | (None, Some(paths)) => Some(paths),
+            (None, None) => None,
+        },
+        MergeMethod::Override => child.additional_stubs.clone(),
+    };
+    let refresh_mode = child.refresh_mode.clone().or(parent.refresh_mode.clone());
+    let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
+    let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
+    let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
+    let addons_merge = child.addons_merge.clone().or(parent.addons_merge.clone());
+    let additional_stubs_merge = child.additional_stubs_merge.clone().or(parent.additional_stubs_merge.clone());
+    let extends = child.extends.clone().or(parent.extends.clone());
+    let auto_refresh_delay = child.auto_refresh_delay.clone().or(parent.auto_refresh_delay.clone());
+    let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
+    let version = child.version.clone().or(parent.version.clone());
+    let diagnostic_settings = merge_sourced_diagnostic_setting_map(&child.diagnostic_settings, &parent.diagnostic_settings);
 
-        ConfigEntryRaw {
-            odoo_path,
-            python_path,
-            addons_paths,
-            additional_stubs,
-            refresh_mode,
-            file_cache,
-            diag_missing_imports,
-            ac_filter_model_names,
-            addons_merge,
-            additional_stubs_merge,
-            extends,
-            name: child.name.clone(),
-            auto_refresh_delay,
-            add_workspace_addon_path,
-            version,
-            ..Default::default()
-        }
+    ConfigEntryRaw {
+        odoo_path,
+        python_path,
+        addons_paths,
+        additional_stubs,
+        refresh_mode,
+        file_cache,
+        diag_missing_imports,
+        ac_filter_model_names,
+        addons_merge,
+        additional_stubs_merge,
+        extends,
+        name: child.name.clone(),
+        auto_refresh_delay,
+        add_workspace_addon_path,
+        version,
+        diagnostic_settings: diagnostic_settings,
+        ..Default::default()
+    }
 }
 
 fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>) -> Result<(), String> {
@@ -1017,6 +1061,10 @@ fn merge_all_workspaces(
                 key.clone(),
                 "auto_refresh_delay".to_string(),
             )?;
+            merged_entry.diagnostic_settings = merge_sourced_diagnostic_setting_map(
+                &merged_entry.diagnostic_settings,
+                &raw_entry.diagnostic_settings,
+            );
             merged_entry.abstract_ = merged_entry.abstract_ || raw_entry.abstract_;
         }
     }
@@ -1054,6 +1102,9 @@ fn merge_all_workspaces(
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
                 auto_refresh_delay: clamp_auto_refresh_delay(raw_entry.auto_refresh_delay.map(|op| op.value).unwrap_or(1000)),
                 abstract_: raw_entry.abstract_,
+                diagnostic_settings: raw_entry.diagnostic_settings.into_iter()
+                    .map(|(k, v)| (k, v.value))
+                    .collect(),
                 ..Default::default()
             },
         );
