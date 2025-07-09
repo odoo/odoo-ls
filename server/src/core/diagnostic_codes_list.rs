@@ -400,4 +400,8 @@ OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML or CSV fil
 * An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
 */
 OLS05051, DiagnosticSetting::Error, "Invalid XML ID '{0}'. It should not contain more than one dot.",
+/**
+* The given parent_id does not exists in the dependents modules, or is not a menuitem
+*/
+OLS05052, DiagnosticSetting::Error, "Parent menuitem with id '{0}' does not exist",
 }
