@@ -324,3 +324,7 @@ An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contain
 ### OLS30447
 "Parent menuitem with id XXXX does not exist"
 A menuitem is specifying a parent that has not been declared before itself.
+
+### OLS30448
+"Action menuitem with id XXXX does not exist"
+A menuitem is specifying an action that has not been declared before the menuitem.
