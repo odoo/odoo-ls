@@ -89,7 +89,7 @@ impl XmlArchBuilder {
                             }
                         }
                     }
-                }
+                },
                 "parent" => {
                     if is_submenu {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05012, &[]) {
@@ -98,8 +98,18 @@ impl XmlArchBuilder {
                                 ..diagnostic.clone()
                             });
                         }
+                    } else {
+                        //check that parent exists
+                        if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
+                        }
                     }
-                }
+                },
                 "web_icon" => {
                     if has_parent || is_submenu {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05010, &[]) {

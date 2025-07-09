@@ -513,4 +513,17 @@ impl ModuleSymbol {
         result
     }
 
+    pub fn this_and_dependencies(&self, session: &mut SessionInfo) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
+        let mut result = PtrWeakHashSet::new();
+        result.insert(self.weak_self.as_ref().unwrap().upgrade().unwrap());
+        for dep in self.depends.iter() {
+            if let Some(module) = session.sync_odoo.modules.get(&dep.0) {
+                if let Some(module) = module.upgrade() {
+                    result.insert(module);
+                }
+            }
+        }
+        result
+    }
+
 }
