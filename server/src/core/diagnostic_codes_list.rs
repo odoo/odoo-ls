@@ -404,4 +404,8 @@ OLS05051, DiagnosticSetting::Error, "Invalid XML ID '{0}'. It should not contain
 * The given parent_id does not exists in the dependents modules, or is not a menuitem
 */
 OLS05052, DiagnosticSetting::Error, "Parent menuitem with id '{0}' does not exist",
+/**
+ * A menuitem is specifying an action that has not been declared before the menuitem.
+ */
+OLS05053, DiagnosticSetting::Error, "Action with id '{0}' does not exist",
 }
