@@ -2,19 +2,18 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, P
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{error, info};
-use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap, WeakHashSet};
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use std::collections::{HashMap, HashSet};
-use std::fs;
 
 use crate::core::csv_arch_builder::CsvArchBuilder;
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::{constants::*, oyarn, Sy};
-use crate::core::file_mgr::{add_diagnostic, FileInfo, FileMgr, NoqaInfo};
+use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
-use crate::constants::EXTENSION_NAME;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
@@ -161,15 +160,12 @@ impl ModuleSymbol {
         let file_info_ast = file_info.file_info_ast.borrow();
         let ast = file_info_ast.ast.as_ref().unwrap();
         if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
-            add_diagnostic(&mut res, Diagnostic::new(
-                Range::new(Position::new(0, 0), Position::new(0, 1)),
-                Some(DiagnosticSeverity::ERROR),
-                Some(NumberOrString::String(S!("OLS30201"))),
-                Some(EXTENSION_NAME.to_string()),
-                "A manifest should contain exactly one dictionary".to_string(),
-                None,
-                None,
-            ), &session.current_noqa);
+            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30201, &[]) {
+                res.push(Diagnostic {
+                    range: Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    ..diagnostic
+                });
+            }
             return res;
         }
         let mut visited_keys = HashSet::new();
@@ -182,26 +178,51 @@ impl ModuleSymbol {
                         Expr::StringLiteral(key_literal) => {
                             let key_str = key_literal.value.to_string();
                             if visited_keys.contains(&key_str){
-                                add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("A manifest should not have duplicate keys", S!("OLS30202"), &key_literal.range, Some(DiagnosticSeverity::WARNING)), &session.current_noqa);
+                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30202, &[]) {
+                                res.push(Diagnostic {
+                                    range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
+                                    ..diagnostic
+                                });
+                            }
                             }
                             visited_keys.insert(key_str.clone());
                             if key_str == "name" {
                                 if !value.is_string_literal_expr() {
-                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The name of the module should be a string", S!("OLS30203"), &key_literal.range, Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30203, &[]) {
+                                        res.push(Diagnostic {
+                                            range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
+                                            ..diagnostic
+                                        });
+                                    }
                                 } else {
                                     self.module_name = oyarn!("{}", value.as_string_literal_expr().unwrap().value);
                                 }
                             } else if key_str == "depends" {
                                 if !value.is_list_expr() {
-                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The depends value should be a list", S!("OLS30204"), &key_literal.range, Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30204, &[]) {
+                                        res.push(Diagnostic {
+                                            range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
+                                            ..diagnostic
+                                        });
+                                    }
                                 } else {
                                     for depend in value.as_list_expr().unwrap().elts.iter() {
                                         if !depend.is_string_literal_expr() {
-                                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The depends key should be a list of strings", S!("OLS30205"), &depend.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30205, &[]) {
+                                                res.push(Diagnostic {
+                                                    range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
+                                                    ..diagnostic
+                                                });
+                                            }
                                         } else {
                                             let depend_value = oyarn!("{}", depend.as_string_literal_expr().unwrap().value);
                                             if depend_value == self.dir_name {
-                                                add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("A module cannot depends on itself", S!("OLS30206"), &depend.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30206, &[]) {
+                                                    res.push(Diagnostic {
+                                                        range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
+                                                        ..diagnostic
+                                                    });
+                                                }
                                             } else {
                                                 self.depends.push((depend_value, depend.range().clone()));
                                             }
@@ -210,60 +231,58 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "data" {
                                 if !value.is_list_expr() {
-                                    add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data value should be a list", S!("OLS30207"), &key_literal.range, Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30207, &[]) {
+                                        res.push(Diagnostic {
+                                            range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
+                                            ..diagnostic
+                                        });
+                                    }
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
                                         if !data.is_literal_expr() {
-                                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("The data key should be a list of strings", S!("OLS30208"), &data.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30208, &[]) {
+                                                res.push(Diagnostic {
+                                                    range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
+                                                    ..diagnostic
+                                                });
+                                            }
                                         } else {
                                             self.data.push((data.as_string_literal_expr().unwrap().value.to_string(), data.range().clone()));
                                         }
                                     }
                                 }
                             } else if key_str == "active" {
-                                add_diagnostic(&mut res, Diagnostic::new(
-                                    Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
-                                    Some(DiagnosticSeverity::WARNING),
-                                    Some(NumberOrString::String(S!("OLS20201"))),
-                                    Some(EXTENSION_NAME.to_string()),
-                                    "The active key is deprecated".to_string(),
-                                    None,
-                                    Some(vec![DiagnosticTag::DEPRECATED]),
-                                ), &session.current_noqa)
+                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20201, &[]) {
+                                    res.push(Diagnostic {
+                                        range: Range::new(Position::new(key_literal.range().start().to_u32(), 0), Position::new(key_literal.range().end().to_u32(), 0)),
+                                        tags: Some(vec![DiagnosticTag::DEPRECATED]),
+                                        ..diagnostic
+                                    });
+                                }
                             }
                         }
                         _ => {
-                            add_diagnostic(&mut res, self._create_diagnostic_for_manifest_key("Manifest keys should be strings", S!("OLS30209"), &key.range(), Some(DiagnosticSeverity::ERROR)), &session.current_noqa);
+                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30209, &[]) {
+                                    res.push(Diagnostic {
+                                        range: Range::new(Position::new(key.range().start().to_u32(), 0), Position::new(key.range().end().to_u32(), 0)),
+                                        ..diagnostic
+                                    });
+                            }
                         }
                     }
                 },
                 None => {
-                    add_diagnostic(&mut res, Diagnostic::new(
-                        Range::new(Position::new(0, 0), Position::new(0, 1)),
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(NumberOrString::String(S!("OLS30302"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        "Do not use dict unpacking to build your manifest".to_string(),
-                        None,
-                        None,
-                    ), &session.current_noqa);
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30302, &[]) {
+                        res.push(Diagnostic {
+                            range: Range::new(Position::new(0, 0), Position::new(0, 1)),
+                            ..diagnostic_base.clone()
+                        });
+                    }
                     return res;
                 }
             }
         }
         res
-    }
-
-    fn _create_diagnostic_for_manifest_key(&self, text: &str, code: String, range: &TextRange, severity: Option<DiagnosticSeverity>) -> Diagnostic {
-        Diagnostic::new(
-            Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-            severity,
-            Some(NumberOrString::String(code)),
-            Some(EXTENSION_NAME.to_string()),
-            text.to_string(),
-            None,
-            None,
-        )
     }
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
@@ -281,15 +300,12 @@ impl ModuleSymbol {
                 if module.is_none() {
                     symbol.get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
                     symbol.not_found_paths_mut().push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
-                    add_diagnostic(&mut diagnostics, Diagnostic::new(
-                        FileMgr::textRange_to_temporary_Range(range),
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(NumberOrString::String(S!("OLS30210"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Module {} depends on {} which is not found. Please review your addons paths", symbol.name(), depend),
-                        None,
-                        None,
-                    ), &session.current_noqa)
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30210, &[&symbol.name(), &depend]) {
+                        diagnostics.push(Diagnostic {
+                            range: FileMgr::textRange_to_temporary_Range(range),
+                            ..diagnostic_base.clone()
+                        });
+                    }
                 } else {
                     loaded.push(depend.clone());
                     let module = module.unwrap();
@@ -317,23 +333,19 @@ impl ModuleSymbol {
             if !path.exists() {
                 symbol.borrow_mut().as_module_package_mut().not_found_data.insert(path.sanitize(), BuildSteps::ARCH);
                 symbol.borrow().get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.clone());
-                diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30444"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Data file {} not found", path.sanitize()),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30445, &[&path.sanitize()]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
+                        ..diagnostic.clone()
+                    });
+                }
             } else if path.extension().map_or(true, |ext| !["xml", "csv"].contains(&ext.to_str().unwrap_or(""))) {
-                diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30445"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Data file {} is not a valid XML or CSV file", path.sanitize()),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30446, &[&path.sanitize()]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         diagnostics
@@ -365,7 +377,7 @@ impl ModuleSymbol {
                     file_info.publish_diagnostics(session); //TODO do it only if diagnostics are not empty, else in validation
                 } else if data.len() > 0 {
                     let mut diagnostics = vec![];
-                    XmlFileSymbol::build_syntax_diagnostics(&mut diagnostics, &mut file_info, &document.unwrap_err());
+                    XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, &mut file_info, &document.unwrap_err());
                     file_info.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
                     file_info.publish_diagnostics(session);
                     continue

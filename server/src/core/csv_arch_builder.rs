@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use lsp_types::{Diagnostic};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, oyarn, threads::SessionInfo, S};
+use crate::{constants::{BuildStatus, BuildSteps}, threads::SessionInfo};
 
 use super::{symbols::{symbol::Symbol}};
 

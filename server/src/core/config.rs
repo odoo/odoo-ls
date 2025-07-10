@@ -229,6 +229,7 @@ impl ConfigFile {
                     "python_path", "additional_stubs", "additional_stubs_merge",
                     "refresh_mode", "file_cache", "diag_missing_imports",
                     "ac_filter_model_names", "auto_refresh_delay", "add_workspace_addon_path",
+                    "diagnostic_settings"
                 ];
                 for key in order {
                     if let Some(val) = map.get(key) {

@@ -3,7 +3,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity};
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-use crate::{constants::EXTENSION_NAME, S};
+use crate::{constants::EXTENSION_NAME, core::file_mgr::NoqaInfo, S};
 
 #[macro_export]
 macro_rules! diagnostic_codes {
@@ -12,6 +12,9 @@ macro_rules! diagnostic_codes {
             $(#[$meta:meta])* $name:ident , $msg:expr
         ),* $(,)?
     ) => {
+        use serde::{Deserialize, Serialize};
+        use super::{DiagnosticInfo, DiagnosticSetting};
+
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
         pub enum DiagnosticCode {
             $(
@@ -58,7 +61,7 @@ pub static DEFAULT_DIAGNOSTIC: LazyLock<Diagnostic> = LazyLock::new(|| Diagnosti
 pub enum DiagnosticSetting {
     Error,
     Warning,
-    Information,
+    Info,
     Hint,
     Disabled
 }
@@ -76,14 +79,12 @@ pub fn get_severity(
     code: DiagnosticCode,
     session: &SessionInfo,
 ) -> Option<DiagnosticSeverity> {
-    // Assume SessionInfo has a method or field to get the current config entry (ConfigEntry)
-    // and that ConfigEntry has diagnostic_severity_overrides: Option<HashMap<String, String>>
     let setting = session.sync_odoo.config.diagnostic_settings.get(&code).cloned()
         .unwrap_or(DIAGNOSTIC_INFOS[&code].default_setting);
     match setting {
         DiagnosticSetting::Error => Some(DiagnosticSeverity::ERROR),
         DiagnosticSetting::Warning => Some(DiagnosticSeverity::WARNING),
-        DiagnosticSetting::Information => Some(DiagnosticSeverity::INFORMATION),
+        DiagnosticSetting::Info => Some(DiagnosticSeverity::INFORMATION),
         DiagnosticSetting::Hint => Some(DiagnosticSeverity::HINT),
         DiagnosticSetting::Disabled => None,
     }
@@ -101,15 +102,21 @@ pub fn format_message(code: DiagnosticCode, params:&[&str]) -> String {
 }
 
 /// Create a diagnostic, using the session's config for overrides
+/// returns None if the diagnostic is disabled by the session's noqa config or user config
 pub fn create_diagnostic(
     session: &SessionInfo,
     code: DiagnosticCode,
     params: &[&str],
 ) -> Option<Diagnostic> {
-    let severity = get_severity(code, session);
-    if severity.is_none() {
-        return None;
+    match &session.current_noqa {
+        NoqaInfo::All => return None,
+        NoqaInfo::Codes(codes) => if codes.contains(&code.to_string()) {return None},
+        NoqaInfo::None => {}
     }
+    let severity = match get_severity(code, session) {
+        None => return None,
+        severity => severity,
+    };
     Some(Diagnostic {
         severity,
         message: format_message(code, params),

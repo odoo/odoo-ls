@@ -1,14 +1,11 @@
-use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::Rc};
-
-use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use lsp_types::{Diagnostic, Position, Range};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
-use tracing::{error, warn};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, oyarn, threads::SessionInfo, S};
+use crate::{core::diagnostics::{create_diagnostic, DiagnosticCode}, threads::SessionInfo, S};
 
-use super::{file_mgr::FileInfo, odoo::SyncOdoo, symbols::{symbol::Symbol, xml_file_symbol::XmlFileSymbol}, xml_arch_builder::XmlArchBuilder};
+use super::xml_arch_builder::XmlArchBuilder;
 
 static BINDING_VIEWS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([a-z]+(,[a-z]+)*)?$").unwrap());
 
@@ -22,14 +19,14 @@ impl XmlArchBuilder {
                     match attr.name() {
                         "noupdate" | "auto_sequence" | "uid" | "context" => {},
                         _ => {
-                            diagnostics.push(Diagnostic::new(
-                                Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                Some(DiagnosticSeverity::ERROR),
-                                Some(lsp_types::NumberOrString::String(S!("OLS30400"))),
-                                Some(EXTENSION_NAME.to_string()),
-                                format!("Invalid attribute in {} node {}", attr.name(), node.tag_name().name()),
-                                None,
-                                None));
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30400, &[attr.name(), node.tag_name().name()]) {
+                                diagnostics.push(
+                                    Diagnostic {
+                                        range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                        ..diagnostic.clone()
+                                    }
+                                );
+                            }
                         }
                     }
                 }
@@ -44,14 +41,14 @@ impl XmlArchBuilder {
                         || self.load_report(session, &child, diagnostics)
                         || self.load_function(session, &child, diagnostics)
                         || child.is_text() || child.is_comment()) {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS30401"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Invalid child node {} in {}", child.tag_name().name(), node.tag_name().name()),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30401, &[child.tag_name().name(), node.tag_name().name()]) {
+                            diagnostics.push(
+                                Diagnostic {
+                                    range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                }
+                            );
+                        }
                     }
                 }
                 return true;
@@ -71,14 +68,12 @@ impl XmlArchBuilder {
                 },
                 "sequence" => {
                     if attr.value().parse::<i32>().is_err() {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS30404"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Sequence attribute must be a string representing a number"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30404, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "name" | "groups" | "active" => {},
@@ -86,73 +81,61 @@ impl XmlArchBuilder {
                     if (has_parent || is_submenu) && node.has_children() {
                         let other_than_text = node.children().any(|c| !c.is_text() && !c.is_comment());
                         if other_than_text {
-                            diagnostics.push(Diagnostic::new(
-                                Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                Some(DiagnosticSeverity::ERROR),
-                                Some(lsp_types::NumberOrString::String(S!("OLS30405"))),
-                                Some(EXTENSION_NAME.to_string()),
-                                format!("submenuitems are not allowed when Action attribute and parent are specified"),
-                                None,
-                                None));
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30405, &[]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
                         }
                     }
                 }
                 "parent" => {
                     if is_submenu {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS30408"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("parent attribute is not allowed in submenuitems"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30408, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 }
                 "web_icon" => {
                     if has_parent || is_submenu {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS30406"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("web_icon attribute is not allowed when parent is specified"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30406, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 }
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS30403"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in menuitem node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30403, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
         if found_id.is_none() {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS30402"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("menuitem node must contain an id attribute"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30402, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
         }
         for child in node.children().filter(|n| n.is_element()) {
             if child.tag_name().name() != "menuitem" {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS30407"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Invalid child node {} in menuitem", child.tag_name().name()),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30407, &[child.tag_name().name()]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
             else {
                 self.load_menuitem(session, &child, true, diagnostics);
@@ -174,40 +157,34 @@ impl XmlArchBuilder {
                 "uid" => {},
                 "context" => {},
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS30409"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in record node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30409, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
 
         if !found_model {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304010"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("record node must contain a model attribute"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30410, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
             return false;
         }
 
         for child in node.children().filter(|n| n.is_element()) {
             if !self.load_field(session, &child, diagnostics) {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS304011"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Invalid child node {} in record. Only field node is allowed", child.tag_name().name()),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30411, &[child.tag_name().name()]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         self.on_operation_creation(session, found_id, node, diagnostics);
@@ -217,29 +194,25 @@ impl XmlArchBuilder {
     fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "field" { return false; }
         if node.attribute("name").is_none() {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304012"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("field node must contain a name attribute"),
-                None,
-                None));
-         }
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30412, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
+        }
 
         let has_type = node.attribute("type").is_some();
         let has_ref = node.attribute("ref").is_some();
         let has_eval = node.attribute("eval").is_some();
         let has_search = node.attribute("search").is_some();
         if [has_type, has_ref, has_eval, has_search].iter().filter(|b| **b).count() > 1 {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304018"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("field node cannot have more than one of the attributes type, ref, eval or search"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30413, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
             return false;
         }
         let mut is_xml_or_html = false;
@@ -248,40 +221,34 @@ impl XmlArchBuilder {
                 "int" => {
                     let content = node.text().unwrap_or("");
                     if !(content.parse::<i32>().is_ok() || content == "None") {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304013"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Invalid content for int field: {}", content),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30414, &[content]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 }
                 "float" => {
                     let content = node.text().unwrap_or("");
                     if content.parse::<f64>().is_err() {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304014"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("Invalid content for float field: {}", content),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30415, &[content]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 }
                 "list" | "tuple" => {
                     for child in node.children() {
                         if !self.load_value(session, &child, diagnostics) {
-                            diagnostics.push(Diagnostic::new(
-                                Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                                Some(DiagnosticSeverity::ERROR),
-                                Some(lsp_types::NumberOrString::String(S!("OLS304015"))),
-                                Some(EXTENSION_NAME.to_string()),
-                                format!("Invalid child node {} in list/tuple field", child.tag_name().name()),
-                                None,
-                                None));
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30416, &[child.tag_name().name()]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
                         }
                     }
                 }
@@ -291,14 +258,12 @@ impl XmlArchBuilder {
                 "base64" | "char" | "file" => {
                     if node.has_attribute("file") {
                         if node.text().is_some() {
-                            diagnostics.push(Diagnostic::new(
-                                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                                Some(DiagnosticSeverity::ERROR),
-                                Some(lsp_types::NumberOrString::String(S!("OLS304017"))),
-                                Some(EXTENSION_NAME.to_string()),
-                                format!("text content is not allowed on a value that contains a file attribute"),
-                                None,
-                                None));
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30417, &[]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
                         }
                     }
                 }
@@ -310,62 +275,52 @@ impl XmlArchBuilder {
                 "name" | "type" | "file" => {},
                 "ref" | "eval" | "search" => {
                     if node.text().is_some() {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304019"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("text content is not allowed on a field with {} attribute", attr.name()),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30418, &[attr.name()]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "model" => {
                     if !has_eval && !has_search {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304020"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("model attribute is not allowed on field node without eval or search attribute"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30419, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "use" => {
                     if !has_search {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304021"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("use attribute is only allowed on field node with search attribute"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30420, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 }
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304016"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in field node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30421, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
         for child in node.children() {
             if !self.load_record(session, &child, diagnostics) && !child.is_text() && !child.is_comment() && !is_xml_or_html {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS304022"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Fields only allow 'record' children nodes"),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30422, &[]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         true
@@ -382,73 +337,60 @@ impl XmlArchBuilder {
                 "search" => {
                     has_search = true;
                     if has_eval || has_type {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304024"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("search attribute is not allowed when eval or type attribute is present"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30423, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "eval" => {
                     has_eval = true;
                     if has_search || has_type {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304025"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("eval attribute is not allowed when search or type attribute is present"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30424, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "type" => {
                     if has_search || has_eval {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304026"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("type attribute is not allowed when search or eval attribute is present"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30425, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                     if node.has_attribute("file") && node.text().is_some() {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304027"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("text content is not allowed on a value that contains a file attribute"),
-                            None,
-                            None));
-
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30426, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "file" => {
                     if !has_type {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304028"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("file attribute is only allowed on value node with type attribute"),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30427, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 }
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304023"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in value node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30428, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
@@ -466,36 +408,30 @@ impl XmlArchBuilder {
     fn load_delete(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "delete" { return false; }
         if node.attribute("model").is_none() {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304029"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("delete node must contain a model attribute"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30429, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
         }
         let found_id = node.attribute("id").map(|s| s.to_string());
         let has_search = node.attribute("search").is_some();
         if found_id.is_some() && has_search {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304030"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("delete node cannot have both id and search attributes"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30430, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
         }
         if found_id.is_none() && !has_search {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304031"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("delete node must have either id or search attribute"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30431, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
         }
         self.on_operation_creation(session, found_id, node, diagnostics);
         true
@@ -506,17 +442,15 @@ impl XmlArchBuilder {
         let mut found_id = None;
         for attr in ["id", "name", "res_model"] {
             if node.attribute(attr).is_none() {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS304032"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("act_window node must contain a {} attribute", attr),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30432, &[attr]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
             if attr == "id" {
-                found_id = Some(node.attribute(attr).unwrap().to_string());
+                found_id = node.attribute(attr).map(|v| v.to_string());
             }
         }
         for attr in node.attributes() {
@@ -525,49 +459,41 @@ impl XmlArchBuilder {
                 "domain" | "view_mode" | "view_id" | "target" | "context" | "groups" | "limit" | "usage" | "binding_model" => {},
                 "binding_type" => {
                     if attr.value() != "action" && attr.value() != "report" {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304034"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("binding_type attribute must be either 'action' or 'report', found {}", attr.value()),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30435, &[attr.value()]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 "binding_views" => {
                     if !BINDING_VIEWS_RE.is_match(attr.value()) {
-                        diagnostics.push(Diagnostic::new(
-                            Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            Some(DiagnosticSeverity::ERROR),
-                            Some(lsp_types::NumberOrString::String(S!("OLS304035"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            format!("binding_views attribute must be a comma-separated list of view types matching ^([a-z]+(,[a-z]+)*)?$, found {}", attr.value()),
-                            None,
-                            None));
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30436, &[attr.value()]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                     }
                 },
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304033"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in act_window node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30433, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
         if node.text().is_some() {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304033"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("act_window node cannot have text content"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30434, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
         }
         self.on_operation_creation(session, found_id, node, diagnostics);
         true
@@ -578,14 +504,12 @@ impl XmlArchBuilder {
         let mut found_id = None;
         for attr in ["string", "model", "name"] {
             if node.attribute(attr).is_none() {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS304036"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("report node must contain a {} attribute", attr),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30437, &[attr]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         for attr in node.attributes() {
@@ -594,26 +518,22 @@ impl XmlArchBuilder {
                 "print_report_name" | "report_type" | "multi"| "menu" | "keyword" | "file" |
                 "xml" | "parser" | "auto" | "header" | "attachment" | "attachment_use" | "groups" | "paperformat" | "usage" => {},
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304037"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in report node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30438, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
         if node.text().is_some() {
-            diagnostics.push(Diagnostic::new(
-                Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS304038"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("report node cannot have text content"),
-                None,
-                None));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30439, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
         }
         self.on_operation_creation(session, found_id, node, diagnostics);
         true
@@ -623,14 +543,12 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "function" { return false; }
         for attr in ["model", "name"] {
             if node.attribute(attr).is_none() {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS304039"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("function node must contain a {} attribute", attr),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30440, &[attr]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         let mut has_eval = false;
@@ -638,54 +556,46 @@ impl XmlArchBuilder {
             match attr.name() {
                 "model" | "name" => {},
                 "uid" => {},
-                "context" => {}
+                "context" => {},
                 "eval" => {
                     has_eval = true;
                 }
                 _ => {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304041"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("Invalid attribute {} in function node", attr.name()),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30442, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             }
         }
         for child in node.children().filter(|n| n.is_element()) {
             if self.load_value(session, &child, diagnostics) {
                 if has_eval {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304040"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("function node cannot have value children when eval attribute is present"),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30441, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             } else if self.load_function(session, &child, diagnostics) {
                 if has_eval {
-                    diagnostics.push(Diagnostic::new(
-                        Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(lsp_types::NumberOrString::String(S!("OLS304042"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        format!("function node cannot have function children when eval attribute is present"),
-                        None,
-                        None));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30443, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
                 }
             } else {
-                diagnostics.push(Diagnostic::new(
-                    Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS304043"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Invalid child node {} in function node", child.tag_name().name()),
-                    None,
-                    None));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30444, &[child.tag_name().name()]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         true
