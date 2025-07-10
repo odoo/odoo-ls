@@ -1,9 +1,8 @@
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
-use roxmltree::{Document, Node};
 use ruff_python_ast::Mod;
 use ruff_python_parser::{Mode, ParseOptions, Parsed, Token, TokenKind};
-use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use lsp_types::{Diagnostic, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -11,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
 use std::rc::Rc;
@@ -137,11 +137,11 @@ impl FileInfo {
         if old_hash == self.file_info_ast.borrow().text_hash {
             return false;
         }
-        self._build_ast(in_workspace);
+        self._build_ast(session, in_workspace);
         true
     }
 
-    pub fn _build_ast(&mut self, in_workspace: bool) {
+    pub fn _build_ast(&mut self, session: &mut SessionInfo, in_workspace: bool) {
         if self.uri.ends_with(".xml") {
             self.file_info_ast.borrow_mut().ast_type = AstType::Xml;
             return;
@@ -165,15 +165,16 @@ impl FileInfo {
         self.valid = true;
         for error in ast.errors().iter() {
             self.valid = false;
-            diagnostics.push(Diagnostic::new(
-                Range{ start: Position::new(error.location.start().to_u32(), 0),
-                    end: Position::new(error.location.end().to_u32(), 0)},
-                Some(DiagnosticSeverity::ERROR),
-                Some(NumberOrString::String(S!("OLS30001"))),
-                Some(EXTENSION_NAME.to_string()),
-                error.error.to_string(),
-                None,
-                None));
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30001, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range{
+                        start: Position::new(error.location.start().to_u32(), 0),
+                        end: Position::new(error.location.end().to_u32(), 0)
+                    },
+                    message: error.error.to_string(),
+                    ..diagnostic_base
+                });
+            }
         }
         match ast.into_syntax() {
             Mod::Expression(_expr) => {
@@ -202,7 +203,7 @@ impl FileInfo {
         let mut hasher = DefaultHasher::new();
         self.file_info_ast.borrow().text_rope.clone().unwrap().hash(&mut hasher);
         self.file_info_ast.borrow_mut().text_hash = hasher.finish();
-        self._build_ast(session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
+        self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
     }
 
     pub fn extract_tokens(&mut self, ast: &Parsed<Mod>, source: &String) {
@@ -539,27 +540,3 @@ impl FileMgr {
     }
 }
 
-pub fn add_diagnostic(diagnostic_vec: &mut Vec<Diagnostic>, new_diagnostic: Diagnostic, noqa: &NoqaInfo){
-    match noqa {
-        NoqaInfo::None => {},
-        NoqaInfo::All => {
-            return;
-        }
-        NoqaInfo::Codes(codes) => {
-            match &new_diagnostic.code {
-                None => {}
-                Some(NumberOrString::Number(n)) => {
-                    if codes.contains(&n.to_string()) {
-                        return;
-                    }
-                }
-                Some(NumberOrString::String(s)) => {
-                    if codes.contains(&s) {
-                        return;
-                    }
-                }
-            }
-        }
-    }
-    diagnostic_vec.push(new_diagnostic);
-}

@@ -1,14 +1,13 @@
-use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
-use regex::Regex;
+use lsp_types::{Diagnostic};
 use roxmltree::Node;
-use tracing::{error, warn};
+use tracing::{warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::entry_point::EntryPointType, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::EntryPointType}, threads::SessionInfo, Sy};
 
-use super::{file_mgr::FileInfo, odoo::SyncOdoo, symbols::{symbol::Symbol, xml_file_symbol::XmlFileSymbol}};
+use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
 
 /*
 Struct made to load RelaxNG Odoo schemas and add hooks and specific OdooLS behavior on particular nodes.
@@ -58,18 +57,15 @@ impl XmlArchBuilder {
             let module = module.unwrap();
             let id_split = id.split(".").collect::<Vec<&str>>();
             if id_split.len() > 2 {
-                diagnostics.push(Diagnostic::new(
-                    Range {
-                        start: Position::new(node.range().start as u32, 0),
-                        end: Position::new(node.range().end as u32, 0),
-                    },
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Invalid XML ID '{}'. It should not contain more than one dot", id),
-                    None,
-                    None
-                ));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30447, &[&id]) {
+                    diagnostics.push(lsp_types::Diagnostic {
+                        range: lsp_types::Range {
+                            start: lsp_types::Position::new(node.range().start as u32, 0),
+                            end: lsp_types::Position::new(node.range().end as u32, 0),
+                        },
+                        ..diagnostic.clone()
+                    });
+                }
                 return;
             }
             let id = id_split.last().unwrap().to_string();

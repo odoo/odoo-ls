@@ -2,16 +2,15 @@
 // Each entry is a doc comment and a code, followed by its default severity and message template.
 //
 // To add a new code, add it here in the same format.
-
-use serde::{Deserialize, Serialize};
-use super::{DiagnosticInfo, DiagnosticSetting};
-
 /*
+Error codes for OdooLS diagnostics are in the format:
+OLS<Section><CodeNumber> (OLSXXYYY)
 Sections:
-- Import resolution
-- Manifest validation
-- Python validation
-- XML validation
+- Python / Syntax 01
+- Import 02
+- Odoo / inheritance, model dependency, missing dependencies ,modules... 03
+- Manifest 04
+- XML/CSV 05
  */
 
 diagnostic_codes! {
@@ -256,10 +255,10 @@ diagnostic_codes! {
     /** "menuitem node must contains an id attribute"
     */
     OLS30402, (DiagnosticSetting::Error, "menuitem node must contains an id attribute"),
-    /** "Invalid attribute in menuitem node".
+    /** "Invalid attribute {0} in menuitem node".
     * This attribute is not valid in a menuitem node
     */
-    OLS30403, (DiagnosticSetting::Error, "Invalid attribute in menuitem node"),
+    OLS30403, (DiagnosticSetting::Error, "Invalid attribute {0} in menuitem node"),
     /** "Sequence attribute must be a string representing a number"
     */
     OLS30404, (DiagnosticSetting::Error, "Sequence attribute must be a string representing a number"),
@@ -269,23 +268,163 @@ diagnostic_codes! {
     /** "web_icon attribute is not allowed when parent is specified"
     */
     OLS30406, (DiagnosticSetting::Error, "web_icon attribute is not allowed when parent is specified"),
-    /** "Invalid child node in menuitem"
+    /** "Invalid child node {0} in menuitem"
     */
-    OLS30407, (DiagnosticSetting::Error, "Invalid child node in menuitem"),
+    OLS30407, (DiagnosticSetting::Error, "Invalid child node {0} in menuitem"),
     /** "parent attribute is not allowed in submenuitems"
     */
     OLS30408, (DiagnosticSetting::Error, "parent attribute is not allowed in submenuitems"),
-    /** "Various errors of RNG validation of XML files"
+    /** "Invalid attribute {0} in record node"
     */
-    OLS30409, (DiagnosticSetting::Error, "Various errors of RNG validation of XML files"),
-    /** "Data file not found in the module"
+    OLS30409, (DiagnosticSetting::Error, "Invalid attribute {0} in record node"),
+    /** "record node must contain a model attribute"
+    * A <record> node in XML must have a 'model' attribute.
     */
-    OLS30444, (DiagnosticSetting::Error, "Data file not found in the module"),
-    /** "Data file should be an XML or a CSV file"
+    OLS30410, (DiagnosticSetting::Error, "record node must contain a model attribute"),
+    /** "Invalid child node {0} in record. Only field node is allowed"
+    * Only <field> nodes are allowed as children of <record>.
     */
-    OLS30445, (DiagnosticSetting::Error, "Data file should be an XML or a CSV file"),
+    OLS30411, (DiagnosticSetting::Error, "Invalid child node {0} in record. Only field node is allowed"),
+    /** "field node must contain a name attribute"
+    * A <field> node in XML must have a 'name' attribute.
+    */
+    OLS30412, (DiagnosticSetting::Error, "field node must contain a name attribute"),
+    /** "field node cannot have more than one of the attributes type, ref, eval or search"
+    * A <field> node cannot have more than one of the following attributes: type, ref, eval, search.
+    */
+    OLS30413, (DiagnosticSetting::Error, "field node cannot have more than one of the attributes type, ref, eval or search"),
+    /** "Invalid content for int field: {0}"
+    * The content of a <field type="int"> must be a valid integer or 'None'.
+    */
+    OLS30414, (DiagnosticSetting::Error, "Invalid content for int field: {0}"),
+    /** "Invalid content for float field: {0}"
+    * The content of a <field type="float"> must be a valid float.
+    */
+    OLS30415, (DiagnosticSetting::Error, "Invalid content for float field: {0}"),
+    /** "Invalid child node {0} in list/tuple field"
+    * Only valid child nodes are allowed in <field type="list|tuple">.
+    */
+    OLS30416, (DiagnosticSetting::Error, "Invalid child node {0} in list/tuple field"),
+    /** "text content is not allowed on a value that contains a file attribute"
+    * <field> or <value> nodes with a 'file' attribute must not have text content.
+    */
+    OLS30417, (DiagnosticSetting::Error, "text content is not allowed on a value that contains a file attribute"),
+    /** "text content is not allowed on a field with {0} attribute"
+    * <field> nodes with 'ref', 'eval', or 'search' attributes must not have text content.
+    */
+    OLS30418, (DiagnosticSetting::Error, "text content is not allowed on a field with {0} attribute"),
+    /** "model attribute is not allowed on field node without eval or search attribute"
+    * The 'model' attribute is only allowed on <field> nodes with 'eval' or 'search'.
+    */
+    OLS30419, (DiagnosticSetting::Error, "model attribute is not allowed on field node without eval or search attribute"),
+    /** "use attribute is only allowed on field node with search attribute"
+    * The 'use' attribute is only allowed on <field> nodes with 'search'.
+    */
+    OLS30420, (DiagnosticSetting::Error, "use attribute is only allowed on field node with search attribute"),
+    /** "Invalid attribute {0} in field node"
+    * The attribute is not valid for <field> nodes.
+    */
+    OLS30421, (DiagnosticSetting::Error, "Invalid attribute {0} in field node"),
+    /** "Fields only allow 'record' children nodes"
+    * Only <record> nodes are allowed as children of <field> (except for xml/html fields).
+    */
+    OLS30422, (DiagnosticSetting::Error, "Fields only allow 'record' children nodes"),
+    /** "search attribute is not allowed when eval or type attribute is present"
+    * The 'search' attribute cannot be used together with 'eval' or 'type' on a <value> node.
+    */
+    OLS30423, (DiagnosticSetting::Error, "search attribute is not allowed when eval or type attribute is present"),
+    /** "eval attribute is not allowed when search or type attribute is present"
+    * The 'eval' attribute cannot be used together with 'search' or 'type' on a <value> node.
+    */
+    OLS30424, (DiagnosticSetting::Error, "eval attribute is not allowed when search or type attribute is present"),
+    /** "type attribute is not allowed when search or eval attribute is present"
+    * The 'type' attribute cannot be used together with 'search' or 'eval' on a <value> node.
+    */
+    OLS30425, (DiagnosticSetting::Error, "type attribute is not allowed when search or eval attribute is present"),
+    /** "text content is not allowed on a value that contains a file attribute"
+    * <value> nodes with a 'file' attribute must not have text content.
+    */
+    OLS30426, (DiagnosticSetting::Error, "text content is not allowed on a value that contains a file attribute"),
+    /** "file attribute is only allowed on value node with type attribute"
+    * The 'file' attribute is only allowed on <value> nodes with a 'type' attribute.
+    */
+    OLS30427, (DiagnosticSetting::Error, "file attribute is only allowed on value node with type attribute"),
+    /** "Invalid attribute {0} in value node"
+    * The attribute is not valid for <value> nodes.
+    */
+    OLS30428, (DiagnosticSetting::Error, "Invalid attribute {0} in value node"),
+    /** "delete node must contain a model attribute"
+    * A <delete> node in XML must have a 'model' attribute.
+    */
+    OLS30429, (DiagnosticSetting::Error, "delete node must contain a model attribute"),
+    /** "delete node cannot have both id and search attributes"
+    * A <delete> node cannot have both 'id' and 'search' attributes at the same time.
+    */
+    OLS30430, (DiagnosticSetting::Error, "delete node cannot have both id and search attributes"),
+    /** "delete node must have either id or search attribute"
+    * A <delete> node must have either an 'id' or a 'search' attribute.
+    */
+    OLS30431, (DiagnosticSetting::Error, "delete node must have either id or search attribute"),
+    /** "act_window node must contain a {0} attribute"
+    * An <act_window> node must have the specified attribute (id, name, or res_model).
+    */
+    OLS30432, (DiagnosticSetting::Error, "act_window node must contain a {0} attribute"),
+    /** "Invalid attribute {0} in act_window node"
+    * The attribute is not valid for <act_window> nodes.
+    */
+    OLS30433, (DiagnosticSetting::Error, "Invalid attribute {0} in act_window node"),
+    /** "act_window node cannot have text content"
+    * <act_window> nodes cannot have text content.
+    */
+    OLS30434, (DiagnosticSetting::Error, "act_window node cannot have text content"),
+    /** "binding_type attribute must be either 'action' or 'report', found {0}"
+    * The 'binding_type' attribute must be either 'action' or 'report'.
+    */
+    OLS30435, (DiagnosticSetting::Error, "binding_type attribute must be either 'action' or 'report', found {0}"),
+    /** "binding_views attribute must be a comma-separated list of view types matching ^([a-z]+(,[a-z]+)*)?$, found {0}"
+    * The 'binding_views' attribute must match the required pattern.
+    */
+    OLS30436, (DiagnosticSetting::Error, "binding_views attribute must be a comma-separated list of view types matching ^([a-z]+(,[a-z]+)*)?$, found {0}"),
+    /** "report node must contain a {0} attribute"
+    * A <report> node must have the specified attribute (string, model, or name).
+    */
+    OLS30437, (DiagnosticSetting::Error, "report node must contain a {0} attribute"),
+    /** "Invalid attribute {0} in report node"
+    * The attribute is not valid for <report> nodes.
+    */
+    OLS30438, (DiagnosticSetting::Error, "Invalid attribute {0} in report node"),
+    /** "report node cannot have text content"
+    * <report> nodes cannot have text content.
+    */
+    OLS30439, (DiagnosticSetting::Error, "report node cannot have text content"),
+    /** "function node must contain a {0} attribute"
+    * A <function> node must have the specified attribute (model or name).
+    */
+    OLS30440, (DiagnosticSetting::Error, "function node must contain a {0} attribute"),
+    /** "function node cannot have value children when eval attribute is present"
+    * <function> nodes cannot have <value> children when 'eval' attribute is present.
+    */
+    OLS30441, (DiagnosticSetting::Error, "function node cannot have value children when eval attribute is present"),
+    /** "Invalid attribute {0} in function node"
+    * The attribute is not valid for <function> nodes.
+    */
+    OLS30442, (DiagnosticSetting::Error, "Invalid attribute {0} in function node"),
+    /** "function node cannot have function children when eval attribute is present"
+    * <function> nodes cannot have <function> children when 'eval' attribute is present.
+    */
+    OLS30443, (DiagnosticSetting::Error, "function node cannot have function children when eval attribute is present"),
+    /** "Invalid child node {0} in function node"
+    * Only valid child nodes are allowed in <function> nodes.
+    */
+    OLS30444, (DiagnosticSetting::Error, "Invalid child node {0} in function node"),
+    /** "Data file {0} not found in the module"
+    */
+    OLS30445, (DiagnosticSetting::Error, "Data file {0} not found in the module"),
+    /** "Data file {0} is not a valid XML or CSV file"
+    */
+    OLS30446, (DiagnosticSetting::Error, "Data file {0} is not a valid XML or CSV file"),
     /** Invalid XML ID '{0}'. It should not contain more than one dot.
     * An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
     */
-    OLS30446, (DiagnosticSetting::Error, "Invalid XML ID '{0}'. It should not contain more than one dot."),
+    OLS30447, (DiagnosticSetting::Error, "Invalid XML ID '{0}'. It should not contain more than one dot."),
 }
