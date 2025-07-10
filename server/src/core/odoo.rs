@@ -816,6 +816,13 @@ impl SyncOdoo {
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
         for entry in session.sync_odoo.entry_point_mgr.borrow().iter_main() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    return Some(sym);
+                }
+                continue;
+            }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
@@ -828,6 +835,13 @@ impl SyncOdoo {
         //Not found? Then return if it is matching a non-public entry strictly matching the file
         let mut found_an_entry = false; //there to ensure that a wrongly built entry would create infinite loop
         for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    return Some(sym);
+                }
+                continue;
+            }
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;
                 let tree = entry.borrow().get_tree_for_entry(path);
