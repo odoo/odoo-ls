@@ -6,7 +6,7 @@ use regex::Regex;
 use roxmltree::Node;
 use tracing::{error, warn};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, oyarn, threads::SessionInfo, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::{file_mgr::FileInfo, odoo::SyncOdoo, symbols::{symbol::Symbol, xml_file_symbol::XmlFileSymbol}, xml_arch_builder::XmlArchBuilder};
 
@@ -81,7 +81,22 @@ impl XmlArchBuilder {
                             None));
                     }
                 },
-                "name" | "groups" | "active" => {},
+                "groups" => {
+                    for group in attr.value().split(",") {
+                        let group = group.trim_start_matches("-");
+                        if self.get_group_ids(session, group, &attr, diagnostics).is_empty() {
+                            diagnostics.push(Diagnostic::new(
+                                Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                Some(DiagnosticSeverity::ERROR),
+                                Some(lsp_types::NumberOrString::String(S!("OLS30449"))),
+                                Some(EXTENSION_NAME.to_string()),
+                                format!("Group with id '{}' does not exist", group),
+                                None,
+                                None));
+                        }
+                    }
+                },
+                "name" | "active" => {},
                 "action" => {
                     if (has_parent || is_submenu) && node.has_children() {
                         let other_than_text = node.children().any(|c| !c.is_text() && !c.is_comment());
@@ -182,7 +197,11 @@ impl XmlArchBuilder {
                 self.load_menuitem(session, &child, true, diagnostics);
             }
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::MENUITEM(XmlDataMenuItem {
+            xml_symbol: self.xml_symbol.clone(),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -234,7 +253,12 @@ impl XmlArchBuilder {
                     None));
             }
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::RECORD(XmlDataRecord {
+            xml_symbol: self.xml_symbol.clone(),
+            model: oyarn!("{}", node.attribute("model").unwrap()),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -483,7 +507,11 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::TEMPLATE(XmlDataTemplate {
+            xml_symbol: self.xml_symbol.clone(),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -521,7 +549,12 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::DELETE(XmlDataDelete {
+            xml_symbol: self.xml_symbol.clone(),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            model: Sy!(node.attribute("model").unwrap().to_string()),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -593,7 +626,13 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::ACT_WINDOW(XmlDataActWindow {
+            xml_symbol: self.xml_symbol.clone(),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            res_model: Sy!(node.attribute("res_model").unwrap().to_string()),
+            name: Sy!(node.attribute("name").unwrap().to_string()),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -639,7 +678,14 @@ impl XmlArchBuilder {
                 None,
                 None));
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::REPORT(XmlDataReport {
+            xml_symbol: self.xml_symbol.clone(),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            name: Sy!(node.attribute("name").unwrap().to_string()),
+            model: Sy!(node.attribute("model").unwrap().to_string()),
+            string: Sy!(node.attribute("string").unwrap().to_string()),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 

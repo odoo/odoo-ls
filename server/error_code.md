@@ -328,3 +328,7 @@ A menuitem is specifying a parent that has not been declared before itself.
 ### OLS30448
 "Action menuitem with id XXXX does not exist"
 A menuitem is specifying an action that has not been declared before the menuitem.
+
+### OLS30449
+"Group with id XXXX does not exist"
+A menuitem is specifying a group that has not been declared before the menuitem
