@@ -13,6 +13,7 @@ use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use tracing::warn;
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbols::symbol::Symbol;
@@ -25,7 +26,6 @@ use crate::S;
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
-use super::file_mgr::add_diagnostic;
 use super::file_mgr::FileMgr;
 use super::python_arch_eval::PythonArchEval;
 use super::symbols::module_symbol::ModuleSymbol;
@@ -625,60 +625,46 @@ impl PythonArchEvalHooks {
                                     let symbols = model.get_main_symbols(session, None);
                                     if symbols.is_empty() {
                                         if in_validation {
-                                            let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                            add_diagnostic(diagnostics, Diagnostic::new(range,
-                                                Some(DiagnosticSeverity::ERROR),
-                                                Some(NumberOrString::String(S!("OLS30105"))),
-                                                Some(EXTENSION_NAME.to_string()),
-                                                S!("This model is inherited, but never declared."),
-                                                None,
-                                                None
-                                                )
-                                            , &session.current_noqa);
+                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30105, &[]) {
+                                                diagnostics.push(Diagnostic {
+                                                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                                    ..diagnostic_base.clone()
+                                                });
+                                            }
                                         }
                                     } else {
                                         if in_validation {
-                                            let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                                             let valid_modules: Vec<OYarn> = symbols.iter().map(|s| match s.borrow().find_module() {
                                                 Some(sym) => sym.borrow().name().clone(),
                                                 None => Sy!("Unknown").clone()
                                             }).collect();
-                                            add_diagnostic(diagnostics, Diagnostic::new(range,
-                                                Some(DiagnosticSeverity::ERROR),
-                                                Some(NumberOrString::String(S!("OLS30101"))),
-                                                Some(EXTENSION_NAME.to_string()),
-                                                format!("This model is not declared in the dependencies of your module. You should consider adding one of the following dependency: {:?}", valid_modules),
-                                                None,
-                                                None
-                                                )
-                                            , &session.current_noqa);
+                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30101, &[&format!("{:?}", valid_modules)]) {
+                                                diagnostics.push(Diagnostic {
+                                                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                                    ..diagnostic_base.clone()
+                                                });
+                                            }
                                         }
                                     }
                                 } else if has_class_in_parents {
                                     if in_validation {
-                                        let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
-                                        add_diagnostic(diagnostics, Diagnostic::new(range,
-                                            Some(DiagnosticSeverity::ERROR),
-                                            Some(NumberOrString::String(S!("OLS30102"))),
-                                            Some(EXTENSION_NAME.to_string()),
-                                            S!("Unknown model. Check your addons path"),
-                                            None,
-                                            None
-                                        ), &session.current_noqa);
+                                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30102, &[]) {
+                                                diagnostics.push(Diagnostic {
+                                                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                                    ..diagnostic_base
+                                                });
+                                        };
                                     }
                                 }
                             }
                         } else if has_class_in_parents {
-                            let range = FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range());
                             if in_validation {
-                                add_diagnostic(diagnostics, Diagnostic::new(range,
-                                    Some(DiagnosticSeverity::ERROR),
-                                    Some(NumberOrString::String(S!("OLS30102"))),
-                                    None,
-                                    S!("Unknown model. Check your addons path"),
-                                    None,
-                                    None
-                                ), &session.current_noqa);
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30102, &[]) {
+                                    diagnostics.push(Diagnostic {
+                                        range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                        ..diagnostic_base
+                                    });
+                                };
                             }
                         }
                     }
@@ -939,27 +925,21 @@ impl PythonArchEvalHooks {
             return diagnostics;
         }
         let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", returns_str)).cloned() else {
-            add_diagnostic(&mut diagnostics, Diagnostic::new(
-                FileMgr::textRange_to_temporary_Range(&expr.range()),
-                Some(DiagnosticSeverity::ERROR),
-                Some(NumberOrString::String(S!("OLS30102"))),
-                Some(EXTENSION_NAME.to_string()),
-                S!("Unknown model. Check your addons path"),
-                None,
-                None,
-            ), &session.current_noqa);
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30102, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                    ..diagnostic_base
+                });
+            };
             return diagnostics;
         };
         let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
-            add_diagnostic(&mut diagnostics, Diagnostic::new(
-                FileMgr::textRange_to_temporary_Range(&expr.range()),
-                Some(DiagnosticSeverity::ERROR),
-                Some(NumberOrString::String(S!("OLS30101"))),
-                Some(EXTENSION_NAME.to_string()),
-                S!("This model is not in the dependencies of your module."),
-                None,
-                None,
-            ), &session.current_noqa);
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30101, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                    ..diagnostic
+                });
+            }
             return diagnostics
         };
         func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
@@ -986,15 +966,12 @@ impl PythonArchEvalHooks {
             let field_name = expr.value.to_string();
             let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
             if syms.is_empty(){
-                add_diagnostic(&mut diagnostics, Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&expr.range()),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30323"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Field {field_name} does not exist on model {model_name} or not in dependencies"),
-                    None,
-                    None,
-                ), &session.current_noqa);
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30323, &[&field_name, &model_name]) {
+                    diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                        ..diagnostic
+                    });
+                }
             }
         }
         diagnostics
@@ -1020,15 +997,12 @@ impl PythonArchEvalHooks {
             let field_name = expr.value.to_string();
             let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
             if syms.is_empty(){
-                add_diagnostic(&mut diagnostics, Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&expr.range()),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30323"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Field {field_name} does not exist on model {model_name} or not in dependencies"),
-                    None,
-                    None,
-                ), &session.current_noqa);
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30323, &[&field_name, &model_name]) {
+                    diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                        ..diagnostic
+                    });
+                }
             }
         }
         diagnostics
@@ -1053,30 +1027,24 @@ impl PythonArchEvalHooks {
         let xml_id_str = xml_id_expr.value.to_str();
         let mut xml_id_split = xml_id_str.split('.');
         let module_name = xml_id_split.next().unwrap();
-        let mut xml_id = xml_id_split.collect::<Vec<&str>>().join(".");
-        let mut module = session.sync_odoo.modules.get(module_name).cloned();
+        let xml_id = xml_id_split.collect::<Vec<&str>>().join(".");
+        let module = session.sync_odoo.modules.get(module_name).cloned();
         if module.is_none() {
             if in_validation {
                 if xml_id.len() == 0 {
-                    diagnostics.push(Diagnostic::new(
-                        FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(NumberOrString::String(S!("OLS30330"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        S!("Unspecified module. Add the module name before the XML ID: 'module.xml_id'"),
-                        None,
-                        None
-                    ));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30330, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                            ..diagnostic
+                        });
+                    }
                 } else {
-                    diagnostics.push(Diagnostic::new(
-                        FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                        Some(DiagnosticSeverity::ERROR),
-                        Some(NumberOrString::String(S!("OLS30331"))),
-                        Some(EXTENSION_NAME.to_string()),
-                        S!("Unknown module"),
-                        None,
-                        None
-                    ));
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30331, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                            ..diagnostic
+                        });
+                    }
                 }
             }
             return None;

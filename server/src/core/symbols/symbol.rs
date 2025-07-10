@@ -3,7 +3,8 @@ use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
-use crate::core::file_mgr::{add_diagnostic, NoqaInfo};
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::file_mgr::NoqaInfo;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -2440,16 +2441,16 @@ impl Symbol {
     fn member_symbol_hook(&self, session: &SessionInfo, name: &String, diagnostics: &mut Vec<Diagnostic>){
         if session.sync_odoo.version_major >= 17 && name == "Form"{
             let tree = self.get_tree();
-            if tree == (vec![Sy!("odoo"), Sy!("tests"), Sy!("common")], vec!()){
-                add_diagnostic(diagnostics, Diagnostic::new(Range::new(Position::new(0,0),Position::new(0,0)),
-                    Some(DiagnosticSeverity::WARNING),
-                    Some(NumberOrString::String(S!("OLS20006"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    S!("Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
-                    None,
-                    Some(vec![DiagnosticTag::DEPRECATED]),
-                ),
-                &session.current_noqa);
+            if tree == (vec![Sy!("odoo"), Sy!("tests"), Sy!("common")], vec!()) {
+                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS20006, &[]) {
+                    diagnostics.push(
+                        Diagnostic {
+                            range: Range::new(Position::new(0,0),Position::new(0,0)),
+                            tags: Some(vec![DiagnosticTag::DEPRECATED]),
+                            ..diagnostic_base.clone()
+                        }
+                    );
+                }
             }
         }
     }
