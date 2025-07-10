@@ -17,3 +17,4 @@ pub mod python_utils;
 pub mod symbols;
 pub mod xml_arch_builder;
 pub mod xml_arch_builder_rng_validation;
+pub mod xml_data;

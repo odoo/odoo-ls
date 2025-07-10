@@ -12,6 +12,7 @@ use weak_table::PtrWeakHashSet;
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
+use crate::core::xml_data::{XmlData, XmlDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
@@ -56,8 +57,12 @@ impl PythonOdooBuilder {
                     let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
                     let module = module.upgrade().unwrap();
                     let mut module = module.borrow_mut();
-                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name).or_insert(PtrWeakHashSet::new());
-                    set.insert(sym.clone());
+                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name.clone()).or_insert(vec![]);
+                    set.push(XmlData::RECORD(XmlDataRecord {
+                        xml_symbol: sym.clone(),
+                        model: Sy!("ir.model"),
+                        xml_id: Some(xml_id_model_name),
+                    }));
                 });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }

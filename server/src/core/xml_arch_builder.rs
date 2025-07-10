@@ -6,7 +6,8 @@ use roxmltree::{Attribute, Node};
 use tracing::{error, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::EntryPointType}, threads::SessionInfo, Sy};
+use crate::{core::{diagnostics::{create_diagnostic, DiagnosticCode}}};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{entry_point::EntryPointType, xml_data::XmlData}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
 
@@ -44,7 +45,8 @@ impl XmlArchBuilder {
         session: &mut SessionInfo,
         id: Option<String>,
         node: &Node,
-        diagnostics: &mut Vec<Diagnostic>,
+        mut xml_data: XmlData,
+        diagnostics: &mut Vec<Diagnostic>
     ) {
         if !self.is_in_main_ep {
             return;
@@ -77,29 +79,15 @@ impl XmlArchBuilder {
                     xml_module = m.upgrade().unwrap();
                 }
             }
-            let xml_module_bw = xml_module.borrow();
-            let already_existing = xml_module_bw.as_module_package().xml_ids.get(&Sy!(id.clone())).cloned();
-            drop(xml_module_bw);
-            let mut found_one = false;
-            if let Some(existing) = already_existing {
-                //Check that it exists a main xml_id
-                for s in existing.iter() {
-                    if Rc::ptr_eq(&s, &xml_module) {
-                        found_one = true;
-                        break;
-                    }
-                }
-            } else {
-                xml_module.borrow_mut().as_module_package_mut().xml_ids.insert(Sy!(id.clone()), PtrWeakHashSet::new());
+            if xml_module.borrow().as_module_package().xml_ids.get(&Sy!(id.clone())).is_none() {
+                xml_module.borrow_mut().as_module_package_mut().xml_ids.insert(Sy!(id.clone()), vec![]);
             }
-            if !found_one && !Rc::ptr_eq(&xml_module, &module) {
-                // no diagnostic to create.
-            }
-            xml_module.borrow_mut().as_module_package_mut().xml_ids.get_mut(&Sy!(id)).unwrap().insert(self.xml_symbol.clone());
+            xml_data.set_symbol(self.xml_symbol.clone());
+            xml_module.borrow_mut().as_module_package_mut().xml_ids.get_mut(&Sy!(id)).unwrap().push(xml_data);
         }
     }
 
-    pub fn get_xml_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_xml_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
         let mut res = vec![];
         if !self.is_in_main_ep {
             return res;
@@ -134,9 +122,23 @@ impl XmlArchBuilder {
             return res;
         }
         let module = module.unwrap();
-        for module in module.borrow().as_module_package().this_and_dependencies(session).iter() {
-            if let Some(xml) = module.borrow().as_module_package().xml_ids.get(&oyarn!("{}", id_split.last().unwrap())) {
-                res.extend(xml.iter());
+        if let Some(xml) = module.borrow().as_module_package().xml_ids.get(&oyarn!("{}", id_split.last().unwrap())) {
+            res.extend(xml.iter().map(|x| x.clone()));
+        }
+        res
+    }
+
+    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+        let xml_ids = self.get_xml_ids(session, xml_id, attr, diagnostics);
+        let mut res = vec![];
+        for data in xml_ids.iter() {
+            match data {
+                XmlData::RECORD(r) => {
+                    if r.model == "res.groups" {
+                        res.push(data.clone());
+                    }
+                },
+                _ => {}
             }
         }
         res
