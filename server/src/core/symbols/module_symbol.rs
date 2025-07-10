@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::xml_arch_builder::XmlArchBuilder;
+use crate::core::xml_data::XmlData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
@@ -40,7 +41,7 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
-    pub xml_ids: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub xml_ids: HashMap<OYarn, Vec<XmlData>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,

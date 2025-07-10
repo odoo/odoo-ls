@@ -408,4 +408,8 @@ OLS05052, DiagnosticSetting::Error, "Parent menuitem with id '{0}' does not exis
  * A menuitem is specifying an action that has not been declared before the menuitem.
  */
 OLS05053, DiagnosticSetting::Error, "Action with id '{0}' does not exist",
+/**
+ * A menuitem is specifying a group that has not been declared before the menuitem
+ */
+OLS05054, DiagnosticSetting::Error, "Group with id '{0}' does not exist",
 }
