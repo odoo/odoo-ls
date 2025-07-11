@@ -1,11 +1,11 @@
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
-use roxmltree::{Document, Error};
+use lsp_types::Diagnostic;
+use roxmltree::Error;
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{diagnostics::DiagnosticCode, file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
+use super::{symbol::Symbol, symbol_mgr::SectionRange};
 
 #[derive(Debug)]
 pub struct XmlFileSymbol {
@@ -35,7 +35,7 @@ pub struct XmlFileSymbol {
 impl XmlFileSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
-        let mut res = Self {
+        let res = Self {
             name: oyarn!("{}", name),
             path,
             is_external,
@@ -138,16 +138,14 @@ impl XmlFileSymbol {
         self.in_workspace
     }
 
-    pub fn build_syntax_diagnostics(diagnostics: &mut Vec<Diagnostic>, file_info: &mut FileInfo, doc_error: &Error) {
+    pub fn build_syntax_diagnostics(session: &SessionInfo, diagnostics: &mut Vec<Diagnostic>, file_info: &mut FileInfo, doc_error: &Error) {
         let offset = file_info.position_to_offset(doc_error.pos().row -1, doc_error.pos().col -1);
-        diagnostics.push(Diagnostic::new(
-            Range::new(Position::new(offset as u32, 0), Position::new(offset as u32 + 1, 0)),
-            Some(DiagnosticSeverity::ERROR),
-            Some(NumberOrString::String(S!("OLS30210"))),
-            Some(EXTENSION_NAME.to_string()),
-            format!("Unable to parse XML file: {}", doc_error),
-            None,
-            None));
+        if let Some(diagnostic) = crate::core::diagnostics::create_diagnostic(session, DiagnosticCode::OLS30210, &[&doc_error.to_string()]) {
+            diagnostics.push(lsp_types::Diagnostic {
+                range: lsp_types::Range::new(lsp_types::Position::new(offset as u32, 0), lsp_types::Position::new(offset as u32 + 1, 0)),
+                ..diagnostic.clone()
+            });
+        }
     }
 
 }

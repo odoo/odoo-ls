@@ -1,5 +1,6 @@
 pub mod config;
 pub mod csv_arch_builder;
+pub mod diagnostics;
 pub mod evaluation;
 pub mod entry_point;
 pub mod file_mgr;

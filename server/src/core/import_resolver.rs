@@ -1,5 +1,5 @@
 use glob::glob;
-use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use tracing::error;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -9,11 +9,11 @@ use std::path::{Path, PathBuf};
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, Identifier};
 use crate::{constants::*, oyarn, Sy, S};
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
 
 use super::entry_point::{EntryPoint, EntryPointType};
-use super::file_mgr::add_diagnostic;
 use super::odoo::SyncOdoo;
 use super::symbols::symbol::Symbol;
 
@@ -37,16 +37,13 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbo
     if session.sync_odoo.version_major >= 17 && alias.name.as_str() == "Form" && (*(from_symbol.as_ref().unwrap())).borrow().get_main_entry_tree(session).0 == vec!["odoo", "tests", "common"]{
         let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);
         if let Some(diagnostic) = diagnostics.as_mut() {
-            add_diagnostic(diagnostic, Diagnostic::new(
-                        Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
-                        Some(DiagnosticSeverity::WARNING),
-                            Some(NumberOrString::String(S!("OLS20006"))),
-                            Some(EXTENSION_NAME.to_string()),
-                            S!("Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
-                            None,
-                        Some(vec![DiagnosticTag::DEPRECATED]),
-                )
-            , &session.current_noqa);
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS20006, &[]) {
+                diagnostic.push(Diagnostic {
+                    range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
+                    tags: Some(vec![DiagnosticTag::DEPRECATED]),
+                    ..diagnostic_base
+                });
+            }
         }
         results.pop()
     } else {

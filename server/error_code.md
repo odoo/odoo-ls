@@ -311,12 +311,12 @@ This attribute is not valid in a menuitem node
 ### OLS30409 - OLS30443
 "Various errors of RNG validation of XML files"
 
-### OLS30444
+### OLS30445
 "Data file not found in the module"
 
-### OLS30445
+### OLS30446
 "Data file should be an XML or a CSV file"
 
-### OLS30446
+### OLS30447
 "XML ID should not contain more than one dot"
 An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
