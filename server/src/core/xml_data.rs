@@ -1,6 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, ops::Range, rc::{Rc, Weak}};
 
-use crate::{constants::OYarn, core::symbols::symbol::Symbol};
+use ruff_text_size::TextRange;
+
+use crate::{constants::{OYarn, SymType}, core::symbols::symbol::Symbol};
 
 
 #[derive(Debug, Clone)]
@@ -15,33 +17,33 @@ pub enum XmlData {
 
 #[derive(Debug, Clone)]
 pub struct XmlDataRecord {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
-    pub model: OYarn,
+    pub file_symbol: Weak<RefCell<Symbol>>,
+    pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataMenuItem {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataTemplate {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataDelete {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
     pub model: OYarn,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataActWindow {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
     pub name: OYarn,
     pub res_model: OYarn,
@@ -49,7 +51,7 @@ pub struct XmlDataActWindow {
 
 #[derive(Debug, Clone)]
 pub struct XmlDataReport {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
     pub name: OYarn,
     pub model: OYarn,
@@ -58,48 +60,59 @@ pub struct XmlDataReport {
 
 impl XmlData {
 
-    pub fn set_symbol(&mut self, xml_symbol: Rc<RefCell<Symbol>>) {
+    pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
         match self {
             XmlData::RECORD(ref mut record) => {
-                record.xml_symbol = xml_symbol;
+                record.file_symbol = Rc::downgrade(xml_symbol);
             },
             XmlData::MENUITEM(ref mut menu_item) => {
-                menu_item.xml_symbol = xml_symbol;
+                menu_item.file_symbol = Rc::downgrade(xml_symbol);
             },
             XmlData::TEMPLATE(ref mut template) => {
-                template.xml_symbol = xml_symbol;
+                template.file_symbol = Rc::downgrade(xml_symbol);
             },
             XmlData::DELETE(ref mut delete) => {
-                delete.xml_symbol = xml_symbol;
+                delete.file_symbol = Rc::downgrade(xml_symbol);
             },
             XmlData::ACT_WINDOW(ref mut act_window) => {
-                act_window.xml_symbol = xml_symbol;
+                act_window.file_symbol = Rc::downgrade(xml_symbol);
             },
             XmlData::REPORT(ref mut report) => {
-                report.xml_symbol = xml_symbol;
+                report.file_symbol = Rc::downgrade(xml_symbol);
             },
         }
     }
 
-    pub fn get_symbol(&self) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn get_xml_file_symbol(&self) -> Option<Rc<RefCell<Symbol>>> {
+        let file_symbol = self.get_file_symbol()?;
+        if let Some(symbol) = file_symbol.upgrade() {
+            if symbol.borrow().typ() == SymType::XML_FILE {
+                return Some(symbol);
+            }
+        }
+        None
+    }
+
+    /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
+    pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
         match self {
             XmlData::RECORD(ref record) => {
-                Some(record.xml_symbol.clone())
+                Some(record.file_symbol.clone())
             },
             XmlData::MENUITEM(ref menu_item) => {
-                Some(menu_item.xml_symbol.clone())
+                Some(menu_item.file_symbol.clone())
             },
             XmlData::TEMPLATE(ref template) => {
-                Some(template.xml_symbol.clone())
+                Some(template.file_symbol.clone())
             },
             XmlData::DELETE(ref delete) => {
-                Some(delete.xml_symbol.clone())
+                Some(delete.file_symbol.clone())
             },
             XmlData::ACT_WINDOW(ref act_window) => {
-                Some(act_window.xml_symbol.clone())
+                Some(act_window.file_symbol.clone())
             },
             XmlData::REPORT(ref report) => {
-                Some(report.xml_symbol.clone())
+                Some(report.file_symbol.clone())
             },
         }
     }

@@ -1,4 +1,5 @@
 use crate::core::entry_point::EntryPointType;
+use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
@@ -597,8 +598,17 @@ impl SyncOdoo {
                     session.sync_odoo.add_to_validations(sym_rc.clone());
                     return true;
                 }
-                let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
-                validator.validate(session);
+                let typ = sym_rc.borrow().typ();
+                match typ {
+                    SymType::XML_FILE => {
+                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), sym_rc);
+                        validator.validate(session);
+                    },
+                    _ => {
+                        let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
+                        validator.validate(session);
+                    }
+                }
                 continue;
             }
         }

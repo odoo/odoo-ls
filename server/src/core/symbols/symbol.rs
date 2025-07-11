@@ -546,6 +546,20 @@ impl Symbol {
         }
     }
 
+    pub fn as_xml_file_sym(&self) -> &XmlFileSymbol {
+        match self {
+            Symbol::XmlFileSymbol(x) => x,
+            _ => {panic!("Not an XML file symbol")}
+        }
+    }
+
+    pub fn as_xml_file_sym_mut(&mut self) -> &mut XmlFileSymbol {
+        match self {
+            Symbol::XmlFileSymbol(x) => x,
+            _ => {panic!("Not an XML file symbol")}
+        }
+    }
+
     pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
         match self {
             Symbol::File(f) => f,
