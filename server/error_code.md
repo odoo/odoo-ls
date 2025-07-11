@@ -320,3 +320,15 @@ This attribute is not valid in a menuitem node
 ### OLS30446
 "XML ID should not contain more than one dot"
 An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
+
+### OLS30447
+"Parent menuitem with id XXXX does not exist"
+A menuitem is specifying a parent that has not been declared before itself.
+
+### OLS30448
+"Action menuitem with id XXXX does not exist"
+A menuitem is specifying an action that has not been declared before the menuitem.
+
+### OLS30449
+"Group with id XXXX does not exist"
+A menuitem is specifying a group that has not been declared before the menuitem

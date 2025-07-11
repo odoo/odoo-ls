@@ -8,6 +8,7 @@ use std::fs;
 
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::xml_arch_builder::XmlArchBuilder;
+use crate::core::xml_data::XmlData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{add_diagnostic, FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
@@ -41,7 +42,7 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
-    pub xml_ids: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    pub xml_ids: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
@@ -499,6 +500,33 @@ impl ModuleSymbol {
             }
         }
         result
+    }
+
+    pub fn this_and_dependencies(&self, session: &mut SessionInfo) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
+        let mut result = PtrWeakHashSet::new();
+        result.insert(self.weak_self.as_ref().unwrap().upgrade().unwrap());
+        for dep in self.depends.iter() {
+            if let Some(module) = session.sync_odoo.modules.get(&dep.0) {
+                if let Some(module) = module.upgrade() {
+                    result.insert(module);
+                }
+            }
+        }
+        result
+    }
+
+    //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
+    //For example, stock could create an xml_id called "account.my_xml_id", and so be returned by this function called on "account" module with xml_id "my_xml_id"
+    pub fn get_xml_id(&self, xml_id: &OYarn) -> Vec<XmlData> {
+        let mut res = vec![];
+        if let Some(xml_file_set) = self.xml_ids.get(xml_id) {
+            for xml_file in xml_file_set.iter() {
+                if let Some(xml_data) = xml_file.borrow().as_xml_file_sym().xml_ids.get(xml_id) {
+                    res.extend(xml_data.iter().cloned());
+                }
+            }
+        }
+        res
     }
 
 }

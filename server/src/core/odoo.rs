@@ -1,4 +1,5 @@
 use crate::core::entry_point::EntryPointType;
+use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
@@ -597,8 +598,17 @@ impl SyncOdoo {
                     session.sync_odoo.add_to_validations(sym_rc.clone());
                     return true;
                 }
-                let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
-                validator.validate(session);
+                let typ = sym_rc.borrow().typ();
+                match typ {
+                    SymType::XML_FILE => {
+                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), sym_rc);
+                        validator.validate(session);
+                    },
+                    _ => {
+                        let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
+                        validator.validate(session);
+                    }
+                }
                 continue;
             }
         }
@@ -814,6 +824,13 @@ impl SyncOdoo {
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
         for entry in session.sync_odoo.entry_point_mgr.borrow().iter_main() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    return Some(sym);
+                }
+                continue;
+            }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
@@ -826,6 +843,13 @@ impl SyncOdoo {
         //Not found? Then return if it is matching a non-public entry strictly matching the file
         let mut found_an_entry = false; //there to ensure that a wrongly built entry would create infinite loop
         for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    return Some(sym);
+                }
+                continue;
+            }
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;
                 let tree = entry.borrow().get_tree_for_entry(path);
