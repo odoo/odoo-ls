@@ -10,7 +10,7 @@ use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::constants::DEFAULT_PYTHON;
+use crate::constants::{DEFAULT_PYTHON, CONFIG_WIKI_URL};
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting};
 use crate::utils::{fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
@@ -215,10 +215,20 @@ impl ConfigFile {
     color: #888;
     font-size: 0.9em;
   }
+  .config-wiki-link {
+    margin-bottom: 10px;
+    display: block;
+    font-family: sans-serif;
+    font-size: 1em;
+    color: #2d5fa4;
+    text-decoration: none;
+    font-weight: bold;
+  }
 </style>
-<div class="toml-table">
-"#,
-        );
+<a class="config-wiki-link" href=""#);
+        html.push_str(CONFIG_WIKI_URL);
+        html.push_str("\" target=\"_blank\" rel=\"noopener\">Configuration file documentation &rarr;</a>\n");
+        html.push_str("<div class=\"toml-table\">\n");
         let entry_htmls: Vec<String> = self.config.iter().map(|entry| {
             let entry_val = serde_json::to_value(entry).unwrap_or(serde_json::Value::Null);
             let mut entry_html = String::new();
