@@ -121,3 +121,4 @@ pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "un
 "pipes", "smtpd", "sndhdr", "spwd", "sunau", "telnetlib", "uu", "xdrlib", "struct", "codecs"];
 
 pub const DEFAULT_PYTHON: &str  = "python3";
+pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/Configuration-files";
