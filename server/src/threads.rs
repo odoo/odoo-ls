@@ -192,10 +192,11 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
     let check_reset =  |msg: Option<&DelayedProcessingMessage>| {
         let length = sync_odoo.lock().unwrap().watched_file_updates.load(Ordering::SeqCst);
         if length > 10 {
-            let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path.as_ref().unwrap().clone();
-            let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
-            while index_lock_path.exists(){
-                std::thread::sleep(std::time::Duration::from_secs(1));
+            if let Some(main_entry_path) = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned() {
+                let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
+                while index_lock_path.exists(){
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
             }
             let message = "Too many requests, possible change of branch, restarting Odoo LS";
             info!(message);
