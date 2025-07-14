@@ -41,7 +41,7 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
-    pub xml_ids: HashMap<OYarn, Vec<XmlData>>,
+    pub xml_ids: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
@@ -375,7 +375,6 @@ impl ModuleSymbol {
                     let root = document.root_element();
                     let mut xml_builder = XmlArchBuilder::new(xml_sym);
                     xml_builder.load_arch(session, &mut file_info, &root);
-                    file_info.publish_diagnostics(session); //TODO do it only if diagnostics are not empty, else in validation
                 } else if data.len() > 0 {
                     let mut diagnostics = vec![];
                     XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, &mut file_info, &document.unwrap_err());
@@ -525,6 +524,20 @@ impl ModuleSymbol {
             }
         }
         result
+    }
+
+    //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
+    //For example, stock could create an xml_id called "account.my_xml_id", and so be returned by this function called on "account" module with xml_id "my_xml_id"
+    pub fn get_xml_id(&self, xml_id: &OYarn) -> Vec<XmlData> {
+        let mut res = vec![];
+        if let Some(xml_file_set) = self.xml_ids.get(xml_id) {
+            for xml_file in xml_file_set.iter() {
+                if let Some(xml_data) = xml_file.borrow().as_xml_file_sym().xml_ids.get(xml_id) {
+                    res.extend(xml_data.iter().cloned());
+                }
+            }
+        }
+        res
     }
 
 }

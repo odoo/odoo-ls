@@ -54,13 +54,20 @@ impl PythonOdooBuilder {
             None => {
                 let model = Model::new(model_name.clone(), sym.clone());
                 session.sync_odoo.modules.get("base").map(|module| {
+                    let file = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
                     let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
                     let module = module.upgrade().unwrap();
                     let mut module = module.borrow_mut();
-                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name.clone()).or_insert(vec![]);
-                    set.push(XmlData::RECORD(XmlDataRecord {
-                        xml_symbol: sym.clone(),
-                        model: Sy!("ir.model"),
+                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name.clone()).or_insert(PtrWeakHashSet::new());
+                    set.insert(file.clone());
+                    let mut file = file.borrow_mut();
+                    let file = file.as_file_mut();
+                    file.xml_ids.entry(xml_id_model_name.clone()).or_insert(vec![]).push(XmlData::RECORD(XmlDataRecord {
+                        file_symbol: Rc::downgrade(&sym),
+                        model: (Sy!("ir.model"), std::ops::Range::<usize> {
+                            start: 0,
+                            end: 1,
+                        }),
                         xml_id: Some(xml_id_model_name),
                     }));
                 });

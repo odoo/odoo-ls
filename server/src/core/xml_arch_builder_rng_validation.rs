@@ -175,7 +175,7 @@ impl XmlArchBuilder {
             }
         }
         let data = XmlData::MENUITEM(XmlDataMenuItem {
-            xml_symbol: self.xml_symbol.clone(),
+            file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
@@ -225,8 +225,8 @@ impl XmlArchBuilder {
             }
         }
         let data = XmlData::RECORD(XmlDataRecord {
-            xml_symbol: self.xml_symbol.clone(),
-            model: oyarn!("{}", node.attribute("model").unwrap()),
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
@@ -444,7 +444,7 @@ impl XmlArchBuilder {
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
         let data = XmlData::TEMPLATE(XmlDataTemplate {
-            xml_symbol: self.xml_symbol.clone(),
+            file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
@@ -480,7 +480,7 @@ impl XmlArchBuilder {
             }
         }
         let data = XmlData::DELETE(XmlDataDelete {
-            xml_symbol: self.xml_symbol.clone(),
+            file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             model: Sy!(node.attribute("model").unwrap().to_string()),
         });
@@ -547,7 +547,7 @@ impl XmlArchBuilder {
             }
         }
         let data = XmlData::ACT_WINDOW(XmlDataActWindow {
-            xml_symbol: self.xml_symbol.clone(),
+            file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             res_model: Sy!(node.attribute("res_model").unwrap().to_string()),
             name: Sy!(node.attribute("name").unwrap().to_string()),
@@ -593,7 +593,7 @@ impl XmlArchBuilder {
             }
         }
         let data = XmlData::REPORT(XmlDataReport {
-            xml_symbol: self.xml_symbol.clone(),
+            file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             name: Sy!(node.attribute("name").unwrap().to_string()),
             model: Sy!(node.attribute("model").unwrap().to_string()),
