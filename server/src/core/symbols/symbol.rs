@@ -548,6 +548,20 @@ impl Symbol {
         }
     }
 
+    pub fn as_xml_file_sym(&self) -> &XmlFileSymbol {
+        match self {
+            Symbol::XmlFileSymbol(x) => x,
+            _ => {panic!("Not an XML file symbol")}
+        }
+    }
+
+    pub fn as_xml_file_sym_mut(&mut self) -> &mut XmlFileSymbol {
+        match self {
+            Symbol::XmlFileSymbol(x) => x,
+            _ => {panic!("Not an XML file symbol")}
+        }
+    }
+
     pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
         match self {
             Symbol::File(f) => f,
@@ -1074,7 +1088,7 @@ impl Symbol {
                 match step {
                     BuildSteps::SYNTAX => panic!(),
                     BuildSteps::ARCH => x.arch_status = status,
-                    BuildSteps::ARCH_EVAL => panic!(),
+                    BuildSteps::ARCH_EVAL => {},
                     BuildSteps::VALIDATION => x.validation_status = status,
                 }
             },
@@ -1571,8 +1585,8 @@ impl Symbol {
         }
     }
 
-    //Add a symbol as dependency on the step of the other symbol for the build level.
-    //-> The build of the 'step' of self requires the build of 'dep_level' of the other symbol to be done
+    /**Add a symbol as dependency on the step of the other symbol for the build level.
+    * -> The build of the 'step' of self requires the build of 'dep_level' of the other symbol to be done */
     pub fn add_dependency(&mut self, symbol: &mut Symbol, step:BuildSteps, dep_level:BuildSteps) {
         if step == BuildSteps::SYNTAX || dep_level == BuildSteps::SYNTAX {
             panic!("Can't add dependency for syntax step")
@@ -1651,9 +1665,9 @@ impl Symbol {
                         if let Some(hashset) = hashset {
                             for sym in hashset {
                                 if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
-                                    if index == BuildSteps::ARCH_EVAL as usize {
+                                    if index + 1 == BuildSteps::ARCH_EVAL as usize {
                                         session.sync_odoo.add_to_rebuild_arch_eval(sym.clone());
-                                    } else if index == BuildSteps::VALIDATION as usize {
+                                    } else if index + 1 == BuildSteps::VALIDATION as usize {
                                         sym.borrow_mut().invalidate_sub_functions(session);
                                         session.sync_odoo.add_to_validations(sym.clone());
                                     }
