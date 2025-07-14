@@ -2,7 +2,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range}
 use roxmltree::{Document, Error};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model, xml_data::XmlData}, oyarn, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -17,6 +17,7 @@ pub struct XmlFileSymbol {
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
+    pub xml_ids: HashMap<OYarn, Vec<XmlData>>,
     in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
@@ -44,6 +45,7 @@ impl XmlFileSymbol {
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
+            xml_ids: HashMap::new(),
             in_workspace: false,
             self_import: false,
             sections: vec![],
