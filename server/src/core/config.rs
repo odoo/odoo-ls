@@ -117,7 +117,7 @@ impl ConfigFile {
             val.get("value").is_some() && val.get("sources").is_some() && val.get("sources").unwrap().is_array()
         }
 
-        fn render_field(key: &str, value: &serde_json::Value) -> String {
+        fn render_field(key: &str, value: &serde_json::Value, ident: usize) -> String {
             let mut rows = String::new();
             if is_sourced_field(value) {
                 let val = &value["value"];
@@ -131,7 +131,7 @@ impl ConfigFile {
                     // Nested object
                     rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {{</div><div class=\"toml-right\"></div></div>\n", key));
                     for (k, v) in val.as_object().unwrap() {
-                        for line in render_field(k, v).lines() {
+                        for line in render_field(k, v, ident + 1).lines() {
                             rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {}</div></div>\n", line));
                         }
                     }
@@ -148,15 +148,15 @@ impl ConfigFile {
                                 .map(render_source)
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\">{}</div></div>\n", item_val, item_rendered_src));
+                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat((ident + 1) * 2), item_val, item_rendered_src));
                         } else {
-                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\">{}</div></div>\n", item, rendered_src));
+                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat((ident + 1) * 2), item, rendered_src));
                         }
                     }
                     rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">]</div><div class=\"toml-right\"></div></div>\n");
                 } else {
                     // Single value
-                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {}</div><div class=\"toml-right\">{}</div></div>\n", key, val, rendered_src));
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{} = {}</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat(ident * 2), key, val, rendered_src));
                 }
             } else if value.is_array() {
                 // Array of Sourced or primitive values
@@ -170,9 +170,9 @@ impl ConfigFile {
                             .map(render_source)
                             .collect::<Vec<_>>()
                             .join(", ");
-                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\">{}</div></div>\n", item_val, item_rendered_src));
+                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat((ident + 1) * 2), item_val, item_rendered_src));
                     } else {
-                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {},</div><div class=\"toml-right\"></div></div>\n", item));
+                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\"></div></div>\n", " ".repeat((ident + 1) * 2), item));
                     }
                 }
                 rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">]</div><div class=\"toml-right\"></div></div>\n");
@@ -180,14 +180,14 @@ impl ConfigFile {
                 // Nested object
                 rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {{</div><div class=\"toml-right\"></div></div>\n", key));
                 for (k, v) in value.as_object().unwrap() {
-                    for line in render_field(k, v).lines() {
-                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {}</div></div>\n", line));
+                    for line in render_field(k, v, ident + 1).lines() {
+                        rows.push_str(line);
                     }
                 }
                 rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">}</div><div class=\"toml-right\"></div></div>\n");
             } else {
                 // Primitive value
-                rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {}</div><div class=\"toml-right\"></div></div>\n", key, value));
+                rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{} = {}</div><div class=\"toml-right\"></div></div>\n", " ".repeat(ident * 2), key, value));
             }
             rows
         }
@@ -233,7 +233,7 @@ impl ConfigFile {
                 ];
                 for key in order {
                     if let Some(val) = map.get(key) {
-                        entry_html.push_str(&render_field(key, val));
+                        entry_html.push_str(&render_field(key, val, 0));
                     }
                 }
             }
@@ -671,17 +671,17 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
 
     let config = raw.config.into_iter().map(|mut entry| {
         // odoo_path
-        entry.odoo_path.as_mut().map(|sourced| { sourced.sources.insert(path.sanitize());});
+        entry.odoo_path.iter_mut().for_each(|sourced| { sourced.sources.insert(path.sanitize());});
 
         // addons_paths
-        entry.addons_paths.as_mut().map(|paths| {
+        entry.addons_paths.iter_mut().for_each(|paths| {
             paths.iter_mut().for_each(|sourced| {
                 sourced.sources.insert(path.sanitize());
             });
         });
 
         // additional_stubs
-        entry.additional_stubs.as_mut().map(|stubs| {
+        entry.additional_stubs.iter_mut().for_each(|stubs| {
             stubs.iter_mut().for_each(|sourced| {
                 sourced.sources.insert(path.sanitize());
             });
@@ -700,6 +700,9 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         entry.auto_refresh_delay.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.add_workspace_addon_path.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.version.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
+        entry.diagnostic_settings.values_mut().for_each(|sourced| {
+            sourced.sources.insert(path.sanitize());
+        });
 
         (entry.name.clone(), entry)
     }).collect();
