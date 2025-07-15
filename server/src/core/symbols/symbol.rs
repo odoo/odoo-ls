@@ -2442,7 +2442,7 @@ impl Symbol {
         if session.sync_odoo.version_major >= 17 && name == "Form"{
             let tree = self.get_tree();
             if tree == (vec![Sy!("odoo"), Sy!("tests"), Sy!("common")], vec!()) {
-                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS20006, &[]) {
+                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                     diagnostics.push(
                         Diagnostic {
                             range: Range::new(Position::new(0,0),Position::new(0,0)),

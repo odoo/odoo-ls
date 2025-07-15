@@ -57,7 +57,7 @@ impl XmlArchBuilder {
             let module = module.unwrap();
             let id_split = id.split(".").collect::<Vec<&str>>();
             if id_split.len() > 2 {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30447, &[&id]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[&id]) {
                     diagnostics.push(lsp_types::Diagnostic {
                         range: lsp_types::Range {
                             start: lsp_types::Position::new(node.range().start as u32, 0),
