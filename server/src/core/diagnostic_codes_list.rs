@@ -15,11 +15,10 @@ Sections:
  */
 
 diagnostic_codes! {
-    /** "{0} not found".
-    * The symbol you are trying to import was not found.
-    * Check your python environment, the effective your sys.path and your addon paths.
+    /** Unable to parse file. Ruff_python_parser was unable to parse the file content.
+    * See the error message to get the details from Ruff
     */
-    OLS02001, (DiagnosticSetting::Warning, "{0} not found"),
+    OLS01000, (DiagnosticSetting::Error, "Unable to parse file. Ruff_python_parser was unable to parse the file content. See the error message to get the details from Ruff"),
     /** "{0} not found".
     * The symbol you used as a base class can not be resolved.
     * Be sure that the symbol is referring to a valid python class.
@@ -30,30 +29,37 @@ diagnostic_codes! {
     * Be sure that the symbol is referring to a valid python class.
     */
     OLS01002, (DiagnosticSetting::Warning, "{0} not found"),
+    /** "Multiple definition found for base class".
+    * The extension is unable to handle a base class that has multiple possible definitions. This Warning should disappear in the future
+    */
+    OLS01003, (DiagnosticSetting::Warning, "Multiple definition found for base class"),
+    /** "Non-static method should have at least one parameter"
+    */
+    OLS01004, (DiagnosticSetting::Error, "Non-static method should have at least one parameter"),
+    /** "First Argument to super must be a class"
+    */
+    OLS01005, (DiagnosticSetting::Error, "First Argument to super must be a class"),
+    /** "Super calls outside a class scope must have at least one argument"
+    */
+    OLS01006, (DiagnosticSetting::Error, "Super calls outside a class scope must have at least one argument"),
+    /** "{0} takes {1} positional arguments but {2} was given".
+    * Number of positional arguments given as parameter to the function is wrong.
+    */
+    OLS01007, (DiagnosticSetting::Error, "{0} takes {1} positional arguments but {2} was given"),
+    /** "{0} got an unexpected keyword argument '{1}'".
+    * You gave a named parameter that is not present in the function definition.
+    */
+    OLS01008, (DiagnosticSetting::Error, "{0} got an unexpected keyword argument '{1}'"),
+    /** "{0} not found".
+    * The symbol you are trying to import was not found.
+    * Check your python environment, the effective your sys.path and your addon paths.
+    */
+    OLS02001, (DiagnosticSetting::Warning, "{0} not found"),
     /** "Failed to evaluate {0}".
     * The extension failed to evaluate a symbol. This occurs more specifically when the extension detect a loop in the imports.
     * If your code is working fine, it can happen if you use too many "import *" that can break the extension flow for now.
     */
     OLS02002, (DiagnosticSetting::Warning, "Failed to evaluate {0}"),
-    /** "Multiple definition found for base class".
-    * The extension is unable to handle a base class that has multiple possible definitions. This Warning should disappear in the future
-    */
-    OLS01003, (DiagnosticSetting::Warning, "Multiple definition found for base class"),
-    /** "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form".
-    * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
-    */
-    OLS03301, (DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
-    /** "The active key is deprecated".
-    * Deprecation Warning
-    */
-    OLS03302, (DiagnosticSetting::Warning, "The active key is deprecated"),
-    /** Unable to parse file. Ruff_python_parser was unable to parse the file content.
-    * See the error message to get the details from Ruff
-    */
-    OLS01000, (DiagnosticSetting::Error, "Unable to parse file. Ruff_python_parser was unable to parse the file content. See the error message to get the details from Ruff"),
-    /** "Non-static method should have at least one parameter"
-    */
-    OLS01004, (DiagnosticSetting::Error, "Non-static method should have at least one parameter"),
     /** "This model is not in the dependencies of your module."
     * With the Environment (often via self.env), or in @api.returns, you are trying to get a recordset of a model that is not defined in the current module or in the dependencies of the current module.
     * Even if it could work, this is strongly not recommended, as the model you are referring to could be not available on a live database.
@@ -80,58 +86,6 @@ diagnostic_codes! {
     * The extension found some classes inheriting this model, but didn't find any class that declare it first, with only a _name.
     */
     OLS03005, (DiagnosticSetting::Error, "This model is inherited, but never declared."),
-    /** "A manifest should contain exactly one dictionary".
-    * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
-    * Do not store any other information in it.
-    */
-    OLS04001, (DiagnosticSetting::Error, "A manifest should contain exactly one dictionary"),
-    /** "A manifest should not have duplicate keys".
-    * A __manifest__.py dictionary should have at most one definition per key
-    */
-    OLS04002, (DiagnosticSetting::Error, "A manifest should not have duplicate keys"),
-    /** "The name of the module should be a string".
-    * The name key on the __manifest__.py should be a string
-    */
-    OLS04003, (DiagnosticSetting::Error, "The name of the module should be a string"),
-    /** "The depends value should be a list".
-    * "depends" value in module manifest should be a list
-    */
-    OLS04004, (DiagnosticSetting::Error, "The depends value should be a list"),
-    /** "The depends key should be a list of strings".
-    * Values in the manifest's "depends" list should be strings
-    */
-    OLS04005, (DiagnosticSetting::Error, "The depends key should be a list of strings"),
-    /** "A module cannot depends on itself".
-    * A module cannot have its own name as a dependency in its manifest
-    */
-    OLS04006, (DiagnosticSetting::Error, "A module cannot depends on itself"),
-    /** "The data value should be a list".
-    * "data" value in module manifest should be a list
-    */
-    OLS04007, (DiagnosticSetting::Error, "The data value should be a list"),
-    /** "The data key should be a list of strings".
-    * Values in the manifest's "data" list should be strings
-    */
-    OLS04008, (DiagnosticSetting::Error, "The data key should be a list of strings"),
-    /** "Manifest keys should be strings".
-    * Keys of the dictionary in manifest files have to be string literals
-    */
-    OLS04009, (DiagnosticSetting::Error, "Manifest keys should be strings"),
-    /** "Module {0} depends on {1} which is not found. Please review your addons paths".
-    * Module has dependency on a dependency that is either wrong or does not exist.
-    * Check that module folder exists, and it contains __init__.py and __manifest__.py
-    */
-    OLS04010, (DiagnosticSetting::Error, "Module {0} depends on {1} which is not found. Please review your addons paths"),
-    /** "Do not use dict unpacking to build your manifest".
-    * Dict unpacking should be avoided. Do not create a dictionary with values that must be unpacked like in {"a":1, **d}
-    */
-    OLS04011, (DiagnosticSetting::Error, "Do not use dict unpacking to build your manifest"),
-    /** "First Argument to super must be a class"
-    */
-    OLS01005, (DiagnosticSetting::Error, "First Argument to super must be a class"),
-    /** "Super calls outside a class scope must have at least one argument"
-    */
-    OLS01006, (DiagnosticSetting::Error, "Super calls outside a class scope must have at least one argument"),
     /** "Domains should be a list of tuples".
     * The provided domain is not a list of tuples. A domain should be in the form [("field", "operator", "value")]
     */
@@ -140,14 +94,6 @@ diagnostic_codes! {
     * Tuples in a domain should contains 3 elements: ("field", "operator", "value")
     */
     OLS03007, (DiagnosticSetting::Error, "Domain tuple should have 3 elements"),
-    /** "{0} takes {1} positional arguments but {2} was given".
-    * Number of positional arguments given as parameter to the function is wrong.
-    */
-    OLS01007, (DiagnosticSetting::Error, "{0} takes {1} positional arguments but {2} was given"),
-    /** "{0} got an unexpected keyword argument '{1}'".
-    * You gave a named parameter that is not present in the function definition.
-    */
-    OLS01008, (DiagnosticSetting::Error, "{0} got an unexpected keyword argument '{1}'"),
     /** "A String value in search domain tuple should be '&', '|' or '!'".
     * For an string that represents an operator in a search domain, the only valid values are '&', '|' or '!'
     */
@@ -201,6 +147,60 @@ diagnostic_codes! {
     * Consider marking the modified field with the compute method
     */
     OLS03019, (DiagnosticSetting::Error, "Compute method not set to modify this field"),
+    /** "A manifest should contain exactly one dictionary".
+    * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
+    * Do not store any other information in it.
+    */
+    OLS04001, (DiagnosticSetting::Error, "A manifest should contain exactly one dictionary"),
+    /** "A manifest should not have duplicate keys".
+    * A __manifest__.py dictionary should have at most one definition per key
+    */
+    OLS04002, (DiagnosticSetting::Error, "A manifest should not have duplicate keys"),
+    /** "The name of the module should be a string".
+    * The name key on the __manifest__.py should be a string
+    */
+    OLS04003, (DiagnosticSetting::Error, "The name of the module should be a string"),
+    /** "The depends value should be a list".
+    * "depends" value in module manifest should be a list
+    */
+    OLS04004, (DiagnosticSetting::Error, "The depends value should be a list"),
+    /** "The depends key should be a list of strings".
+    * Values in the manifest's "depends" list should be strings
+    */
+    OLS04005, (DiagnosticSetting::Error, "The depends key should be a list of strings"),
+    /** "A module cannot depends on itself".
+    * A module cannot have its own name as a dependency in its manifest
+    */
+    OLS04006, (DiagnosticSetting::Error, "A module cannot depends on itself"),
+    /** "The data value should be a list".
+    * "data" value in module manifest should be a list
+    */
+    OLS04007, (DiagnosticSetting::Error, "The data value should be a list"),
+    /** "The data key should be a list of strings".
+    * Values in the manifest's "data" list should be strings
+    */
+    OLS04008, (DiagnosticSetting::Error, "The data key should be a list of strings"),
+    /** "Manifest keys should be strings".
+    * Keys of the dictionary in manifest files have to be string literals
+    */
+    OLS04009, (DiagnosticSetting::Error, "Manifest keys should be strings"),
+    /** "Module {0} depends on {1} which is not found. Please review your addons paths".
+    * Module has dependency on a dependency that is either wrong or does not exist.
+    * Check that module folder exists, and it contains __init__.py and __manifest__.py
+    */
+    OLS04010, (DiagnosticSetting::Error, "Module {0} depends on {1} which is not found. Please review your addons paths"),
+    /** "Do not use dict unpacking to build your manifest".
+    * Dict unpacking should be avoided. Do not create a dictionary with values that must be unpacked like in {"a":1, **d}
+    */
+    OLS04011, (DiagnosticSetting::Error, "Do not use dict unpacking to build your manifest"),
+    /** "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form".
+    * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
+    */
+    OLS03301, (DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form"),
+    /** "The active key is deprecated".
+    * Deprecation Warning
+    */
+    OLS03302, (DiagnosticSetting::Warning, "The active key is deprecated"),
     /** "Unknown XML ID".
     * The XML ID you referenced has not been found in any XML in this module or its dependencies
     */
