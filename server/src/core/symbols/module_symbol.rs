@@ -160,7 +160,7 @@ impl ModuleSymbol {
         let file_info_ast = file_info.file_info_ast.borrow();
         let ast = file_info_ast.ast.as_ref().unwrap();
         if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
-            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30201, &[]) {
+            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04001, &[]) {
                 res.push(Diagnostic {
                     range: Range::new(Position::new(0, 0), Position::new(0, 1)),
                     ..diagnostic
@@ -178,7 +178,7 @@ impl ModuleSymbol {
                         Expr::StringLiteral(key_literal) => {
                             let key_str = key_literal.value.to_string();
                             if visited_keys.contains(&key_str){
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30202, &[]) {
+                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04002, &[]) {
                                 res.push(Diagnostic {
                                     range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                     ..diagnostic
@@ -188,7 +188,7 @@ impl ModuleSymbol {
                             visited_keys.insert(key_str.clone());
                             if key_str == "name" {
                                 if !value.is_string_literal_expr() {
-                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30203, &[]) {
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04003, &[]) {
                                         res.push(Diagnostic {
                                             range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                             ..diagnostic
@@ -199,7 +199,7 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "depends" {
                                 if !value.is_list_expr() {
-                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30204, &[]) {
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04004, &[]) {
                                         res.push(Diagnostic {
                                             range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                             ..diagnostic
@@ -208,7 +208,7 @@ impl ModuleSymbol {
                                 } else {
                                     for depend in value.as_list_expr().unwrap().elts.iter() {
                                         if !depend.is_string_literal_expr() {
-                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30205, &[]) {
+                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04005, &[]) {
                                                 res.push(Diagnostic {
                                                     range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
                                                     ..diagnostic
@@ -217,7 +217,7 @@ impl ModuleSymbol {
                                         } else {
                                             let depend_value = oyarn!("{}", depend.as_string_literal_expr().unwrap().value);
                                             if depend_value == self.dir_name {
-                                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30206, &[]) {
+                                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04006, &[]) {
                                                     res.push(Diagnostic {
                                                         range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
                                                         ..diagnostic
@@ -231,7 +231,7 @@ impl ModuleSymbol {
                                 }
                             } else if key_str == "data" {
                                 if !value.is_list_expr() {
-                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30207, &[]) {
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04007, &[]) {
                                         res.push(Diagnostic {
                                             range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                             ..diagnostic
@@ -240,7 +240,7 @@ impl ModuleSymbol {
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
                                         if !data.is_literal_expr() {
-                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30208, &[]) {
+                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04008, &[]) {
                                                 res.push(Diagnostic {
                                                     range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
                                                     ..diagnostic
@@ -252,7 +252,7 @@ impl ModuleSymbol {
                                     }
                                 }
                             } else if key_str == "active" {
-                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20201, &[]) {
+                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03302, &[]) {
                                     res.push(Diagnostic {
                                         range: Range::new(Position::new(key_literal.range().start().to_u32(), 0), Position::new(key_literal.range().end().to_u32(), 0)),
                                         tags: Some(vec![DiagnosticTag::DEPRECATED]),
@@ -262,7 +262,7 @@ impl ModuleSymbol {
                             }
                         }
                         _ => {
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30209, &[]) {
+                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04009, &[]) {
                                     res.push(Diagnostic {
                                         range: Range::new(Position::new(key.range().start().to_u32(), 0), Position::new(key.range().end().to_u32(), 0)),
                                         ..diagnostic
@@ -272,7 +272,7 @@ impl ModuleSymbol {
                     }
                 },
                 None => {
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30302, &[]) {
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04011, &[]) {
                         res.push(Diagnostic {
                             range: Range::new(Position::new(0, 0), Position::new(0, 1)),
                             ..diagnostic_base.clone()
@@ -300,7 +300,7 @@ impl ModuleSymbol {
                 if module.is_none() {
                     symbol.get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
                     symbol.not_found_paths_mut().push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30210, &[&symbol.name(), &depend]) {
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04010, &[&symbol.name(), &depend]) {
                         diagnostics.push(Diagnostic {
                             range: FileMgr::textRange_to_temporary_Range(range),
                             ..diagnostic_base.clone()
@@ -333,14 +333,14 @@ impl ModuleSymbol {
             if !path.exists() {
                 symbol.borrow_mut().as_module_package_mut().not_found_data.insert(path.sanitize(), BuildSteps::ARCH);
                 symbol.borrow().get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.clone());
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30445, &[&path.sanitize()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05049, &[&path.sanitize()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
                         ..diagnostic.clone()
                     });
                 }
             } else if path.extension().map_or(true, |ext| !["xml", "csv"].contains(&ext.to_str().unwrap_or(""))) {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30446, &[&path.sanitize()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path.sanitize()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
                         ..diagnostic.clone()

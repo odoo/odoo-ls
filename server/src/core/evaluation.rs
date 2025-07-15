@@ -763,7 +763,7 @@ impl Evaluation {
                                         }
                                         let class_sym_weak_eval = class_sym_weak_eval.as_weak();
                                         if class_sym_weak_eval.instance.unwrap_or(false) {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30311, &[]){
+                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01005, &[]){
                                                 diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
                                                     Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
@@ -795,7 +795,7 @@ impl Evaluation {
                                 } else {
                                     match parent.borrow().get_in_parents(&vec![SymType::CLASS], true){
                                         None => {
-                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30312, &[]) {
+                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01006, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(expr.range().start().to_u32(), 0),
                                                     Position::new(expr.range().end().to_u32(), 0)),
@@ -1255,7 +1255,7 @@ impl Evaluation {
                 }
             }
             if !pos_arg {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30315, &[&function.name, &0.to_string(), &1.to_string()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &0.to_string(), &1.to_string()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -1273,7 +1273,7 @@ impl Evaluation {
             //match arg with argument from function
             let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
             if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30315, &[&function.name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -1304,7 +1304,7 @@ impl Evaluation {
                     }
                 }
                 if !found_one && kwarg_index == i32::MAX {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30316, &[&function.name, &arg_identifier.id]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function.name, &arg_identifier.id]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                             ..diagnostic
@@ -1317,7 +1317,7 @@ impl Evaluation {
             }
         }
         if found_pos_arg_with_kw + 1 < number_pos_arg {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30315, &[&function.name, &number_pos_arg.to_string(), &arg_index.to_string()]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &number_pos_arg.to_string(), &arg_index.to_string()]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                     ..diagnostic
@@ -1342,7 +1342,7 @@ impl Evaluation {
                 Expr::Tuple(t) => {
                     need_tuple = max(need_tuple - 1, 0);
                     if t.elts.len() != 3 {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30314, &[]) {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03007, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
                                 ..diagnostic
@@ -1355,7 +1355,7 @@ impl Evaluation {
                 Expr::List(l) => {
                     need_tuple = max(need_tuple - 1, 0);
                     if l.elts.len() != 3 {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30314, &[]) {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03007, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(l.range().start().to_u32(), 0), Position::new(l.range().end().to_u32(), 0)),
                                 ..diagnostic
@@ -1380,7 +1380,7 @@ impl Evaluation {
                             }
                         }
                         _ => {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30317, &[]) {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03008, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                     ..diagnostic
@@ -1394,7 +1394,7 @@ impl Evaluation {
             }
         }
         if need_tuple > 0 {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30319, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03010, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
                     ..diagnostic
@@ -1416,7 +1416,7 @@ impl Evaluation {
                     'split_name: for name in split_expr {
                         if date_mode {
                             if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
-                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS30321, &[]) {
+                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
                                     diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                         ..diagnostic_base
@@ -1427,7 +1427,7 @@ impl Evaluation {
                             continue;
                         }
                         if obj.is_none() {
-                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS30322, &[]) {
+                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03013, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                     ..diagnostic_base
@@ -1444,7 +1444,7 @@ impl Evaluation {
                                 false,
                                 false);
                             if symbols.is_empty() {
-                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS30320, &[&name, &object.borrow().name()]) {
+                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[&name, &object.borrow().name()]) {
                                     diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                         ..diagnostic_base
@@ -1484,7 +1484,7 @@ impl Evaluation {
                         "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
                         "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
                         _ => {
-                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS30318, &[]) {
+                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                     ..diagnostic_base.clone()

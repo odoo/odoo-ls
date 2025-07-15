@@ -408,7 +408,7 @@ impl PythonArchEval {
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
-                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20004, &[&file_tree.clone().join(".")]) {
+                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS02002, &[&file_tree.clone().join(".")]) {
                             self.diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                                 ..diagnostic
@@ -427,7 +427,7 @@ impl PythonArchEval {
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
                     if self._match_diag_config(session.sync_odoo, &_import_result.symbol) {
-                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20001, &[&file_tree.clone().join(".")]) {
+                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS02001, &[&file_tree.clone().join(".")]) {
                             self.diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(_import_result.range.start().to_u32(), 0), Position::new(_import_result.range.end().to_u32(), 0)),
                                 ..diagnostic
@@ -571,7 +571,7 @@ impl PythonArchEval {
 
                     // If there is some modified fields in the method, that are not the correct ones, show diagnostic
                     if !valid_field && invalid_field {
-                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30328, &[]) {
+                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03019, &[]) {
                             self.diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(attr_expr.range.start().to_u32(), 0), Position::new(attr_expr.range.end().to_u32(), 0)),
                                 ..diagnostic
@@ -605,7 +605,7 @@ impl PythonArchEval {
         let tree = flatten_tree(tree_not_found);
         file.not_found_paths_mut().push((BuildSteps::ARCH_EVAL, tree.clone()));
         self.entry_point.borrow_mut().not_found_symbols.insert(file.get_rc().unwrap());
-        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20002, &[&tree.join(".")]) {
+        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01001, &[&tree.join(".")]) {
             self.diagnostics.push(Diagnostic {
                 range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                 ..diagnostic
@@ -628,7 +628,7 @@ impl PythonArchEval {
                 continue;
             }
             if eval_base.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20005, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -640,7 +640,7 @@ impl PythonArchEval {
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
             if ref_sym.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20005, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -653,7 +653,7 @@ impl PythonArchEval {
                 if symbol.borrow().typ() != SymType::COMPILED {
                     if symbol.borrow().typ() != SymType::CLASS {
                         if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS20003, &[&AstUtils::flatten_expr(base)]) {
+                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
                                 self.diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
                                     ..diagnostic
@@ -738,7 +738,7 @@ impl PythonArchEval {
                     }
                 }
             } else if !function_sym.borrow_mut().as_func_mut().is_static{
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS30002, &[]) {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
                     self.diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
                         ..diagnostic

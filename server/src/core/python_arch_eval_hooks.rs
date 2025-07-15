@@ -625,7 +625,7 @@ impl PythonArchEvalHooks {
                                     let symbols = model.get_main_symbols(session, None);
                                     if symbols.is_empty() {
                                         if in_validation {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30105, &[]) {
+                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
                                                     ..diagnostic_base.clone()
@@ -638,7 +638,7 @@ impl PythonArchEvalHooks {
                                                 Some(sym) => sym.borrow().name().clone(),
                                                 None => Sy!("Unknown").clone()
                                             }).collect();
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30101, &[&format!("{:?}", valid_modules)]) {
+                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
                                                     ..diagnostic_base.clone()
@@ -648,7 +648,7 @@ impl PythonArchEvalHooks {
                                     }
                                 } else if has_class_in_parents {
                                     if in_validation {
-                                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30102, &[]) {
+                                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
                                                     ..diagnostic_base
@@ -659,7 +659,7 @@ impl PythonArchEvalHooks {
                             }
                         } else if has_class_in_parents {
                             if in_validation {
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30102, &[]) {
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
                                     diagnostics.push(Diagnostic {
                                         range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
                                         ..diagnostic_base
@@ -925,7 +925,7 @@ impl PythonArchEvalHooks {
             return diagnostics;
         }
         let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", returns_str)).cloned() else {
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30102, &[]) {
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                     ..diagnostic_base
@@ -934,7 +934,7 @@ impl PythonArchEvalHooks {
             return diagnostics;
         };
         let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30101, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03001, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                     ..diagnostic
@@ -966,7 +966,7 @@ impl PythonArchEvalHooks {
             let field_name = expr.value.to_string();
             let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
             if syms.is_empty(){
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30323, &[&field_name, &model_name]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                         ..diagnostic
@@ -997,7 +997,7 @@ impl PythonArchEvalHooks {
             let field_name = expr.value.to_string();
             let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
             if syms.is_empty(){
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30323, &[&field_name, &model_name]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                         ..diagnostic
@@ -1032,14 +1032,14 @@ impl PythonArchEvalHooks {
         if module.is_none() {
             if in_validation {
                 if xml_id.len() == 0 {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30330, &[]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05002, &[]) {
                         diagnostics.push(Diagnostic {
                             range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
                             ..diagnostic
                         });
                     }
                 } else {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS30331, &[]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
                         diagnostics.push(Diagnostic {
                             range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
                             ..diagnostic

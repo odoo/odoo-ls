@@ -165,7 +165,7 @@ impl FileInfo {
         self.valid = true;
         for error in ast.errors().iter() {
             self.valid = false;
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS30001, &[]) {
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01000, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range{
                         start: Position::new(error.location.start().to_u32(), 0),
