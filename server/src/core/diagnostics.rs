@@ -9,7 +9,7 @@ use crate::{constants::EXTENSION_NAME, core::file_mgr::NoqaInfo, S};
 macro_rules! diagnostic_codes {
     (
         $(
-            $(#[$meta:meta])* $name:ident , $msg:expr
+            $(#[$meta:meta])* $name:ident , $default_setting:expr , $msg:expr
         ),* $(,)?
     ) => {
         use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ macro_rules! diagnostic_codes {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
         pub enum DiagnosticCode {
             $(
-                $(#[$meta])* $name,
+                #[doc = $msg] $(#[$meta])* $name,
             )*
         }
 
@@ -41,7 +41,7 @@ macro_rules! diagnostic_codes {
         }
 
         pub static DIAGNOSTIC_INFOS: once_cell::sync::Lazy<std::collections::HashMap<DiagnosticCode, DiagnosticInfo>> = once_cell::sync::Lazy::new(|| std::collections::HashMap::from([
-            $( (DiagnosticCode::$name, DiagnosticInfo { default_setting: $msg.0, template: $msg.1 }), )*
+            $( (DiagnosticCode::$name, DiagnosticInfo { default_setting: $default_setting, template: $msg }), )*
         ]));
     }
 }
