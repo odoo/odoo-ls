@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{self, get_configuration, ConfigEntry, ConfigFile, RefreshMode};
+use super::config::{self, default_profile_name, get_configuration, ConfigEntry, ConfigFile, RefreshMode};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -983,23 +983,21 @@ impl Odoo {
             }
         };
         let selected_config = match maybe_selected_config {
-            None => {
-                session.show_message(MessageType::INFO, String::from("No Odoo configuration selected. Please select a configuration in the settings."));
-                return;
-            }
-            Some(c) if c == "" => {
-                session.show_message(MessageType::INFO, String::from("No Odoo configuration selected. Please select a configuration in the settings."));
-                return;
-            }
+            None => default_profile_name(),
+            Some(c) if c == "" => default_profile_name(),
             Some(config) => config,
         };
+        if selected_config == "Disabled" {
+            info!("OdooLS is disabled. Exiting...");
+            return;
+        }
         let config = config.and_then(|(ce, _)|{
             ce.get(&selected_config).cloned().ok_or(format!("Unable to find selected configuration \"{}\"", &selected_config))
         });
         match config {
             Ok(config) => {
                 if config.abstract_ {
-                    session.show_message(MessageType::ERROR, format!("Selected configuration ({}) is abstract. Please select a valid configuration and restart.", selected_config));
+                    session.show_message(MessageType::ERROR, format!("Selected configuration ({}) is abstract. Please select a valid configuration and restart.", config.name));
                     return;
                 }
                 SyncOdoo::init(session, config);
@@ -1470,9 +1468,7 @@ impl Odoo {
         if Odoo::is_config_workspace_file(session, path) {
             let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders())
                 .and_then(|(cfg_map, cfg_file)| {
-                    let Some(config_name) = Odoo::read_selected_configuration(session)? else {
-                      return Err(S!("No configuration selected"));
-                    };
+                    let config_name = Odoo::read_selected_configuration(session)?.unwrap_or(default_profile_name());
                     cfg_map.get(&config_name)
                         .cloned()
                         .ok_or_else(|| format!("Unable to find selected configuration \"{config_name}\""))
