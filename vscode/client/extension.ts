@@ -21,6 +21,7 @@ import {
     Range,
     TextEditor,
     DecorationOptions,
+    MarkdownString,
 } from "vscode";
 import {
     LanguageClientOptions,
@@ -49,11 +50,6 @@ import { ThemeIcon } from "vscode";
 
 let CONFIG_HTML_MAP: Record<string, string> = {};
 let CONFIG_FILE: any = undefined;
-
-function handleSetConfigurationNotification(payload: { html: Record<string, string>, configFile: any }) {
-    CONFIG_HTML_MAP = payload.html || {};
-    CONFIG_FILE = payload.configFile;
-}
 
 function getClientOptions(): LanguageClientOptions {
     return {
@@ -206,18 +202,44 @@ function startLangServer(
     return new SafeLanguageClient('odooServer', 'Odoo Server', serverOptions, clientOptions);
 }
 
+const RESTART_COMMAND_MD = `[$(list-unordered) Show all configurations](command:odoo.showServerConfig "Show all configurations")\n
+[$(debug-restart) Reload Server and Configuration](command:odoo.restartServer "Reload Server and Configuration")`;
+
 async function setStatusConfig(context: ExtensionContext) {
     const config = await getCurrentConfig(context);
-    let text = (config ? `Odoo (${config})` : `Odoo (Disabled)`);
+    let text = (config ? `Odoo (${config})` : `Odoo (Default)`);
     global.STATUS_BAR.text = (global.IS_LOADING) ? "$(loading~spin) " + text : text;
+
+    let tooltipMd = '';
+    if (config && config !== 'Disabled') {
+        let configEntry = getCurrentConfigEntry(context);
+        if (configEntry) {
+            const odooPath = configEntry.odoo_path?.value || configEntry.odoo_path || '';
+            const pythonPath = configEntry.python_path?.value || configEntry.python_path || '';
+            let addonsPaths: string[] = [];
+            if (Array.isArray(configEntry.addons_paths)) {
+                addonsPaths = configEntry.addons_paths.map((a: any) => a.value || a).filter(Boolean);
+            }
+            tooltipMd += `**Odoo Path:** ${odooPath || 'Not set'}  \n`;
+            tooltipMd += `**Addons Paths:**  \n`
+
+            if (addonsPaths.length > 0) {
+                for (const ap of addonsPaths) {
+                    tooltipMd += `  - ${ap}  \n`;
+                }
+            } else {
+                tooltipMd += `  Not set  \n`;
+            }
+            tooltipMd += `\n\n**Python Path:**  ${pythonPath || 'Not set'}  \n`;
+            tooltipMd += `\n---\n`;
+        }
+    }
+    tooltipMd += RESTART_COMMAND_MD;
+    global.STATUS_BAR.tooltip = new MarkdownString(tooltipMd, true);
+    global.STATUS_BAR.tooltip.isTrusted = {enabledCommands: ["odoo.restartServer", "odoo.showServerConfig"]};
 }
-
-
 async function changeSelectedConfig(context: ExtensionContext, configName: string) {
   try {
-    if (configName == "Disabled"){
-        configName = undefined;
-    }
     await workspace.getConfiguration().update("Odoo.selectedProfile", configName, ConfigurationTarget.Workspace);
     return true;
   } catch (err) {
@@ -323,7 +345,16 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             client.onNotification("$Odoo/setPid", async(params) => {
                 global.SERVER_PID = params["server_pid"];
             }),
-            client.onNotification("$Odoo/setConfiguration", handleSetConfigurationNotification),
+            client.onNotification("$Odoo/setConfiguration", async (payload: { html: Record<string, string>, configFile: any }) =>  {
+                CONFIG_HTML_MAP = payload.html || {};
+                CONFIG_FILE = payload.configFile;
+                const selected = workspace.getConfiguration().get("Odoo.selectedProfile") as string;
+                if (selected === "Disabled" ){
+                    // Stop the client if the selected profile is "Disabled"
+                    // We already got the configurations
+                    global.LSCLIENT.stop();
+                }
+            }),
             client.onNotification("$Odoo/invalid_python_path", async(params) => {
                 await window.showErrorMessage(
                     "The Odoo extension is unable to start Python with the path you provided. Verify your configuration"
@@ -385,18 +416,9 @@ function deleteOldFiles(context: ExtensionContext) {
 async function initStatusBar(context: ExtensionContext): Promise<void> {
     global.STATUS_BAR = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     global.STATUS_BAR.command = "odoo.clickStatusBar";
-    global.STATUS_BAR.tooltip = "Odoo: Change Configuration";
     context.subscriptions.push(global.STATUS_BAR);
     await setStatusConfig(context);
     global.STATUS_BAR.show();
-
-    // Add a restart button to the status bar
-    global.STATUS_BAR_RESTART = window.createStatusBarItem(StatusBarAlignment.Left, 99);
-    global.STATUS_BAR_RESTART.text = "$(refresh)";
-    global.STATUS_BAR_RESTART.tooltip = "Odoo: Restart Language Server";
-    global.STATUS_BAR_RESTART.command = "odoo.restartServer";
-    context.subscriptions.push(global.STATUS_BAR_RESTART);
-    global.STATUS_BAR_RESTART.show();
 }
 
 

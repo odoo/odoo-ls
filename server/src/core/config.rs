@@ -463,7 +463,7 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ConfigEntryRaw {
-    #[serde(default = "default_name")]
+    #[serde(default = "default_profile_name")]
     pub name: String,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
@@ -518,7 +518,7 @@ pub struct ConfigEntryRaw {
 impl Default for ConfigEntryRaw {
     fn default() -> Self {
         Self {
-            name: default_name(),
+            name: default_profile_name(),
             extends: None,
             odoo_path: None,
             addons_merge: None,
@@ -564,6 +564,7 @@ impl ConfigEntryRaw {
 
 #[derive(Debug, Clone)]
 pub struct ConfigEntry {
+    pub name: String,
     pub odoo_path: Option<String>,
     pub addons_paths: HashSet<String>,
     pub python_path: String,
@@ -582,6 +583,7 @@ pub struct ConfigEntry {
 impl Default for ConfigEntry {
     fn default() -> Self {
         Self {
+            name: default_profile_name(),
             odoo_path: None,
             addons_paths: HashSet::new(),
             python_path: S!(DEFAULT_PYTHON),
@@ -608,7 +610,7 @@ impl ConfigEntry {
 pub type ConfigNew = HashMap<String, ConfigEntry>;
 
 
-fn default_name() -> String {
+pub fn default_profile_name() -> String {
     "default".to_string()
 }
 
@@ -1094,8 +1096,9 @@ fn merge_all_workspaces(
     let mut final_config: ConfigNew = HashMap::new();
     for (key, raw_entry) in merged_raw_config {
         final_config.insert(
-            key,
+            key.clone(),
             ConfigEntry {
+                name: key.clone(),
                 odoo_path: raw_entry.odoo_path.map(|op| op.value),
                 addons_paths: raw_entry.addons_paths.into_iter().flatten().map(|op| op.value).collect(),
                 python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!(DEFAULT_PYTHON)),
