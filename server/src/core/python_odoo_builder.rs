@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -12,6 +13,7 @@ use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
+use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
@@ -302,11 +304,11 @@ impl PythonOdooBuilder {
         let symbol = &self.symbol.clone();
         let odoo_symbol_tree = symbol.borrow().get_main_entry_tree(session);
         let mut sym = symbol.borrow_mut();
-        if session.sync_odoo.full_version < S!("18.1") && odoo_symbol_tree.0.len() == 2 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "models" &&
+        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") == Ordering::Less && odoo_symbol_tree.0.len() == 2 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "models" &&
             (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel") {
             //we don't want to compare these classes with themselves (<18.1)
             return false;
-        } else if session.sync_odoo.full_version >= S!("18.1") && odoo_symbol_tree.0.len() == 3 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "orm" && odoo_symbol_tree.0[2] == "models" &&
+        } else if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal && odoo_symbol_tree.0.len() == 3 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "orm" && odoo_symbol_tree.0[2] == "models" &&
             (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel") {
             //we don't want to compare these classes with themselves (> 18.1)
             return false;
@@ -317,7 +319,7 @@ impl PythonOdooBuilder {
             let mut base_model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]);
             let mut model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]);
             let mut transient_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]);
-            if session.sync_odoo.full_version >= S!("18.1") {
+            if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
                 base_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]);
                 model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("Model")]);
                 transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("TransientModel")]);
