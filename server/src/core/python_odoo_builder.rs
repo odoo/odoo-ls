@@ -69,7 +69,11 @@ impl PythonOdooBuilder {
                             end: 1,
                         }),
                         xml_id: Some(xml_id_model_name),
-                        fields: vec![]
+                        fields: vec![],
+                        range: std::ops::Range::<usize> {
+                            start: self.symbol.borrow().range().start().to_usize(),
+                            end: self.symbol.borrow().range().end().to_usize(),
+                        }
                     }));
                 });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
