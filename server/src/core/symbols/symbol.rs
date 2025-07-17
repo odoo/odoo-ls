@@ -2477,11 +2477,43 @@ impl Symbol {
         }
     }
 
+    pub fn is_inheriting_from_field(&self, session: &mut SessionInfo) -> bool {
+        // if not class return false
+        if !matches!(self.typ(), SymType::CLASS) {
+            return false;
+        }
+        let tree = flatten_tree(&self.get_main_entry_tree(session));
+        if session.sync_odoo.full_version <= S!("18.0") {
+            if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+                if tree[2].as_str() == "Field" {
+                    return true;
+                }
+            }
+        } else {
+            if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
+                    tree[2] == "fields" && tree[3] == "Field"
+            ){
+                return true;
+            }
+        }
+        // Follow class inheritance
+        for base in self.as_class_sym().bases.iter().map(|weak_base| weak_base.upgrade()).flatten() {
+            if base.borrow().is_inheriting_from_field(session) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn is_field_class(&self, session: &mut SessionInfo) -> bool {
+        // if not class return false
+        if !matches!(self.typ(), SymType::CLASS) {
+            return false;
+        }
         let tree = flatten_tree(&self.get_main_entry_tree(session));
         if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
-            if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" {
-                return tree[2] == "fields_misc" && tree[3] == "Boolean" ||
+            if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
+                    tree[2] == "fields_misc" && tree[3] == "Boolean" ||
                     tree[2] == "fields_numeric" && tree[3] == "Integer" ||
                     tree[2] == "fields_numeric" && tree[3] == "Float" ||
                     tree[2] == "fields_numeric" && tree[3] == "Monetary" ||
@@ -2501,7 +2533,9 @@ impl Symbol {
                     tree[2] == "fields_properties" && tree[3] == "PropertiesDefinition" ||
                     tree[2] == "fields_relational" && tree[3] == "One2many" ||
                     tree[2] == "fields_relational" && tree[3] == "Many2many" ||
-                    tree[2] == "fields_misc" && tree[3] == "Id";
+                    tree[2] == "fields_misc" && tree[3] == "Id"
+            ){
+                return true;
             }
         } else {
             if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
@@ -2510,6 +2544,9 @@ impl Symbol {
                     return true;
                 }
             }
+        }
+        if self.is_inheriting_from_field(session) {
+            return true;
         }
         false
     }

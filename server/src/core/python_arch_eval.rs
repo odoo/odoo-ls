@@ -394,7 +394,11 @@ impl PythonArchEval {
                 let import_sym_ref = _import_result.symbol.clone();
                 let has_loop = self.check_for_loop_evaluation(session, import_sym_ref, &variable);
                 if !has_loop { //anti-loop. We want to be sure we are not evaluating to the same sym
-                    variable.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(&_import_result.symbol), None)]);
+                    let instance = match _import_result.symbol.borrow().typ() {
+                        SymType::CLASS => Some(false),
+                        _ => None
+                    };
+                    variable.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(&_import_result.symbol), instance)]);
                     let file_of_import_symbol = _import_result.symbol.borrow().get_file();
                     if let Some(import_file) = file_of_import_symbol {
                         let import_file = import_file.upgrade().unwrap();
