@@ -101,6 +101,26 @@ pub fn is_symlink_cs(path: String) -> bool {
     }
 }
 
+pub fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let parse = |s: &str| {
+        s.split('.')
+            .map(|part| part.parse::<u32>().unwrap_or(0))
+            .collect::<Vec<_>>()
+    };
+
+    let mut va = parse(a);
+    let mut vb = parse(b);
+
+    // Pad shorter version with zeroes to match length
+    let max_len = va.len().max(vb.len());
+    va.resize(max_len, 0);
+    vb.resize(max_len, 0);
+
+    va.cmp(&vb)
+}
+
 pub trait ToFilePath {
     fn to_file_path(&self) -> Result<PathBuf, ()>;
 }

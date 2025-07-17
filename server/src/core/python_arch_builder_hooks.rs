@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -7,6 +8,7 @@ use tracing::warn;
 use crate::core::entry_point::EntryPoint;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
+use crate::utils::compare_semver;
 use crate::{Sy, S};
 use crate::constants::OYarn;
 
@@ -25,7 +27,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]))
         ],
         func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
@@ -46,7 +48,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
         func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
@@ -73,27 +75,27 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2oneReference")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
-            (Sy!("0.0"), Sy!("18.0"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2oneReference")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
+            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Integer")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Float")])),
@@ -147,15 +149,14 @@ impl PythonArchBuilderHooks {
         let name = symbol.borrow().name().clone();
         for hook in arch_class_hooks.iter() {
             for hook_tree in hook.trees.iter() {
-                if hook_tree.0 >= session.sync_odoo.full_version || 
-                    hook_tree.1 <= session.sync_odoo.full_version {
-                    continue; //skip if version not in range
-                }
-                if name.eq(hook_tree.2.1.last().unwrap()) {
-                    if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
-                        (hook.func)(session, entry_point, symbol.clone());
+                if compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.0.as_str()) >= Ordering::Equal &&
+                    compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.1.as_str()) == Ordering::Less {
+                    if name.eq(hook_tree.2.1.last().unwrap()) {
+                        if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
+                            (hook.func)(session, entry_point, symbol.clone());
+                        }
                     }
-                }
+                    }
             }
         }
     }
@@ -170,7 +171,7 @@ impl PythonArchBuilderHooks {
                 }
             }
         } else if name == "init" {
-            if session.sync_odoo.full_version.as_str() >= "18.1" {
+            if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") != Ordering::Less {
                 if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
                     let odoo_namespace = session.sync_odoo.get_symbol(symbol.borrow().paths()[0].as_str(), &(vec![Sy!("odoo")], vec![]), u32::MAX);
                     if let Some(odoo_namespace) = odoo_namespace.get(0) {

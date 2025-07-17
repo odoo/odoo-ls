@@ -11,9 +11,10 @@ use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
-use crate::utils::{PathSanitizer as _};
+use crate::utils::{compare_semver, PathSanitizer as _};
 use crate::S;
 use core::panic;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
@@ -2477,14 +2478,7 @@ impl Symbol {
 
     pub fn is_field_class(&self, session: &mut SessionInfo) -> bool {
         let tree = flatten_tree(&self.get_main_entry_tree(session));
-        if session.sync_odoo.full_version <= S!("18.0") {
-            if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-                if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
-            "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
-                    return true;
-                }
-            }
-        } else {
+        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
             if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" {
                 return tree[2] == "fields_misc" && tree[3] == "Boolean" ||
                     tree[2] == "fields_numeric" && tree[3] == "Integer" ||
@@ -2507,6 +2501,13 @@ impl Symbol {
                     tree[2] == "fields_relational" && tree[3] == "One2many" ||
                     tree[2] == "fields_relational" && tree[3] == "Many2many" ||
                     tree[2] == "fields_misc" && tree[3] == "Id";
+            }
+        } else {
+            if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+                if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+            "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+                    return true;
+                }
             }
         }
         false
