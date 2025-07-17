@@ -185,26 +185,43 @@ impl Model {
 
     /* Return all symbols that build this model.
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
+        if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
-    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
-        let mut symbol = Vec::new();
+    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, with_inheritance: bool) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
+        self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
+    }
+
+    fn all_symbols_helper(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
+        let mut symbols = Vec::new();
         for s in self.symbols.iter() {
             if let Some(from_module) = from_module.as_ref() {
                 let module = s.borrow().find_module();
                 if let Some(module) = module {
                     if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                        symbol.push((s, None));
+                        symbols.push((s.clone(), None));
                     } else {
-                        symbol.push((s, Some(module.borrow().as_module_package().dir_name.clone())));
+                        symbols.push((s.clone(), Some(module.borrow().as_module_package().dir_name.clone())));
                     }
                 } else {
                     session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
                 }
             } else {
-                symbol.push((s.clone(), None));
+                symbols.push((s.clone(), None));
+            }
+            if with_inheritance {
+                let inherited_models = s.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
+                for inherited_model in inherited_models.iter() {
+                    if !seen_inherited_models.contains(inherited_model) {
+                        seen_inherited_models.insert(inherited_model.clone());
+                        let model = session.sync_odoo.models.get(inherited_model).cloned();
+                        if let Some(model) = model {
+                            symbols.extend(model.borrow().all_symbols_helper(session, from_module.clone(), true, seen_inherited_models));
+                        }
+                    }
+                }
             }
         }
-        symbol
+        symbols
     }
 
     pub fn add_dependent(&mut self, symbol: &Rc<RefCell<Symbol>>) {

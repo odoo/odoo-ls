@@ -1,10 +1,11 @@
+use std::rc::Rc;
+
 use lsp_types::{Diagnostic, Position, Range};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
 
-use crate::{core::diagnostics::{create_diagnostic, DiagnosticCode}};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -213,9 +214,16 @@ impl XmlArchBuilder {
             }
             return false;
         }
-
+        let mut data = XmlDataRecord {
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            fields: vec![]
+        };
         for child in node.children().filter(|n| n.is_element()) {
-            if !self.load_field(session, &child, diagnostics) {
+            if let Some(field) = self.load_field(session, &child, diagnostics) {
+                data.fields.push(field);
+            } else {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05015, &[child.tag_name().name()]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
@@ -224,17 +232,13 @@ impl XmlArchBuilder {
                 }
             }
         }
-        let data = XmlData::RECORD(XmlDataRecord {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
-            model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-        });
+        let data = XmlData::RECORD(data);
         self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
-    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        if node.tag_name().name() != "field" { return false; }
+    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlDataField> {
+        if node.tag_name().name() != "field" { return None; }
         if node.attribute("name").is_none() {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {
                 diagnostics.push(Diagnostic {
@@ -255,7 +259,7 @@ impl XmlArchBuilder {
                     ..diagnostic.clone()
                 });
             }
-            return false;
+            return None;
         }
         let mut is_xml_or_html = false;
         if let Some(field_type) = node.attribute("type") {
@@ -365,7 +369,10 @@ impl XmlArchBuilder {
                 }
             }
         }
-        true
+        Some(XmlDataField {
+            name: oyarn!("{}", node.attribute("name").unwrap()),
+            range: node.attribute_node("name").unwrap().range(),
+        })
     }
 
     fn load_value(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
