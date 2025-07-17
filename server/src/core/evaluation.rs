@@ -1005,7 +1005,11 @@ impl Evaluation {
                             if !attributes.is_empty() {
                                 let is_instance = ibase.as_weak().instance.unwrap_or(false);
                                 attributes.iter().for_each(|attribute|{
-                                    let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
+                                    let instance = match attribute.borrow().typ() {
+                                        SymType::CLASS => Some(false),
+                                        _ => None
+                                    };
+                                    let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), instance);
                                     match eval.symbol.sym {
                                         EvaluationSymbolPtr::WEAK(ref mut weak) => {
                                             weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
@@ -1059,13 +1063,17 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 for inferred_sym in inferred_syms.symbols.iter() {
-                    evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(inferred_sym), None));
+                    let instance = match inferred_sym.borrow().typ() {
+                        SymType::CLASS => Some(false),
+                        _ => None
+                    };
+                    evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(inferred_sym), instance));
                 }
                 if !inferred_syms.always_defined{
                     evals.push(Evaluation::new_unbound(name));
                 }
             },
-            ExprOrIdent::Expr(Expr::Subscript(sub)) => {
+            ExprOrIdent::Expr(Expr::Subscript(sub)) => 'subscript_block: {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer, required_dependencies);
                 diagnostics.extend(diags);
                 // TODO handle multiple eval_left
@@ -1080,20 +1088,38 @@ impl Evaluation {
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
-                let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                    SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
-                        parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                    },
-                    _ => {false}
-                };
+                let base = &bases[0];
+                match base {
+                    EvaluationSymbolPtr::WEAK(base_sym_weak_eval) if base_sym_weak_eval.instance == Some(false) => {
+                        if let Some(SymType::CLASS) = base.upgrade_weak().map(|s| s.borrow().typ()) {
+                            // This is a Generic type (Field[int], or List[int]), for now we just return the main type/Class (Field/List)
+                            // TODO: handle generic types
+                            evals.push(Evaluation {
+                                symbol: EvaluationSymbol {
+                                    sym: base.clone(),
+                                    get_symbol_hook: None,
+                                },
+                                value: None,
+                                range: Some(sub.range())
+                            });
+                            break 'subscript_block;
+                        }
+                    }
+                    _ => {}
+                }
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
-                    let base = &bases[0];
                     if !base.is_weak() {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                     }
+                    let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                    let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                        SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                            parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                        },
+                        _ => {false}
+                    };
                     let base = base.upgrade_weak().unwrap();
                     let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX).symbols;
                     if get_item.len() == 1 {
