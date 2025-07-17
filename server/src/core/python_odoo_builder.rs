@@ -97,6 +97,7 @@ impl PythonOdooBuilder {
                             end: 1,
                         }),
                         xml_id: Some(xml_id_model_name),
+                        fields: vec![]
                     }));
                 });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
