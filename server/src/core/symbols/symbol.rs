@@ -2258,7 +2258,7 @@ impl Symbol {
         iter.into_iter()
     }
 
-    //store in result all available members for self: sub symbols, base class elements and models symbols
+    //store in result all available members for symbol: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
     pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
         if acc.is_none() {
@@ -2278,7 +2278,7 @@ impl Symbol {
                         if only_fields && !symbol.borrow().is_field(session){
                             continue;
                         }
-                        if only_methods && symbol.borrow().typ() != SymType::FUNCTION{
+                        if only_methods && symbol.borrow().typ() != SymType::FUNCTION {
                             continue;
                         }
                         let name = symbol.borrow().name().clone();
@@ -2310,6 +2310,25 @@ impl Symbol {
                                             result.insert(name.clone(), vec![(s, Some(model_sym.borrow().name().clone()))]);
                                         }
                                     }
+                                    //add fields from _inherits
+                                    if let Some(model_data) = model_sym.borrow().as_class_sym()._model.as_ref() {
+                                        for (inherits_model, inherits_field) in model_data.inherits.iter() {
+                                            let inherits_model_sym = session.sync_odoo.models.get(inherits_model).cloned();
+                                            if let Some(inherits_model_sym) = inherits_model_sym {
+                                                for (model_symbol, deps) in inherits_model_sym.borrow().all_symbols(session, from_module.clone(), true).iter().filter(|(x, deps)| deps.is_none()) {
+                                                    for (field_name, field_symbols) in Symbol::all_fields(&model_symbol, session, from_module.clone()) {
+                                                        for (s, deps) in field_symbols.iter().filter(|(x, deps)| deps.is_none()) {
+                                                            if let Some(vec) = result.get_mut(&field_name) {
+                                                                vec.push((s.clone(), Some(model_sym.borrow().name().clone())));
+                                                            } else {
+                                                                result.insert(field_name.clone(), vec![(s.clone(), Some(model_sym.borrow().name().clone()))]);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2318,6 +2337,7 @@ impl Symbol {
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
                     //no comodel as we will search for co-model from original class (what about overrided _name?)
+                    //TODO what about base of co-models classes?
                     if let Some(base) = base.upgrade() {
                         Symbol::all_members(&base, session, result, false, only_fields, only_methods, from_module.clone(), acc, false);
                     }
@@ -2338,6 +2358,9 @@ impl Symbol {
             }
         }
     }
+
+
+
     /* return the Symbol (class, function or file) the closest to the given offset */
     pub fn get_scope_symbol(file_symbol: Rc<RefCell<Symbol>>, offset: u32, is_param: bool) -> Rc<RefCell<Symbol>> {
         let mut result = file_symbol.clone();
@@ -2570,6 +2593,12 @@ impl Symbol {
             return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
         }
         false
+    }
+
+    pub fn all_fields(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> {
+        let mut all_fields = HashMap::new();
+        Symbol::all_members(symbol, session, &mut all_fields, true, true, false, from_module.clone(), &mut None, false);
+        all_fields
     }
 
     /* similar to get_symbol: will return the symbol that is under this one with the specified name.

@@ -6,6 +6,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use crate::core::evaluation::ContextValue;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
@@ -392,7 +393,7 @@ impl PythonValidator {
                     if !symbol.borrow().is_field_class(session){
                         continue;
                     }
-                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).map(|ctx_val| ctx_val.as_string()) {
+                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(s))).map(|ctx_val| ctx_val.as_string()) {
                         let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                             continue;
                         };
