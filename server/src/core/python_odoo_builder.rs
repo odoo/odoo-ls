@@ -304,15 +304,27 @@ impl PythonOdooBuilder {
         let symbol = &self.symbol.clone();
         let odoo_symbol_tree = symbol.borrow().get_main_entry_tree(session);
         let mut sym = symbol.borrow_mut();
-        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") == Ordering::Less && odoo_symbol_tree.0.len() == 2 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "models" &&
-            (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel") {
-            //we don't want to compare these classes with themselves (<18.1)
+        if (
+            compare_semver(session.sync_odoo.full_version.as_str(), "18.1") == Ordering::Less && odoo_symbol_tree.0.len() == 2
+            && odoo_symbol_tree.1.len() == 1
+            && odoo_symbol_tree.0[0] == "odoo"
+            && odoo_symbol_tree.0[1] == "models"
+            && (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel"))
+            || (compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal && odoo_symbol_tree.0.len() == 3
+            && odoo_symbol_tree.1.len() == 1
+            && odoo_symbol_tree.0[0] == "odoo"
+            && odoo_symbol_tree.0[1] == "orm"
+            && odoo_symbol_tree.0[2] == "models"
+            && (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel"))
+            || (compare_semver(session.sync_odoo.full_version.as_str(), "18.3") >= Ordering::Equal && odoo_symbol_tree.0.len() == 3
+            && odoo_symbol_tree.1.len() == 1
+            && odoo_symbol_tree.0[0] == "odoo"
+            && odoo_symbol_tree.0[1] == "orm"
+            && odoo_symbol_tree.0[2] == "models_transient"
+            && odoo_symbol_tree.1[0] == "TransientModel") {
+            //we don't want to compare these classes with themselves (> 18.3)
             return false;
-        } else if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal && odoo_symbol_tree.0.len() == 3 && odoo_symbol_tree.1.len() == 1 && odoo_symbol_tree.0[0] == "odoo" && odoo_symbol_tree.0[1] == "orm" && odoo_symbol_tree.0[2] == "models" &&
-            (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel") {
-            //we don't want to compare these classes with themselves (> 18.1)
-            return false;
-        }else {
+        } else {
             if sym.as_class_sym().bases.is_empty() {
                 return false;
             }
@@ -323,6 +335,9 @@ impl PythonOdooBuilder {
                 base_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]);
                 model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("Model")]);
                 transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("TransientModel")]);
+            }
+            if compare_semver(session.sync_odoo.full_version.as_str(), "18.3") >= Ordering::Equal {
+                transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models_transient")], vec![Sy!("TransientModel")]);
             }
             let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
             let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &model_tree, u32::MAX);
