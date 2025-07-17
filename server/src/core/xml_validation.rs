@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, hash::Hash, path::PathBuf, rc::Rc
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, threads::SessionInfo, S};
+use crate::{constants::{BuildSteps, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, threads::SessionInfo, S};
 
 
 
@@ -89,9 +89,30 @@ impl XmlValidator {
             dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
         }
         let all_fields = Symbol::all_fields(&main_symbols[0], session, Some(module.clone()));
+        let mut mandatory_fields: Vec<String> = vec![];
+        // for (field_name, field_sym) in all_fields.iter() {
+        //     for (fs, deps) in field_sym.iter() {
+        //         if deps.is_none() {
+        //             let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+        //             .any(|eval| 
+        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+        //                 .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
+        //             );
+        //             let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+        //             .any(|eval| 
+        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+        //                 .context.contains_key("default")
+        //             );
+        //             if has_required && !has_default {
+        //                 mandatory_fields.push(field_name.clone());
+        //             }
+        //         }
+        //     }
+        // }
         for field in &xml_data_record.fields {
             let declared_field = all_fields.get(&field.name);
             if let Some(declared_field) = declared_field {
+                mandatory_fields.retain(|f| f != &field.name);
                 //TODO Check type
             } else {
                 
@@ -106,6 +127,17 @@ impl XmlValidator {
                 ));
             }
         }
+        // if mandatory_fields.len() > 0 {
+        //         diagnostics.push(Diagnostic::new(
+        //             Range::new(Position::new(xml_data_record.range.start.try_into().unwrap(), 0), Position::new(xml_data_record.range.end.try_into().unwrap(), 0)),
+        //             Some(lsp_types::DiagnosticSeverity::ERROR),
+        //             Some(lsp_types::NumberOrString::String(S!("OLS30452"))),
+        //             Some(EXTENSION_NAME.to_string()),
+        //             format!("Some mandatory fields are not declared in the record: {:?}", mandatory_fields),
+        //             None,
+        //             None
+        //         ));
+        // }
     }
 
     fn validate_menu_item(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_menu_item: &XmlDataMenuItem, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {

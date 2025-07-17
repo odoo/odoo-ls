@@ -868,6 +868,8 @@ impl PythonArchEvalHooks {
             "related",
             "compute",
             "delegate",
+            "required",
+            "default",
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
@@ -886,6 +888,9 @@ impl PythonArchEvalHooks {
                 let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
                 if let Some(boolean) = maybe_boolean {
                     context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                }
+                if arg_name == "default" {
+                    context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
                 }
             }
         }
