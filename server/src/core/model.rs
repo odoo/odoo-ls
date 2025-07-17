@@ -208,7 +208,7 @@ impl Model {
             } else {
                 symbols.push((s.clone(), None));
             }
-            if with_inheritance {
+            if with_inheritance { //TODO wrong, should be recursive
                 let inherited_models = s.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
                 for inherited_model in inherited_models.iter() {
                     if !seen_inherited_models.contains(inherited_model) {

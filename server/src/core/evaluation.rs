@@ -612,6 +612,39 @@ impl Evaluation {
         (None, value.diagnostics)
     }
 
+    /* Given an Expr, try to return the represented Boolean. None if it can't be achieved */
+    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
+        let from_module;
+        if let Some(module) = parent.borrow().find_module() {
+            from_module = ContextValue::MODULE(Rc::downgrade(&module));
+        } else {
+            from_module = ContextValue::BOOLEAN(false);
+        }
+        let mut context: Option<Context> = Some(HashMap::from([
+            (S!("module"), from_module),
+            (S!("range"), ContextValue::RANGE(ast.range()))
+        ]));
+        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, &mut vec![]);
+        if value.evaluations.len() == 1 { //only handle strict evaluations
+            let eval = &value.evaluations[0];
+            let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
+            if let Some(v) = v {
+                match v {
+                    EvaluationValue::CONSTANT(v) => {
+                        match v {
+                            Expr::BooleanLiteral(s) => {
+                                return (Some(s.value), value.diagnostics);
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
+        (None, value.diagnostics)
+    }
+
 
     /**
     analyze_ast will extract all known information about an ast:
