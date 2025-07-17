@@ -376,7 +376,7 @@ impl FeaturesUtils {
                                 block = block + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
                             }
                             block += "  \n***  \n";
-                            block += &model.borrow().all_symbols(session, from_module.clone()).into_iter()
+                            block += &model.borrow().all_symbols(session, from_module.clone(), false).into_iter()
                                 .filter_map(|(sym, needed_module)| {
                                     if Rc::ptr_eq(&sym, main_class_rc) {
                                         None // Skip main_class

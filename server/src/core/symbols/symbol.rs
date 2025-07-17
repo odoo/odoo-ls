@@ -2294,7 +2294,7 @@ impl Symbol {
                     let model_data =  sym.as_class_sym()._model.as_ref();
                     if let Some(model_data) = model_data {
                         if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
-                            for (model_sym, dependency) in model.borrow().all_symbols(session, from_module.clone()) {
+                            for (model_sym, dependency) in model.borrow().all_symbols(session, from_module.clone(), true) {
                                 if dependency.is_none() && !Rc::ptr_eq(symbol, &model_sym) {
                                     for s in model_sym.borrow().all_symbols() {
                                         if only_fields && !s.borrow().is_field(session){
@@ -2317,7 +2317,7 @@ impl Symbol {
                 }
                 let bases = symbol.borrow().as_class_sym().bases.clone();
                 for base in bases.iter() {
-                    //no comodel as we will process only model in base class (overrided _name?)
+                    //no comodel as we will search for co-model from original class (what about overrided _name?)
                     if let Some(base) = base.upgrade() {
                         Symbol::all_members(&base, session, result, false, only_fields, only_methods, from_module.clone(), acc, false);
                     }

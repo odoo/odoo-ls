@@ -542,7 +542,7 @@ impl PythonArchEval {
                     let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
                         continue;
                     };
-                    let model_classes = model.borrow().all_symbols(session, parent_class.find_module());
+                    let model_classes = model.borrow().all_symbols(session, parent_class.find_module(), false);
                     let fn_name = self.sym_stack[0].borrow().name().clone();
                     let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)| sym.borrow().as_class_sym()._model.as_ref().unwrap().computes.get(&fn_name).cloned()).flatten().collect();
                     if allowed_fields.is_empty() {
