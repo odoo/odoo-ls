@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
 use itertools::Itertools;
@@ -12,6 +13,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
+use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
 use crate::core::symbols::symbol::Symbol;
 use crate::features::features_utils::FeaturesUtils;
@@ -504,12 +506,22 @@ fn complete_decorator_call(
     }
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, false);
     let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, &mut vec![]).0;
-    for decorator_eval in dec_evals.iter(){
-        let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut vec![], None)  else {continue};
-        let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
+    let mut followed_evals = vec![];
+    for eval in dec_evals {
+        followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+    }
+    for decorator_eval in followed_evals{
+        let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
+            continue;
+        };
+        let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {
+            continue;
+        };
         let dec_sym_tree = dec_sym.borrow().get_tree();
-        let expected_types = if dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")]){
-            if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
+        let version_comparison = compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0");
+        let expected_types = if (version_comparison < Ordering::Equal && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
+                (version_comparison >= Ordering::Equal && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
+            if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
                 &vec![ExpectedType::SIMPLE_FIELD]
             } else if dec_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
                 &vec![ExpectedType::NESTED_FIELD(None)]

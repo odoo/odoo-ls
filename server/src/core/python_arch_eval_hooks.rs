@@ -560,9 +560,17 @@ impl PythonArchEvalHooks {
             let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(),&mut deps);
             Symbol::insert_dependencies(&file, &mut deps, current_step);
             diagnostics.extend(diags);
-            for decorator_eval in dec_evals.iter(){
-                let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval.symbol.get_symbol(session, &mut None, &mut diagnostics, None)  else {continue};
-                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {continue};
+            let mut followed_evals = vec![];
+            for eval in dec_evals {
+                followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+            }
+            for decorator_eval in followed_evals {
+                let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
+                    continue;
+                };
+                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {
+                    continue;
+                };
                 let dec_sym_tree = dec_sym.borrow().get_tree();
                 for hook in arch_eval_decorator_hooks.iter() {
                     for (min_version, max_version, hook_tree) in hook.trees.iter() {
