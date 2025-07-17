@@ -20,6 +20,13 @@ pub struct XmlDataRecord {
     pub file_symbol: Weak<RefCell<Symbol>>,
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
+    pub fields: Vec<XmlDataField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct XmlDataField {
+    pub name: OYarn,
+    pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]

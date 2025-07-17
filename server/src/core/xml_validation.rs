@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, hash::Hash, path::PathBuf, rc::Rc
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, SymType, DEBUG_STEPS}, core::{entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, threads::SessionInfo};
+use crate::{constants::{BuildSteps, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, threads::SessionInfo, S};
 
 
 
@@ -35,74 +35,97 @@ impl XmlValidator {
         }
         let module = self.xml_symbol.borrow().find_module().unwrap();
         let mut dependencies = vec![];
+        let mut model_dependencies = vec![];
+        let mut diagnostics = vec![];
         for xml_ids in self.xml_symbol.borrow().as_xml_file_sym().xml_ids.values() {
             for xml_id in xml_ids.iter() {
-                self.validate_xml_id(session, &module, xml_id, &mut dependencies);
+                self.validate_xml_id(session, &module, xml_id, &mut diagnostics, &mut dependencies, &mut model_dependencies);
             }
         }
-        for mut dep in dependencies.iter_mut() {
+        for dep in dependencies.iter_mut() {
             self.xml_symbol.borrow_mut().add_dependency(&mut dep.borrow_mut(), BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
         }
+        for model in model_dependencies.iter() {
+            self.xml_symbol.borrow_mut().add_model_dependencies(&model);
+        }
         let file_info = self.get_file_info(&mut session.sync_odoo);
+        file_info.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, data: &XmlData, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
-        let path = data.get_file_symbol().unwrap().upgrade().unwrap().borrow().paths()[0].clone();
-        let mut file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap();
-        let mut diagnostics = vec![];
+    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, data: &XmlData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
+        let Some(xml_file) = data.get_xml_file_symbol() else {
+            return;
+        };
+        let path = xml_file.borrow().paths()[0].clone();
         match data {
-            XmlData::RECORD(xml_data_record) => self.validate_record(session, module, xml_data_record, &mut diagnostics, dependencies),
-            XmlData::MENUITEM(xml_data_menu_item) => self.validate_menu_item(session, module, xml_data_menu_item, &mut diagnostics, dependencies),
-            XmlData::TEMPLATE(xml_data_template) => self.validate_template(session, module, xml_data_template, &mut diagnostics, dependencies),
-            XmlData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, &mut diagnostics, dependencies),
-            XmlData::ACT_WINDOW(xml_data_act_window) => self.validate_act_window(session, module, xml_data_act_window, &mut diagnostics, dependencies),
-            XmlData::REPORT(xml_data_report) => self.validate_report(session, module, xml_data_report, &mut diagnostics, dependencies),
+            XmlData::RECORD(xml_data_record) => self.validate_record(session, module, xml_data_record, diagnostics, dependencies, model_dependencies),
+            XmlData::MENUITEM(xml_data_menu_item) => self.validate_menu_item(session, module, xml_data_menu_item, diagnostics, dependencies, model_dependencies),
+            XmlData::TEMPLATE(xml_data_template) => self.validate_template(session, module, xml_data_template, diagnostics, dependencies, model_dependencies),
+            XmlData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, diagnostics, dependencies, model_dependencies),
+            XmlData::ACT_WINDOW(xml_data_act_window) => self.validate_act_window(session, module, xml_data_act_window, diagnostics, dependencies, model_dependencies),
+            XmlData::REPORT(xml_data_report) => self.validate_report(session, module, xml_data_report, diagnostics, dependencies, model_dependencies),
         }
-        file_info.borrow_mut().update_validation_diagnostics(HashMap::from([(BuildSteps::VALIDATION, diagnostics)]));
     }
 
-    fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &XmlDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
-        let mut model_ok = false;
-        let model = session.sync_odoo.models.get(&xml_data_record.model.0).cloned();
-        if let Some(model) = model {
-            self.xml_symbol.borrow_mut().add_model_dependencies(&model);
-            for main_sym in model.borrow().get_main_symbols(session, Some(module.clone())).iter() {
-                model_ok = true;
-                dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
-            }
-        } else {
+    fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &XmlDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
+        let Some(model) = session.sync_odoo.models.get(&xml_data_record.model.0).cloned() else {
             //TODO register to not_found_models
-        }
-        if !model_ok {
-            diagnostics.push(Diagnostic {
-                range: Range::new(Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0)),
-                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
-                message: format!("Model '{}' not found in module '{}'", xml_data_record.model.0, module.borrow().name()),
-                source: Some("OdooLS".to_string()),
-                ..Default::default()
-            });
+            diagnostics.push(Diagnostic::new(
+                Range::new(Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0)),
+                Some(lsp_types::DiagnosticSeverity::ERROR),
+                Some(lsp_types::NumberOrString::String(S!("OLS30450"))),
+                Some(EXTENSION_NAME.to_string()),
+                format!("Model '{}' not found in module '{}'", xml_data_record.model.0, module.borrow().name()),
+                None,
+                None
+            ));
             info!("Model '{}' not found in module '{}'", xml_data_record.model.0, module.borrow().name());
+            return;
+        };
+        model_dependencies.push(model.clone());
+        let main_symbols = model.borrow().get_main_symbols(session, Some(module.clone()));
+        for main_sym in main_symbols.iter() {
+            dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
+        }
+        let mut all_fields = HashMap::new();
+        Symbol::all_members(&main_symbols[0], session, &mut all_fields, true, true, false, Some(module.clone()), &mut None, false);
+        for field in &xml_data_record.fields {
+            let declared_field = all_fields.get(&field.name);
+            if let Some(declared_field) = declared_field {
+                //TODO Check type
+            } else {
+                
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(field.range.start.try_into().unwrap(), 0), Position::new(field.range.end.try_into().unwrap(), 0)),
+                    Some(lsp_types::DiagnosticSeverity::ERROR),
+                    Some(lsp_types::NumberOrString::String(S!("OLS30451"))),
+                    Some(EXTENSION_NAME.to_string()),
+                    format!("Field '{}' not found in model '{}'", field.name, xml_data_record.model.0),
+                    None,
+                    None
+                ));
+            }
         }
     }
 
-    fn validate_menu_item(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_menu_item: &XmlDataMenuItem, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
+    fn validate_menu_item(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_menu_item: &XmlDataMenuItem, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         
     }
 
-    fn validate_template(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_template: &XmlDataTemplate, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
+    fn validate_template(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_template: &XmlDataTemplate, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         
     }
 
-    fn validate_delete(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_delete: &XmlDataDelete, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
+    fn validate_delete(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_delete: &XmlDataDelete, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         
     }
 
-    fn validate_act_window(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_act_window: &XmlDataActWindow, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
+    fn validate_act_window(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_act_window: &XmlDataActWindow, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         
     }
 
-    fn validate_report(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_report: &XmlDataReport, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>) {
+    fn validate_report(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_report: &XmlDataReport, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         
     }
 }
