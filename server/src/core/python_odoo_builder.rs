@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
 use ruff_python_ast::Expr;
@@ -188,6 +188,33 @@ impl PythonOdooBuilder {
                     }
                 } else {
                     error!("wrong _inherits value");
+                }
+            }
+        }
+        drop(_inherits);
+        drop(symbol);
+        //Add inherits from delegate=True from fields
+        let mut all_fields = HashMap::new();
+        Symbol::all_members(&self.symbol, session, &mut all_fields, false, true, false, None, &mut None, false);
+        for (field_name, symbols) in all_fields.iter() {
+            for (symbol, _deps) in symbols.iter() {
+                if let Some(evals) = symbol.borrow().evaluations() {
+                    for eval in evals.iter() {
+                        let symbol_weak = eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, self.symbol.borrow().get_file().unwrap().upgrade());
+                        if let Some(eval_symbol) = symbol_weak.weak.upgrade() {
+                            if eval_symbol.borrow().name() == &Sy!("Many2one") {
+                                let context = &symbol_weak.context;
+                                if let Some(delegate) = context.get("delegate") {
+                                    if delegate.as_bool() == true {
+                                        if let Some(comodel) = context.get("comodel_name") {
+                                            let comodel_name = oyarn!("{}", comodel.as_string());
+                                            self.symbol.borrow_mut().as_class_sym_mut()._model.as_mut().unwrap().inherits.push((comodel_name, field_name.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

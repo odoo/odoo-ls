@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ops::Index;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::cell::RefCell;
@@ -866,6 +867,7 @@ impl PythonArchEvalHooks {
             "comodel_name",
             "related",
             "compute",
+            "delegate",
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
@@ -880,6 +882,11 @@ impl PythonArchEvalHooks {
             if let Some(related_string) = maybe_related_string {
                 context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
                 context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
+            } else {
+                let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
+                if let Some(boolean) = maybe_boolean {
+                    context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                }
             }
         }
 

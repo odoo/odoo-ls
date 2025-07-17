@@ -88,8 +88,7 @@ impl XmlValidator {
         for main_sym in main_symbols.iter() {
             dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
         }
-        let mut all_fields = HashMap::new();
-        Symbol::all_members(&main_symbols[0], session, &mut all_fields, true, true, false, Some(module.clone()), &mut None, false);
+        let all_fields = Symbol::all_fields(&main_symbols[0], session, Some(module.clone()));
         for field in &xml_data_record.fields {
             let declared_field = all_fields.get(&field.name);
             if let Some(declared_field) = declared_field {
