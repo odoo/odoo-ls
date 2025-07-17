@@ -4,7 +4,8 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
-use crate::utils::PathSanitizer;
+use crate::utils::{compare_semver, PathSanitizer};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Weak;
@@ -71,12 +72,13 @@ impl FeaturesUtils {
             return vec![];
         }
         let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), &mut vec![]).0;
-        if !evaluations.iter().any(|eval|
-            match eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade() {
-                Some(sym_rc) => sym_rc.borrow().is_field_class(session),
-                None => false
-            }
-        ){
+        let mut followed_evals = vec![];
+        for eval in evaluations {
+            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+        }
+        if !followed_evals.iter().any(|eval|
+            eval.is_weak() && eval.as_weak().weak.upgrade().map(|sym| sym.borrow().is_field_class(session)).unwrap_or(false)
+        ) {
             return vec![];
         }
         parent_class.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, false, true, false).0
@@ -188,10 +190,16 @@ impl FeaturesUtils {
     ) -> Vec<Rc<RefCell<Symbol>>>{
         let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), &mut vec![]).0;
-        for callable_eval in callable_evals.iter() {
-            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+        let mut followed_evals = vec![];
+        for eval in callable_evals {
+            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+        }
+        for callable_eval in followed_evals {
+            let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
+                continue;
+            };
             let Some(callable_sym) = callable.weak.upgrade() else {
-                continue
+                continue;
             };
             if callable_sym.borrow().typ() != SymType::FUNCTION {
                 continue;
@@ -200,18 +208,21 @@ impl FeaturesUtils {
 
             // Check if we are in api.onchange/constrains/depends
             let func_sym_tree = func.get_tree();
-            if func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")]){
-                if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
-                arg_symbols.extend(
-                    FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
-                );
-                continue;
-            } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
-                arg_symbols.extend(
-                    FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
-                );
-                continue;
-            }
+            // TODO: account for change in tree after 18.1 odoo.orm.decorators
+            let version_comparison = compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0");
+            if (version_comparison < Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
+                (version_comparison >= Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])){
+                if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
+                    arg_symbols.extend(
+                        FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
+                    );
+                    continue;
+                } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
+                    arg_symbols.extend(
+                        FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
+                    );
+                    continue;
+                }
             }
 
             let func_arg = func.as_func().get_indexed_arg_in_call(
@@ -251,10 +262,16 @@ impl FeaturesUtils {
         }
         let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), &mut vec![]).0;
-        for callable_eval in callable_evals.iter() {
-            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+        let mut followed_evals = vec![];
+        for eval in callable_evals {
+            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+        }
+        for callable_eval in followed_evals {
+            let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
+                continue;
+            };
             let Some(callable_sym) = callable.weak.upgrade() else {
-                continue
+                continue;
             };
             if !callable_sym.borrow().is_field_class(session) {
                 continue;

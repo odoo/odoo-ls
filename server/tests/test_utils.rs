@@ -1,7 +1,30 @@
-use std::{cell::RefCell, rc::Rc};
+use once_cell::sync::Lazy;
+use std::{cell::RefCell, rc::Rc, cmp::Ordering};
 
-use odoo_ls_server::{core::{file_mgr::FileInfo, symbols::symbol::Symbol}, threads::SessionInfo};
+use odoo_ls_server::{core::{file_mgr::FileInfo, symbols::symbol::Symbol}, threads::SessionInfo, utils::compare_semver};
 
+
+/// Returns the correct class name for Partner/ResPartner depending on Odoo version
+pub static PARTNER_CLASS_NAME: Lazy<fn(&str) -> &'static str> = Lazy::new(|| {
+    |full_version: &str| {
+        if compare_semver(full_version, "18.1") >= Ordering::Equal {
+            "ResPartner"
+        } else {
+            "Partner"
+        }
+    }
+});
+
+/// Returns the correct class name for Country/ResCountry depending on Odoo version
+pub static COUNTRY_CLASS_NAME: Lazy<fn(&str) -> &'static str> = Lazy::new(|| {
+    |full_version: &str| {
+        if compare_semver(full_version, "18.1") >= Ordering::Equal {
+            "ResCountry"
+        } else {
+            "Country"
+        }
+    }
+});
 
 
 /// Helper to get hover markdown string at a given (line, character)

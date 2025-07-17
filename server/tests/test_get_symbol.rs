@@ -20,6 +20,9 @@ fn test_hover_on_model_field_and_method() {
     assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_session(&mut odoo);
 
+    // Use Lazy value for partner and country class names
+    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.full_version.as_str());
+    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.full_version.as_str());
     // Get file symbol and file info
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
@@ -53,12 +56,12 @@ fn test_hover_on_model_field_and_method() {
     // Hover on related field "partner_company_phone_code"
     let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 10, 63).unwrap_or_default();
     assert!(
-        hover_partner_id.contains("partner_id: Partner"),
+        hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in related field name should show field name and field type"
     );
     let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 10, 74).unwrap_or_default();
     assert!(
-        hover_country_id.contains("country_id: Country"),
+        hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in related field name should show field name and field type"
     );
     let hover_phone_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 10, 86).unwrap_or_default();
@@ -96,12 +99,12 @@ fn test_hover_on_model_field_and_method() {
     // Hover on depends decorator, on different sections
     let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 27, 22).unwrap_or_default();
     assert!(
-        hover_partner_id.contains("partner_id: Partner"),
+        hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in depends should show field name and field type"
     );
     let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 27, 35).unwrap_or_default();
     assert!(
-        hover_country_id.contains("country_id: Country"),
+        hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in depends should show field name and field type"
     );
     let hover_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 27, 43).unwrap_or_default();
@@ -125,12 +128,12 @@ fn test_hover_on_model_field_and_method() {
     // Hover on domains, on different sections
     let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 25).unwrap_or_default();
     assert!(
-        hover_partner_id.contains("partner_id: Partner"),
+        hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in search domain should show field name and field type"
     );
     let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 39).unwrap_or_default();
     assert!(
-        hover_country_id.contains("country_id: Country"),
+        hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in search domain should show field name and field type"
     );
     let hover_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 48).unwrap_or_default();
@@ -163,6 +166,10 @@ fn test_definition() {
     assert!(PathBuf::from(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
     assert!(PathBuf::from(&module2_test_file).exists(), "Test file does not exist: {}", module1_test_file);
     let mut session = setup::setup::create_session(&mut odoo);
+
+    // Use Lazy value for partner and Country class names
+    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.full_version.as_str());
+    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.full_version.as_str());
 
     // Get file symbol and file info
     let file_mgr = session.sync_odoo.get_file_mgr();
@@ -219,7 +226,7 @@ fn test_definition() {
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_partner_id[0].borrow().range()), partner_id_locs[0].range, "Expected partner_id to be at the same location as the field");
 
     let country_id_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 10, 74);
-    let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_partner")], vec![Sy!("Partner"), Sy!("country_id")]), u32::MAX);
+    let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_partner")], vec![Sy!(partner_class_name), Sy!("country_id")]), u32::MAX);
     assert_eq!(country_id_field_sym.len(), 1, "Expected 1 location for country_id");
     let country_id_field_sym = country_id_field_sym[0].clone();
     let country_id_file = country_id_field_sym.borrow().get_file().unwrap().upgrade().unwrap().borrow().paths()[0].clone();
@@ -229,7 +236,7 @@ fn test_definition() {
 
     // now the same for phone_code
     let phone_code_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 10, 86);
-    let phone_code_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_country")], vec![Sy!("Country"), Sy!("phone_code")]), u32::MAX);
+    let phone_code_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_country")], vec![Sy!(country_class_name), Sy!("phone_code")]), u32::MAX);
     assert_eq!(phone_code_field_sym.len(), 1, "Expected 1 location for phone_code");
     let phone_code_field_sym = phone_code_field_sym[0].clone();
     let phone_code_file = phone_code_field_sym.borrow().get_file().unwrap().upgrade().unwrap().borrow().paths()[0].clone();
