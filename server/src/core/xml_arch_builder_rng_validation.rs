@@ -244,7 +244,11 @@ impl XmlArchBuilder {
             file_symbol: Rc::downgrade(&self.xml_symbol),
             model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            fields: vec![]
+            fields: vec![],
+            range: std::ops::Range::<usize> {
+                start: node.range().start as usize,
+                end: node.range().end as usize,
+            }
         };
         for child in node.children().filter(|n| n.is_element()) {
             if let Some(field) = self.load_field(session, &child, diagnostics) {

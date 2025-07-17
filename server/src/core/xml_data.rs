@@ -21,6 +21,7 @@ pub struct XmlDataRecord {
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
     pub fields: Vec<XmlDataField>,
+    pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
