@@ -170,8 +170,7 @@ impl PythonOdooBuilder {
         drop(_inherits);
         drop(symbol);
         //Add inherits from delegate=True from fields
-        let mut all_fields = HashMap::new();
-        Symbol::all_members(&self.symbol, session, &mut all_fields, false, true, false, None, &mut None, false);
+        let all_fields = Symbol::all_members(&self.symbol, session, false, true, false, None, false);
         for (field_name, symbols) in all_fields.iter() {
             for (symbol, _deps) in symbols.iter() {
                 if let Some(evals) = symbol.borrow().evaluations() {
