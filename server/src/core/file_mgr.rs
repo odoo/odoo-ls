@@ -350,6 +350,13 @@ impl FileInfo {
         }
     }
 
+    pub fn std_range_to_range(&self, range: &std::ops::Range<usize>) -> Range {
+        Range {
+            start: self.offset_to_position(range.start),
+            end: self.offset_to_position(range.end)
+        }
+    }
+
     pub fn position_to_offset_with_rope(rope: &Rope, line: u32, char: u32) -> usize {
         let line_char = rope.try_line_to_char(line as usize).expect("unable to get char from line");
         rope.try_char_to_byte(line_char + char as usize).expect("unable to get byte from char")
