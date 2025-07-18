@@ -2213,22 +2213,22 @@ impl Symbol {
         let mut iter: Vec<Rc<RefCell<Symbol>>> = Vec::new();
         match self {
             Symbol::File(_) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(_, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Class(_) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(_, hashmap)| hashmap.into_iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Function(_) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(_, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
             },
             Symbol::Package(PackageSymbol::Module(m)) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(_, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
                 for symbol in m.module_symbols.values().cloned() {
@@ -2236,7 +2236,7 @@ impl Symbol {
                 }
             },
             Symbol::Package(PackageSymbol::PythonPackage(p)) => {
-                for symbol in self.iter_symbols().flat_map(|(name, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
+                for symbol in self.iter_symbols().flat_map(|(_, hashmap)| hashmap.iter().flat_map(|(_, vec)| vec.clone())) {
                     iter.push(symbol.clone());
                 }
                 for symbol in p.module_symbols.values().cloned() {
@@ -2260,77 +2260,81 @@ impl Symbol {
 
     //store in result all available members for symbol: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
-    pub fn all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut Option<HashSet<Tree>>, is_super: bool) {
-        if acc.is_none() {
-            *acc = Some(HashSet::new());
-        }
+    pub fn all_members(
+        symbol: &Rc<RefCell<Symbol>>,
+        session: &mut SessionInfo,
+        with_co_models: bool,
+        only_fields: bool,
+        only_methods: bool,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        is_super: bool) -> HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>{
+        let mut result: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
+        let mut acc: HashSet<Tree> = HashSet::new();
+        Symbol::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
+        return  result;
+    }
+    fn _all_members(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<Rc<RefCell<Symbol>>>, acc: &mut HashSet<Tree>, is_super: bool) {
         let tree = symbol.borrow().get_tree();
-        if acc.as_mut().unwrap().contains(&tree) {
+        if acc.contains(&tree) {
             return;
         }
-        acc.as_mut().unwrap().insert(tree);
+        acc.insert(tree);
+        let mut append_result = |symbol: Rc<RefCell<Symbol>>, dep: Option<OYarn>| {
+            let name = symbol.borrow().name().clone();
+            if let Some(vec) = result.get_mut(&name) {
+                vec.push((symbol, dep));
+            } else {
+                result.insert(name.clone(), vec![(symbol, dep)]);
+            }
+        };
         let typ = symbol.borrow().typ();
         match typ {
             SymType::CLASS => {
                 // Skip current class symbols for super
                 if !is_super{
                     for symbol in symbol.borrow().all_symbols() {
-                        if only_fields && !symbol.borrow().is_field(session){
+                        if (only_fields && !symbol.borrow().is_field(session)) || (only_methods && symbol.borrow().typ() != SymType::FUNCTION) {
                             continue;
                         }
-                        if only_methods && symbol.borrow().typ() != SymType::FUNCTION {
-                            continue;
-                        }
-                        let name = symbol.borrow().name().clone();
-                        if let Some(vec) = result.get_mut(&name) {
-                            vec.push((symbol, None));
-                        } else {
-                            result.insert(name.clone(), vec![(symbol, None)]);
-                        }
+                        append_result(symbol, None);
                     }
                 }
+                let mut bases: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+                symbol.borrow().as_class_sym().bases.iter().for_each(|base| {
+                    base.upgrade().map(|b| bases.insert(b));
+                });
                 if with_co_models {
-                    let sym = symbol.borrow();
-                    let model_data =  sym.as_class_sym()._model.as_ref();
-                    if let Some(model_data) = model_data {
-                        if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
-                            for (model_sym, dependency) in model.borrow().all_symbols(session, from_module.clone(), true) {
-                                if dependency.is_none() && !Rc::ptr_eq(symbol, &model_sym) {
-                                    for s in model_sym.borrow().all_symbols() {
-                                        if only_fields && !s.borrow().is_field(session){
-                                            continue;
-                                        }
-                                        if only_methods && symbol.borrow().typ() != SymType::FUNCTION{
-                                            continue;
-                                        }
-                                        let name = s.borrow().name().clone();
-                                        if let Some(vec) = result.get_mut(&name) {
-                                            vec.push((s, Some(model_sym.borrow().name().clone())));
-                                        } else {
-                                            result.insert(name.clone(), vec![(s, Some(model_sym.borrow().name().clone()))]);
-                                        }
-                                    }
-                                    //add fields from _inherits
-                                    if let Some(model_data) = model_sym.borrow().as_class_sym()._model.as_ref() {
-                                        for (inherits_model, inherits_field) in model_data.inherits.iter() {
-                                            let inherits_model_sym = session.sync_odoo.models.get(inherits_model).cloned();
-                                            if let Some(inherits_model_sym) = inherits_model_sym {
-                                                for (model_symbol, deps) in inherits_model_sym.borrow().all_symbols(session, from_module.clone(), true).iter().filter(|(x, deps)| deps.is_none()) {
-                                                    for (field_name, field_symbols) in Symbol::all_fields(&model_symbol, session, from_module.clone()) {
-                                                        for (s, deps) in field_symbols.iter().filter(|(x, deps)| deps.is_none()) {
-                                                            if let Some(vec) = result.get_mut(&field_name) {
-                                                                vec.push((s.clone(), Some(model_sym.borrow().name().clone())));
-                                                            } else {
-                                                                result.insert(field_name.clone(), vec![(s.clone(), Some(model_sym.borrow().name().clone()))]);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                    let Some(model) = symbol.borrow().as_class_sym()._model.as_ref().and_then(|model_data|
+                        session.sync_odoo.models.get(&model_data.name).cloned()
+                    ) else {
+                        return;
+                    };
+                    // no recursion because it is handled in all_symbols_inherits
+                    let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module.clone());
+                    for (model_sym, dependency) in model_symbols {
+                        if dependency.is_some() || Rc::ptr_eq(symbol, &model_sym) {
+                            continue;
+                        }
+                        model_sym.borrow().as_class_sym().bases.iter().for_each(|base| {
+                            base.upgrade().map(|b| bases.insert(b));
+                        });
+                        for s in model_sym.borrow().all_symbols() {
+                            if (only_fields && !s.borrow().is_field(session)) || (only_methods && s.borrow().typ() != SymType::FUNCTION) {
+                                continue;
                             }
+                            append_result(s, Some(model_sym.borrow().name().clone()));
+                        }
+                    }
+                    for (model_sym, dependency) in model_inherits_symbols {
+                        if dependency.is_some() || Rc::ptr_eq(symbol, &model_sym) {
+                            continue;
+                        }
+                        model_sym.borrow().as_class_sym().bases.iter().for_each(|base| {
+                            base.upgrade().map(|b| bases.insert(b));
+                        });
+                        // for inherits symbols, we only add fields
+                        for s in model_sym.borrow().all_symbols().filter(|s| s.borrow().is_field(session)) {
+                            append_result(s, Some(model_sym.borrow().name().clone()));
                         }
                     }
                 }
@@ -2339,23 +2343,14 @@ impl Symbol {
                     //no comodel as we will search for co-model from original class (what about overrided _name?)
                     //TODO what about base of co-models classes?
                     if let Some(base) = base.upgrade() {
-                        Symbol::all_members(&base, session, result, false, only_fields, only_methods, from_module.clone(), acc, false);
+                        Symbol::_all_members(&base, session, result, false, only_fields, only_methods, from_module.clone(), acc, false);
                     }
                 }
             },
-            _ => {
-                for symbol in symbol.borrow().all_symbols() {
-                    if only_fields && !symbol.borrow().is_field(session){
-                        continue;
-                    }
-                    let name = symbol.borrow().name().clone();
-                    if let Some(vec) = result.get_mut(&name) {
-                        vec.push((symbol, None));
-                    } else {
-                        result.insert(name.clone(), vec![(symbol, None)]);
-                    }
-                }
-            }
+            // if not class just add it to result
+            _ => symbol.borrow().all_symbols().for_each(|s|
+                if !(only_fields && !s.borrow().is_field(session)) {append_result(s, None)}
+            )
         }
     }
 
@@ -2596,9 +2591,7 @@ impl Symbol {
     }
 
     pub fn all_fields(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> {
-        let mut all_fields = HashMap::new();
-        Symbol::all_members(symbol, session, &mut all_fields, true, true, false, from_module.clone(), &mut None, false);
-        all_fields
+        Symbol::all_members(symbol, session, true, true, false, from_module.clone(), false)
     }
 
     /* similar to get_symbol: will return the symbol that is under this one with the specified name.
