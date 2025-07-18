@@ -1,4 +1,4 @@
-use lsp_types::{GotoDefinitionResponse, Location, Range};
+use lsp_types::{GotoDefinitionResponse, Location, Position, Range};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
 use std::path::PathBuf;
@@ -8,8 +8,10 @@ use crate::constants::SymType;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::xml_file_symbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
+use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
 use crate::oyarn;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
@@ -146,6 +148,68 @@ impl DefinitionFeature {
             index += 1;
         }
         Some(GotoDefinitionResponse::Array(links))
+    }
+
+    pub fn get_location_xml(session: &mut SessionInfo,
+        file_symbol: &Rc<RefCell<Symbol>>,
+        file_info: &Rc<RefCell<FileInfo>>,
+        line: u32,
+        character: u32
+    ) -> Option<GotoDefinitionResponse> {
+        let offset = file_info.borrow().position_to_offset(line, character);
+        let data = file_info.borrow().file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+        let document = roxmltree::Document::parse(&data);
+        if let Ok(document) = document {
+            let root = document.root_element();
+            let (symbols, _range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset);
+            if symbols.is_empty() {
+                return None;
+            }
+            let mut links = vec![];
+            for xml_result in symbols.iter() {
+                match xml_result {
+                    crate::features::xml_ast_utils::XmlAstResult::SYMBOL(s) => {
+                        if let Some(file) = s.borrow().get_file() {
+                            for path in file.upgrade().unwrap().borrow().paths().iter() {
+                                let full_path = match file.upgrade().unwrap().borrow().typ() {
+                                    SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
+                                    _ => path.clone()
+                                };
+                                let range = match s.borrow().typ() {
+                                    SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                                    _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range()),
+                                };
+                                links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
+                            }
+                        }
+                    },
+                    XmlAstResult::XML_DATA(xml_file_symbol, range) => {
+                        for path in xml_file_symbol.borrow().paths().iter() {
+                            let full_path = match xml_file_symbol.borrow().typ() {
+                                SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", xml_file_symbol.borrow().as_package().i_ext())).sanitize(),
+                                _ => path.clone()
+                            };
+                            let range = match xml_file_symbol.borrow().typ() {
+                                SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                                _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
+                            };
+                            links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
+                        }
+                    }
+                }
+            }
+            return Some(GotoDefinitionResponse::Array(links));
+        }
+        None
+    }
+
+    pub fn get_location_csv(session: &mut SessionInfo,
+        file_symbol: &Rc<RefCell<Symbol>>,
+        file_info: &Rc<RefCell<FileInfo>>,
+        line: u32,
+        character: u32
+    ) -> Option<GotoDefinitionResponse> {
+        None
     }
 
 }
