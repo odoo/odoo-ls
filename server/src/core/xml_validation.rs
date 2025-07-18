@@ -112,7 +112,7 @@ impl XmlValidator {
         for field in &xml_data_record.fields {
             let declared_field = all_fields.get(&field.name);
             if let Some(declared_field) = declared_field {
-                mandatory_fields.retain(|f| f != &field.name);
+                mandatory_fields.retain(|f| f != &field.name.as_str());
                 //TODO Check type
             } else {
                 
