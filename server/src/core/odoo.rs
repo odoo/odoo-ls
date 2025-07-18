@@ -1,4 +1,5 @@
 use crate::core::entry_point::EntryPointType;
+use crate::core::file_mgr::AstType;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
@@ -1106,7 +1107,17 @@ impl Odoo {
                         file_info.borrow_mut().prepare_ast(session);
                     }
                     if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
-                        return Ok(HoverFeature::get_hover(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        match file_info.borrow().file_info_ast.borrow().ast_type {
+                            AstType::Python => {
+                                return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            },
+                            AstType::Xml => {
+                                return Ok(HoverFeature::hover_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            },
+                            AstType::Csv => {
+                                return Ok(HoverFeature::hover_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            },
+                        }
                     }
                 }
             }

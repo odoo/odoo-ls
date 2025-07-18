@@ -6,7 +6,7 @@ use odoo_ls_server::{core::{file_mgr::FileInfo, symbols::symbol::Symbol}, thread
 
 /// Helper to get hover markdown string at a given (line, character)
 pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<String> {
-    let hover = odoo_ls_server::features::hover::HoverFeature::get_hover(
+    let hover = odoo_ls_server::features::hover::HoverFeature::hover_python(
         session,
         file_symbol,
         file_info,
