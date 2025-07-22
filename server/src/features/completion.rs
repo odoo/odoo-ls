@@ -23,7 +23,7 @@ use super::features_utils::TypeInfo;
 
 
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExpectedType {
     MODEL_NAME,
     DOMAIN(Rc<RefCell<Symbol>>),
@@ -32,9 +32,10 @@ pub enum ExpectedType {
     DOMAIN_FIELD(Rc<RefCell<Symbol>>),
     DOMAIN_COMPARATOR,
     CLASS(Rc<RefCell<Symbol>>),
-    SIMPLE_FIELD,
+    SIMPLE_FIELD(Option<OYarn>),
     NESTED_FIELD(Option<OYarn>),
     METHOD_NAME,
+    INHERITS,
 }
 
 pub struct CompletionFeature;
@@ -159,8 +160,10 @@ fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>
     let mut expected_type = vec![];
     if stmt_assign.targets.len() == 1 {
         if let Some(target_name) = stmt_assign.targets.first().unwrap().as_name_expr() {
-            if target_name.id == "_inherit" {
-                expected_type.push(ExpectedType::MODEL_NAME);
+            match target_name.id.as_str() {
+                "_inherit" => expected_type.push(ExpectedType::MODEL_NAME),
+                "_inherits" => expected_type.push(ExpectedType::INHERITS),
+                _ => {}
             }
         }
     }
@@ -376,7 +379,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Lambda(expr_lambda) => compare_lambda(session, file, expr_lambda, offset, is_param, expected_type),
         Expr::If(expr_if) => complete_if_expr(session, file, expr_if, offset, is_param, expected_type),
         Expr::Dict(expr_dict) => complete_dict(session, file, expr_dict, offset, is_param, expected_type),
-        Expr::Set(_) => None,
+        Expr::Set(expr_set) => complete_set(session, file, expr_set, offset, is_param, expected_type),
         Expr::ListComp(_) => None,
         Expr::SetComp(_) => None,
         Expr::DictComp(_) => None,
@@ -460,10 +463,39 @@ fn complete_if_expr(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_
 
 fn complete_dict(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_dict: &ruff_python_ast::ExprDict, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     for dict_item in expr_dict.items.iter() {
-        if dict_item.key.is_some() {
-            if offset > dict_item.value.range().start().to_usize() && offset <= dict_item.value.range().end().to_usize() {
-                return complete_expr( &dict_item.value, session, file, offset, is_param, expected_type);
+        if let Some(dict_item_key) = &dict_item.key {
+            // For expected type INHERITS, we want to complete the model name for the key
+            // and a simple field of type Many2one for the value
+            if offset > dict_item_key.range().start().to_usize() && offset <= dict_item_key.range().end().to_usize() {
+                let expected_type= expected_type.iter().map(|e| match e {
+                    ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
+                    _ => e.clone(),
+                }).collect();
+                return complete_expr( dict_item_key, session, file, offset, is_param, &expected_type);
             }
+            if offset > dict_item.value.range().start().to_usize() && offset <= dict_item.value.range().end().to_usize() {
+                // if expected type has model name, replace it with simple field
+                // for _inherits completion
+                let expected_type = expected_type.iter().map(|e| match e {
+                    ExpectedType::INHERITS => ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one"))),
+                    _ => e.clone(),
+                }).collect();
+                return complete_expr( &dict_item.value, session, file, offset, is_param, &expected_type);
+            }
+        }
+    }
+    None
+}
+
+fn complete_set(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_set: &ruff_python_ast::ExprSet, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    for set_item in expr_set.elts.iter() {
+        if offset > set_item.range().start().to_usize() && offset <= set_item.range().end().to_usize() {
+            // A set expression here is just starting to write the inherits dict
+            let expected_type= expected_type.iter().map(|e| match e {
+                ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
+                _ => e.clone(),
+            }).collect();
+            return complete_expr( set_item, session, file, offset, is_param, &expected_type);
         }
     }
     None
@@ -522,7 +554,7 @@ fn complete_decorator_call(
         let expected_types = if (version_comparison < Ordering::Equal && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
                 (version_comparison >= Ordering::Equal && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
             if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
-                &vec![ExpectedType::SIMPLE_FIELD]
+                &vec![ExpectedType::SIMPLE_FIELD(None)]
             } else if dec_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
                 &vec![ExpectedType::NESTED_FIELD(None)]
             } else {
@@ -717,7 +749,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
             ExpectedType::DOMAIN_FIELD(parent) => {
                 add_nested_field_names(session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent.clone(), true, &None);
             },
-            ExpectedType::SIMPLE_FIELD | ExpectedType::NESTED_FIELD(_) | ExpectedType::METHOD_NAME => 'field_block:  {
+            ExpectedType::SIMPLE_FIELD(_) | ExpectedType::NESTED_FIELD(_) | ExpectedType::METHOD_NAME => 'field_block:  {
                 let scope = Symbol::get_scope_symbol(file.clone(), expr_string_literal.range().start().to_u32(), true);
                 let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
                     break 'field_block;
@@ -726,16 +758,17 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     break 'field_block;
                 }
                 match expected_type {
-                    ExpectedType::SIMPLE_FIELD =>  add_model_attributes(
-                        session, &mut items, current_module.clone(), parent_class, false, true, false, expr_string_literal.value.to_str()),
+                    ExpectedType::SIMPLE_FIELD(maybe_field_type) =>  add_model_attributes(
+                        session, &mut items, current_module.clone(), parent_class, false, true, false, expr_string_literal.value.to_str(), maybe_field_type),
                     ExpectedType::METHOD_NAME =>  add_model_attributes(
-                        session, &mut items, current_module.clone(), parent_class, false, false, true, expr_string_literal.value.to_str()),
+                        session, &mut items, current_module.clone(), parent_class, false, false, true, expr_string_literal.value.to_str(), &None),
                     ExpectedType::NESTED_FIELD(maybe_field_type) => add_nested_field_names(
                         session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent_class, false, maybe_field_type),
                     _ => unreachable!()
                 }
             },
             ExpectedType::CLASS(_) => {},
+            ExpectedType::INHERITS => {},
         }
     }
     Some(CompletionResponse::List(CompletionList {
@@ -764,7 +797,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                 let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, &mut vec![]);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
-                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str())
+                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str(), &None)
                 }
             }
         }
@@ -998,17 +1031,24 @@ fn add_model_attributes(
     is_super: bool,
     only_fields: bool,
     only_methods: bool,
-    attribute_name: &str
+    attribute_name: &str,
+    specific_field_type: &Option<OYarn>,
 ){
     let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
     Symbol::all_members(&parent_sym, session, &mut all_symbols, true, only_fields, only_methods, from_module.clone(), &mut None, is_super);
     for (_symbol_name, symbols) in all_symbols {
         //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
-        if _symbol_name.starts_with(attribute_name) {
-            if let Some((final_sym, dep)) = symbols.first() {
-                let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
-                items.push(build_completion_item_from_symbol(session, vec![final_sym.clone()], context_of_symbol));
+        let Some((final_sym, _dep)) = symbols.first() else {
+            continue;
+        };
+        if let Some(field_type) = specific_field_type {
+            if !final_sym.borrow().is_specific_field(session, &[field_type.as_str()]) {
+                continue;
             }
+        }
+        if _symbol_name.starts_with(attribute_name) {
+            let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
+            items.push(build_completion_item_from_symbol(session, vec![final_sym.clone()], context_of_symbol));
         }
     }
 }
