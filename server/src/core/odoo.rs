@@ -1,5 +1,7 @@
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
+use crate::core::symbols::file_symbol;
+use crate::core::xml_data::XmlData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::threads::SessionInfo;
@@ -929,6 +931,47 @@ impl SyncOdoo {
         self.capabilities = capabilities.clone();
     }
 
+    /**
+     * search for an xml_id in the already registered xml files.
+     * */
+    pub fn get_xml_ids(&mut self, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+        if !from_file.borrow().get_entry().unwrap().borrow().is_main() {
+            return vec![];
+        }
+        let id_split = xml_id.split(".").collect::<Vec<&str>>();
+        let mut module = None;
+        if id_split.len() == 1 {
+            // If no module name, we are in the current module
+            module = from_file.borrow().find_module();
+        } else if id_split.len() == 2 {
+            // Try to find the module by name
+            if let Some(m) = self.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
+                module = m.upgrade();
+            }
+        } else if id_split.len() > 2 {
+            diagnostics.push(Diagnostic::new(
+                Range {
+                    start: Position::new(range.start as u32, 0),
+                    end: Position::new(range.end as u32, 0),
+                },
+                Some(DiagnosticSeverity::ERROR),
+                Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
+                Some(EXTENSION_NAME.to_string()),
+                format!("Invalid XML ID '{}'. It should not contain more than one dot", xml_id),
+                None,
+                None
+            ));
+            return vec![];
+        }
+        if module.is_none() {
+            warn!("Module not found for id: {}", xml_id);
+            return vec![];
+        }
+        let module = module.unwrap();
+        let module = module.borrow();
+        module.as_module_package().get_xml_id(&oyarn!("{}", id_split.last().unwrap()))
+    }
+
 }
 
 #[derive(Debug)]
@@ -1106,7 +1149,8 @@ impl Odoo {
                     if file_info.borrow().file_info_ast.borrow().ast.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    match file_info.borrow().file_info_ast.borrow().ast_type {
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
                         AstType::Python => {
                             if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
                                 return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
@@ -1142,7 +1186,8 @@ impl Odoo {
                     if file_info.borrow().file_info_ast.borrow().ast.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    match file_info.borrow().file_info_ast.borrow().ast_type {
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
                         AstType::Python => {
                             if file_info.borrow().file_info_ast.borrow().ast.is_some() {
                                 return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));

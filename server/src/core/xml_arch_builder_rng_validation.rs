@@ -105,7 +105,7 @@ impl XmlArchBuilder {
                         }
                     }
                     //check that action exists
-                    if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                    if session.sync_odoo.get_xml_ids(&self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -124,7 +124,7 @@ impl XmlArchBuilder {
                         }
                     } else {
                         //check that parent exists
-                        if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                        if session.sync_odoo.get_xml_ids(&self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },

@@ -349,6 +349,10 @@ impl EntryPoint {
         self.typ == EntryPointType::PUBLIC || self.typ == EntryPointType::BUILTIN
     }
 
+    pub fn is_main(&self) -> bool {
+        self.typ == EntryPointType::MAIN || self.typ == EntryPointType::ADDON
+    }
+
     pub fn get_symbol(&self) -> Option<Rc<RefCell<Symbol>>> {
         let tree = self.addon_to_odoo_tree.as_ref().unwrap_or(&self.tree).clone();
         let symbol = self.root.borrow().get_symbol(&(tree, vec![]), u32::MAX);
