@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, hash::Hash, path::PathBuf, rc::Rc
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, threads::SessionInfo, S};
+use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, threads::SessionInfo, Sy, S};
 
 
 
@@ -89,33 +89,65 @@ impl XmlValidator {
             dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
         }
         let all_fields = Symbol::all_fields(&main_symbols[0], session, Some(module.clone()));
+        self.validate_fields(session, xml_data_record, &all_fields, diagnostics);
+    }
+
+    fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: &XmlDataRecord, all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>) {
+        //Compute mandatory fields
         let mut mandatory_fields: Vec<String> = vec![];
-        // for (field_name, field_sym) in all_fields.iter() {
-        //     for (fs, deps) in field_sym.iter() {
-        //         if deps.is_none() {
-        //             let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-        //             .any(|eval| 
-        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-        //                 .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
-        //             );
-        //             let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-        //             .any(|eval| 
-        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-        //                 .context.contains_key("default")
-        //             );
-        //             if has_required && !has_default {
-        //                 mandatory_fields.push(field_name.clone());
-        //             }
-        //         }
-        //     }
-        // }
+        for (field_name, field_sym) in all_fields.iter() {
+            for (fs, deps) in field_sym.iter() {
+                if deps.is_none() {
+                    let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+                    .any(|eval| 
+                        eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+                        .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
+                    );
+                    let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+                    .any(|eval| 
+                        eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+                        .context.contains_key("default")
+                    );
+                    if has_required && !has_default {
+                        mandatory_fields.push(field_name.to_string());
+                    }
+                }
+            }
+        }
+        //check each field in the record
         for field in &xml_data_record.fields {
+            //Check that the field belong to the model
             let declared_field = all_fields.get(&field.name);
-            if let Some(declared_field) = declared_field {
+            if let Some(_declared_field) = declared_field {
                 mandatory_fields.retain(|f| f != &field.name.as_str());
-                //TODO Check type
+                //Check specific attributes
+                match xml_data_record.model.0.as_str() {
+                    "ir.ui.view" => {
+                        if field.name == "model" && field.text.is_some() && field.text_range.is_some() {
+                            //TODO text that field.text is a valid model
+                            let model = session.sync_odoo.models.get(&Sy!(field.text.as_ref().unwrap().clone())).cloned();
+                            let mut main_sym = vec![];
+                            if let Some(model) = model {
+                                let from_module = self.xml_symbol.borrow().find_module();
+                                main_sym = model.borrow().get_main_symbols(session, from_module);
+                            }
+                            if main_sym.is_empty() {
+                                diagnostics.push(Diagnostic::new(
+                                    Range::new(Position::new(field.text_range.as_ref().unwrap().start.try_into().unwrap(), 0), Position::new(field.text_range.as_ref().unwrap().end.try_into().unwrap(), 0)),
+                                    Some(lsp_types::DiagnosticSeverity::ERROR),
+                                    Some(lsp_types::NumberOrString::String(S!("OLS30453"))),
+                                    Some(EXTENSION_NAME.to_string()),
+                                    format!("Model '{}' not found", field.text.as_ref().unwrap()),
+                                    None,
+                                    None
+                                ))
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+                //TODO check type
             } else {
-                
                 diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(field.range.start.try_into().unwrap(), 0), Position::new(field.range.end.try_into().unwrap(), 0)),
                     Some(lsp_types::DiagnosticSeverity::ERROR),
@@ -127,16 +159,18 @@ impl XmlValidator {
                 ));
             }
         }
-        // if mandatory_fields.len() > 0 {
-        //         diagnostics.push(Diagnostic::new(
-        //             Range::new(Position::new(xml_data_record.range.start.try_into().unwrap(), 0), Position::new(xml_data_record.range.end.try_into().unwrap(), 0)),
-        //             Some(lsp_types::DiagnosticSeverity::ERROR),
-        //             Some(lsp_types::NumberOrString::String(S!("OLS30452"))),
-        //             Some(EXTENSION_NAME.to_string()),
-        //             format!("Some mandatory fields are not declared in the record: {:?}", mandatory_fields),
-        //             None,
-        //             None
-        //         ));
+        //Diagnostic if some mandatory fields are not detected
+        // if !mandatory_fields.is_empty() {
+        // We have to check  that remaining fields are not declared in an inherited record or is automatically field (delegate=True)
+        //     diagnostics.push(Diagnostic::new(
+        //         Range::new(Position::new(xml_data_record.range.start.try_into().unwrap(), 0), Position::new(xml_data_record.range.end.try_into().unwrap(), 0)),
+        //         Some(lsp_types::DiagnosticSeverity::ERROR),
+        //         Some(lsp_types::NumberOrString::String(S!("OLS30452"))),
+        //         Some(EXTENSION_NAME.to_string()),
+        //         format!("Some mandatory fields are not declared in the record: {:?}", mandatory_fields),
+        //         None,
+        //         None
+        //     ));
         // }
     }
 

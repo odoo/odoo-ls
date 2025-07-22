@@ -12,6 +12,7 @@ use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::constants::SymType;
 use crate::threads::SessionInfo;
+use crate::Sy;
 
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::symbol::Symbol;
@@ -230,10 +231,10 @@ impl Model {
     }
 
     fn all_inherits_helper(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, visited_models: &mut HashSet<String>) -> (Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>) {
-        if visited_models.contains(&self.name) {
+        if visited_models.contains(&self.name.to_string()) {
             return (Vec::new(), Vec::new());
         }
-        visited_models.insert(self.name.clone());
+        visited_models.insert(self.name.to_string());
         let mut symbols = Vec::new();
         let mut inherits_symbols = Vec::new();
         for s in self.symbols.iter() {

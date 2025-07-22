@@ -373,9 +373,19 @@ impl XmlArchBuilder {
                 }
             }
         }
+        let mut text = None;
+        let mut text_range = None;
+        for child in node.children() {
+            if child.is_text() {
+                text = child.text().map(|s| s.to_string());
+                text_range = Some(child.range());
+            }
+        }
         Some(XmlDataField {
             name: oyarn!("{}", node.attribute("name").unwrap()),
             range: node.attribute_node("name").unwrap().range(),
+            text: text,
+            text_range: text_range,
         })
     }
 
