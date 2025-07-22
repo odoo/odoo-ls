@@ -28,6 +28,8 @@ pub struct XmlDataRecord {
 pub struct XmlDataField {
     pub name: OYarn,
     pub range: Range<usize>,
+    pub text: Option<String>,
+    pub text_range: Option<Range<usize>>,
 }
 
 #[derive(Debug, Clone)]
