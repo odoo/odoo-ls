@@ -44,7 +44,7 @@ pub fn combine_noqa_info(noqas: &Vec<NoqaInfo>) -> NoqaInfo {
     NoqaInfo::Codes(codes.iter().cloned().collect())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AstType {
     Python,
     Xml,
@@ -423,6 +423,29 @@ impl FileMgr {
                 return Range {
                     start: FileInfo::offset_to_position_with_rope(&rope, range.start().to_usize()),
                     end: FileInfo::offset_to_position_with_rope(&rope, range.end().to_usize())
+                };
+            },
+            Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))
+        };
+        Range::default()
+    }
+    
+
+    pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &std::ops::Range<usize>) -> Range {
+        let file = self.files.get(path);
+        if let Some(file) = file {
+            if file.borrow().file_info_ast.borrow().text_rope.is_none() {
+                file.borrow_mut().prepare_ast(session);
+            }
+            return file.borrow().std_range_to_range(range);
+        }
+        //file not in cache, let's load rope on the fly
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                let rope = ropey::Rope::from(content.as_str());
+                return Range {
+                    start: FileInfo::offset_to_position_with_rope(&rope, range.start),
+                    end: FileInfo::offset_to_position_with_rope(&rope, range.end)
                 };
             },
             Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))

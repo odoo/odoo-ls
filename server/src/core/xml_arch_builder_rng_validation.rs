@@ -113,7 +113,7 @@ impl XmlArchBuilder {
                         }
                     }
                     //check that action exists
-                    if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                    if session.sync_odoo.get_xml_ids(&self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
                         diagnostics.push(Diagnostic::new(
                             Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                             Some(DiagnosticSeverity::ERROR),
@@ -136,7 +136,7 @@ impl XmlArchBuilder {
                             None));
                     } else {
                         //check that parent exists
-                        if self.get_xml_ids(session, attr.value(), &attr, diagnostics).is_empty() {
+                        if session.sync_odoo.get_xml_ids(&self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
                             diagnostics.push(Diagnostic::new(
                                 Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 Some(DiagnosticSeverity::ERROR),

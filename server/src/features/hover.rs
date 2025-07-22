@@ -1,7 +1,7 @@
 use lsp_types::{Hover, HoverContents, MarkupContent, Position, Range};
 use crate::core::evaluation::Evaluation;
 use crate::core::file_mgr::FileInfo;
-use crate::features::xml_ast_utils::XmlAstUtils;
+use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
 use crate::threads::SessionInfo;
 use std::rc::Rc;
 use crate::core::symbols::symbol::Symbol;
@@ -39,7 +39,8 @@ impl HoverFeature {
             let root = document.root_element();
             let (symbols, range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset);
             let range = range.map(|r| (file_info.borrow().std_range_to_range(&r)));
-            let evals = symbols.iter().map(|s| Evaluation::eval_from_symbol(&Rc::downgrade(s), Some(false))).collect::<Vec<Evaluation>>();
+            let evals = symbols.iter().filter(|s| matches!(s, XmlAstResult::SYMBOL(_)))
+                .map(|s| Evaluation::eval_from_symbol(&Rc::downgrade(&s.as_symbol()), Some(false))).collect::<Vec<Evaluation>>();
             return Some(Hover { contents:
                 HoverContents::Markup(MarkupContent {
                     kind: lsp_types::MarkupKind::Markdown,

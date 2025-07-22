@@ -88,49 +88,8 @@ impl XmlArchBuilder {
         }
     }
 
-    /**
-     * search for an xml_id in the already registered xml files.
-     * */
-    pub fn get_xml_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
-        if !self.is_in_main_ep {
-            return vec![];
-        }
-        let id_split = xml_id.split(".").collect::<Vec<&str>>();
-        let mut module = None;
-        if id_split.len() == 1 {
-            // If no module name, we are in the current module
-            module = self.xml_symbol.borrow().find_module();
-        } else if id_split.len() == 2 {
-            // Try to find the module by name
-            if let Some(m) = session.sync_odoo.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
-                module = m.upgrade();
-            }
-        } else if id_split.len() > 2 {
-            diagnostics.push(Diagnostic::new(
-                Range {
-                    start: Position::new(attr.range().start as u32, 0),
-                    end: Position::new(attr.range().end as u32, 0),
-                },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("Invalid XML ID '{}'. It should not contain more than one dot", xml_id),
-                None,
-                None
-            ));
-            return vec![];
-        }
-        if module.is_none() {
-            warn!("Module not found for id: {}", xml_id);
-            return vec![];
-        }
-        let module = module.unwrap();
-        let module = module.borrow();
-        module.as_module_package().get_xml_id(&oyarn!("{}", id_split.last().unwrap()))
-    }
-
     pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
-        let xml_ids = self.get_xml_ids(session, xml_id, attr, diagnostics);
+        let xml_ids = session.sync_odoo.get_xml_ids(&self.xml_symbol, xml_id, &attr.range(), diagnostics);
         let mut res = vec![];
         for data in xml_ids.iter() {
             match data {
