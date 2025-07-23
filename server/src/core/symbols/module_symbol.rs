@@ -41,7 +41,8 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
-    pub xml_ids: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
+    pub xml_id_locations: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
+    pub xml_ids: HashMap<OYarn, Vec<XmlData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
@@ -80,6 +81,7 @@ impl ModuleSymbol {
             root_path: dir_path.sanitize(),
             loaded: false,
             module_name: OYarn::from(""),
+            xml_id_locations: HashMap::new(),
             xml_ids: HashMap::new(),
             dir_name: OYarn::from(""),
             depends: vec!((OYarn::from("base"), TextRange::default())),
@@ -530,9 +532,9 @@ impl ModuleSymbol {
     //For example, stock could create an xml_id called "account.my_xml_id", and so be returned by this function called on "account" module with xml_id "my_xml_id"
     pub fn get_xml_id(&self, xml_id: &OYarn) -> Vec<XmlData> {
         let mut res = vec![];
-        if let Some(xml_file_set) = self.xml_ids.get(xml_id) {
+        if let Some(xml_file_set) = self.xml_id_locations.get(xml_id) {
             for xml_file in xml_file_set.iter() {
-                if let Some(xml_data) = xml_file.borrow().as_xml_file_sym().xml_ids.get(xml_id) {
+                if let Some(xml_data) = xml_file.borrow().get_xml_id(xml_id) {
                     res.extend(xml_data.iter().cloned());
                 }
             }

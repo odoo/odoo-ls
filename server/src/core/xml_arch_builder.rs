@@ -81,7 +81,7 @@ impl XmlArchBuilder {
                 }
             }
             xml_data.set_file_symbol(&self.xml_symbol);
-            xml_module.borrow_mut().as_module_package_mut().xml_ids.entry(Sy!(id.clone())).or_insert(PtrWeakHashSet::new()).insert(self.xml_symbol.clone());
+            xml_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id.clone())).or_insert(PtrWeakHashSet::new()).insert(self.xml_symbol.clone());
             self.xml_symbol.borrow_mut().as_xml_file_sym_mut().xml_ids.entry(Sy!(id.clone())).or_insert(vec![]).push(xml_data);
         }
     }

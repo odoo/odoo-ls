@@ -184,16 +184,21 @@ impl DefinitionFeature {
                         }
                     },
                     XmlAstResult::XML_DATA(xml_file_symbol, range) => {
-                        for path in xml_file_symbol.borrow().paths().iter() {
-                            let full_path = match xml_file_symbol.borrow().typ() {
-                                SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", xml_file_symbol.borrow().as_package().i_ext())).sanitize(),
-                                _ => path.clone()
-                            };
-                            let range = match xml_file_symbol.borrow().typ() {
-                                SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
-                            };
-                            links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
+                        let file = xml_file_symbol.borrow().get_file(); //in case of XML_DATA coming from a python class
+                        if let Some(file) = file {
+                            if let Some(file) = file.upgrade() {
+                                for path in file.borrow().paths().iter() {
+                                    let full_path = match file.borrow().typ() {
+                                        SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
+                                        _ => path.clone()
+                                    };
+                                    let range = match file.borrow().typ() {
+                                        SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                                        _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
+                                    };
+                                    links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
+                                }
+                            }
                         }
                     }
                 }

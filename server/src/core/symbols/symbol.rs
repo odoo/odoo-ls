@@ -5,6 +5,7 @@ use weak_table::traits::WeakElement;
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::file_mgr::NoqaInfo;
+use crate::core::xml_data::XmlData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -2853,6 +2854,31 @@ impl Symbol {
         iter_recursive(self, &mut res);
 
         res
+    }
+
+    pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<XmlData>> {
+        match self {
+            Symbol::XmlFileSymbol(xml_file) => xml_file.xml_ids.get(xml_id).cloned(),
+            Symbol::Package(PackageSymbol::Module(module)) => module.xml_ids.get(xml_id).cloned(),
+            Symbol::Package(PackageSymbol::PythonPackage(package)) => package.xml_ids.get(xml_id).cloned(),
+            Symbol::File(file) => file.xml_ids.get(xml_id).cloned(),
+            _ => None,
+        }
+    }
+
+    pub fn insert_xml_id(&mut self, xml_id: OYarn, xml_data: XmlData) {
+        match self {
+            Symbol::File(file) => {
+                file.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+            },
+            Symbol::Package(PackageSymbol::Module(module)) => {
+                module.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+            },
+            Symbol::Package(PackageSymbol::PythonPackage(package)) => {
+                package.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+            },
+            _ => {}
+        }
     }
 
     pub fn print_dependencies(&self) {
