@@ -11,8 +11,6 @@ pub enum XmlData {
     MENUITEM(XmlDataMenuItem),
     TEMPLATE(XmlDataTemplate),
     DELETE(XmlDataDelete),
-    ACT_WINDOW(XmlDataActWindow),
-    REPORT(XmlDataReport),
 }
 
 #[derive(Debug, Clone)]
@@ -51,23 +49,6 @@ pub struct XmlDataDelete {
     pub model: OYarn,
 }
 
-#[derive(Debug, Clone)]
-pub struct XmlDataActWindow {
-    pub file_symbol: Weak<RefCell<Symbol>>,
-    pub xml_id: Option<OYarn>,
-    pub name: OYarn,
-    pub res_model: OYarn,
-}
-
-#[derive(Debug, Clone)]
-pub struct XmlDataReport {
-    pub file_symbol: Weak<RefCell<Symbol>>,
-    pub xml_id: Option<OYarn>,
-    pub name: OYarn,
-    pub model: OYarn,
-    pub string: OYarn,
-}
-
 impl XmlData {
 
     pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
@@ -83,12 +64,6 @@ impl XmlData {
             },
             XmlData::DELETE(ref mut delete) => {
                 delete.file_symbol = Rc::downgrade(xml_symbol);
-            },
-            XmlData::ACT_WINDOW(ref mut act_window) => {
-                act_window.file_symbol = Rc::downgrade(xml_symbol);
-            },
-            XmlData::REPORT(ref mut report) => {
-                report.file_symbol = Rc::downgrade(xml_symbol);
             },
         }
     }
@@ -117,13 +92,7 @@ impl XmlData {
             },
             XmlData::DELETE(ref delete) => {
                 Some(delete.file_symbol.clone())
-            },
-            XmlData::ACT_WINDOW(ref act_window) => {
-                Some(act_window.file_symbol.clone())
-            },
-            XmlData::REPORT(ref report) => {
-                Some(report.file_symbol.clone())
-            },
+            }
         }
     }
 }

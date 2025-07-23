@@ -47,6 +47,12 @@ impl XmlAstUtils {
                 }
                 "field" => {
                     XmlAstUtils::visit_field(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
+                },
+                "menuitem" => {
+                    XmlAstUtils::visit_menu_item(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
+                },
+                "template" => {
+                    XmlAstUtils::visit_template(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
                 }
                 _ => {
                     for child in node.children() {
@@ -114,16 +120,8 @@ impl XmlAstUtils {
                 }
             } else if attr.name() == "ref" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    let mut field_name = "";
-                    for attr in node.attributes() {
-                        if attr.name() == "name" {
-                            field_name = attr.value();
-                        }
-                    }
-                    if field_name == "inherit_id" {
-                        XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
-                        results.1 = Some(attr.range_value());
-                    }
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    results.1 = Some(attr.range_value());
                 }
             }
         }
@@ -140,18 +138,58 @@ impl XmlAstUtils {
             if model.is_empty() || field.is_empty() {
                 return;
             }
-            if model == "ir.ui.view" {
-                if field == "model" {
-                    if let Some(model) = session.sync_odoo.models.get(node.text().unwrap()).cloned() {
-                        let from_module = match on_dep_only {
-                            true => from_module.clone(),
-                            false => None,
-                        };
-                        results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.clone())));
-                        results.1 = Some(node.range());
-                    }
+            if field == "model" || field == "res_model" { //do not check model, let's assume it will contains a model name
+                XmlAstUtils::add_model_result(session, node, from_module, results, on_dep_only);
+            }
+        }
+    }
+
+    fn visit_menu_item(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+        for attr in node.attributes() {
+            if attr.name() == "action" {
+                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    results.1 = Some(attr.range_value());
+                }
+            } else if attr.name() == "groups" {
+                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    results.1 = Some(attr.range_value());
                 }
             }
+        }
+        for child in node.children() {
+            XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+        }
+    }
+
+    fn visit_template(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+        for attr in node.attributes() {
+            if attr.name() == "inherit_id" {
+                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    results.1 = Some(attr.range_value());
+                }
+            } else if attr.name() == "groups" {
+                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    results.1 = Some(attr.range_value());
+                }
+            }
+        }
+        for child in node.children() {
+            XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+        }
+    }
+
+    fn add_model_result(session: &mut SessionInfo, node: &Node, from_module: Option<Rc<RefCell<Symbol>>>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+        if let Some(model) = session.sync_odoo.models.get(node.text().unwrap()).cloned() {
+            let from_module = match on_dep_only {
+                true => from_module.clone(),
+                false => None,
+            };
+            results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.clone())));
+            results.1 = Some(node.range());
         }
     }
 
