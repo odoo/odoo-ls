@@ -1,3 +1,4 @@
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::symbols::file_symbol;
@@ -937,7 +938,7 @@ impl SyncOdoo {
     /**
      * search for an xml_id in the already registered xml files.
      * */
-    pub fn get_xml_ids(&mut self, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+    pub fn get_xml_ids(session: &mut SessionInfo, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
         if !from_file.borrow().get_entry().unwrap().borrow().is_main() {
             return vec![];
         }
@@ -948,22 +949,19 @@ impl SyncOdoo {
             module = from_file.borrow().find_module();
         } else if id_split.len() == 2 {
             // Try to find the module by name
-            if let Some(m) = self.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
+            if let Some(m) = session.sync_odoo.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
                 module = m.upgrade();
             }
         } else if id_split.len() > 2 {
-            diagnostics.push(Diagnostic::new(
-                Range {
-                    start: Position::new(range.start as u32, 0),
-                    end: Position::new(range.end as u32, 0),
-                },
-                Some(DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS30446"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("Invalid XML ID '{}'. It should not contain more than one dot", xml_id),
-                None,
-                None
-            ));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id]) {
+                diagnostics.push(lsp_types::Diagnostic {
+                    range: lsp_types::Range {
+                        start: lsp_types::Position::new(range.start as u32, 0),
+                        end: lsp_types::Position::new(range.end as u32, 0),
+                    },
+                    ..diagnostic.clone()
+                });
+            }
             return vec![];
         }
         if module.is_none() {

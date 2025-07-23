@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, hash::Hash, path::PathBuf, rc::Rc
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, threads::SessionInfo, Sy, S};
 
 
 
@@ -69,15 +69,12 @@ impl XmlValidator {
     fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &XmlDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         let Some(model) = session.sync_odoo.models.get(&xml_data_record.model.0).cloned() else {
             //TODO register to not_found_models
-            diagnostics.push(Diagnostic::new(
-                Range::new(Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0)),
-                Some(lsp_types::DiagnosticSeverity::ERROR),
-                Some(lsp_types::NumberOrString::String(S!("OLS30450"))),
-                Some(EXTENSION_NAME.to_string()),
-                format!("Model '{}' not found in module '{}'", xml_data_record.model.0, module.borrow().name()),
-                None,
-                None
-            ));
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_data_record.model.0, module.borrow().name()]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0) },
+                    ..diagnostic.clone()
+                });
+            }
             info!("Model '{}' not found in module '{}'", xml_data_record.model.0, module.borrow().name());
             return;
         };
@@ -130,15 +127,12 @@ impl XmlValidator {
                                 main_sym = model.borrow().get_main_symbols(session, from_module);
                             }
                             if main_sym.is_empty() {
-                                diagnostics.push(Diagnostic::new(
-                                    Range::new(Position::new(field.text_range.as_ref().unwrap().start.try_into().unwrap(), 0), Position::new(field.text_range.as_ref().unwrap().end.try_into().unwrap(), 0)),
-                                    Some(lsp_types::DiagnosticSeverity::ERROR),
-                                    Some(lsp_types::NumberOrString::String(S!("OLS30453"))),
-                                    Some(EXTENSION_NAME.to_string()),
-                                    format!("Model '{}' not found", field.text.as_ref().unwrap()),
-                                    None,
-                                    None
-                                ))
+                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&field.text.as_ref().unwrap()]) {
+                                    diagnostics.push(Diagnostic {
+                                        range: Range { start: Position::new(field.text_range.as_ref().unwrap().start.try_into().unwrap(), 0), end: Position::new(field.text_range.as_ref().unwrap().end.try_into().unwrap(), 0) },
+                                        ..diagnostic.clone()
+                                    });
+                                }
                             }
                         }
                     },
@@ -146,15 +140,12 @@ impl XmlValidator {
                 }
                 //TODO check type
             } else {
-                diagnostics.push(Diagnostic::new(
-                    Range::new(Position::new(field.range.start.try_into().unwrap(), 0), Position::new(field.range.end.try_into().unwrap(), 0)),
-                    Some(lsp_types::DiagnosticSeverity::ERROR),
-                    Some(lsp_types::NumberOrString::String(S!("OLS30451"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    format!("Field '{}' not found in model '{}'", field.name, xml_data_record.model.0),
-                    None,
-                    None
-                ));
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[&field.name, &xml_data_record.model.0]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(field.range.start.try_into().unwrap(), 0), end: Position::new(field.range.end.try_into().unwrap(), 0) },
+                        ..diagnostic.clone()
+                    });
+                }
             }
         }
         //Diagnostic if some mandatory fields are not detected
