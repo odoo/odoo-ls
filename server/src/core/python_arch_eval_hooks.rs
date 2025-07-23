@@ -1073,7 +1073,7 @@ impl PythonArchEvalHooks {
             return None;
         };
         let module_rc_bw = module_rc.borrow();
-        let Some(symbol) = module_rc_bw.as_module_package().xml_ids.get(xml_id.as_str()) else {
+        let Some(symbol) = module_rc_bw.as_module_package().xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*diagnostics.push(Diagnostic::new(
                     FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),

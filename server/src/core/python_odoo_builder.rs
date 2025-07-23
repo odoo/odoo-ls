@@ -50,6 +50,28 @@ impl PythonOdooBuilder {
         self._load_class_attributes(session, &mut diagnostics);
         self._add_magic_fields(session);
         let model_name = sym.borrow().as_class_sym()._model.as_ref().unwrap().name.clone();
+        if let Some(module) = sym.borrow().find_module() {
+            let file = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
+            let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
+            let mut module = module.borrow_mut();
+            let set = module.as_module_package_mut().xml_id_locations.entry(xml_id_model_name.clone()).or_insert(PtrWeakHashSet::new());
+            set.insert(file.clone());
+            drop(module); //in case of file being same than module
+            let mut file = file.borrow_mut();
+            file.insert_xml_id(xml_id_model_name.clone(), XmlData::RECORD(XmlDataRecord {
+                file_symbol: Rc::downgrade(&sym),
+                model: (Sy!("ir.model"), std::ops::Range::<usize> {
+                    start: 0,
+                    end: 1,
+                }),
+                xml_id: Some(xml_id_model_name),
+                fields: vec![],
+                range: std::ops::Range::<usize> {
+                    start: self.symbol.borrow().range().start().to_usize(),
+                    end: self.symbol.borrow().range().end().to_usize(),
+                }
+            }));
+        }
         match session.sync_odoo.models.get(&model_name).cloned(){
             Some(model) => {
                 let inherited_model_names = sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
@@ -81,29 +103,6 @@ impl PythonOdooBuilder {
             },
             None => {
                 let model = Model::new(model_name.clone(), sym.clone());
-                session.sync_odoo.modules.get("base").map(|module| {
-                    let file = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
-                    let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
-                    let module = module.upgrade().unwrap();
-                    let mut module = module.borrow_mut();
-                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name.clone()).or_insert(PtrWeakHashSet::new());
-                    set.insert(file.clone());
-                    let mut file = file.borrow_mut();
-                    let file = file.as_file_mut();
-                    file.xml_ids.entry(xml_id_model_name.clone()).or_insert(vec![]).push(XmlData::RECORD(XmlDataRecord {
-                        file_symbol: Rc::downgrade(&sym),
-                        model: (Sy!("ir.model"), std::ops::Range::<usize> {
-                            start: 0,
-                            end: 1,
-                        }),
-                        xml_id: Some(xml_id_model_name),
-                        fields: vec![],
-                        range: std::ops::Range::<usize> {
-                            start: self.symbol.borrow().range().start().to_usize(),
-                            end: self.symbol.borrow().range().end().to_usize(),
-                        }
-                    }));
-                });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
