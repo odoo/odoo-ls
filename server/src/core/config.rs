@@ -429,7 +429,7 @@ fn parse_manifest_version(contents: String) -> Option<String> {
     None
 }
 
-fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String) -> Sourced<String> {
+fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: Option<&String>) -> Sourced<String> {
     let Some(config_path) = var.sources.iter().next().map(PathBuf::from) else {
         unreachable!("Expected at least one source for sourced_path: {:?}", var);
     };
@@ -624,7 +624,7 @@ pub fn default_profile_name() -> String {
     "default".to_string()
 }
 
-fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: &String, predicate: &F, var_map: HashMap<String, String>) -> Option<Sourced<String>>
+fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, predicate: &F, var_map: HashMap<String, String>) -> Option<Sourced<String>>
 where
 F: Fn(&String) -> bool,
 {
@@ -651,7 +651,7 @@ F: Fn(&String) -> bool,
 fn process_paths(
     entry: &mut ConfigEntryRaw,
     ws_folders: &HashMap<String, String>,
-    workspace_name: &String,
+    workspace_name: Option<&String>,
 ){
     let var_map: HashMap<String, String> = match entry.version.clone() {
         Some(v) => HashMap::from([(S!("version"), v.value().clone())]),
@@ -901,8 +901,23 @@ fn merge_configs(
     merged
 }
 
+fn load_config_from_file(path: String, ws_folders: &HashMap<String, String>,) -> Result<HashMap<String, ConfigEntryRaw>, String> {
+    let path = PathBuf::from(path);
+    if !path.exists() || !path.is_file() {
+        return Err(S!(format!("Config file not found: {}", path.display())));
+    }
+    process_config(
+        read_config_from_file(path)?,
+        ws_folders,
+        None,
+    )
+}
 
-fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_name: &String, workspace_path: &String) -> Result<HashMap<String, ConfigEntryRaw>, String> {
+fn load_config_from_workspace(
+    ws_folders: &HashMap<String, String>,
+    workspace_name: &String,
+    workspace_path: &String,
+) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     let mut current_dir = PathBuf::from(workspace_path);
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
@@ -924,10 +939,29 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
             break;
         }
     }
-    apply_extends(&mut merged_config)?;
+    let mut merged_config = process_config(merged_config, ws_folders, Some(workspace_name))?;
+
+    for entry in merged_config.values_mut() {
+        if entry.abstract_ { continue; }
+        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
+            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]), ..Default::default()};
+            match entry.addons_paths {
+                Some(ref mut paths) => paths.push(addon_path),
+                None => entry.addons_paths = Some(vec![addon_path]),
+            }
+        }
+    }
+    Ok(merged_config)
+}
+
+fn process_config(
+    mut config_map: HashMap<String, ConfigEntryRaw>,
+    ws_folders: &HashMap<String, String>,
+    workspace_name: Option<&String>,
+) -> Result<HashMap<String, ConfigEntryRaw>, String> {
+    apply_extends(&mut config_map)?;
     let mut new_configs = vec![];
-    for config in merged_config.values_mut() {
-        // If the config has no odoo_path, try to infer it from workspace folders
+    for config in config_map.values_mut() {
         let Some(version_var) = config.version.clone() else {
             continue;
         };
@@ -965,42 +999,31 @@ fn load_merged_config_upward(ws_folders: &HashMap<String, String>, workspace_nam
         }
     }
     for new_entry in new_configs {
-        merged_config.insert(new_entry.name.clone(), new_entry);
+        config_map.insert(new_entry.name.clone(), new_entry);
     }
 
     // Process vars
-    merged_config.values_mut()
+    config_map.values_mut()
         .for_each(|entry| {
             // apply process_var to all vars
             if entry.abstract_ { return; }
             entry.version = entry.version.clone().map(|v| process_version(v, ws_folders, workspace_name));
         });
     // Process paths in the merged config
-    merged_config.values_mut()
+    config_map.values_mut()
         .for_each(|entry| {
             if entry.abstract_ { return; }
             process_paths(entry, ws_folders, workspace_name);
         });
     // Merge sourced paths
-    merged_config.values_mut()
+    config_map.values_mut()
         .for_each(|entry| {
             if entry.abstract_ { return; }
             entry.addons_paths = entry.addons_paths.clone().map(|paths| group_sourced_iters(paths).collect());
             entry.additional_stubs = entry.additional_stubs.clone().map(|stubs| group_sourced_iters(stubs).collect());
         });
 
-    for entry in merged_config.values_mut() {
-        if entry.abstract_ { continue; }
-        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
-            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]), ..Default::default()};
-            match entry.addons_paths {
-                Some(ref mut paths) => paths.push(addon_path),
-                None => entry.addons_paths = Some(vec![addon_path]),
-            }
-        }
-    }
-
-    Ok(merged_config)
+    Ok(config_map)
 }
 
 fn merge_all_workspaces(
@@ -1130,9 +1153,22 @@ fn merge_all_workspaces(
     Ok((final_config, config_file))
 }
 
-pub fn get_configuration(ws_folders: &HashMap<String, String>)  -> Result<(ConfigNew, ConfigFile), String> {
-    let ws_confs: Result<Vec<_>, _> = ws_folders.iter().map(|ws_f| load_merged_config_upward(ws_folders, ws_f.0, ws_f.1)).collect();
-    merge_all_workspaces(ws_confs?, ws_folders)
+pub fn get_configuration(ws_folders: &HashMap<String, String>, cli_config_file: &Option<String>)  -> Result<(ConfigNew, ConfigFile), String> {
+    let mut ws_confs: Vec<HashMap<String, ConfigEntryRaw>> = Vec::new();
+
+    if let Some(ref path) = cli_config_file {
+        let config_from_file = load_config_from_file(path.clone(), ws_folders)?;
+        ws_confs.push(config_from_file);
+    }
+
+    let ws_confs_result: Result<Vec<_>, _> = ws_folders
+        .iter()
+        .map(|ws_f| load_config_from_workspace(ws_folders, ws_f.0, ws_f.1))
+        .collect();
+
+    ws_confs.extend(ws_confs_result?);
+
+    merge_all_workspaces(ws_confs, ws_folders)
 }
 
 /// Check if the old and new configuration entries are different enough to require a restart.
