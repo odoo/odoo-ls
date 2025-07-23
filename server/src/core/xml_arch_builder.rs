@@ -6,7 +6,7 @@ use roxmltree::{Attribute, Node};
 use tracing::{error, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{core::{diagnostics::{create_diagnostic, DiagnosticCode}}};
+use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{entry_point::EntryPointType, xml_data::XmlData}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
@@ -87,7 +87,7 @@ impl XmlArchBuilder {
     }
 
     pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
-        let xml_ids = session.sync_odoo.get_xml_ids(&self.xml_symbol, xml_id, &attr.range(), diagnostics);
+        let xml_ids = SyncOdoo::get_xml_ids(session, &self.xml_symbol, xml_id, &attr.range(), diagnostics);
         let mut res = vec![];
         for data in xml_ids.iter() {
             match data {

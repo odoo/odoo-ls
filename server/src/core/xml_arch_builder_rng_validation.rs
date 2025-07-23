@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, xml_data::{XmlData, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{XmlData, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -103,7 +103,7 @@ impl XmlArchBuilder {
                         }
                     }
                     //check that action exists
-                    if session.sync_odoo.get_xml_ids(&self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
+                    if SyncOdoo::get_xml_ids(session, &self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -122,7 +122,7 @@ impl XmlArchBuilder {
                         }
                     } else {
                         //check that parent exists
-                        if session.sync_odoo.get_xml_ids(&self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
+                        if SyncOdoo::get_xml_ids(session, &self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },

@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc};
 
 use roxmltree::Node;
 
-use crate::{constants::OYarn, core::{evaluation::ContextValue, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::XmlData}, threads::SessionInfo, Sy, S};
+use crate::{constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::XmlData}, threads::SessionInfo, Sy, S};
 
 pub enum XmlAstResult {
     SYMBOL(Rc<RefCell<Symbol>>),
@@ -194,7 +194,7 @@ impl XmlAstUtils {
     }
 
     fn add_xml_id_result(session: &mut SessionInfo, xml_id: &str, file_symbol: &Rc<RefCell<Symbol>>, range: Range<usize>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
-        let mut xml_ids = session.sync_odoo.get_xml_ids(file_symbol, xml_id, &range, &mut vec![]);
+        let mut xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
         if on_dep_only {
             xml_ids = xml_ids.into_iter().filter(|x| 
                 {
