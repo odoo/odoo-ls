@@ -198,11 +198,13 @@ impl XmlAstUtils {
         if on_dep_only {
             xml_ids = xml_ids.into_iter().filter(|x| 
                 {
-                    let file = x.get_xml_file_symbol();
+                    let file = x.get_file_symbol();
                     if let Some(file) = file {
-                        let module = file.borrow().find_module();
-                        if let Some(module) = module {
-                            return ModuleSymbol::is_in_deps(session, &file_symbol.borrow().find_module().unwrap(), module.borrow().name());
+                        if let Some(file) = file.upgrade() {
+                            let module = file.borrow().find_module();
+                            if let Some(module) = module {
+                                return ModuleSymbol::is_in_deps(session, &file_symbol.borrow().find_module().unwrap(), module.borrow().name());
+                            }
                         }
                     }
                         return false;
