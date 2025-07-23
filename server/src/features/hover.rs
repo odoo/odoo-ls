@@ -37,7 +37,7 @@ impl HoverFeature {
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();
-            let (symbols, range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset);
+            let (symbols, range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             let range = range.map(|r| (file_info.borrow().std_range_to_range(&r)));
             let evals = symbols.iter().filter(|s| matches!(s, XmlAstResult::SYMBOL(_)))
                 .map(|s| Evaluation::eval_from_symbol(&Rc::downgrade(&s.as_symbol()), Some(false))).collect::<Vec<Evaluation>>();

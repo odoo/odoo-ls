@@ -161,7 +161,7 @@ impl DefinitionFeature {
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();
-            let (symbols, _range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset);
+            let (symbols, _range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             if symbols.is_empty() {
                 return None;
             }
