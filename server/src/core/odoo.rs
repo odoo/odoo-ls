@@ -59,6 +59,7 @@ pub struct SyncOdoo {
     pub full_version: String,
     pub config: ConfigEntry,
     pub config_file: Option<ConfigFile>,
+    pub config_path: Option<String>,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
@@ -96,6 +97,7 @@ impl SyncOdoo {
             full_version: "0.0.0".to_string(),
             config: ConfigEntry::new(),
             config_file: None,
+            config_path: None,
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
             has_main_entry: false,
             has_odoo_main_entry: false,
@@ -969,7 +971,7 @@ impl Odoo {
             session.show_message(MessageType::ERROR, String::from("There are repeated workspace folders names, which is not supported by OdooLS. Please remove the repeated folders and restart the server."));
             return;
         }
-        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders());
+        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders(), &session.sync_odoo.config_path);
         if let Ok((_, config_file)) = &config {
             session.sync_odoo.config_file = Some(config_file.clone());
             Odoo::send_all_configurations(session);
@@ -1466,7 +1468,7 @@ impl Odoo {
     fn check_handle_config_file_update(session: &mut SessionInfo, path: &PathBuf) -> bool {
         // Check if the change is affecting a config file
         if Odoo::is_config_workspace_file(session, path) {
-            let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders())
+            let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders(), &session.sync_odoo.config_path)
                 .and_then(|(cfg_map, cfg_file)| {
                     let config_name = Odoo::read_selected_configuration(session)?.unwrap_or(default_profile_name());
                     cfg_map.get(&config_name)

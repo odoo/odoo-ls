@@ -19,7 +19,7 @@ fn test_config_entry_single_workspace_with_addons_path() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     assert!(config.addons_paths.iter().any(|p| p == &ws_folder.path().sanitize()));
@@ -42,7 +42,7 @@ fn test_config_entry_multiple_workspaces_with_various_addons() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     assert!(config.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
@@ -60,7 +60,7 @@ fn test_config_entry_with_odoo_path_detection() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("odoo_ws"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     assert!(config.odoo_path.as_ref().map(|p| p == &ws_folder.path().sanitize()).unwrap_or(false));
@@ -85,7 +85,7 @@ fn test_single_odools_toml_config() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     assert_eq!(config.python_path, "python");
@@ -127,7 +127,7 @@ fn test_multiple_odools_toml_shadowing() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // ws_folder/odools.toml should take priority
@@ -174,7 +174,7 @@ fn test_extends_and_shadowing() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // Should extend from base, but shadow python_path and auto_refresh_delay
@@ -221,7 +221,7 @@ fn test_workspacefolder_template_variable_variations() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
     ws_folders.insert(S!("ws2"), ws2_folder.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // "${workspaceFolder}" should resolve to ws1 (the current workspace)
@@ -267,7 +267,7 @@ fn test_workspacefolder_template_ws2_in_ws1_add_workspace_addon_path_behavior() 
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
     // By default, ws1 should NOT be added as an addon path, only ws2
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert!(!config.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(config.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
@@ -283,7 +283,7 @@ fn test_workspacefolder_template_ws2_in_ws1_add_workspace_addon_path_behavior() 
     "#;
     ws1.child("odools.toml").write_str(toml_content_with_flag).unwrap();
 
-    let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
+    let (config_map2, _config_file2) = get_configuration(&ws_folders, &None).unwrap();
     let config2 = config_map2.get("default").unwrap();
     assert!(config2.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(config2.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
@@ -308,7 +308,7 @@ fn test_config_file_sources_single_file() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (_config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config_entry = &config_file.config[0];
 
     // All sourced fields should have the odools.toml as their only source
@@ -355,7 +355,7 @@ fn test_config_file_sources_multiple_files_and_extends() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (_config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config_entry = config_file.config.iter().find(|c| c.name == "default").unwrap();
 
     // python_path should be sourced from parent odools.toml (root config)
@@ -400,7 +400,7 @@ fn test_config_file_sources_template_variable_workspacefolder() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
-    let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (_config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config_entry = config_file.config.iter().find(|c| c.name == "default").unwrap();
 
     // Both ws1 and ws2 should be present in addons_paths, each sourced from ws1_odools
@@ -419,7 +419,7 @@ fn test_config_file_sources_default_values() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (_config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
 
     // The $default source is only visible in the HTML serialization
     let config_file_str = config_file.to_html_string();
@@ -456,7 +456,7 @@ fn test_config_file_sources_multiple_workspace_folders_and_shadowing() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
-    let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (_config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
 
     // There should be only one config entry for "default" (merged)
     let root_entry = config_file.config.iter().find(|c| c.name == "default").unwrap();
@@ -488,7 +488,7 @@ fn test_config_file_sources_json_serialization() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
 
-    let (_config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (_config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
 
     // Serialize to JSON and check sources for python_path and addons_paths
     let json = serde_json::to_value(&config_file).unwrap();
@@ -525,7 +525,7 @@ fn test_conflict_two_workspace_folders_both_odoo_path() {
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
     // Should error due to ambiguous odoo_path
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err());
     assert!(result.err().unwrap().contains("More than one workspace folder is a valid odoo_path"));
 }
@@ -557,7 +557,7 @@ fn test_no_conflict_when_config_files_point_to_same_odoo_path() {
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
     // Should NOT error, odoo_path is unambiguous
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_ok());
     let (config_map, _config_file) = result.unwrap();
     let config = config_map.get("default").unwrap();
@@ -593,7 +593,7 @@ fn test_conflict_between_config_files_on_refresh_mode() {
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
     // Should error due to conflicting refresh_mode values
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err());
     assert!(result.err().unwrap().contains("Conflict detected"));
 }
@@ -661,7 +661,7 @@ fn test_merge_different_odoo_paths_and_addons_paths() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_ok());
     let (config_map, config_file) = result.unwrap();
     let config = config_map.get("default").unwrap();
@@ -747,7 +747,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     // With override, only workspace's addons_paths should be present
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert_eq!(config.addons_paths, vec![ws_addons.path().sanitize()].into_iter().collect::<HashSet<_>>());
 
@@ -766,7 +766,7 @@ fn test_addons_paths_merge_method_override_vs_merge() {
     ws_folder.child("odools.toml").write_str(&ws_toml).unwrap();
 
     // Re-run config
-    let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
+    let (config_map2, _config_file2) = get_configuration(&ws_folders, &None).unwrap();
     let config2 = config_map2.get("default").unwrap();
     let expected = vec![
         parent_addons1.path().sanitize(),
@@ -803,7 +803,7 @@ fn test_conflict_and_merge_of_boolean_fields() {
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
     ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
 
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err());
     assert!(result.err().unwrap().contains("Conflict detected"));
 
@@ -827,7 +827,7 @@ fn test_conflict_and_merge_of_boolean_fields() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert_eq!(config.file_cache, false); // inherited from parent
     assert_eq!(config.ac_filter_model_names, true); // overridden by workspace
@@ -866,7 +866,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     // Use different case for workspace folder
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // Should only have one normalized path for the addon
@@ -890,7 +890,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     );
     ws_folder.child("odools.toml").write_str(&toml_content_slash).unwrap();
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert!(config.addons_paths.iter().any(|p| p == &normalized_addon));
 
@@ -907,7 +907,7 @@ fn test_path_case_and_trailing_slash_normalization() {
     );
     ws_folder.child("odools.toml").write_str(&toml_content_noslash).unwrap();
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert!(config.addons_paths.iter().any(|p| p == &normalized_addon));
 }
@@ -948,7 +948,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // Should inherit file_cache from mid, auto_refresh_delay from base, diag_missing_imports from root, ac_filter_model_names from workspace
@@ -976,7 +976,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     "#;
     temp.child("odools.toml").write_str(parent_toml_swapped).unwrap();
 
-    let (config_map2, _config_file2) = get_configuration(&ws_folders).unwrap();
+    let (config_map2, _config_file2) = get_configuration(&ws_folders, &None).unwrap();
     let config2 = config_map2.get("default").unwrap();
     assert_eq!(config2.file_cache, false);
     assert_eq!(config2.auto_refresh_delay, 1111);
@@ -1004,7 +1004,7 @@ fn test_extends_chain_multiple_profiles_and_order() {
     "#;
     temp.child("odools.toml").write_str(parent_toml_mid_root).unwrap();
 
-    let (config_map3, _config_file3) = get_configuration(&ws_folders).unwrap();
+    let (config_map3, _config_file3) = get_configuration(&ws_folders, &None).unwrap();
     let config3 = config_map3.get("default").unwrap();
     // Should still resolve the chain correctly
     assert_eq!(config3.file_cache, false);
@@ -1048,7 +1048,7 @@ fn test_extends_cycle_detection() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err());
     assert!(result.err().unwrap().contains("Circular dependency detected"));
 }
@@ -1071,7 +1071,7 @@ fn test_extends_nonexistent_profile_error() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err());
     assert!(result.err().unwrap().to_lowercase().contains("extends non-existing profile"));
 }
@@ -1094,7 +1094,7 @@ fn test_invalid_toml_config() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err());
     assert!(result.err().unwrap().to_lowercase().contains("toml"));
 }
@@ -1116,7 +1116,7 @@ fn test_malformed_config_missing_required_fields() {
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
     // Should not error, should default name to "default"
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_ok());
     let (config_map, _) = result.unwrap();
     assert!(config_map.contains_key("default"));
@@ -1125,7 +1125,7 @@ fn test_malformed_config_missing_required_fields() {
     let empty_toml = "";
     ws_folder.child("odools.toml").write_str(empty_toml).unwrap();
 
-    let result = get_configuration(&ws_folders);
+    let result = get_configuration(&ws_folders, &None);
     assert!(result.is_ok());
     let (config_map, _) = result.unwrap();
     // Should still have a default "default" config entry
@@ -1165,7 +1165,7 @@ fn test_template_variable_expansion_userhome_and_workspacefolder() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // Both expanded paths should be present in addons_paths
@@ -1208,7 +1208,7 @@ fn test_config_with_relative_addons_paths() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // The expected absolute, sanitized paths
@@ -1252,7 +1252,7 @@ fn test_relative_addons_paths_in_parent_config() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
-    let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
 
     // The expected absolute, sanitized paths
@@ -1280,7 +1280,7 @@ fn test_auto_refresh_delay_boundaries() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert_eq!(config.auto_refresh_delay, 1000);
 
@@ -1292,7 +1292,7 @@ fn test_auto_refresh_delay_boundaries() {
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_max).unwrap();
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert_eq!(config.auto_refresh_delay, 15000);
 
@@ -1304,7 +1304,7 @@ fn test_auto_refresh_delay_boundaries() {
     "#;
     ws_folder.child("odools.toml").write_str(toml_content_ok).unwrap();
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert_eq!(config.auto_refresh_delay, 1234);
 }
@@ -1336,7 +1336,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws"), temp.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
     assert_eq!(
@@ -1361,7 +1361,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws18"), ws_18_addons.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
     assert_eq!(
@@ -1386,7 +1386,7 @@ fn test_odoo_path_with_version_variable_and_workspace_folder() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws17"), ws_17_addons.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("17.0").child("odoo").path().sanitize();
     assert_eq!(
@@ -1435,7 +1435,7 @@ fn test_odoo_path_with_version_from_manifest_file() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws18"), ws_18_addons.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("18.0").child("odoo").path().sanitize();
     assert_eq!(
@@ -1461,7 +1461,7 @@ fn test_odoo_path_with_version_from_manifest_file() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws17"), ws_17_addons.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     let expected_odoo_path = temp.child("17.0").child("odoo").path().sanitize();
     assert_eq!(
@@ -1492,7 +1492,7 @@ fn test_addons_paths_unset_vs_empty_behavior() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert!(config.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when addons_paths is unset");
 
@@ -1504,7 +1504,7 @@ fn test_addons_paths_unset_vs_empty_behavior() {
     "#;
     ws.child("odools.toml").write_str(toml_empty).unwrap();
 
-    let (config_map2, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map2, _) = get_configuration(&ws_folders, &None).unwrap();
     let config2 = config_map2.get("default").unwrap();
     assert!(!config2.addons_paths.contains(&ws.path().sanitize()), "Workspace should NOT be added to addons_paths when addons_paths is set to []");
 
@@ -1517,7 +1517,7 @@ fn test_addons_paths_unset_vs_empty_behavior() {
     "#;
     ws.child("odools.toml").write_str(toml_empty).unwrap();
 
-    let (config_map3, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map3, _) = get_configuration(&ws_folders, &None).unwrap();
     let config3 = config_map3.get("default").unwrap();
     assert!(config3.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when add_workspace_addon_path is true");
 }
@@ -1570,7 +1570,7 @@ fn test_addons_merge_override_cases() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws"), ws.path().sanitize().to_string());
 
-    let (config_map, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
     assert_eq!(
         config.addons_paths,
@@ -1591,7 +1591,7 @@ fn test_addons_merge_override_cases() {
     ws_mod3.create_dir_all().unwrap();
     ws_mod3.child("__manifest__.py").touch().unwrap();
 
-    let (config_map2, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map2, _) = get_configuration(&ws_folders, &None).unwrap();
     let config2 = config_map2.get("default").unwrap();
     assert!(
         config2.addons_paths.contains(&ws.path().sanitize()),
@@ -1607,7 +1607,7 @@ fn test_addons_merge_override_cases() {
     "#;
     ws.child("odools.toml").write_str(child_toml3).unwrap();
 
-    let (config_map3, _) = get_configuration(&ws_folders).unwrap();
+    let (config_map3, _) = get_configuration(&ws_folders, &None).unwrap();
     let config3 = config_map3.get("default").unwrap();
     assert!(
         config3.addons_paths.is_empty(),
@@ -1648,7 +1648,7 @@ fn test_detect_version_variable_creates_profiles_for_each_version() {
     let mut ws_folders = HashMap::new();
     ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
 
-    let (config_map, config_file) = get_configuration(&ws_folders).unwrap();
+    let (config_map, config_file) = get_configuration(&ws_folders, &None).unwrap();
 
     // There should be three profiles: "root" (abstract), "root-17.0", "root-18.0"
     assert!(config_map.contains_key("root"), "Should contain abstract root profile");
