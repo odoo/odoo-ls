@@ -412,4 +412,16 @@ OLS05053, DiagnosticSetting::Error, "Action with id '{0}' does not exist",
  * A menuitem is specifying a group that has not been declared before the menuitem
  */
 OLS05054, DiagnosticSetting::Error, "Group with id '{0}' does not exist",
+/**
+ * Model not found
+ */
+OLS05055, DiagnosticSetting::Error, "Model '{0}' not found in module '{1}'",
+/**
+ * Model not found
+ */
+OLS05056, DiagnosticSetting::Error, "Model '{0}' not found",
+/**
+ * Field not found in model
+ */
+OLS05057, DiagnosticSetting::Error, "Field '{0}' not found in model '{1}'",
 }
