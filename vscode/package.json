@@ -29,6 +29,9 @@
         "mimetypes": ["text/csv"]
       }
     ],
+    "configurationDefaults": {
+      "editor.gotoLocation.alternativeDefinitionCommand": ""
+    },
     "commands": [
       {
         "command": "odoo.clickStatusBar",
