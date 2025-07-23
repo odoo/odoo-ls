@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, xml_data::{XmlData, XmlDataActWindow, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataReport, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, xml_data::{XmlData, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -39,8 +39,6 @@ impl XmlArchBuilder {
                         || self.load_record(session, &child, diagnostics)
                         || self.load_template(session, &child, diagnostics)
                         || self.load_delete(session, &child, diagnostics)
-                        || self.load_act_window(session, &child, diagnostics)
-                        || self.load_report(session, &child, diagnostics)
                         || self.load_function(session, &child, diagnostics)
                         || child.is_text() || child.is_comment()) {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
@@ -504,121 +502,6 @@ impl XmlArchBuilder {
             file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             model: Sy!(node.attribute("model").unwrap().to_string()),
-        });
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
-        true
-    }
-
-    fn load_act_window(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        if node.tag_name().name() != "act_window" { return false; }
-        let mut found_id = None;
-        for attr in ["id", "name", "res_model"] {
-            if node.attribute(attr).is_none() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05036, &[attr]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                        ..diagnostic.clone()
-                    });
-                }
-            }
-            if attr == "id" {
-                found_id = node.attribute(attr).map(|v| v.to_string());
-            }
-        }
-        for attr in node.attributes() {
-            match attr.name() {
-                "id" | "name" | "res_model" => {},
-                "domain" | "view_mode" | "view_id" | "target" | "context" | "groups" | "limit" | "usage" | "binding_model" => {},
-                "binding_type" => {
-                    if attr.value() != "action" && attr.value() != "report" {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[attr.value()]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic.clone()
-                            });
-                        }
-                    }
-                },
-                "binding_views" => {
-                    if !BINDING_VIEWS_RE.is_match(attr.value()) {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05040, &[attr.value()]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic.clone()
-                            });
-                        }
-                    }
-                },
-                _ => {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05037, &[attr.name()]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
-                }
-            }
-        }
-        if node.text().is_some() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05038, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    ..diagnostic.clone()
-                });
-            }
-        }
-        let data = XmlData::ACT_WINDOW(XmlDataActWindow {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            res_model: Sy!(node.attribute("res_model").unwrap().to_string()),
-            name: Sy!(node.attribute("name").unwrap().to_string()),
-        });
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
-        true
-    }
-
-    fn load_report(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        if node.tag_name().name() != "report" { return false; }
-        let mut found_id = None;
-        for attr in ["string", "model", "name"] {
-            if node.attribute(attr).is_none() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05041, &[attr]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                        ..diagnostic.clone()
-                    });
-                }
-            }
-        }
-        for attr in node.attributes() {
-            match attr.name() {
-                "id" => { found_id = Some(attr.value().to_string()); },
-                "print_report_name" | "report_type" | "multi"| "menu" | "keyword" | "file" |
-                "xml" | "parser" | "auto" | "header" | "attachment" | "attachment_use" | "groups" | "paperformat" | "usage" => {},
-                _ => {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05042, &[attr.name()]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
-                }
-            }
-        }
-        if node.text().is_some() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05043, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    ..diagnostic.clone()
-                });
-            }
-        }
-        let data = XmlData::REPORT(XmlDataReport {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            name: Sy!(node.attribute("name").unwrap().to_string()),
-            model: Sy!(node.attribute("model").unwrap().to_string()),
-            string: Sy!(node.attribute("string").unwrap().to_string()),
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
