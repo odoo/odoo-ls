@@ -273,24 +273,24 @@ pub fn build_pattern_map(ws_folders: &HashMap<String, String>) -> HashMap<String
 /// While also checking it with the predicate function.
 /// pass `|_| true` to skip the predicate check.
 /// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
-pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: &String, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Option<String>
+pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Option<String>
 where
     F: Fn(&String) -> bool,
     P: AsRef<Path>
 {
         let mut pattern_map: HashMap<String, String> = build_pattern_map(ws_folders).into_iter().chain(var_map.into_iter()).collect();
-        if let Some(path) = ws_folders.get(workspace_name) {
+        if let Some(path) = workspace_name.and_then(|name| ws_folders.get(name)) {
             pattern_map.insert(S!("workspaceFolder"), path.clone());
-            if let Some(path) = fill_template(template, &pattern_map) {
-                if predicate(&path) {
-                    return Some(path);
-                }
-                // Attempt to convert the path to an absolute path
-                if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
-                    let abs_path    = abs_path.sanitize();
-                    if predicate(&abs_path) {
-                        return Some(abs_path);
-                    }
+        }
+        if let Some(path) = fill_template(template, &pattern_map) {
+            if predicate(&path) {
+                return Some(path);
+            }
+            // Attempt to convert the path to an absolute path
+            if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
+                let abs_path    = abs_path.sanitize();
+                if predicate(&abs_path) {
+                    return Some(abs_path);
                 }
             }
         }
