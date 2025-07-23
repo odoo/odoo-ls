@@ -4,7 +4,7 @@ use clap::error;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument,
-    DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
+    DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
 use serde_json::json;
 #[cfg(target_os = "linux")]
 use nix;
@@ -208,6 +208,11 @@ impl Server {
                     trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\""), S!("(")]),
                     ..CompletionOptions::default()
                 }),
+                references_provider: Some(OneOf::Right(ReferencesOptions {
+                    work_done_progress_options: WorkDoneProgressOptions { 
+                        work_done_progress: Some(false) 
+                    }
+                })),
                 document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions{
                     label: Some(S!("Odoo")),
                     work_done_progress_options: WorkDoneProgressOptions{
@@ -401,7 +406,7 @@ impl Server {
         match msg {
             Message::Request(r) => {
                 match r.method.as_str() {
-                    HoverRequest::METHOD | GotoDefinition::METHOD => {
+                    HoverRequest::METHOD | GotoDefinition::METHOD | References::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
                             info!("Sending request to read thread : {} - {}", r.method, r.id);

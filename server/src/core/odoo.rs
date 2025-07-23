@@ -4,6 +4,7 @@ use crate::core::symbols::file_symbol;
 use crate::core::xml_data::XmlData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
+use crate::features::references::ReferenceFeature;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -1196,6 +1197,43 @@ impl Odoo {
                         },
                         AstType::Csv => {
                             return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        },
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn handle_references(session: &mut SessionInfo, params: ReferenceParams) -> Result<Option<Vec<Location>>, ResponseError> {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("References requested on {} at {} - {}",
+            params.text_document_position.text_document.uri.to_string(),
+            params.text_document_position.position.line,
+            params.text_document_position.position.character));
+        let uri = params.text_document_position.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
+            if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+                let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                if let Some(file_info) = file_info {
+                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                        file_info.borrow_mut().prepare_ast(session);
+                    }
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
+                        AstType::Python => {
+                            if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                                return Ok(ReferenceFeature::get_references(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                            }
+                        },
+                        AstType::Xml => {
+                            return Ok(ReferenceFeature::get_references_xml(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                        },
+                        AstType::Csv => {
+                            return Ok(ReferenceFeature::get_references_csv(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                         },
                     }
                 }
