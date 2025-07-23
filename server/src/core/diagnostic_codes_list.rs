@@ -147,6 +147,11 @@ OLS03018, DiagnosticSetting::Error, "Method does not exist on current model",
 */
 OLS03019, DiagnosticSetting::Error, "Compute method not set to modify this field",
 /**
+ * _name is set on a class which creaes a model, but the name is already used by another model.
+ * Hence, this model is shadowing an existing model.
+ */
+OLS03020, DiagnosticSetting::Warning, "Model {0} is shadowing an existing model in dependencies",
+/**
 * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
 * Do not store any other information in it.
 */
