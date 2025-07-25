@@ -178,6 +178,11 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
                 result[name_index as usize].found = true;
                 result[name_index as usize].symbol = last_symbol.as_ref().unwrap().clone();
             }
+        } else {
+            //everything is ok, let's store the result if not already done
+            result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
+            result[name_index as usize].found = true;
+            result[name_index as usize].symbol = next_symbol.as_ref().unwrap().clone();
         }
     }
 

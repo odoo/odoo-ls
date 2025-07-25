@@ -1,9 +1,11 @@
+use std::rc::Rc;
+
 use lsp_types::{Diagnostic, Position, Range};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
 
-use crate::{core::diagnostics::{create_diagnostic, DiagnosticCode}, threads::SessionInfo, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{XmlData, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -37,8 +39,6 @@ impl XmlArchBuilder {
                         || self.load_record(session, &child, diagnostics)
                         || self.load_template(session, &child, diagnostics)
                         || self.load_delete(session, &child, diagnostics)
-                        || self.load_act_window(session, &child, diagnostics)
-                        || self.load_report(session, &child, diagnostics)
                         || self.load_function(session, &child, diagnostics)
                         || child.is_text() || child.is_comment()) {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
@@ -76,7 +76,20 @@ impl XmlArchBuilder {
                         }
                     }
                 },
-                "name" | "groups" | "active" => {},
+                "groups" => {
+                    for group in attr.value().split(",") {
+                        let group = group.trim_start_matches("-");
+                        if self.get_group_ids(session, group, &attr, diagnostics).is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05054, &[group]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
+                        }
+                    }
+                },
+                "name" | "active" => {},
                 "action" => {
                     if (has_parent || is_submenu) && node.has_children() {
                         let other_than_text = node.children().any(|c| !c.is_text() && !c.is_comment());
@@ -89,6 +102,15 @@ impl XmlArchBuilder {
                             }
                         }
                     }
+                    //check that action exists
+                    if SyncOdoo::get_xml_ids(session, &self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
+                    }
                 }
                 "parent" => {
                     if is_submenu {
@@ -98,8 +120,18 @@ impl XmlArchBuilder {
                                 ..diagnostic.clone()
                             });
                         }
+                    } else {
+                        //check that parent exists
+                        if SyncOdoo::get_xml_ids(session, &self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
+                        }
                     }
-                }
+                },
                 "web_icon" => {
                     if has_parent || is_submenu {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05010, &[]) {
@@ -141,7 +173,11 @@ impl XmlArchBuilder {
                 self.load_menuitem(session, &child, true, diagnostics);
             }
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::MENUITEM(XmlDataMenuItem {
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -176,9 +212,20 @@ impl XmlArchBuilder {
             }
             return false;
         }
-
+        let mut data = XmlDataRecord {
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            fields: vec![],
+            range: std::ops::Range::<usize> {
+                start: node.range().start as usize,
+                end: node.range().end as usize,
+            }
+        };
         for child in node.children().filter(|n| n.is_element()) {
-            if !self.load_field(session, &child, diagnostics) {
+            if let Some(field) = self.load_field(session, &child, diagnostics) {
+                data.fields.push(field);
+            } else {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05015, &[child.tag_name().name()]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
@@ -187,12 +234,13 @@ impl XmlArchBuilder {
                 }
             }
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::RECORD(data);
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
-    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        if node.tag_name().name() != "field" { return false; }
+    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlDataField> {
+        if node.tag_name().name() != "field" { return None; }
         if node.attribute("name").is_none() {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {
                 diagnostics.push(Diagnostic {
@@ -213,7 +261,7 @@ impl XmlArchBuilder {
                     ..diagnostic.clone()
                 });
             }
-            return false;
+            return None;
         }
         let mut is_xml_or_html = false;
         if let Some(field_type) = node.attribute("type") {
@@ -323,7 +371,20 @@ impl XmlArchBuilder {
                 }
             }
         }
-        true
+        let mut text = None;
+        let mut text_range = None;
+        for child in node.children() {
+            if child.is_text() {
+                text = child.text().map(|s| s.to_string());
+                text_range = Some(child.range());
+            }
+        }
+        Some(XmlDataField {
+            name: oyarn!("{}", node.attribute("name").unwrap()),
+            range: node.attribute_node("name").unwrap().range(),
+            text: text,
+            text_range: text_range,
+        })
     }
 
     fn load_value(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
@@ -401,7 +462,11 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::TEMPLATE(XmlDataTemplate {
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
@@ -433,109 +498,12 @@ impl XmlArchBuilder {
                 });
             }
         }
-        self.on_operation_creation(session, found_id, node, diagnostics);
-        true
-    }
-
-    fn load_act_window(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        if node.tag_name().name() != "act_window" { return false; }
-        let mut found_id = None;
-        for attr in ["id", "name", "res_model"] {
-            if node.attribute(attr).is_none() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05036, &[attr]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                        ..diagnostic.clone()
-                    });
-                }
-            }
-            if attr == "id" {
-                found_id = node.attribute(attr).map(|v| v.to_string());
-            }
-        }
-        for attr in node.attributes() {
-            match attr.name() {
-                "id" | "name" | "res_model" => {},
-                "domain" | "view_mode" | "view_id" | "target" | "context" | "groups" | "limit" | "usage" | "binding_model" => {},
-                "binding_type" => {
-                    if attr.value() != "action" && attr.value() != "report" {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[attr.value()]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic.clone()
-                            });
-                        }
-                    }
-                },
-                "binding_views" => {
-                    if !BINDING_VIEWS_RE.is_match(attr.value()) {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05040, &[attr.value()]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic.clone()
-                            });
-                        }
-                    }
-                },
-                _ => {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05037, &[attr.name()]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
-                }
-            }
-        }
-        if node.text().is_some() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05038, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    ..diagnostic.clone()
-                });
-            }
-        }
-        self.on_operation_creation(session, found_id, node, diagnostics);
-        true
-    }
-
-    fn load_report(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        if node.tag_name().name() != "report" { return false; }
-        let mut found_id = None;
-        for attr in ["string", "model", "name"] {
-            if node.attribute(attr).is_none() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05041, &[attr]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                        ..diagnostic.clone()
-                    });
-                }
-            }
-        }
-        for attr in node.attributes() {
-            match attr.name() {
-                "id" => { found_id = Some(attr.value().to_string()); },
-                "print_report_name" | "report_type" | "multi"| "menu" | "keyword" | "file" |
-                "xml" | "parser" | "auto" | "header" | "attachment" | "attachment_use" | "groups" | "paperformat" | "usage" => {},
-                _ => {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05042, &[attr.name()]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
-                }
-            }
-        }
-        if node.text().is_some() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05043, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    ..diagnostic.clone()
-                });
-            }
-        }
-        self.on_operation_creation(session, found_id, node, diagnostics);
+        let data = XmlData::DELETE(XmlDataDelete {
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            model: Sy!(node.attribute("model").unwrap().to_string()),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 

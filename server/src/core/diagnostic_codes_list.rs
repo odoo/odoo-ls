@@ -400,4 +400,28 @@ OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML or CSV fil
 * An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
 */
 OLS05051, DiagnosticSetting::Error, "Invalid XML ID '{0}'. It should not contain more than one dot.",
+/**
+* The given parent_id does not exists in the dependents modules, or is not a menuitem
+*/
+OLS05052, DiagnosticSetting::Error, "Parent menuitem with id '{0}' does not exist",
+/**
+ * A menuitem is specifying an action that has not been declared before the menuitem.
+ */
+OLS05053, DiagnosticSetting::Error, "Action with id '{0}' does not exist",
+/**
+ * A menuitem is specifying a group that has not been declared before the menuitem
+ */
+OLS05054, DiagnosticSetting::Error, "Group with id '{0}' does not exist",
+/**
+ * Model not found
+ */
+OLS05055, DiagnosticSetting::Error, "Model '{0}' not found in module '{1}'",
+/**
+ * Model not found
+ */
+OLS05056, DiagnosticSetting::Error, "Model '{0}' not found",
+/**
+ * Field not found in model
+ */
+OLS05057, DiagnosticSetting::Error, "Field '{0}' not found in model '{1}'",
 }

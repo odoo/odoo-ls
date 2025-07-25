@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
 use ruff_python_ast::Expr;
@@ -13,6 +13,7 @@ use crate::core::file_mgr::{FileMgr};
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
+use crate::core::xml_data::{XmlData, XmlDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
@@ -49,6 +50,28 @@ impl PythonOdooBuilder {
         self._load_class_attributes(session, &mut diagnostics);
         self._add_magic_fields(session);
         let model_name = sym.borrow().as_class_sym()._model.as_ref().unwrap().name.clone();
+        if let Some(module) = sym.borrow().find_module() {
+            let file = self.symbol.borrow().get_file().unwrap().upgrade().unwrap();
+            let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
+            let mut module = module.borrow_mut();
+            let set = module.as_module_package_mut().xml_id_locations.entry(xml_id_model_name.clone()).or_insert(PtrWeakHashSet::new());
+            set.insert(file.clone());
+            drop(module); //in case of file being same than module
+            let mut file = file.borrow_mut();
+            file.insert_xml_id(xml_id_model_name.clone(), XmlData::RECORD(XmlDataRecord {
+                file_symbol: Rc::downgrade(&sym),
+                model: (Sy!("ir.model"), std::ops::Range::<usize> {
+                    start: 0,
+                    end: 1,
+                }),
+                xml_id: Some(xml_id_model_name),
+                fields: vec![],
+                range: std::ops::Range::<usize> {
+                    start: self.symbol.borrow().range().start().to_usize(),
+                    end: self.symbol.borrow().range().end().to_usize(),
+                }
+            }));
+        }
         match session.sync_odoo.models.get(&model_name).cloned(){
             Some(model) => {
                 let inherited_model_names = sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
@@ -80,13 +103,6 @@ impl PythonOdooBuilder {
             },
             None => {
                 let model = Model::new(model_name.clone(), sym.clone());
-                session.sync_odoo.modules.get("base").map(|module| {
-                    let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
-                    let module = module.upgrade().unwrap();
-                    let mut module = module.borrow_mut();
-                    let set = module.as_module_package_mut().xml_ids.entry(xml_id_model_name).or_insert(PtrWeakHashSet::new());
-                    set.insert(sym.clone());
-                });
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
@@ -175,6 +191,32 @@ impl PythonOdooBuilder {
                     }
                 } else {
                     error!("wrong _inherits value");
+                }
+            }
+        }
+        drop(_inherits);
+        drop(symbol);
+        //Add inherits from delegate=True from fields
+        let all_fields = Symbol::all_members(&self.symbol, session, false, true, false, None, false);
+        for (field_name, symbols) in all_fields.iter() {
+            for (symbol, _deps) in symbols.iter() {
+                if let Some(evals) = symbol.borrow().evaluations() {
+                    for eval in evals.iter() {
+                        let symbol_weak = eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, self.symbol.borrow().get_file().unwrap().upgrade());
+                        if let Some(eval_symbol) = symbol_weak.weak.upgrade() {
+                            if eval_symbol.borrow().name() == &Sy!("Many2one") {
+                                let context = &symbol_weak.context;
+                                if let Some(delegate) = context.get("delegate") {
+                                    if delegate.as_bool() == true {
+                                        if let Some(comodel) = context.get("comodel_name") {
+                                            let comodel_name = oyarn!("{}", comodel.as_string());
+                                            self.symbol.borrow_mut().as_class_sym_mut()._model.as_mut().unwrap().inherits.push((comodel_name, field_name.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

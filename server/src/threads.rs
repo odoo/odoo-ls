@@ -4,7 +4,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
-    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, Request, Shutdown}, CompletionResponse, DocumentSymbolResponse, Hover, LogMessageParams, MessageType, ShowMessageParams};
+    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, References, Request, Shutdown}, CompletionResponse, DocumentSymbolResponse, Hover, Location, LogMessageParams, MessageType, ShowMessageParams};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -398,6 +398,9 @@ pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                     },
                     GotoDefinition::METHOD => {
                         to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
+                    },
+                    References::METHOD => {
+                        to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
                     },
                     DocumentSymbolRequest::METHOD => {
                         to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))

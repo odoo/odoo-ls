@@ -941,8 +941,7 @@ fn add_nested_field_names(
         }
         if let Some(object) = &obj {
             if index == split_expr.len() - 1 {
-                let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
-                Symbol::all_members(&object, session, &mut all_symbols, true, true, false, from_module.clone(), &mut None, false);
+                let all_symbols = Symbol::all_members(&object, session,  true, true, false, from_module.clone(), false);
                 for (_symbol_name, symbols) in all_symbols {
                     //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                     if _symbol_name.starts_with(name) {
@@ -1000,8 +999,7 @@ fn add_model_attributes(
     only_methods: bool,
     attribute_name: &str
 ){
-    let mut all_symbols: HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> = HashMap::new();
-    Symbol::all_members(&parent_sym, session, &mut all_symbols, true, only_fields, only_methods, from_module.clone(), &mut None, is_super);
+    let all_symbols = Symbol::all_members(&parent_sym, session, true, only_fields, only_methods, from_module.clone(), is_super);
     for (_symbol_name, symbols) in all_symbols {
         //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
         if _symbol_name.starts_with(attribute_name) {

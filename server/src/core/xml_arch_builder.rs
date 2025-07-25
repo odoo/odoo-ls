@@ -1,11 +1,13 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::{Rc, Weak}};
 
-use lsp_types::{Diagnostic};
-use roxmltree::Node;
-use tracing::{warn};
+use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use regex::Regex;
+use roxmltree::{Attribute, Node};
+use tracing::{error, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::EntryPointType}, threads::SessionInfo, Sy};
+use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{entry_point::EntryPointType, xml_data::XmlData}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
 
@@ -36,6 +38,7 @@ impl XmlArchBuilder {
         self.load_odoo_openerp_data(session, node, &mut diagnostics);
         self.xml_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         file_info.replace_diagnostics(BuildSteps::ARCH, diagnostics);
+        session.sync_odoo.add_to_validations(self.xml_symbol.clone());
     }
 
     pub fn on_operation_creation(
@@ -43,7 +46,8 @@ impl XmlArchBuilder {
         session: &mut SessionInfo,
         id: Option<String>,
         node: &Node,
-        diagnostics: &mut Vec<Diagnostic>,
+        mut xml_data: XmlData,
+        diagnostics: &mut Vec<Diagnostic>
     ) {
         if !self.is_in_main_ep {
             return;
@@ -76,25 +80,25 @@ impl XmlArchBuilder {
                     xml_module = m.upgrade().unwrap();
                 }
             }
-            let xml_module_bw = xml_module.borrow();
-            let already_existing = xml_module_bw.as_module_package().xml_ids.get(&Sy!(id.clone())).cloned();
-            drop(xml_module_bw);
-            let mut found_one = false;
-            if let Some(existing) = already_existing {
-                //Check that it exists a main xml_id
-                for s in existing.iter() {
-                    if Rc::ptr_eq(&s, &xml_module) {
-                        found_one = true;
-                        break;
-                    }
-                }
-            } else {
-                xml_module.borrow_mut().as_module_package_mut().xml_ids.insert(Sy!(id.clone()), PtrWeakHashSet::new());
-            }
-            if !found_one && !Rc::ptr_eq(&xml_module, &module) {
-                // no diagnostic to create.
-            }
-            xml_module.borrow_mut().as_module_package_mut().xml_ids.get_mut(&Sy!(id)).unwrap().insert(self.xml_symbol.clone());
+            xml_data.set_file_symbol(&self.xml_symbol);
+            xml_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id.clone())).or_insert(PtrWeakHashSet::new()).insert(self.xml_symbol.clone());
+            self.xml_symbol.borrow_mut().as_xml_file_sym_mut().xml_ids.entry(Sy!(id.clone())).or_insert(vec![]).push(xml_data);
         }
+    }
+
+    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+        let xml_ids = SyncOdoo::get_xml_ids(session, &self.xml_symbol, xml_id, &attr.range(), diagnostics);
+        let mut res = vec![];
+        for data in xml_ids.iter() {
+            match data {
+                XmlData::RECORD(r) => {
+                    if r.model.0 == "res.groups" {
+                        res.push(data.clone());
+                    }
+                },
+                _ => {}
+            }
+        }
+        res
     }
 }

@@ -1,5 +1,11 @@
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
+use crate::core::file_mgr::AstType;
+use crate::core::symbols::file_symbol;
+use crate::core::xml_data::XmlData;
+use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
+use crate::features::references::ReferenceFeature;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -597,8 +603,17 @@ impl SyncOdoo {
                     session.sync_odoo.add_to_validations(sym_rc.clone());
                     return true;
                 }
-                let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
-                validator.validate(session);
+                let typ = sym_rc.borrow().typ();
+                match typ {
+                    SymType::XML_FILE => {
+                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), sym_rc);
+                        validator.validate(session);
+                    },
+                    _ => {
+                        let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
+                        validator.validate(session);
+                    }
+                }
                 continue;
             }
         }
@@ -814,6 +829,13 @@ impl SyncOdoo {
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
         for entry in session.sync_odoo.entry_point_mgr.borrow().iter_main() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    return Some(sym);
+                }
+                continue;
+            }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
@@ -826,6 +848,13 @@ impl SyncOdoo {
         //Not found? Then return if it is matching a non-public entry strictly matching the file
         let mut found_an_entry = false; //there to ensure that a wrongly built entry would create infinite loop
         for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_data {
+                if let Some(sym) = sym.upgrade() {
+                    return Some(sym);
+                }
+                continue;
+            }
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;
                 let tree = entry.borrow().get_tree_for_entry(path);
@@ -902,6 +931,44 @@ impl SyncOdoo {
     pub fn load_capabilities(&mut self, capabilities: &lsp_types::ClientCapabilities) {
         info!("Client capabilities: {:?}", capabilities);
         self.capabilities = capabilities.clone();
+    }
+
+    /**
+     * search for an xml_id in the already registered xml files.
+     * */
+    pub fn get_xml_ids(session: &mut SessionInfo, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+        if !from_file.borrow().get_entry().unwrap().borrow().is_main() {
+            return vec![];
+        }
+        let id_split = xml_id.split(".").collect::<Vec<&str>>();
+        let mut module = None;
+        if id_split.len() == 1 {
+            // If no module name, we are in the current module
+            module = from_file.borrow().find_module();
+        } else if id_split.len() == 2 {
+            // Try to find the module by name
+            if let Some(m) = session.sync_odoo.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
+                module = m.upgrade();
+            }
+        } else if id_split.len() > 2 {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id]) {
+                diagnostics.push(lsp_types::Diagnostic {
+                    range: lsp_types::Range {
+                        start: lsp_types::Position::new(range.start as u32, 0),
+                        end: lsp_types::Position::new(range.end as u32, 0),
+                    },
+                    ..diagnostic.clone()
+                });
+            }
+            return vec![];
+        }
+        if module.is_none() {
+            warn!("Module not found for id: {}", xml_id);
+            return vec![];
+        }
+        let module = module.unwrap();
+        let module = module.borrow();
+        module.as_module_package().get_xml_id(&oyarn!("{}", id_split.last().unwrap()))
     }
 
 }
@@ -1079,8 +1146,19 @@ impl Odoo {
                     if file_info.borrow().file_info_ast.borrow().ast.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
-                        return Ok(HoverFeature::get_hover(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
+                        AstType::Python => {
+                            if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                                return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            }
+                        },
+                        AstType::Xml => {
+                            return Ok(HoverFeature::hover_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        },
+                        AstType::Csv => {
+                            return Ok(HoverFeature::hover_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        },
                     }
                 }
             }
@@ -1105,8 +1183,56 @@ impl Odoo {
                     if file_info.borrow().file_info_ast.borrow().ast.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    if file_info.borrow().file_info_ast.borrow().ast.is_some() {
-                        return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
+                        AstType::Python => {
+                            if file_info.borrow().file_info_ast.borrow().ast.is_some() {
+                                return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            }
+                        },
+                        AstType::Xml => {
+                            return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        },
+                        AstType::Csv => {
+                            return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        },
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn handle_references(session: &mut SessionInfo, params: ReferenceParams) -> Result<Option<Vec<Location>>, ResponseError> {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("References requested on {} at {} - {}",
+            params.text_document_position.text_document.uri.to_string(),
+            params.text_document_position.position.line,
+            params.text_document_position.position.character));
+        let uri = params.text_document_position.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
+            if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+                let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                if let Some(file_info) = file_info {
+                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                        file_info.borrow_mut().prepare_ast(session);
+                    }
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
+                        AstType::Python => {
+                            if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                                return Ok(ReferenceFeature::get_references(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                            }
+                        },
+                        AstType::Xml => {
+                            return Ok(ReferenceFeature::get_references_xml(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                        },
+                        AstType::Csv => {
+                            return Ok(ReferenceFeature::get_references_csv(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                        },
                     }
                 }
             }

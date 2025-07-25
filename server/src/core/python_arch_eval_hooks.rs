@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ops::Index;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::cell::RefCell;
@@ -866,6 +867,9 @@ impl PythonArchEvalHooks {
             "comodel_name",
             "related",
             "compute",
+            "delegate",
+            "required",
+            "default",
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
@@ -880,6 +884,14 @@ impl PythonArchEvalHooks {
             if let Some(related_string) = maybe_related_string {
                 context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
                 context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
+            } else {
+                let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
+                if let Some(boolean) = maybe_boolean {
+                    context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                }
+                if arg_name == "default" {
+                    context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
+                }
             }
         }
 
@@ -1061,7 +1073,7 @@ impl PythonArchEvalHooks {
             return None;
         };
         let module_rc_bw = module_rc.borrow();
-        let Some(symbol) = module_rc_bw.as_module_package().xml_ids.get(xml_id.as_str()) else {
+        let Some(symbol) = module_rc_bw.as_module_package().xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*diagnostics.push(Diagnostic::new(
                     FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
