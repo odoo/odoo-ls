@@ -30,10 +30,10 @@ if {
     [[ $(( ${version_list[1]} % 2 )) -eq 1 && $(( ${version_list[0]} )) -ne 0 ]]
 }; then
   echo "pre-release version $PACKAGE_VERSION"
-  nox --session build_package_prerelease -- "$@"
+  nox --session build_package_prerelease -- $PACKAGE_VERSION "$@"
 else
   echo "release version $PACKAGE_VERSION"
-  nox --session build_package -- "$@"
+  nox --session build_package -- $PACKAGE_VERSION "$@"
 fi
 
 read -n 1 -s -r -p "Press any key to close..."
