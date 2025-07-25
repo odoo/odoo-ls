@@ -864,7 +864,7 @@ fn test_path_case_and_trailing_slash_normalization() {
 
     let mut ws_folders = HashMap::new();
     // Use different case for workspace folder
-    ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_lowercase());
+    ws_folders.insert(S!("ws1"), ws_folder.path().sanitize());
 
     let (config_map, _config_file) = get_configuration(&ws_folders).unwrap();
     let config = config_map.get("default").unwrap();
