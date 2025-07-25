@@ -1671,3 +1671,72 @@ fn test_detect_version_variable_creates_profiles_for_each_version() {
     assert!(v17_entry.addons_paths_sourced().as_ref().unwrap().iter().any(|s| s.value() == &v17_path));
     assert!(v18_entry.addons_paths_sourced().as_ref().unwrap().iter().any(|s| s.value() == &v18_path));
 }
+
+#[test]
+fn test_config_file_path_priority() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    // Create two addon dirs for testing merge
+    let ws_addon = ws_folder.child("ws_addons");
+    ws_addon.create_dir_all().unwrap();
+    ws_addon.child("mod").child("__manifest__.py").touch().unwrap();
+
+    let ext_addon = temp.child("ext_addons");
+    ext_addon.create_dir_all().unwrap();
+    ext_addon.child("mod").child("__manifest__.py").touch().unwrap();
+
+    // Workspace config with one addons_path
+    let ws_toml = format!(r#"
+        [[config]]
+        name = "default"
+        python_path = "python"
+        addons_paths = ["{}"]
+    "#, ws_addon.path().sanitize());
+    ws_folder.child("odools.toml").write_str(&ws_toml).unwrap();
+
+    // External config with a different addons_path
+    let ext_toml = format!(r#"
+        [[config]]
+        name = "default"
+        file_cache = true
+        auto_refresh_delay = 4321
+        addons_paths = ["{}"]
+    "#, ext_addon.path().sanitize());
+    let ext_config = temp.child("external_config.toml");
+    ext_config.write_str(&ext_toml).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
+
+    let config_path = ext_config.path().sanitize();
+    let (config_map, _config_file) = get_configuration(&ws_folders, &Some(config_path)).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    // Should use values from external config
+    assert_eq!(config.file_cache, true);
+    assert_eq!(config.auto_refresh_delay, 4321);
+
+    // Should merge addons_paths from both configs
+    let ws_addon_path = ws_addon.path().sanitize();
+    let ext_addon_path = ext_addon.path().sanitize();
+    assert!(config.addons_paths.iter().any(|p| p == &ws_addon_path), "Should contain ws_addon path");
+    assert!(config.addons_paths.iter().any(|p| p == &ext_addon_path), "Should contain ext_addon path");
+}
+
+#[test]
+fn test_config_file_path_nonexistent_errors() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
+
+    // Provide a non-existent config file path
+    let non_existent = temp.child("does_not_exist.toml");
+    let config_path = non_existent.path().sanitize();
+    let result = get_configuration(&ws_folders, &Some(config_path));
+    assert!(result.is_err(), "Expected error when config file path does not exist");
+}
