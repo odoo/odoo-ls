@@ -460,7 +460,7 @@ impl PythonArchEval {
                         if !self.file_mode {
                             deps.push(vec![]);
                         }
-                        let ann_evaluations = assign.annotation.as_ref().map(|annotation| Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start(), &mut deps));
+                        let mut ann_evaluations = assign.annotation.as_ref().map(|annotation| Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start(), &mut deps));
                         Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                         deps = vec![vec![], vec![]];
                         if !self.file_mode {
@@ -483,7 +483,14 @@ impl PythonArchEval {
                                 take_value = ann_evaluations.is_none();
                             }
                         }
-                        let (eval, diags) = if take_value {value_evaluations.unwrap()} else {ann_evaluations.unwrap()};
+                        let (eval, diags) = if take_value {
+                            value_evaluations.unwrap()
+                        } else {
+                            if value_evaluations.is_some() {
+                                ann_evaluations.as_mut().unwrap().0.extend(value_evaluations.unwrap().0);
+                            }
+                            ann_evaluations.unwrap()
+                        };
                         variable_rc.borrow_mut().evaluations_mut().unwrap().extend(eval);
                         self.diagnostics.extend(diags);
                         let mut dep_to_add = vec![];
