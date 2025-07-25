@@ -634,7 +634,8 @@ F: Fn(&String) -> bool,
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     if has_template(&sourced_path.value) {
         return fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate, var_map, &config_dir)
-        .map(|p| PathBuf::from(p).sanitize())
+        .and_then(|p| std::fs::canonicalize(PathBuf::from(p)).ok())
+        .map(|p| p.sanitize())
         .map(|path| Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default()});
     }
     let mut path = PathBuf::from(&sourced_path.value);
