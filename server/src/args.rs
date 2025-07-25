@@ -54,6 +54,11 @@ pub struct Cli {
     //provide a path to the directory that will be used for logs
     #[arg(long)]
     pub logs_directory: Option<String>,
+
+    /// Default config file path
+    #[arg(long)]
+    pub config_path: Option<String>,
+
 }
 
 #[derive(ValueEnum, Clone, Debug)]

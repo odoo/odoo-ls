@@ -155,7 +155,6 @@ impl Server {
         }
     }
 
-
     pub fn initialize(&mut self) -> Result<(), ServerError> {
         info!("Waiting for a connection...");
         let (id, params) = self.connection.as_ref().unwrap().initialize_start()?;
@@ -561,5 +560,10 @@ impl Server {
                 }
             }
         })
+    }
+
+    pub fn set_config_path(&mut self, config_path: String) {
+        let mut sync_odoo = self.sync_odoo.lock().unwrap();
+        sync_odoo.config_path = Some(config_path);
     }
 }
