@@ -75,6 +75,17 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
+            (Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule")])),
+        ],
+        func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+            let mut range = symbol.borrow().range().clone();
+            // ----------- env.cr ------------
+            symbol.borrow_mut().add_new_variable(session, Sy!("global"), &range);
+        }
+    },
+    PythonArchClassHook {
+        odoo_entry: true,
+        trees: vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),

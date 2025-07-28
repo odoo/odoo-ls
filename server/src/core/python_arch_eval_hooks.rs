@@ -293,6 +293,21 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             eval_1.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), Some(false))]);
         }
     }},
+    PythonArchEvalFileHook {odoo_entry: true,
+                            trees: vec![(Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule"), Sy!("global")]))],
+                            if_exist_only: true,
+                            func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        let mut boolean_field = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("odoo")], vec![Sy!("fields"), Sy!("Boolean")]), u32::MAX);
+        if compare_semver(odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
+            boolean_field = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")]), u32::MAX); ;
+        }
+        if let Some(boolean) = boolean_field.first() {
+            let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(&boolean), Some(true));
+            let weak = eval.symbol.get_mut_symbol_ptr().as_mut_weak();
+            weak.context.insert(Sy!("compute"), ContextValue::STRING(S!("_compute_global")));
+            symbol.borrow_mut().set_evaluations(vec![eval]);
+        }
+    }},
 ]});
 
 type PythonArchEvalHookFunc = fn (odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>);

@@ -1706,4 +1706,11 @@ impl EvaluationSymbolPtr {
             _ => panic!("Not an EvaluationSymbolWeak")
         }
     }
+
+    pub(crate) fn as_mut_weak(&mut self) -> &mut EvaluationSymbolWeak {
+        match self {
+            EvaluationSymbolPtr::WEAK(w) => w,
+            _ => panic!("Not an EvaluationSymbolWeak")
+        }
+    }
 }
