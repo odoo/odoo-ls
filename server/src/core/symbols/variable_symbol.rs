@@ -1,7 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::{OYarn, SymType}, core::evaluation::Evaluation, oyarn, threads::SessionInfo};
-use std::{cell::RefCell, rc::{Rc, Weak}};
+use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, Sy};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}, u32};
 
 use super::symbol::Symbol;
 
@@ -62,7 +62,14 @@ impl VariableSymbol {
     pub fn get_relational_model(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
         for eval in self.evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, false, false, None, &mut vec![]);
+            let mut context = None;
+            if let Some(parent) = self.parent.as_ref() {
+                // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
+                // we update the context here for the case where we are coming from a decorator for example.
+                context = Some(HashMap::new());
+                context.as_mut().unwrap().insert(Sy!("base_attr"), ContextValue::SYMBOL(parent.clone()));
+            }
+            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None, &mut vec![]);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak() {
                     if ["Many2one", "One2many", "Many2many"].contains(&symbol.borrow().name().as_str()) {
