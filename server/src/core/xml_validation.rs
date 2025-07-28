@@ -1,9 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, hash::Hash, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::HashMap, hash::Hash, path::PathBuf, rc::Rc};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, threads::SessionInfo, utils::compare_semver, Sy, S};
 
 
 
@@ -111,6 +111,16 @@ impl XmlValidator {
         }
         //check each field in the record
         for field in &xml_data_record.fields {
+            let mut field_name = field.name.clone();
+            let mut has_translation = false;
+            if compare_semver(&session.sync_odoo.full_version, "18.2.0") >= Ordering::Equal {
+                let translation = field.name.split("@").collect::<Vec<&str>>();
+                if translation.len() > 1 {
+                    field_name = translation[0].to_string();
+                    has_translation = true;
+                    //TODO check that the language exists
+                }
+            }
             //Check that the field belong to the model
             let declared_field = all_fields.get(&field.name);
             if let Some(_declared_field) = declared_field {
@@ -140,6 +150,9 @@ impl XmlValidator {
                 }
                 //TODO check type
             } else {
+                if has_translation {
+                    continue;
+                }
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[&field.name, &xml_data_record.model.0]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(field.range.start.try_into().unwrap(), 0), end: Position::new(field.range.end.try_into().unwrap(), 0) },
