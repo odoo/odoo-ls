@@ -2044,7 +2044,14 @@ impl Symbol {
         let mut res = VecDeque::new();
         let symbol = &*symbol_rc.borrow();
         if !stop_on_type {
-            if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+            let mut base_attr = symbol_context.get(&S!("base_attr"));
+            if base_attr.is_none() {
+                //search in context (used in decorators to indicate on which base the field is searched)
+                if let Some(context) = context.as_ref() {
+                    base_attr = context.get(&S!("base_attr"));
+                }
+            }
+            if let Some(base_attr) = base_attr {
                 let base_attr = base_attr.as_symbol().upgrade();
                 if let Some(base_attr) = base_attr {
                     let attribute_type_sym = symbol;
