@@ -21,6 +21,7 @@ use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_python_parser::{Mode, ParseOptions};
+use serde_json::Value;
 use tracing::{error, warn, info, trace};
 
 use std::collections::HashSet;
@@ -63,6 +64,7 @@ pub struct SyncOdoo {
     pub version_minor: u32,
     pub version_micro: u32,
     pub full_version: String,
+    pub python_version: Vec<u32>,
     pub config: ConfigEntry,
     pub config_file: Option<ConfigFile>,
     pub config_path: Option<String>,
@@ -101,6 +103,7 @@ impl SyncOdoo {
             version_minor: 0,
             version_micro: 0,
             full_version: "0.0.0".to_string(),
+            python_version: vec![0, 0, 0],
             config: ConfigEntry::new(),
             config_file: None,
             config_path: None,
@@ -194,7 +197,6 @@ impl SyncOdoo {
                 session.send_notification("$Odoo/loadingStatusUpdate", "stop");
                 return;
             }
-            session.sync_odoo.has_valid_python = true;
             let output = output.unwrap();
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -209,6 +211,30 @@ impl SyncOdoo {
                         EntryPointMgr::add_entry_to_public(session, final_path.clone());
                     }
                 }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                error!("{}", stderr);
+            }
+            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.version_info))"]).output();
+            if let Err(_output) = &output {
+                error!("Wrong python command: {}", session.sync_odoo.config.python_path.clone());
+                session.send_notification("$Odoo/invalid_python_path", ());
+                session.send_notification("$Odoo/loadingStatusUpdate", "stop");
+                return;
+            }
+            session.sync_odoo.has_valid_python = true;
+            let output = output.unwrap();
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                session.log_message(MessageType::INFO, format!("Detected sys.version_info: {}", stdout));
+                let version_infos: Value = serde_json::from_str(&stdout).expect("Unable to get python version info with json of sys.version_info output");
+                session.sync_odoo.python_version = version_infos.as_array()
+                    .expect("Expected JSON array")
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .take(3)
+                    .collect();
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 error!("{}", stderr);
