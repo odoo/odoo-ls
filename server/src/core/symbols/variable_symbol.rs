@@ -1,6 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, Sy};
+use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, Sy, S};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}, u32};
 
 use super::symbol::Symbol;
@@ -67,7 +67,7 @@ impl VariableSymbol {
                 // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
                 // we update the context here for the case where we are coming from a decorator for example.
                 context = Some(HashMap::new());
-                context.as_mut().unwrap().insert(Sy!("base_attr"), ContextValue::SYMBOL(parent.clone()));
+                context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.clone()));
             }
             let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None, &mut vec![]);
             for eval_weak in eval_weaks.iter() {

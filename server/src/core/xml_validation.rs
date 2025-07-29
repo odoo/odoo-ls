@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::HashMap, hash::Hash, path::
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, threads::SessionInfo, utils::compare_semver, Sy, S};
+use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy, S};
 
 
 
@@ -116,7 +116,7 @@ impl XmlValidator {
             if compare_semver(&session.sync_odoo.full_version, "18.2.0") >= Ordering::Equal {
                 let translation = field.name.split("@").collect::<Vec<&str>>();
                 if translation.len() > 1 {
-                    field_name = translation[0].to_string();
+                    field_name = oyarn!("{}", translation[0]);
                     has_translation = true;
                     //TODO check that the language exists
                 }

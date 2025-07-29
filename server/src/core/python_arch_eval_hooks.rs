@@ -304,7 +304,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(boolean) = boolean_field.first() {
             let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(&boolean), Some(true));
             let weak = eval.symbol.get_mut_symbol_ptr().as_mut_weak();
-            weak.context.insert(Sy!("compute"), ContextValue::STRING(S!("_compute_global")));
+            weak.context.insert(S!("compute"), ContextValue::STRING(S!("_compute_global")));
             symbol.borrow_mut().set_evaluations(vec![eval]);
         }
     }},
