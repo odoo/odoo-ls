@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, Expr, ExprNamed, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -793,6 +793,102 @@ impl PythonArchBuilder {
         }
     }
 
+    fn check_tuples(&self, version: &Vec<u32>, op: &CmpOp, tuple: &ExprTuple) -> bool {
+        let mut tuple = tuple.elts.iter().map(|elt| {
+            if let Expr::NumberLiteral(num) = elt {
+                if num.value.is_int() {
+                    num.value.as_int().unwrap().as_u32().unwrap()
+                } else {
+                    0 as u32
+                }
+            } else {
+                0 as u32 // If not a number, treat as 0
+            }
+        }).collect::<Vec<u32>>();
+        // ensure that the vec is sized of 3
+        tuple.resize(3, 0);
+        return match op {
+            CmpOp::Gt => {
+                version[0] > tuple[0] ||
+                (version[0] == tuple[0] && version[1] > tuple[1]) ||
+                (version[0] == tuple[0] && version[1] == tuple[1] && version[2] > tuple[2])
+            },
+            CmpOp::GtE => {
+                version[0] >= tuple[0] ||
+                (version[0] == tuple[0] && version[1] >= tuple[1]) ||
+                (version[0] == tuple[0] && version[1] == tuple[1] && version[2] >= tuple[2])
+            },
+            CmpOp::Lt => {
+                version[0] < tuple[0] ||
+                (version[0] == tuple[0] && version[1] < tuple[1]) ||
+                (version[0] == tuple[0] && version[1] == tuple[1] && version[2] < tuple[2])
+            },
+            CmpOp::LtE => {
+                version[0] <= tuple[0] ||
+                (version[0] == tuple[0] && version[1] <= tuple[1]) ||
+                (version[0] == tuple[0] && version[1] == tuple[1] && version[2] <= tuple[2])
+            },
+            CmpOp::Eq => {
+                version[0] == tuple[0] &&
+                version[1] == tuple[1] &&
+                version[2] == tuple[2]
+            },
+            CmpOp::NotEq => {
+                version[0] != tuple[0] ||
+                version[1] != tuple[1] ||
+                version[2] != tuple[2]
+            },
+            _ => {
+                false
+            }
+        }
+    }
+
+    /** returns
+    * first bool: true if we can go in the condition, because no version check is preventing it
+    * second bool: true if there was a version check or false if the condition was unrelated
+    */
+    fn _check_sys_version_condition(&self, session: &mut SessionInfo, expr: &Expr) -> (bool, bool) {
+        if session.sync_odoo.python_version[0] == 0 {
+            return (true, false); //unknown python version
+        }
+        if let Expr::Compare(expr_comp) = expr {
+            if expr_comp.comparators.len() == 1 {
+                let p1 = expr_comp.left.as_ref();
+                let p2 = expr_comp.comparators.first().unwrap();
+                if !p1.is_tuple_expr() && !p2.is_tuple_expr() {
+                    return (true, false);
+                }
+                if !p1.is_attribute_expr() && !p2.is_attribute_expr() {
+                    return (true, false);
+                }
+                let (tuple, attr) = if p1.is_tuple_expr() {
+                    (p1.as_tuple_expr().unwrap(), p2.as_attribute_expr().unwrap())
+                } else {
+                    (p2.as_tuple_expr().unwrap(), p1.as_attribute_expr().unwrap())
+                };
+                if attr.value.is_name_expr() && attr.value.as_name_expr().unwrap().id == "sys" {
+                    if attr.attr.id == "version_info" {
+                        let mut op = expr_comp.ops.first().unwrap();
+                        if p1.is_tuple_expr() { //invert if tuple is in front
+                            if op.is_gt() {
+                                op = &CmpOp::Lt;
+                            } else if op.is_gt_e() {
+                                op = &CmpOp::LtE;
+                            } else if op.is_lt() {
+                                op = &CmpOp::Gt;
+                            } else if op.is_lt_e() {
+                                op = &CmpOp::GtE;
+                            }
+                        }
+                        return (self.check_tuples(&session.sync_odoo.python_version, op, tuple), true)
+                    }
+                }
+            }
+        }
+        (true, false)
+    }
+
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
         let scope = self.sym_stack.last().unwrap().clone();
@@ -803,17 +899,26 @@ impl PythonArchBuilder {
         let mut last_test_section = test_section.index;
 
         self.visit_expr(session, &if_stmt.test);
+        let mut body_version_ok = false; //if true, it means we found a condition that is true and contained a version check. Used to avoid else clause
         let mut stmt_sections = if if_stmt.body.is_empty() {
             vec![]
         } else {
-            scope.borrow_mut().as_mut_symbol_mgr().add_section( // first body section
-                if_stmt.body[0].range().start(),
-                None // Take preceding section (if test)
-            );
-            self.ast_indexes.push(0 as u16); //0 for body
-            self.visit_node(session, &if_stmt.body)?;
-            self.ast_indexes.pop();
-            vec![ SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())]
+                scope.borrow_mut().as_mut_symbol_mgr().add_section( // first body section
+                    if_stmt.body[0].range().start(),
+                    None // Take preceding section (if test)
+                );
+            let check_version = self._check_sys_version_condition(session, if_stmt.test.as_ref());
+            if check_version.0 {
+                if check_version.1 {
+                    body_version_ok = true;
+                }
+                self.ast_indexes.push(0 as u16); //0 for body
+                self.visit_node(session, &if_stmt.body)?;
+                self.ast_indexes.pop();
+                vec![ SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())]
+            } else {
+                vec![]
+            }
         };
 
         let mut else_clause_exists = false;
@@ -836,9 +941,22 @@ impl PythonArchBuilder {
                 elif_else_clause.body[0].range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
-            self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
-            self.visit_node(session, &elif_else_clause.body)?;
-            self.ast_indexes.pop();
+            if elif_else_clause.test.is_some() {
+                let version_check = self._check_sys_version_condition(session, elif_else_clause.test.as_ref().unwrap());
+                if version_check.0 {
+                    if version_check.1 {
+                        body_version_ok = true;
+                    }
+                    self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
+                    self.visit_node(session, &elif_else_clause.body)?;
+                    self.ast_indexes.pop();
+                }
+            }
+            else if !body_version_ok { //else clause
+                self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
+                self.visit_node(session, &elif_else_clause.body)?;
+                self.ast_indexes.pop();
+            }
             let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             Ok::<Option<SectionIndex>, Error>(Some(clause_section))
         });
