@@ -230,7 +230,9 @@ impl PythonOdooBuilder {
         let attr_sym = &attr_sym[0];
         for eval in attr_sym.borrow().evaluations().unwrap().iter() {
             let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-            return eval;
+            if eval.is_some() {
+                return eval;
+            }
         }
         None
     }
