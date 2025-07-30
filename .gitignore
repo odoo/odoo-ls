@@ -20,3 +20,4 @@ vscode/requirements.txt
 vscode/server
 vscode/CHANGELOG.md
 vscode/package-lock.json
+vscode/build
