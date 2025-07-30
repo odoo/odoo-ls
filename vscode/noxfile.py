@@ -90,13 +90,13 @@ def build_specific_target(session: nox.Session, target: str, debug: bool) -> Non
     else:
         print(f"Unknown target: {target}")
         return
-    if not Path(f"../server/target/{rust_target}/{status}/{file_name}").is_file():
+    if not Path(f"../server/target/{rust_target}/release/{file_name}").is_file():
         print(f"Unable to find odoo_ls_server binary for {target}, please build the server first.")
         return
-    session.run("cp", f"../server/target/{rust_target}/{status}/{file_name}", file_name, external=True)
+    session.run("cp", f"../server/target/{rust_target}/release/{file_name}", file_name, external=True)
     if take_pdb:
-        if Path(f"../server/target/{rust_target}/{status}/odoo_ls_server.pdb").is_file():
-            session.run("cp", f"../server/target/{rust_target}/{status}/odoo_ls_server.pdb", "odoo_ls_server.pdb", external=True)
+        if Path(f"../server/target/{rust_target}/release/odoo_ls_server.pdb").is_file():
+            session.run("cp", f"../server/target/{rust_target}/release/odoo_ls_server.pdb", "odoo_ls_server.pdb", external=True)
         else:
             print(f"Unable to find odoo_ls_server.pdb for {target}, please build the server first.")
             return
@@ -112,7 +112,7 @@ def build_specific_target(session: nox.Session, target: str, debug: bool) -> Non
 def get_targets(session: nox.Session) -> List[str]:
     """Returns the list of targets to build."""
     res = []
-    for arg in session.posargs:
+    for arg in session.posargs[1:]:
         if arg == "all":
             if len(res) > 0:
                 print("You can't use all if specific targets are already specified.")
@@ -147,6 +147,8 @@ def get_targets(session: nox.Session) -> List[str]:
 @nox.session()
 def build_package(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
+    os.makedirs("build", exist_ok=True)
+    os.makedirs(f"build/{session.posargs[0]}", exist_ok=True)
     targets = get_targets(session)
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
@@ -155,6 +157,7 @@ def build_package(session: nox.Session) -> None:
     session.run("cp", "../changelog.md", "changelog.md", external=True)
     for target in targets:
         build_specific_target(session, target, False)
+        session.run("mv", f"odoo-{target}-{session.posargs[0]}.vsix", f"build/{session.posargs[0]}/odoo-{target}-{session.posargs[0]}.vsix", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "changelog.md", external=True)
@@ -162,6 +165,8 @@ def build_package(session: nox.Session) -> None:
 @nox.session()
 def build_package_prerelease(session: nox.Session) -> None:
     """Builds VSIX package for publishing."""
+    os.makedirs("build", exist_ok=True)
+    os.makedirs(f"build/{session.posargs[0]}", exist_ok=True)
     targets = get_targets(session)
     _setup_template_environment(session)
     session.run("npm", "install", external=True)
@@ -169,7 +174,8 @@ def build_package_prerelease(session: nox.Session) -> None:
     copy_dir(session, "../server/additional_stubs", "additional_stubs")
     session.run("cp", "../changelog.md", "changelog.md", external=True)
     for target in targets:
-        build_specific_target(session, target, False)
+        build_specific_target(session, target, True)
+        session.run("mv", f"odoo-{target}-{session.posargs[0]}.vsix", f"build/{session.posargs[0]}/odoo-{target}-{session.posargs[0]}.vsix", external=True)
     session.run("rm", "-r", "typeshed", external=True)
     session.run("rm", "-r", "additional_stubs", external=True)
     session.run("rm", "changelog.md", external=True)
