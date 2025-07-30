@@ -1010,7 +1010,17 @@ fn merge_all_workspaces(
     let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
 
     for workspace_config in workspace_configs {
-        for (key, raw_entry) in workspace_config {
+        for (key,mut raw_entry) in workspace_config {
+
+            match raw_entry.extends.clone() {
+                Some(v)=>{
+                    merged_raw_config.values_mut().for_each(|ra|{update_python_path(&mut raw_entry,ra, key.clone())});
+                },
+                None => {
+                    merged_raw_config.values_mut().for_each(|ra|{update_python_path(ra,&mut raw_entry, key.clone())});
+                }
+            }
+
             let merged_entry = merged_raw_config.entry(key.clone()).or_insert_with(ConfigEntryRaw::new);
             merged_entry.name = key.clone();
 
@@ -1152,4 +1162,15 @@ fn clamp_auto_refresh_delay(val: u64) -> u64 {
     } else {
         val
     }
+}
+/// This method swaps the python path defined in odools.toml to extend the parent configuration
+fn update_python_path(ra:& mut ConfigEntryRaw, raw_entry:& mut ConfigEntryRaw, key:String){
+    if ra.extends.clone() == Some(raw_entry.name.clone()){
+        ra.python_path = merge_sourced_options(
+            raw_entry.python_path.clone(),
+            raw_entry.python_path.clone(),
+            key.clone(),
+            "python_path".to_string(),
+        ).unwrap();
+    };
 }

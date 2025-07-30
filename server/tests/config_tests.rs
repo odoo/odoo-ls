@@ -178,7 +178,13 @@ fn test_extends_and_shadowing() {
     let config = config_map.get("default").unwrap();
 
     // Should extend from base, but shadow python_path and auto_refresh_delay
-    assert_eq!(config.python_path, "python");
+    if std::env::consts::FAMILY == "unix"{
+        assert_eq!(config.python_path, "python3");
+
+    }else {
+        assert_eq!(config.python_path, "python");
+
+    }
     assert_eq!(config.file_cache, true);
     assert_eq!(config.auto_refresh_delay, 3333);
 
