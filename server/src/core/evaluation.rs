@@ -1276,7 +1276,7 @@ impl Evaluation {
     }
 
     fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, expr_call: &ExprCall, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, is_on_instance: bool) -> Vec<Diagnostic> {
-        if function.is_overloaded() {
+        if function.is_overloaded() || function.is_property {
             return vec![];
         }
         let mut diagnostics = vec![];
