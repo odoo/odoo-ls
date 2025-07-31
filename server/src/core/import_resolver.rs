@@ -1,12 +1,13 @@
 use glob::glob;
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
+use ruff_python_ast::name::Name;
 use tracing::error;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, Identifier};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
@@ -51,15 +52,32 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbo
     }
 }
 
+/**
+ * Helper to manually import a symbol. Do not forget to use level instead of '.' in the from_stmt parameter.
+ */
+pub fn manual_import(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt:Option<String>, name: &str, asname: Option<String>, level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
+    let name_aliases = vec![Alias {
+        name: Identifier { id: Name::new(name), range: TextRange::new(TextSize::new(0), TextSize::new(0)) },
+        asname: match asname {
+            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)) }),
+            None => None,
+        },
+        range: TextRange::new(TextSize::new(0), TextSize::new(0)),
+    }];
+    let from_stmt = match from_stmt {
+        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)) }),
+        None => None,
+    };
+    resolve_import_stmt(session, source_file_symbol, from_stmt.as_ref(), &name_aliases, level, diagnostics)
+}
+
 pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     //A: search base of different imports
     let source_root = source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap();
     let entry = source_root.borrow().get_entry().unwrap();
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
-        &_source_file_symbol_lock.paths()[0].clone(),
-        &_source_file_symbol_lock.get_tree(),
-        &_source_file_symbol_lock.typ(),
+        &_source_file_symbol_lock,
         level,
         from_stmt);
     drop(_source_file_symbol_lock);
@@ -206,20 +224,20 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
     None
 }
 
-fn _resolve_packages(file_path: &String, file_tree: &Tree, file_sym_type: &SymType, level: Option<u32>, from_stmt: Option<&Identifier>) -> Vec<OYarn> {
+fn _resolve_packages(from_file: &Symbol, level: Option<u32>, from_stmt: Option<&Identifier>) -> Vec<OYarn> {
     let mut first_part_tree: Vec<OYarn> = vec![];
     if level.is_some() && level.unwrap() > 0 {
         let mut lvl = level.unwrap();
-        if lvl > Path::new(file_path).components().count() as u32 {
+        if lvl > Path::new(&from_file.paths()[0]).components().count() as u32 {
             panic!("Level is too high!")
         }
-        if matches!(*file_sym_type, SymType::PACKAGE(_)) {
+        if matches!(from_file.typ(), SymType::PACKAGE(_)) {
             lvl -= 1;
         }
         if lvl == 0 {
-            first_part_tree = file_tree.0.clone();
+            first_part_tree = from_file.get_tree().0.clone();
         } else {
-            let tree = file_tree;
+            let tree = from_file.get_tree();
             if lvl > tree.0.len() as u32 {
                 error!("Level is too high and going out of scope");
                 first_part_tree = vec![];
@@ -417,9 +435,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     let entry = source_root.borrow().get_entry().unwrap();
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
     let file_tree = _resolve_packages(
-        &_source_file_symbol_lock.paths()[0].clone(),
-        &_source_file_symbol_lock.get_tree(),
-        &_source_file_symbol_lock.typ(),
+        &_source_file_symbol_lock,
         level,
         from_stmt);
     drop(_source_file_symbol_lock);

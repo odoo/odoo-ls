@@ -4,11 +4,12 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use once_cell::sync::Lazy;
 use ruff_text_size::{TextRange, TextSize};
-use tracing::warn;
+use tracing::{info, warn};
 use crate::core::entry_point::EntryPoint;
+use crate::core::import_resolver::manual_import;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
-use crate::utils::compare_semver;
+use crate::utils::{compare_semver, is_file_cs, PathSanitizer};
 use crate::{Sy, S};
 use crate::constants::OYarn;
 
@@ -192,6 +193,45 @@ impl PythonArchBuilderHooks {
                         odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("_"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
                         odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("_lt"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
                         odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("Command"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
+                    }
+                }
+            }
+        } else if name == "werkzeug" {
+            if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]) {
+                //doing this patch like this imply that an odoo project will make these functions available for all entrypoints, but heh
+                let werkzeug_url = session.sync_odoo.get_symbol(symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![]), u32::MAX);
+                if let Some(werkzeug_url) = werkzeug_url.first() {
+                    //fake variable, as ext_symbols are not seen through get_symbol, etc...
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_decode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_encode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_join"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_parse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unparse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("URL"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                } else {
+                    warn!("Unable to find werkzeug.urls to monkeypatch it");
+                }
+            }
+        } else if name == "urls" {
+            if symbol.borrow().get_local_tree() == (vec![Sy!("werkzeug"), Sy!("urls")], vec![]) {
+                //manually load patch, as a manual dependency
+                let full_path_monkeypatches = S!("odoo._monkeypatches");
+                let mut main_odoo_symbol = None;
+                if let Some(main_ep) = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref() {
+                    //To import from main entry point, we have to import 'from' a symbol coming from main entry point. 
+                    //We then use the main symbol of the main entry point to achieve that, instead of the werkzeug symbol
+                    main_odoo_symbol = Some(main_ep.borrow().get_symbol().unwrap());
+                }
+                if let Some(main_odoo_symbol) = main_odoo_symbol {
+                    let werkzeug_patch = manual_import(session, &main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, None, &mut None);
+                    for werkzeug_patch in werkzeug_patch {
+                        if werkzeug_patch.found {
+                            info!("monkeypatch manually found");
+                        }
                     }
                 }
             }
