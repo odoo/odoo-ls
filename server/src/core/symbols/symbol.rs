@@ -1345,6 +1345,17 @@ impl Symbol {
         res
     }
 
+    /**
+     * Return the tree without the entrypoint tree.
+     */
+    pub fn get_local_tree(&self) -> Tree {
+        let (mut tree, entry) = self.get_tree_and_entry();
+        if let Some(entry) = entry {
+            tree.0.drain(0..entry.borrow().tree.len());
+        }
+        tree
+    }
+
     pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
         let symbol_tree_files: &Vec<OYarn> = &tree.0;
         let symbol_tree_content: &Vec<OYarn> = &tree.1;

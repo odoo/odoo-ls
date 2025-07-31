@@ -233,6 +233,7 @@ impl SyncOdoo {
                     .map(|v| v as u32)
                     .take(3)
                     .collect();
+                info!("Detected python version: {}.{}.{}", session.sync_odoo.python_version[0], session.sync_odoo.python_version[1], session.sync_odoo.python_version[2]);
             } else {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 error!("{}", stderr);
