@@ -666,6 +666,10 @@ impl PythonArchBuilder {
                 else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classmethod" {
                     func_sym.is_class_method = true;
                 }
+                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classproperty" {
+                    func_sym.is_property = true;
+                    func_sym.is_class_method = true;
+                }
             }
         }
         if func_def.body[0].is_expr_stmt() {
