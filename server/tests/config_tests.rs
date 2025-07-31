@@ -1634,11 +1634,11 @@ fn test_detect_version_variable_creates_profiles_for_each_version() {
     addon18.create_dir_all().unwrap();
     addon18.child("__manifest__.py").touch().unwrap();
 
-    // Write odools.toml in ws1 with $version = "${workspaceFolder}${detectVersion}"
+    // Write odools.toml in ws1 with $version = "${workspaceFolder}${splitVersion}"
     let toml_content = r#"
         [[config]]
         name = "root"
-        "$version" = "${workspaceFolder}/${detectVersion}"
+        "$version" = "${workspaceFolder}/${splitVersion}"
         addons_paths = [
             "./${version}"
         ]
@@ -1739,4 +1739,113 @@ fn test_config_file_path_nonexistent_errors() {
     let config_path = non_existent.path().sanitize();
     let result = get_configuration(&ws_folders, &Some(config_path));
     assert!(result.is_err(), "Expected error when config file path does not exist");
+}
+
+#[test]
+fn test_base_and_version_resolve_for_workspace_subpaths() {
+    let temp = TempDir::new().unwrap();
+    let vdir = temp.child("17.0");
+    vdir.create_dir_all().unwrap();
+    let odoo_dir = vdir.child("odoo");
+    odoo_dir.create_dir_all().unwrap();
+    odoo_dir.child("odoo").child("release.py").touch().unwrap();
+    let addon_dir = vdir.child("addon-path");
+    addon_dir.create_dir_all().unwrap();
+    addon_dir.child("mod1").create_dir_all().unwrap();
+    addon_dir.child("mod1").child("__manifest__.py").touch().unwrap();
+
+    // Write odools.toml in /temp with $base and $version logic
+    let toml_content = format!(r#"
+        [[config]]
+        name = "default"
+        "$base" = "{}/${{detectVersion}}"
+        odoo_path = "${{base}}/odoo"
+        addons_paths = [ "${{base}}/addon-path" ]
+    "#, temp.path().sanitize());
+    temp.child("odools.toml").write_str(&toml_content).unwrap();
+
+    // Test with workspace at /temp/17.0
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), vdir.path().sanitize().to_string());
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    assert_eq!(config.odoo_path.as_ref().unwrap(), &odoo_dir.path().sanitize());
+    assert!(config.addons_paths.contains(&addon_dir.path().sanitize()));
+
+    // Test with workspace at /temp/17.0/odoo
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws2"), odoo_dir.path().sanitize().to_string());
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    assert_eq!(config.odoo_path.as_ref().unwrap(), &odoo_dir.path().sanitize());
+    assert!(config.addons_paths.contains(&addon_dir.path().sanitize()));
+
+    // Test with workspace at /temp/17.0/addon-path
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws3"), addon_dir.path().sanitize().to_string());
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    assert_eq!(config.odoo_path.as_ref().unwrap(), &odoo_dir.path().sanitize());
+    assert!(config.addons_paths.contains(&addon_dir.path().sanitize()));
+
+    // --- Scenario: use /temp/${version}/odoo and /temp/${version}/addon-path instead of ${base} ---
+    let toml_content_version = format!(r#"
+        [[config]]
+        name = "default"
+        "$base" = "{0}/${{detectVersion}}"
+        odoo_path = "{0}/${{version}}/odoo"
+        addons_paths = [ "{0}/${{version}}/addon-path" ]
+    "#, temp.path().sanitize());
+    temp.child("odools.toml").write_str(&toml_content_version).unwrap();
+
+    // Test with workspace at /temp/17.0
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), vdir.path().sanitize().to_string());
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    assert_eq!(config.odoo_path.as_ref().unwrap(), &odoo_dir.path().sanitize());
+    assert!(config.addons_paths.contains(&addon_dir.path().sanitize()));
+
+    // Test with workspace at /temp/17.0/odoo
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws2"), odoo_dir.path().sanitize().to_string());
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    assert_eq!(config.odoo_path.as_ref().unwrap(), &odoo_dir.path().sanitize());
+    assert!(config.addons_paths.contains(&addon_dir.path().sanitize()));
+
+    // Test with workspace at /temp/17.0/addon-path
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws3"), addon_dir.path().sanitize().to_string());
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    assert_eq!(config.odoo_path.as_ref().unwrap(), &odoo_dir.path().sanitize());
+    assert!(config.addons_paths.contains(&addon_dir.path().sanitize()));
+    // --- Crash scenario: $base is an absolute path (should error) ---
+    let toml_content_abs = format!(r#"
+        [[config]]
+        name = "default"
+        "$base" = "/not/a/real/path/${{detectVersion}}"
+        odoo_path = "${{base}}/odoo"
+        addons_paths = [ "${{base}}/addon-path" ]
+    "#);
+    temp.child("odools.toml").write_str(&toml_content_abs).unwrap();
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws_abs"), vdir.path().sanitize().to_string());
+    let result = get_configuration(&ws_folders, &None);
+    assert!(result.is_err(), "Expected error when $base is an absolute path");
+
+    // --- Crash scenario: $base is not a valid path (should error) ---
+    let toml_content_invalid = r#"
+        [[config]]
+        name = "default"
+        "$base" = "invalid_path/${detectVersion}"
+        odoo_path = "${base}/odoo"
+        addons_paths = [ "${base}/addon-path" ]
+    "#;
+    temp.child("odools.toml").write_str(toml_content_invalid).unwrap();
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws_invalid"), vdir.path().sanitize().to_string());
+    let result = get_configuration(&ws_folders, &None);
+    assert!(result.is_err(), "Expected error when $base is not a valid path");
 }
