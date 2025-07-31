@@ -515,8 +515,12 @@ pub struct ConfigEntryRaw {
     #[serde(default, serialize_with = "serialize_option_as_default")]
     add_workspace_addon_path: Option<Sourced<bool>>,
 
+
     #[serde(default, rename(serialize = "$version", deserialize = "$version"), serialize_with = "serialize_option_as_default")]
     version: Option<Sourced<String>>,
+
+    #[serde(default, rename(serialize = "$base", deserialize = "$base"), serialize_with = "serialize_option_as_default")]
+    base: Option<Sourced<String>>,
 
     #[serde(default)]
     diagnostic_settings: HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
@@ -543,6 +547,7 @@ impl Default for ConfigEntryRaw {
             auto_refresh_delay: None,
             add_workspace_addon_path: None,
             version: None,
+            base: None,
             diagnostic_settings: Default::default(),
             abstract_: false,
         }
@@ -653,10 +658,13 @@ fn process_paths(
     ws_folders: &HashMap<String, String>,
     workspace_name: Option<&String>,
 ){
-    let var_map: HashMap<String, String> = match entry.version.clone() {
-        Some(v) => HashMap::from([(S!("version"), v.value().clone())]),
-        None => HashMap::new(),
-    };
+    let mut var_map: HashMap<String, String> = HashMap::new();
+    if let Some(v) = entry.version.clone() {
+        var_map.insert(S!("version"), v.value().clone());
+    }
+    if let Some(b) = entry.base.clone() {
+        var_map.insert(S!("base"), b.value().clone());
+    }
     entry.odoo_path =  entry.odoo_path.as_ref()
         .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone()));
 
@@ -788,6 +796,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
     let auto_refresh_delay = child.auto_refresh_delay.clone().or(parent.auto_refresh_delay.clone());
     let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
     let version = child.version.clone().or(parent.version.clone());
+    let base = child.base.clone().or(parent.base.clone());
     let diagnostic_settings = merge_sourced_diagnostic_setting_map(&child.diagnostic_settings, &parent.diagnostic_settings);
 
     ConfigEntryRaw {
@@ -806,6 +815,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         auto_refresh_delay,
         add_workspace_addon_path,
         version,
+        base,
         diagnostic_settings: diagnostic_settings,
         ..Default::default()
     }
@@ -939,34 +949,48 @@ fn load_config_from_workspace(
             break;
         }
     }
-    let mut merged_config = process_config(merged_config, ws_folders, Some(workspace_name))?;
+    let mut new_configs = vec![];
+    for config in merged_config.values_mut() {
+        // Make $base always an absolute path
+        if let Some(base_var) = config.base.clone() {
+            let base_path = PathBuf::from(base_var.value());
 
-    for entry in merged_config.values_mut() {
-        if entry.abstract_ { continue; }
-        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
-            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]), ..Default::default()};
-            match entry.addons_paths {
-                Some(ref mut paths) => paths.push(addon_path),
-                None => entry.addons_paths = Some(vec![addon_path]),
+            // If $base ends with ${detectVersion}, match workspace path and set $version using path components
+            if base_path.components().last().map(|c| c.as_os_str().to_string_lossy() == "${detectVersion}").unwrap_or(false)  {
+                let Some(base_prefix_pb) = base_path.parent().map(PathBuf::from) else {
+                    return Err(S!("$base must be a valid path with a parent directory"));
+                };
+                let abs_base = match base_prefix_pb.canonicalize() {
+                    Ok(p) => p,
+                    Err(e) => return Err(S!(format!("Failed to canonicalize base path: {} ({})", base_prefix_pb.display(), e))),
+                };
+                let base_prefix_pb = PathBuf::from(abs_base.sanitize());
+                let ws_path_pb: PathBuf = PathBuf::from(workspace_path);
+                let base_prefix_components: Vec<_> = base_prefix_pb.components().collect();
+                let ws_path_components: Vec<_> = ws_path_pb.components().collect();
+                if ws_path_components.len() > base_prefix_components.len()
+                    && ws_path_components[..base_prefix_components.len()] == base_prefix_components[..] {
+                    let version_component = ws_path_components[base_prefix_components.len()];
+                    let version_str = version_component.as_os_str().to_string_lossy().to_string();
+                    if !version_str.is_empty() {
+                        config.version = Some(Sourced { value: version_str.clone(), ..Default::default() });
+                        let mut resolved_base = base_prefix_pb.clone();
+                        resolved_base.push(&version_str);
+                        config.base.as_mut().map(|b| b.value = resolved_base.sanitize());
+                    } else {
+                        return Err(S!("Could not extract version from workspace path using $base"));
+                    }
+                } else {
+                    return Err(S!("$base does not match the current workspace folder"));
+                }
             }
         }
-    }
-    Ok(merged_config)
-}
-
-fn process_config(
-    mut config_map: HashMap<String, ConfigEntryRaw>,
-    ws_folders: &HashMap<String, String>,
-    workspace_name: Option<&String>,
-) -> Result<HashMap<String, ConfigEntryRaw>, String> {
-    apply_extends(&mut config_map)?;
-    let mut new_configs = vec![];
-    for config in config_map.values_mut() {
+        // Also handle legacy $version with ${splitVersion}
         let Some(version_var) = config.version.clone() else {
             continue;
         };
         let version_path = PathBuf::from(version_var.value());
-        if version_path.components().last().map(|c| c.as_os_str().to_string_lossy() == "${detectVersion}").unwrap_or(false) {
+        if version_path.components().last().map(|c| c.as_os_str().to_string_lossy() == "${splitVersion}").unwrap_or(false) {
             config.abstract_ = true;
             let Some(parent_dir) = version_path.parent()  else {
                 continue;
@@ -974,7 +998,7 @@ fn process_config(
             let Some(parent_dir) = fill_or_canonicalize(
                 &{Sourced { value: parent_dir.sanitize(), sources: version_var.sources.clone(), ..Default::default() }},
                 ws_folders,
-                workspace_name,
+                Some(workspace_name),
                 &|p| PathBuf::from(p).is_dir(),
                 HashMap::new(),
             ) else {
@@ -999,9 +1023,29 @@ fn process_config(
         }
     }
     for new_entry in new_configs {
-        config_map.insert(new_entry.name.clone(), new_entry);
+        merged_config.insert(new_entry.name.clone(), new_entry);
     }
+    let mut merged_config = process_config(merged_config, ws_folders, Some(workspace_name))?;
 
+    for entry in merged_config.values_mut() {
+        if entry.abstract_ { continue; }
+        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
+            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]), ..Default::default()};
+            match entry.addons_paths {
+                Some(ref mut paths) => paths.push(addon_path),
+                None => entry.addons_paths = Some(vec![addon_path]),
+            }
+        }
+    }
+    Ok(merged_config)
+}
+
+fn process_config(
+    mut config_map: HashMap<String, ConfigEntryRaw>,
+    ws_folders: &HashMap<String, String>,
+    workspace_name: Option<&String>,
+) -> Result<HashMap<String, ConfigEntryRaw>, String> {
+    apply_extends(&mut config_map)?;
     // Process vars
     config_map.values_mut()
         .for_each(|entry| {
