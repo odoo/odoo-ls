@@ -113,7 +113,12 @@ impl PythonArchBuilder {
                     file_info_ast.ast.as_ref().unwrap()
                 },
                 false => {
-                    &AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    if !self.sym_stack[0].borrow().ast_indexes().unwrap().is_empty() {
+                        &AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    } else {
+                        //if ast_index is empty, this is because the function has been added manually and do not belong to the ast. Skip it's building
+                        &vec![]
+                    }
                 }
             };
             let old_stack_noqa = session.noqas_stack.clone();
