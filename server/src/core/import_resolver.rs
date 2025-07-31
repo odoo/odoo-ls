@@ -378,6 +378,14 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                 SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
+        } else if is_dir_cs(full_path.sanitize()) {
+            //namespace directory
+            let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
+            if _rc_symbol.is_some() {
+                let _arc_symbol = _rc_symbol.unwrap();
+                SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
+                return Ok(_arc_symbol);
+            }
         } else if !matches!(parent.borrow().typ(), SymType::ROOT) {
             if cfg!(target_os = "windows") {
                 for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
@@ -397,14 +405,6 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
                         Err(_) => {},
                     }
                 }
-            }
-        } else if is_dir_cs(full_path.sanitize()) {
-            //namespace directory
-            let _rc_symbol = Symbol::create_from_path(session, &full_path, parent.clone(), false);
-            if _rc_symbol.is_some() {
-                let _arc_symbol = _rc_symbol.unwrap();
-                SyncOdoo::build_now(session, &_arc_symbol, BuildSteps::ARCH);
-                return Ok(_arc_symbol);
             }
         }
     }
