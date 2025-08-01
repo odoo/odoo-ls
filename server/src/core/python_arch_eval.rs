@@ -672,6 +672,18 @@ impl PythonArchEval {
                             }
                         }
                     } else {
+                        //Even if this is a valid class, we have to be sure that its own bases should have been loaded already
+                        let sym_file = symbol.borrow().get_file().clone();
+                        if let Some(file) =  sym_file {
+                            if let Some(file) = file.upgrade() {
+                                if file.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                                    SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
+                                }
+                                if !Rc::ptr_eq(&self.file, &file) {
+                                    self.file.borrow_mut().add_dependency(&mut file.borrow_mut(), self.current_step, BuildSteps::ARCH_EVAL);
+                                }
+                            }
+                        }
                         loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
                     }
                 }
