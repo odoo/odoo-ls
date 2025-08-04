@@ -1375,7 +1375,7 @@ impl Evaluation {
                 found_pos_arg_with_kw = number_pos_arg;
             }
         }
-        if found_pos_arg_with_kw + 1 < number_pos_arg {
+        if found_pos_arg_with_kw < number_pos_arg {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &number_pos_arg.to_string(), &arg_index.to_string()]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
