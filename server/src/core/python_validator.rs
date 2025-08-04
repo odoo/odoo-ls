@@ -78,7 +78,7 @@ impl PythonValidator {
                 if self.sym_stack[0].borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
                     return;
                 }
-                if DEBUG_STEPS {
+                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !self.sym_stack[0].borrow().is_external()) {
                 trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
                 }
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
@@ -103,7 +103,7 @@ impl PythonValidator {
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymType::FUNCTION => {
-                if DEBUG_STEPS {
+                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !self.sym_stack[0].borrow().is_external()) {
                 trace!("Validating function {}", self.sym_stack[0].borrow().name());
                 }
                 self.file_mode = false;

@@ -9,7 +9,7 @@ use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
 
-use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS};
+use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
@@ -72,7 +72,7 @@ impl PythonArchBuilder {
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
             self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
         }
-        if DEBUG_STEPS {
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol.borrow().is_external()) {
             trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
         }
         symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
