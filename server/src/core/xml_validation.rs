@@ -94,12 +94,12 @@ impl XmlValidator {
             for (fs, deps) in field_sym.iter() {
                 if deps.is_none() {
                     let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-                    .any(|eval| 
+                    .any(|eval|
                         eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
                         .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
                     );
                     let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-                    .any(|eval| 
+                    .any(|eval|
                         eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
                         .context.contains_key("default")
                     );

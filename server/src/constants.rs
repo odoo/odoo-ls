@@ -10,6 +10,7 @@ pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;
 pub const DEBUG_STEPS: bool = false;
+pub const DEBUG_STEPS_ONLY_INTERNAL: bool = true;
 pub const DEBUG_REBUILD_NOW: bool = false;
 
 pub type Tree = (Vec<OYarn>, Vec<OYarn>);
