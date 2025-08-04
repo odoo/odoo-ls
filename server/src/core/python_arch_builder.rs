@@ -683,9 +683,13 @@ impl PythonArchBuilder {
         for arg in func_def.parameters.posonlyargs.iter() {
             let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
             param.borrow_mut().as_variable_mut().is_parameter = true;
+            let mut default = None;
+            if arg.default.is_some() {
+                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
+            }
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
-                default_value: None,
+                default_value: default,
                 arg_type: ArgumentType::POS_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });
