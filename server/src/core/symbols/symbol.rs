@@ -2561,44 +2561,53 @@ impl Symbol {
         if !matches!(self.typ(), SymType::CLASS) {
             return false;
         }
-        let tree = flatten_tree(&self.get_main_entry_tree(session));
-        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
-            if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
-                    tree[2] == "fields_misc" && tree[3] == "Boolean" ||
-                    tree[2] == "fields_numeric" && tree[3] == "Integer" ||
-                    tree[2] == "fields_numeric" && tree[3] == "Float" ||
-                    tree[2] == "fields_numeric" && tree[3] == "Monetary" ||
-                    tree[2] == "fields_textual" && tree[3] == "Char" ||
-                    tree[2] == "fields_textual" && tree[3] == "Text" ||
-                    tree[2] == "fields_textual" && tree[3] == "Html" ||
-                    tree[2] == "fields_temporal" && tree[3] == "Date" ||
-                    tree[2] == "fields_temporal" && tree[3] == "Datetime" ||
-                    tree[2] == "fields_binary" && tree[3] == "Binary" ||
-                    tree[2] == "fields_binary" && tree[3] == "Image" ||
-                    tree[2] == "fields_selection" && tree[3] == "Selection" ||
-                    tree[2] == "fields_reference" && tree[3] == "Reference" ||
-                    tree[2] == "fields_relational" && tree[3] == "Many2one" ||
-                    tree[2] == "fields_reference" && tree[3] == "Many2oneReference" ||
-                    tree[2] == "fields_misc" && tree[3] == "Json" ||
-                    tree[2] == "fields_properties" && tree[3] == "Properties" ||
-                    tree[2] == "fields_properties" && tree[3] == "PropertiesDefinition" ||
-                    tree[2] == "fields_relational" && tree[3] == "One2many" ||
-                    tree[2] == "fields_relational" && tree[3] == "Many2many" ||
-                    tree[2] == "fields_misc" && tree[3] == "Id"
-            ){
-                return true;
-            }
+        let mut cache = self.as_class_sym()._is_field_class.borrow_mut();
+        if let Some(is_field_class) = cache.as_ref() {
+            return *is_field_class;
         } else {
-            if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-                if matches!(tree[2].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
-            "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+            let tree = &self.get_main_entry_tree(session);
+            if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
+                if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
+                        tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
+                        tree.0[2] == "fields_numeric" && tree.1[0] == "Integer" ||
+                        tree.0[2] == "fields_numeric" && tree.1[0] == "Float" ||
+                        tree.0[2] == "fields_numeric" && tree.1[0] == "Monetary" ||
+                        tree.0[2] == "fields_textual" && tree.1[0] == "Char" ||
+                        tree.0[2] == "fields_textual" && tree.1[0] == "Text" ||
+                        tree.0[2] == "fields_textual" && tree.1[0] == "Html" ||
+                        tree.0[2] == "fields_temporal" && tree.1[0] == "Date" ||
+                        tree.0[2] == "fields_temporal" && tree.1[0] == "Datetime" ||
+                        tree.0[2] == "fields_binary" && tree.1[0] == "Binary" ||
+                        tree.0[2] == "fields_binary" && tree.1[0] == "Image" ||
+                        tree.0[2] == "fields_selection" && tree.1[0] == "Selection" ||
+                        tree.0[2] == "fields_reference" && tree.1[0] == "Reference" ||
+                        tree.0[2] == "fields_relational" && tree.1[0] == "Many2one" ||
+                        tree.0[2] == "fields_reference" && tree.1[0] == "Many2oneReference" ||
+                        tree.0[2] == "fields_misc" && tree.1[0] == "Json" ||
+                        tree.0[2] == "fields_properties" && tree.1[0] == "Properties" ||
+                        tree.0[2] == "fields_properties" && tree.1[0] == "PropertiesDefinition" ||
+                        tree.0[2] == "fields_relational" && tree.1[0] == "One2many" ||
+                        tree.0[2] == "fields_relational" && tree.1[0] == "Many2many" ||
+                        tree.0[2] == "fields_misc" && tree.1[0] == "Id"
+                ){
+                    cache.replace(true);
                     return true;
                 }
+            } else {
+                if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields" {
+                    if matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+                "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+                        cache.replace(true);
+                        return true;
+                    }
+                }
+            }
+            if self.is_inheriting_from_field(session) {
+                cache.replace(true);
+                return true;
             }
         }
-        if self.is_inheriting_from_field(session) {
-            return true;
-        }
+        cache.replace(false);
         false
     }
 
