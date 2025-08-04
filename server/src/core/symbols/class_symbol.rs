@@ -28,6 +28,7 @@ pub struct ClassSymbol {
     pub body_range: TextRange,
     pub _model: Option<ModelData>,
     pub noqas: NoqaInfo,
+    pub(crate) _is_field_class: Rc<RefCell<Option<bool>>>, //cache, do not call directly, use is_field_class() method instead
 
     //Trait SymbolMgr
     //--- Body symbols
@@ -57,6 +58,7 @@ impl ClassSymbol {
             bases: vec![],
             _model: None,
             noqas: NoqaInfo::None,
+            _is_field_class: Rc::new(RefCell::new(None)),
         };
         res._init_symbol_mgr();
         res
