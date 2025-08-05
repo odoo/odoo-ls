@@ -9,7 +9,7 @@ use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluat
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ArgumentType {
     POS_ONLY,
     ARG,
@@ -18,7 +18,7 @@ pub enum ArgumentType {
     KWORD_ONLY,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Argument {
     pub symbol: Weak<RefCell<Symbol>>, //always a weak to a symbol of the function
     //other informations about arg
