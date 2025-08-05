@@ -851,20 +851,20 @@ impl PythonArchEvalHooks {
     }
 
     fn _update_get_eval(odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>, tree: Tree) {
-        let get_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__get__")]), u32::MAX);
-        if get_sym.is_empty() {
+        let get_syms = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__get__")]), u32::MAX);
+        let Some(get_sym) = get_syms.last() else {
             return;
-        }
-        let return_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &tree, u32::MAX);
-        if return_sym.is_empty() {
+        };
+        let return_syms = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &tree, u32::MAX);
+        let Some(return_sym) = return_syms.last() else {
             let file = symbol.borrow().get_file().clone();
             file.as_ref().unwrap().upgrade().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
             entry_point.borrow_mut().not_found_symbols.insert(symbol);
             return;
-        }
-        get_sym.last().unwrap().borrow_mut().set_evaluations(vec![Evaluation {
+        };
+        get_sym.borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
-                Rc::downgrade(return_sym.last().unwrap()),
+                Rc::downgrade(return_sym),
                 Some(true),
                 HashMap::new(),
                 Some(PythonArchEvalHooks::eval_get)
@@ -872,6 +872,18 @@ impl PythonArchEvalHooks {
             value: None,
             range: None
         }]);
+
+        let tree = if compare_semver(odoo.full_version.as_str(), "18.1.0") == Ordering::Less {
+            (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__get__")])
+        } else {
+            (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields")], vec![Sy!("Field"), Sy!("__get__")])
+        };
+        let Some(field_get) = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(),  &tree, u32::MAX).first().cloned()
+        else {
+            return;
+        };
+        let field_get_borrowed = field_get.borrow();
+        get_sym.borrow_mut().as_func_mut().args = field_get_borrowed.as_func().args.clone();
     }
     fn eval_relational_with_related(session: &mut SessionInfo, related_field: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
         let Some(ContextValue::SYMBOL(class_sym_weak)) = context.get(&S!("field_parent")) else {return None};
