@@ -71,7 +71,7 @@ impl FeaturesUtils {
         if parent_class.borrow().as_class_sym()._model.is_none(){
             return vec![];
         }
-        let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), &mut vec![]).0;
+        let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in evaluations {
             followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
@@ -189,7 +189,7 @@ impl FeaturesUtils {
         arg_index: usize,
     ) -> Vec<Rc<RefCell<Symbol>>>{
         let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
-        let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), &mut vec![]).0;
+        let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
             followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
@@ -228,7 +228,7 @@ impl FeaturesUtils {
             let func_arg = func.as_func().get_indexed_arg_in_call(
                 call_expr,
                 arg_index as u32,
-                callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
+                callable.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool()));
             let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
                 continue
             };
@@ -261,7 +261,7 @@ impl FeaturesUtils {
             return vec![];
         }
         let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
-        let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), &mut vec![]).0;
+        let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
             followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
@@ -486,7 +486,7 @@ impl FeaturesUtils {
                 let Some(type_symbol) = arg.symbol.upgrade()
                 .and_then(|arg_symbol| arg_symbol.borrow().parent())
                 .and_then(|weak_parent| weak_parent.upgrade())
-                .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent.clone(), &anno_expr.range().start(), &mut vec![]).0.first().cloned())
+                .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent.clone(), &anno_expr.range().start(), false, &mut vec![]).0.first().cloned())
                 .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade())
                  else {
                     return arg_name.to_string()

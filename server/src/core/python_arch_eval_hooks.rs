@@ -672,7 +672,7 @@ impl PythonArchEvalHooks {
                 return diagnostics // failed to find parent
             };
             let mut deps = vec![vec![], vec![], vec![]];
-            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(),&mut deps);
+            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(), false, &mut deps);
             Symbol::insert_dependencies(&file, &mut deps, current_step);
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
@@ -1006,12 +1006,12 @@ impl PythonArchEvalHooks {
         );
 
         for (arg_name, (field_name_expr, arg_range)) in contexts_to_add {
-            let maybe_related_string = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
+            let maybe_related_string = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
             if let Some(related_string) = maybe_related_string {
                 context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
                 context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
             } else {
-                let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), &mut vec![]).0;
+                let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
                 if let Some(boolean) = maybe_boolean {
                     context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
                 }

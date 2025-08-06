@@ -594,7 +594,7 @@ impl PythonValidator {
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
         let mut deps = vec![vec![], vec![], vec![]];
-        let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer, &mut deps);
+        let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer, false, &mut deps);
         Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::VALIDATION);
         self.diagnostics.extend(diags);
     }

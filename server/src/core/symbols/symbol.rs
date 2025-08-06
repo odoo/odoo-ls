@@ -2111,7 +2111,14 @@ impl Symbol {
                 match sym {
                     EvaluationSymbolPtr::WEAK(ref mut w) => {
                         if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
-                            w.context.insert(S!("base_attr"), base_attr.clone());
+                            if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                                w.context.insert(S!("base_attr"), base_attr.clone());
+                            }
+                        }
+                        if let Some(base_attr) = symbol_context.get(&S!("is_attr_of_instance")) {
+                            if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                                w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
+                            }
                         }
                     },
                     _ => {}
@@ -2148,6 +2155,15 @@ impl Symbol {
                 if results.is_empty() {
                     return vec![evaluation.clone()];
                 }
+                if w.instance.is_some_and(|v| v) {
+                    //if the previous evaluation was set to True, we want to keep it
+                    results = results.into_iter().map(|mut r| {
+                        if let EvaluationSymbolPtr::WEAK(ref mut weak) = r {
+                            weak.instance = Some(true);
+                        }
+                        r
+                    }).collect();
+                }
                 let mut acc: PtrWeakHashSet<Weak<RefCell<Symbol>>>  = PtrWeakHashSet::new();
                 let can_eval_external = !symbol.borrow().is_external();
                 let mut index = 0;
@@ -2157,6 +2173,7 @@ impl Symbol {
                     match next_ref {
                         EvaluationSymbolPtr::WEAK(next_ref_weak) => {
                             let sym = next_ref_weak.weak.upgrade();
+                            let next_ref_weak_instance = next_ref_weak.instance.clone();
                             if sym.is_none() {
                                 index += 1;
                                 continue;
@@ -2193,10 +2210,17 @@ impl Symbol {
                                             }
                                         }
                                     }
-                                    let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
+                                    let mut next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
                                     if !next_sym_refs.is_empty() {
                                         results.pop_front();
                                         index -= 1;
+                                        // /!\ we want to keep instance = True if previous evaluation was set to True!
+                                        if next_ref_weak_instance.is_some_and(|v| v) {
+                                            next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
+                                                next_results.as_mut_weak().instance = Some(true);
+                                                next_results
+                                            }).collect();
+                                        }
                                         for next_results in next_sym_refs {
                                             results.push_back(next_results);
                                         }
