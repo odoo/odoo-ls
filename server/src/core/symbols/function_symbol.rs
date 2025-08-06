@@ -90,6 +90,9 @@ impl FunctionSymbol {
             is_class_method: false,
             noqas: NoqaInfo::None,
         };
+        if name == "__new__" {
+            res.is_static = true;
+        }
         res._init_symbol_mgr();
         res
     }
@@ -160,7 +163,7 @@ impl FunctionSymbol {
     }
 
     /* Given a call of this function and an index, return the corresponding parameter definition */
-    pub fn get_indexed_arg_in_call(&self, call: &ExprCall, index: u32, is_on_instance: bool) -> Option<&Argument> {
+    pub fn get_indexed_arg_in_call(&self, call: &ExprCall, index: u32, is_on_instance: Option<bool>) -> Option<&Argument> {
         if self.is_overloaded() {
             return None;
         }
@@ -169,7 +172,7 @@ impl FunctionSymbol {
             call_arg_keyword = call.arguments.keywords.get((index - call.arguments.args.len() as u32) as usize);
         }
         let mut arg_index = 0;
-        if is_on_instance {
+        if is_on_instance.is_some() {
             arg_index += 1;
         }
         if let Some(keyword) = call_arg_keyword {

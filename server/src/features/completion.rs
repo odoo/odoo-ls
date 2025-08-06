@@ -505,7 +505,7 @@ fn complete_decorator_call(
         return None; // All the decorators we handle have at least one arg for now
     }
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, false);
-    let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, &mut vec![]).0;
+    let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
         followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
@@ -548,7 +548,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-    let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start(), &mut vec![]).0;
+    let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start(), false, &mut vec![]).0;
     for (arg_index, arg) in expr_call.arguments.args.iter().enumerate() {
         if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
             for callable_eval in callable_evals.iter() {
@@ -561,7 +561,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
                         let func_arg = func.get_indexed_arg_in_call(
                             expr_call,
                             arg_index as u32,
-                            callable.context.get(&S!("is_attr_of_instance")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool());
+                            callable.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool()));
                         if let Some(func_arg) = func_arg {
                             if let Some(func_arg_sym) = func_arg.symbol.upgrade() {
                                 let mut expected_type = vec![];
@@ -754,7 +754,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
     if offset > attr.value.range().start().to_usize() && offset <= attr.value.range().end().to_usize() {
         return complete_expr( &attr.value, session, file, offset, is_param, expected_type);
     } else {
-        let parent = Evaluation::eval_from_ast(session, &attr.value, scope.clone(), &attr.range().start(), &mut vec![]).0;
+        let parent = Evaluation::eval_from_ast(session, &attr.value, scope.clone(), &attr.range().start(), false, &mut vec![]).0;
 
         let from_module = file.borrow().find_module().clone();
         for parent_eval in parent.iter() {
@@ -777,7 +777,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
 
 fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
-    let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope.clone(), &expr_subscript.value.range().start(), &mut vec![]).0;
+    let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope.clone(), &expr_subscript.value.range().start(), false, &mut vec![]).0;
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.is_expired_if_weak() {

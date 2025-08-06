@@ -564,7 +564,7 @@ impl Evaluation {
     * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
     * not build but required during the eval_from_ast, it will NOT be built
     */
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -575,12 +575,12 @@ impl Evaluation {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
-        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, required_dependencies);
+        let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, required_dependencies);
         return (analyze_result.evaluations, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
+    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -591,7 +591,7 @@ impl Evaluation {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, &mut vec![]);
+        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -613,7 +613,7 @@ impl Evaluation {
     }
 
     /* Given an Expr, try to return the represented Boolean. None if it can't be achieved */
-    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
+    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = parent.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -624,7 +624,7 @@ impl Evaluation {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, &mut vec![]);
+        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -669,7 +669,7 @@ impl Evaluation {
         context: {}
         diagnostics: vec![]
      */
-    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, context: &mut Option<Context>, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> AnalyzeAstResult {
+    pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, context: &mut Option<Context>, for_annotation: bool, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> AnalyzeAstResult {
         let odoo = &mut session.sync_odoo;
         let mut evals = vec![];
         let mut diagnostics = vec![];
@@ -740,7 +740,7 @@ impl Evaluation {
                 evals.push(Evaluation::new_dict(odoo, values, expr.range));
             },
             ExprOrIdent::Expr(Expr::Call(expr)) => {
-                let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent.clone(), max_infer, required_dependencies);
+                let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 //TODO actually we only evaluate if there is only one function behind the evaluation.
                 // we could evaluate the result of each function and filter results by signature matching.
@@ -769,8 +769,8 @@ impl Evaluation {
                     However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_sym_weak_eval= base_eval[0].symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
-                let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval, session, context, true, false, None, &mut diagnostics);
+                let base_sym_weak_eval_base= base_eval[0].symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
+                let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, &mut diagnostics);
                 for base_eval_ptr in base_eval_ptrs.iter() {
                     let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                     let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
@@ -781,7 +781,7 @@ impl Evaluation {
                             if base_sym.borrow().match_tree_from_any_entry(session, &(vec![Sy!("builtins")], vec![Sy!("super")])){
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty(){
-                                    let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer, required_dependencies);
+                                    let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent.clone(), max_infer, false, required_dependencies);
                                     diagnostics.extend(diags);
                                     if class_eval.len() != 1 {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -806,18 +806,24 @@ impl Evaluation {
                                             None
                                         } else {
                                             let mut is_instance = None;
+                                            let mut default_instance = true; //used if we can't evaluate the instance parameter
+                                            if parent.borrow().typ() == SymType::FUNCTION && parent.borrow().as_func().is_class_method {
+                                                default_instance = false;
+                                            }
                                             if expr.arguments.args.len() >= 2 {
-                                                let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent.clone(), max_infer, required_dependencies);
+                                                let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent.clone(), max_infer, false, required_dependencies);
                                                 diagnostics.extend(diags);
                                                 if object_or_type_eval.len() != 1 {
-                                                    return Some((class_sym_weak_eval.weak.clone(), is_instance))
+                                                    return Some((class_sym_weak_eval.weak.clone(), Some(default_instance)))
                                                 }
                                                 let object_or_type_weak_eval = &Symbol::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
                                                         session, context, &mut diagnostics, Some(parent.clone())),
                                                         session, &mut None, false, false, None, &mut diagnostics)[0];
                                                 if object_or_type_weak_eval.is_weak() {
-                                                    is_instance = object_or_type_weak_eval.as_weak().instance;
+                                                    is_instance = Some(object_or_type_weak_eval.as_weak().instance.unwrap_or(default_instance));
+                                                } else {
+                                                    is_instance = Some(default_instance);
                                                 }
                                             }
                                             Some((class_sym_weak_eval.weak.clone(), is_instance))
@@ -837,7 +843,18 @@ impl Evaluation {
                                             }
                                             None
                                         },
-                                        Some(parent_class) => Some((parent_class.clone(), Some(true)))
+                                        Some(parent_class) => {
+                                            let mut instance = Some(true);
+                                            if parent.borrow().typ() == SymType::FUNCTION {
+                                                if parent.borrow().as_func().is_class_method {
+                                                    instance = Some(false);
+                                                }
+                                                if parent.borrow().as_func().is_static {
+                                                    instance = None;
+                                                }
+                                            }
+                                            Some((parent_class.clone(), instance))
+                                        }
                                     }
                                 };
                                 if let Some((super_class, instance)) = super_class{
@@ -967,12 +984,7 @@ impl Evaluation {
                                 _ => Weak::new()
                             };
                             if is_in_validation {
-                                let mut on_instance = !base_sym.borrow().as_func().is_static;
-                                if on_instance {
-                                    //check that the call is indeed done on an instance
-                                    on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance"))
-                                        .unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
-                                }
+                                let on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool());
                                 diagnostics.extend(Evaluation::validate_call_arguments(session,
                                     &base_sym.borrow().as_func(),
                                     expr,
@@ -1003,7 +1015,7 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
-                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, required_dependencies);
+                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
@@ -1039,7 +1051,16 @@ impl Evaluation {
                                 let is_instance = ibase.as_weak().instance.unwrap_or(false);
                                 attributes.iter().for_each(|attribute|{
                                     let instance = match attribute.borrow().typ() {
-                                        SymType::CLASS => Some(false),
+                                        SymType::CLASS => match for_annotation{
+                                            true => Some(true),
+                                            false => Some(false)
+                                        },
+                                        SymType::VARIABLE => match for_annotation {
+                                            // this is a variable, but a follow_ref would probably lead to a class,
+                                            // and here, because of annotation, we know we want an instance
+                                            true => Some(true),
+                                            false => None
+                                        }
                                         _ => None
                                     };
                                     let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), instance);
@@ -1086,7 +1107,7 @@ impl Evaluation {
                 };
                 match ast {
                     ExprOrIdent::Expr(Expr::Named(expr))  => {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, required_dependencies);
+                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, false, required_dependencies);
                         diagnostics.extend(diags.clone());
                     }
                     _ => {}
@@ -1097,7 +1118,16 @@ impl Evaluation {
                 }
                 for inferred_sym in inferred_syms.symbols.iter() {
                     let instance = match inferred_sym.borrow().typ() {
-                        SymType::CLASS => Some(false),
+                        SymType::CLASS => match for_annotation{
+                            true => Some(true),
+                            false => Some(false)
+                        },
+                        SymType::VARIABLE => match for_annotation {
+                            // this is a variable, but a follow_ref would probably lead to a class,
+                            // and here, because of annotation, we know we want an instance
+                            true => Some(true),
+                            false => None
+                        }
                         _ => None
                     };
                     evals.push(Evaluation::eval_from_symbol(&Rc::downgrade(inferred_sym), instance));
@@ -1107,7 +1137,7 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Subscript(sub)) => 'subscript_block: {
-                let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer, required_dependencies);
+                let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 // TODO handle multiple eval_left
                 if eval_left.is_empty() {
@@ -1127,9 +1157,13 @@ impl Evaluation {
                         if let Some(SymType::CLASS) = base.upgrade_weak().map(|s| s.borrow().typ()) {
                             // This is a Generic type (Field[int], or List[int]), for now we just return the main type/Class (Field/List)
                             // TODO: handle generic types
+                            let mut new_base = base.clone();
+                            if for_annotation {
+                                new_base.as_mut_weak().instance = Some(true);
+                            }
                             evals.push(Evaluation {
                                 symbol: EvaluationSymbol {
-                                    sym: base.clone(),
+                                    sym: new_base,
                                     get_symbol_hook: None,
                                 },
                                 value: None,
@@ -1140,7 +1174,7 @@ impl Evaluation {
                     }
                     _ => {}
                 }
-                let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, &mut diagnostics);
+                let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
                 if let Some(value) = value.0 {
                     if !base.is_weak() {
@@ -1195,11 +1229,11 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::If(if_expr)) => {
-                let (_, diags) = Evaluation::eval_from_ast(session, &if_expr.test, parent.clone(), max_infer, required_dependencies);
+                let (_, diags) = Evaluation::eval_from_ast(session, &if_expr.test, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent.clone(), max_infer, required_dependencies);
+                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent.clone(), max_infer, required_dependencies);
+                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 evals.extend(body_evals.into_iter().chain(orelse_evals.into_iter()));
             },
@@ -1226,7 +1260,7 @@ impl Evaluation {
                         break 'u_op_block
                     },
                 };
-                let (bases, diags) = Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer, required_dependencies);
+                let (bases, diags) = Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 for base in bases.into_iter(){
                     let base_sym_weak_eval= base.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
@@ -1275,7 +1309,11 @@ impl Evaluation {
         AnalyzeAstResult { evaluations: evals, diagnostics }
     }
 
-    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, expr_call: &ExprCall, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, is_on_instance: bool) -> Vec<Diagnostic> {
+    /**
+     * parameters:
+     * object_instance: None if called on nothing, true on an instance, false on a class
+     */
+    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, expr_call: &ExprCall, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, object_instance: Option<bool>) -> Vec<Diagnostic> {
         if function.is_overloaded() || function.is_property {
             return vec![];
         }
@@ -1301,28 +1339,31 @@ impl Evaluation {
                 _ => {}
             }
         }
-        if is_on_instance {
-            //check that there is at least one positional argument
-            let mut pos_arg = false;
-            for arg in function.args.iter() {
-                match arg.arg_type {
-                    ArgumentType::ARG | ArgumentType::VARARG | ArgumentType::POS_ONLY => {
-                        pos_arg = true;
-                        break;
+        if !function.is_static {
+            if object_instance.is_some_and(|x| x) || //on instance
+             object_instance.is_some_and(|x| !x) && function.is_class_method { //on classmethod
+                //check that there is at least one positional argument
+                let mut pos_arg = false;
+                for arg in function.args.iter() {
+                    match arg.arg_type {
+                        ArgumentType::ARG | ArgumentType::VARARG | ArgumentType::POS_ONLY => {
+                            pos_arg = true;
+                            break;
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-            if !pos_arg {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &0.to_string(), &1.to_string()]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                        ..diagnostic
-                    });
+                if !pos_arg {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &0.to_string(), &1.to_string()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
+                            ..diagnostic
+                        });
+                    }
+                    return diagnostics;
                 }
-                return diagnostics;
+                arg_index += 1;
             }
-            arg_index += 1;
         }
         for arg in expr_call.arguments.args.iter() {
             if arg.is_starred_expr() {

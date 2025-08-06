@@ -548,7 +548,7 @@ impl PythonArchBuilder {
                         if parent.is_some() {
                             let parent = parent.unwrap();
                             let mut deps = vec![vec![]]; //only arch level
-                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start(), &mut deps);
+                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start(), false, &mut deps);
                             Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::ARCH);
                             variable.as_variable_mut().evaluations = eval.0;
                             self.diagnostics.extend(eval.1);
@@ -666,7 +666,8 @@ impl PythonArchBuilder {
                 else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classmethod" {
                     func_sym.is_class_method = true;
                 }
-                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classproperty" {
+                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classproperty" ||
+                decorator.expression.as_name_expr().unwrap().id.to_string() == "lazy_classproperty" {
                     func_sym.is_property = true;
                     func_sym.is_class_method = true;
                 }

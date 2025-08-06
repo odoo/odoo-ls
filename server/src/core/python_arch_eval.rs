@@ -460,13 +460,13 @@ impl PythonArchEval {
                         if !self.file_mode {
                             deps.push(vec![]);
                         }
-                        let mut ann_evaluations = assign.annotation.as_ref().map(|annotation| Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start(), &mut deps));
+                        let mut ann_evaluations = assign.annotation.as_ref().map(|annotation| Evaluation::eval_from_ast(session, annotation, parent.clone(), &range.start(), true, &mut deps));
                         Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                         deps = vec![vec![], vec![]];
                         if !self.file_mode {
                             deps.push(vec![]);
                         }
-                        let value_evaluations = assign.value.as_ref().map(|value| Evaluation::eval_from_ast(session, value, parent.clone(), &range.start(), &mut deps));
+                        let value_evaluations = assign.value.as_ref().map(|value| Evaluation::eval_from_ast(session, value, parent.clone(), &range.start(), false, &mut deps));
                         Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                         let mut take_value = false;
                         if let Some((ref val_eval, ref _diags)) = value_evaluations{
@@ -561,7 +561,7 @@ impl PythonArchEval {
                     // Check the  whole attribute chain, to see if we are in a field of the model that is valid
                     // so for z.a.b.c, checks, z.a, z.a.b, z.a.b.c, if one of them is valid it is okay
                     'while_block: while matches!(expr, Expr::Attribute(_)){
-                        let assignee = Evaluation::eval_from_ast(session, &expr, self.sym_stack.last().unwrap().clone(), &attr_expr.range.start(), &mut vec![]);
+                        let assignee = Evaluation::eval_from_ast(session, &expr, self.sym_stack.last().unwrap().clone(), &attr_expr.range.start(), false, &mut vec![]);
                         for evaluation in assignee.0{
                             let evaluation_symbol_ptr = evaluation.symbol.get_symbol_weak_transformed(session, &mut None, &mut vec![], None);
                             let Some(sym_rc) = evaluation_symbol_ptr.upgrade_weak() else {
@@ -627,7 +627,7 @@ impl PythonArchEval {
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
             let mut deps = vec![vec![], vec![]];
-            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &class_stmt.range().start(), &mut deps);
+            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &class_stmt.range().start(), false, &mut deps);
             Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::ARCH_EVAL);
             self.diagnostics.extend(eval_base.1);
             let eval_base = eval_base.0;
@@ -738,7 +738,9 @@ impl PythonArchEval {
                         let (eval, diags) = Evaluation::eval_from_ast(session,
                                                     &arg.parameter.annotation.as_ref().unwrap(),
                                                     self.sym_stack.last().unwrap().clone(),
-                                                    &func_stmt.range.start(), &mut deps);
+                                                    &func_stmt.range.start(),
+                                                    true,
+                                                    &mut deps);
                         Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                         let mut var_bw = function_sym.borrow_mut();
                         let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
@@ -752,7 +754,9 @@ impl PythonArchEval {
                         let (eval, diags) = Evaluation::eval_from_ast(session,
                                                     arg.default.as_ref().unwrap(),
                                                     self.sym_stack.last().unwrap().clone(),
-                                                    &func_stmt.range.start(), &mut deps);
+                                                    &func_stmt.range.start(),
+                                                    false,
+                                                    &mut deps);
                         Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                         let mut var_bw = function_sym.borrow_mut();
                         let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
@@ -801,7 +805,7 @@ impl PythonArchEval {
         let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
             &for_stmt.iter,
             self.sym_stack.last().unwrap().clone(),
-            &for_stmt.target.range().start(), &mut deps);
+            &for_stmt.target.range().start(), false, &mut deps);
         Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
@@ -874,7 +878,7 @@ impl PythonArchEval {
                 if !self.file_mode {
                     deps.push(vec![]);
                 }
-                let (eval, diags) = Evaluation::eval_from_ast(session, value, func.clone(), &return_stmt.range.start(), &mut deps);
+                let (eval, diags) = Evaluation::eval_from_ast(session, value, func.clone(), &return_stmt.range.start(), false, &mut deps);
                 Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                 self.diagnostics.extend(diags);
                 FunctionSymbol::add_return_evaluations(func, session, eval);
@@ -897,7 +901,7 @@ impl PythonArchEval {
                             if !self.file_mode {
                                 deps.push(vec![]);
                             }
-                            let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start(), &mut deps);
+                            let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start(), false, &mut deps);
                             Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
                             let mut evals = vec![];
                             for eval in eval.iter() {
@@ -953,13 +957,22 @@ impl PythonArchEval {
         if let Some(returns_ann) = func_stmt.returns.as_ref() {
             let file_sym = func_sym.borrow().get_file().and_then(|file_weak| file_weak.upgrade());
             let mut deps = vec![vec![], vec![]];
-            let (evaluations, diags) = Evaluation::eval_from_ast(
+            let (mut evaluations, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,
                 func_sym.borrow().parent().and_then(|p| p.upgrade()).unwrap(),
                 max_infer,
+                true,
                 &mut deps,
             );
+            for eval in evaluations.iter_mut() { //as this is an evaluation, we need to set the instance to true
+                match eval.symbol.get_mut_symbol_ptr() {
+                    EvaluationSymbolPtr::WEAK(ref mut sym_weak) => {
+                        sym_weak.instance = Some(true);
+                    },
+                    _ => {}
+                }
+            }
             if file_sym.is_some() {
                 Symbol::insert_dependencies(&file_sym.as_ref().unwrap(), &mut deps, BuildSteps::ARCH_EVAL);
             }
