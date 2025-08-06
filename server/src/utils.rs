@@ -25,6 +25,17 @@ macro_rules! Sy {
     };
 }
 
+pub fn get_python_command() -> Option<String> {
+    for cmd in &["python3", "python"] {
+        if let Ok(output) = Command::new(cmd).arg("--version").output() {
+            if output.status.success() {
+                return Some(S!(*cmd));
+            }
+        }
+    }
+    None
+}
+
 #[cfg(target_os = "windows")]
 pub fn is_file_cs(path: String) -> bool {
     let mut p = Path::new(&path);
