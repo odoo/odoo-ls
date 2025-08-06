@@ -5,7 +5,7 @@ use tracing::{error, info};
 
 use crate::core::config::ConfigEntry;
 use crate::threads::SessionInfo;
-use crate::utils::PathSanitizer;
+use crate::utils::{get_python_command, PathSanitizer};
 use crate::args::Cli;
 use std::io::Write;
 use std::path::PathBuf;
@@ -60,6 +60,7 @@ impl CliBackend {
         config.no_typeshed = self.cli.no_typeshed;
         config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]).into_iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).collect();
         config.stdlib = self.cli.stdlib.clone().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).unwrap_or(S!(""));
+        config.python_path = self.cli.python.clone().unwrap_or(get_python_command().unwrap_or(S!("")));
         SyncOdoo::init(&mut session, config);
 
         let output_path = self.cli.output.clone().unwrap_or(S!("output.json"));
