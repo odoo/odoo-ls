@@ -2,7 +2,7 @@ use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
 use ruff_python_ast::Mod;
 use ruff_python_parser::{Mode, ParseOptions, Parsed, Token, TokenKind};
-use lsp_types::{Diagnostic, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
 use std::rc::Rc;
@@ -292,36 +292,69 @@ impl FileInfo {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            for diagnostics in self.diagnostics.values() {
-                for d in diagnostics.iter() {
-                    //check noqa lines
-                    let updated = self.update_range(d.clone());
-                    let updated_line = updated.range.start.line;
-                    if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
-                        match noqa_line {
-                            NoqaInfo::None => {},
-                            NoqaInfo::All => {
-                                continue;
-                            }
-                            NoqaInfo::Codes(codes) => {
-                                match &updated.code {
-                                    None => {continue;},
-                                    Some(NumberOrString::Number(n)) => {
-                                        if codes.contains(&n.to_string()) {
-                                            continue;
-                                        }
-                                    },
-                                    Some(NumberOrString::String(s)) => {
-                                        if codes.contains(&s) {
-                                            continue;
-                                        }
+            'diagnostics: for d in self.diagnostics.values().flatten() {
+                //check noqa lines
+                let updated = self.update_range(d.clone());
+                let updated_line = updated.range.start.line;
+                if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
+                    match noqa_line {
+                        NoqaInfo::None => {},
+                        NoqaInfo::All => {
+                            continue;
+                        }
+                        NoqaInfo::Codes(codes) => {
+                            match &updated.code {
+                                None => {continue;},
+                                Some(NumberOrString::Number(n)) => {
+                                    if codes.contains(&n.to_string()) {
+                                        continue;
+                                    }
+                                },
+                                Some(NumberOrString::String(s)) => {
+                                    if codes.contains(&s) {
+                                        continue;
                                     }
                                 }
                             }
                         }
                     }
-                    all_diagnostics.push(updated);
                 }
+                for filter in &session.sync_odoo.config.diagnostic_filters {
+                    // Path match
+                    if (!filter.negation && !filter.paths.matches(&self.uri)) || (filter.negation && filter.paths.matches(&self.uri)) {
+                        continue;
+                    }
+                    if !filter.codes.is_empty(){
+                        // we pass the filter if we do not have code, or does it not match the filter
+                        let Some(updated_code) = &updated.code else {
+                            continue;
+                        };
+                        let updated_code = match updated_code {
+                            NumberOrString::Number(n) => n.to_string(),
+                            NumberOrString::String(s) => s.clone(),
+                        };
+                        if !filter.codes.iter().any(|re| re.is_match(&updated_code)) {
+                            continue;
+                        }
+                    }
+                    if !filter.types.is_empty() {
+                        // we pass the filter if we do not have severity, or does it not match the filter
+                        let Some(severity) = &updated.severity else {
+                            continue;
+                        };
+                        if !filter.types.iter().any(|t| match (t, severity) {
+                            (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
+                            | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
+                            | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
+                            | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT) => true,
+                            _ => false,
+                        }) {
+                            continue;
+                        }
+                    }
+                    continue 'diagnostics;
+                }
+                all_diagnostics.push(updated);
             }
             session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
                 uri: FileMgr::pathname2uri(&self.uri),

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
 use itertools::Itertools;
+use glob::Pattern;
 use regex::Regex;
 use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
@@ -89,7 +90,72 @@ impl Default for MergeMethod {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct DiagnosticFilter {
+    pub paths: Pattern,
+    pub codes: Vec<Regex>,
+    pub types: Vec<DiagnosticSetting>,
+    pub negation: bool,
+}
 
+impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Helper {
+            path: String,
+            #[serde(default)]
+            codes: Vec<String>,
+            #[serde(default)]
+            types: Vec<DiagnosticSetting>,
+        }
+        let helper = Helper::deserialize(deserializer)?;
+        let (path_str, negation) = if let Some(stripped) = helper.path.strip_prefix('!') {
+            (stripped, true)
+        } else {
+            (helper.path.as_str(), false)
+        };
+        let sanitized_path = PathBuf::from(path_str).sanitize();
+        let path_pattern = Pattern::new(&sanitized_path).map_err(serde::de::Error::custom)?;
+        let mut code_regexes = Vec::with_capacity(helper.codes.len());
+        for code in &helper.codes {
+            let regex = Regex::new(code).map_err(serde::de::Error::custom)?;
+            code_regexes.push(regex);
+        }
+        for t in &helper.types {
+            if let DiagnosticSetting::Disabled = t {
+                return Err(serde::de::Error::custom("DiagnosticFilter.types cannot contain 'Disabled'"));
+            }
+        }
+        Ok(DiagnosticFilter {
+            paths: path_pattern,
+            codes: code_regexes,
+            types: helper.types,
+            negation,
+        })
+    }
+}
+
+impl Serialize for DiagnosticFilter {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("DiagnosticFilter", 3)?;
+        let mut path_str = self.paths.as_str().to_string();
+        if self.negation {
+            path_str = format!("!{}", path_str);
+        }
+        s.serialize_field("path", &path_str)?;
+        let codes: Vec<String> = self.codes.iter().map(|r| r.as_str().to_string()).collect();
+        s.serialize_field("codes", &codes)?;
+        s.serialize_field("types", &self.types)?;
+        s.end()
+    }
+}
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct ConfigFile {
     #[serde(default)]
@@ -239,7 +305,7 @@ impl ConfigFile {
                     "python_path", "additional_stubs", "additional_stubs_merge",
                     "refresh_mode", "file_cache", "diag_missing_imports",
                     "ac_filter_model_names", "auto_refresh_delay", "add_workspace_addon_path",
-                    "diagnostic_settings"
+                    "diagnostic_settings", "diagnostic_filters"
                 ];
                 for key in order {
                     if let Some(val) = map.get(key) {
@@ -525,6 +591,9 @@ pub struct ConfigEntryRaw {
     #[serde(default)]
     diagnostic_settings: HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
 
+    #[serde(default)]
+    pub diagnostic_filters: Vec<Sourced<DiagnosticFilter>>,
+
     #[serde(skip_deserializing, rename(serialize = "abstract"))]
     abstract_: bool
 }
@@ -550,6 +619,7 @@ impl Default for ConfigEntryRaw {
             base: None,
             diagnostic_settings: Default::default(),
             abstract_: false,
+            diagnostic_filters: vec![],
         }
     }
 }
@@ -593,6 +663,7 @@ pub struct ConfigEntry {
     pub no_typeshed: bool,
     pub abstract_: bool,
     pub diagnostic_settings: HashMap<DiagnosticCode, DiagnosticSetting>,
+    pub diagnostic_filters: Vec<DiagnosticFilter>,
 }
 
 impl Default for ConfigEntry {
@@ -612,6 +683,7 @@ impl Default for ConfigEntry {
             no_typeshed: false,
             abstract_: false,
             diagnostic_settings: Default::default(),
+            diagnostic_filters: vec![],
         }
     }
 }
@@ -724,6 +796,9 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         entry.diagnostic_settings.values_mut().for_each(|sourced| {
             sourced.sources.insert(path.sanitize());
         });
+        entry.diagnostic_filters.iter_mut().for_each(|filter| {
+            filter.sources.insert(path.sanitize());
+        });
 
         (entry.name.clone(), entry)
     }).collect();
@@ -799,6 +874,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
     let version = child.version.clone().or(parent.version.clone());
     let base = child.base.clone().or(parent.base.clone());
     let diagnostic_settings = merge_sourced_diagnostic_setting_map(&child.diagnostic_settings, &parent.diagnostic_settings);
+    let diagnostic_filters = child.diagnostic_filters.iter().chain(parent.diagnostic_filters.iter()).cloned().collect::<Vec<_>>();
 
     ConfigEntryRaw {
         odoo_path,
@@ -818,6 +894,7 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         version,
         base,
         diagnostic_settings: diagnostic_settings,
+        diagnostic_filters: diagnostic_filters,
         ..Default::default()
     }
 }
@@ -1150,6 +1227,7 @@ fn merge_all_workspaces(
                 &raw_entry.diagnostic_settings,
             );
             merged_entry.abstract_ = merged_entry.abstract_ || raw_entry.abstract_;
+            merged_entry.diagnostic_filters.extend(raw_entry.diagnostic_filters.iter().cloned());
         }
     }
     // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
@@ -1190,6 +1268,7 @@ fn merge_all_workspaces(
                 diagnostic_settings: raw_entry.diagnostic_settings.into_iter()
                     .map(|(k, v)| (k, v.value))
                     .collect(),
+                diagnostic_filters: raw_entry.diagnostic_filters.into_iter().map(|f| f.value).collect(),
                 ..Default::default()
             },
         );
