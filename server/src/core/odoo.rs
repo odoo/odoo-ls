@@ -1639,6 +1639,8 @@ impl Odoo {
                         // Changes can be applied without restart
                         session.sync_odoo.config_file = Some(cfg_file);
                         session.sync_odoo.config = new_config;
+                        // Recalculate diagnostic filters
+                        session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
                     }
                 }
                 Err(err) => {

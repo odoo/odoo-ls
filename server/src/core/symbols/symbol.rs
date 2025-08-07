@@ -2217,7 +2217,9 @@ impl Symbol {
                                         // /!\ we want to keep instance = True if previous evaluation was set to True!
                                         if next_ref_weak_instance.is_some_and(|v| v) {
                                             next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
-                                                next_results.as_mut_weak().instance = Some(true);
+                                                if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
+                                                    weak.instance = Some(true);
+                                                }
                                                 next_results
                                             }).collect();
                                         }
