@@ -10,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fs};
+use crate::core::config::DiagnosticFilter;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
@@ -72,6 +73,7 @@ pub struct FileInfo {
     diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
     pub noqas_blocs: HashMap<u32, NoqaInfo>,
     noqas_lines: HashMap<u32, NoqaInfo>,
+    diagnostic_filters: Vec<DiagnosticFilter>,
 }
 
 impl FileInfo {
@@ -91,6 +93,7 @@ impl FileInfo {
             diagnostics: HashMap::new(),
             noqas_blocs: HashMap::new(),
             noqas_lines: HashMap::new(),
+            diagnostic_filters: Vec::new(),
         }
     }
     pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, in_workspace: bool, force: bool) -> bool {
@@ -287,6 +290,11 @@ impl FileInfo {
         diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line as usize);
         diagnostic
     }
+    pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
+        self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters.iter().cloned().filter(|filter| {
+            (filter.negation && !filter.paths.matches(&self.uri)) || (!filter.negation && filter.paths.matches(&self.uri))
+        }).collect::<Vec<_>>();
+    }
 
     pub fn publish_diagnostics(&mut self, session: &mut SessionInfo) {
         if self.need_push {
@@ -319,11 +327,7 @@ impl FileInfo {
                         }
                     }
                 }
-                for filter in &session.sync_odoo.config.diagnostic_filters {
-                    // Path match
-                    if (!filter.negation && !filter.paths.matches(&self.uri)) || (filter.negation && filter.paths.matches(&self.uri)) {
-                        continue;
-                    }
+                for filter in self.diagnostic_filters.iter() {
                     if !filter.codes.is_empty(){
                         // we pass the filter if we do not have code, or does it not match the filter
                         let Some(updated_code) = &updated.code else {
@@ -488,7 +492,11 @@ impl FileMgr {
     }
 
     pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> (bool, Rc<RefCell<FileInfo>>) {
-        let file_info = self.files.entry(uri.to_string()).or_insert_with(|| Rc::new(RefCell::new(FileInfo::new(uri.to_string()))));
+        let file_info = self.files.entry(uri.to_string()).or_insert_with(|| {
+            let mut file_info = FileInfo::new(uri.to_string());
+            file_info.update_diagnostic_filters(session);
+            Rc::new(RefCell::new(file_info))
+        });
         let return_info = file_info.clone();
         //Do not modify the file if a version is not given but the file is opened
         let mut updated: bool = false;
@@ -498,6 +506,12 @@ impl FileMgr {
             drop(file_info_mut);
         }
         (updated, return_info)
+    }
+
+    pub fn update_all_file_diagnostic_filters(&mut self, session: &SessionInfo) {
+        for file_info in self.files.values() {
+            file_info.borrow_mut().update_diagnostic_filters(session);
+        }
     }
 
     pub fn delete_path(session: &mut SessionInfo, uri: &String) {
