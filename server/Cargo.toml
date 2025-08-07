@@ -1,6 +1,6 @@
 [package]
 name = "odoo_ls_server"
-version = "0.8.1"
+version = "0.10.0"
 edition = "2021"
 authors = ["Odoo"]
 readme = "../README.md"

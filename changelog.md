@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.10.0 - 2025/08/08 - Better configuration and XML features
+
+Following your feedbacks, we are adding some new features and ways to configure your odools.toml files. If you still think that some changes would be interesting, do not hesitate to contact us !
+Alongside these changes, we added some features to XML files, like gotodefinition, hover, and new diagnostics. Everything we want is not there yet, but it's coming soon!
+We focused a lot too on improving the exactness of various diagnostics, so you should see less errors in your project!
+
+### VsCode
+
+- Add wiki link to configuration view.
+- Update Disabled profile: "Disabled" now shuts down the server
+- New setting to provide a generic odools.toml that would be applied to ALL profiles, and that can be at a specific location
+
+
+### Server
+
+- Add diagnostics filters in configuration files. It allows you to choose diagnostics you want to hide and their severity level
+- Add new config url parameter to give a common config file for all your profiles
+- Rewrite diagnostics modules, to allow filtering and changes of the level.
+- Fix new convention for OLS codes
+- Improve the server restart behaviour
+- Parse and use `delegate=True` to detect _inherits models
+- Improve build tools
+- Fix imports with asname value
+- gotodefinition on ref to xml_ids
+- New hook to global field on IrRule
+- New hooks for werkzeug _monkeypatches
+- Disable call argument checks for properties function for now.
+- Detect and mark function with @classproperty or @lazy_classproperty as such
+- Fix all the arguments validation process
+
+#### XML
+
+- menuitem: check that parent is valid
+- menuitem: chack validity of action attribute
+- menuitem: validate groups attribute
+- record: validate model
+- record: check that all mandatory fields has been provided
+- record, fields, menuitem: hover and gotodefinition to xml_ids and models
+- field: basic validation and for specific models (ir.ui.view)
+- Support for @language in XML Fields
+
+### Fixes
+
+- Fixed version comparator that was not equaling "18.0" and "18.0.0". It had various side effects on some specific version features.
+- Fix crash on delayed thread that occur if odoo is made invalid in the delay
+- Fix creation of custom entrypoints on hovering some xml/csv files
+- Fix crash on reloading functions created by hooks (only in orm files)
+- Various things that would be too hard to explain here. You really read all the changelog?
+
 ## 0.8.1 - 2025/09/07 - Quick fix
 
 ### Fix
