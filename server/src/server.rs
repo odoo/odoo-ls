@@ -387,7 +387,6 @@ impl Server {
         drop(receiver_clone);
         let hook = panic::take_hook(); //drop sender stored in panic
         drop(hook);
-        let _ = self.sender_to_delayed_process.send(DelayedProcessingMessage::EXIT);
         let _ = stop_sender.send(());
         self.connection = None; //drop connection before joining threads
         if let Some(pid_join_handle) = pid_thread {
@@ -396,6 +395,7 @@ impl Server {
         for thread in self.threads {
             thread.join().unwrap();
         }
+        let _ = self.sender_to_delayed_process.send(DelayedProcessingMessage::EXIT);
         self.delayed_process_thread.join().unwrap();
         exit_no_error_code
     }

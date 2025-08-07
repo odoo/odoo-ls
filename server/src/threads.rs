@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
+use std::{collections::VecDeque, path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
@@ -188,6 +188,7 @@ pub enum DelayedProcessingMessage {
 
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
+    let mut restart_requested = false;
     let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay, MAX_DELAY));
     let check_reset =  |msg: Option<&DelayedProcessingMessage>| {
         let length = sync_odoo.lock().unwrap().watched_file_updates.load(Ordering::SeqCst);
@@ -201,7 +202,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             let message = "Too many requests, possible change of branch, restarting Odoo LS";
             info!(message);
             {
-                let mut session = SessionInfo{
+                let session = SessionInfo{
                     sender: sender_session.clone(),
                     receiver: receiver_session.clone(),
                     sync_odoo: &mut sync_odoo.lock().unwrap(),
@@ -209,14 +210,12 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     noqas_stack: vec![],
                     current_noqa: NoqaInfo::None,
                 };
-                let config = session.sync_odoo.config.clone();
                 session.send_notification(ShowMessage::METHOD, ShowMessageParams{
                     typ: MessageType::INFO,
                     message: message.to_string()
                 });
                 // Drain channel before resetting
-                let _: Vec<DelayedProcessingMessage> = receiver.try_iter().collect();
-                SyncOdoo::reset(&mut session, config);
+                session.send_notification("$Odoo/restartNeeded", ());
             }
             return true;
 
@@ -231,7 +230,15 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
         let mut update_file_index = None;
         let mut delay = normal_delay;
         let msg: Result<DelayedProcessingMessage, crossbeam_channel::RecvError> = receiver.recv();
+        if restart_requested {
+            // We just wait for the exit message, otherwise we just ignore the message
+            match msg {
+                Ok(DelayedProcessingMessage::EXIT) => return,
+                _ => continue,
+            }
+        }
         if check_reset(msg.as_ref().ok()) {
+            restart_requested = true;
             continue;
         }
         match msg {
@@ -255,6 +262,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                     loop {
                         let new_msg: Result<DelayedProcessingMessage, TryRecvError> = receiver.try_recv();
                         if check_reset(new_msg.as_ref().ok()) {
+                            restart_requested = true;
                             continue 'main_loop;
                         }
                         match new_msg {
@@ -319,109 +327,177 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
 }
 
 pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
+    let mut buffer = VecDeque::new();
     loop {
-        let msg = generic_receiver.recv();
-        if msg.is_err() {
-            error!("Got an RecvError, exiting thread");
-            break;
-        }
-        let msg = msg.unwrap();
-        let mut session = SessionInfo{
-            sender: sender.clone(),
-            receiver: receiver.clone(),
-            sync_odoo: &mut sync_odoo.lock().unwrap(),
-            delayed_process_sender: Some(delayed_process_sender.clone()),
-            noqas_stack: vec![],
-            current_noqa: NoqaInfo::None,
-        };
-        match msg {
-            Message::Request(r) => {
-                let (value, error) = match r.method.as_str() {
-                    Completion::METHOD => {
-                        to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
-                    },
-                    _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
-                        code: 1,
-                        message: S!("Request not handled by the server"),
-                        data: None
-                    }))}
-                };
-                sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
-            },
-            Message::Notification(n) => {
-                match n.method.as_str() {
-                    DidOpenTextDocument::METHOD => { Odoo::handle_did_open(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidChangeConfiguration::METHOD => { Odoo::handle_did_change_configuration(&mut session, serde_json::from_value(n.params).unwrap()) }
-                    DidChangeWorkspaceFolders::METHOD => { Odoo::handle_did_change_workspace_folders(&mut session, serde_json::from_value(n.params).unwrap()) }
-                    DidChangeTextDocument::METHOD => { Odoo::handle_did_change(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidCloseTextDocument::METHOD => { Odoo::handle_did_close(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidSaveTextDocument::METHOD => { Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidRenameFiles::METHOD => { Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidCreateFiles::METHOD => { Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidDeleteFiles::METHOD => { Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap()); }
-                    DidChangeWatchedFiles::METHOD => { Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap())}
-                    "custom/server/register_capabilities" => { Odoo::register_capabilities(&mut session); }
-                    "custom/server/init" => { Odoo::init(&mut session); }
-                    Shutdown::METHOD => { warn!("Main thread - got shutdown."); break;}
-                    _ => {error!("Notification not handled by main thread: {}", n.method)}
+        // Drain all available messages into buffer
+        loop {
+            let maybe_msg = generic_receiver.try_recv();
+            match maybe_msg {
+                Ok(msg) => {
+                    // Check for shutdown
+                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
+                        warn!("Main thread - got shutdown.");
+                        return;
+                    }
+                    buffer.push_back(msg);
+                },
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    error!("Generic channel disconnected, exiting thread");
+                    return;
                 }
-            },
-            Message::Response(_) => {
-                error!("Error: Responses should not arrives in generic channel. Exiting thread");
-                break;
+            }
+        }
+        // If buffer is empty, block for next message so we do not busy wait
+        if buffer.is_empty() {
+            match generic_receiver.recv() {
+                Ok(msg) => {
+                    // Check for shutdown
+                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
+                        warn!("Main thread - got shutdown.");
+                        return;
+                    }
+                    buffer.push_back(msg);
+                },
+                Err(_) => {
+                    error!("Got an RecvError, exiting thread");
+                    break;
+                }
+            }
+        }
+        // Process buffered messages
+        if let Some(msg) = buffer.pop_front() {
+            let mut session = SessionInfo{
+                sender: sender.clone(),
+                receiver: receiver.clone(),
+                sync_odoo: &mut sync_odoo.lock().unwrap(),
+                delayed_process_sender: Some(delayed_process_sender.clone()),
+                noqas_stack: vec![],
+                current_noqa: NoqaInfo::None,
+            };
+            match msg {
+                Message::Request(r) => {
+                    let (value, error) = match r.method.as_str() {
+                        Completion::METHOD => {
+                            to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
+                            code: 1,
+                            message: S!("Request not handled by the server"),
+                            data: None
+                        }))}
+                    };
+                    sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
+                },
+                Message::Notification(n) => {
+                    match n.method.as_str() {
+                        DidOpenTextDocument::METHOD => { Odoo::handle_did_open(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidChangeConfiguration::METHOD => { Odoo::handle_did_change_configuration(&mut session, serde_json::from_value(n.params).unwrap()) }
+                        DidChangeWorkspaceFolders::METHOD => { Odoo::handle_did_change_workspace_folders(&mut session, serde_json::from_value(n.params).unwrap()) }
+                        DidChangeTextDocument::METHOD => { Odoo::handle_did_change(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidCloseTextDocument::METHOD => { Odoo::handle_did_close(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidSaveTextDocument::METHOD => { Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidRenameFiles::METHOD => { Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidCreateFiles::METHOD => { Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidDeleteFiles::METHOD => { Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap()); }
+                        DidChangeWatchedFiles::METHOD => { Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap())}
+                        "custom/server/register_capabilities" => { Odoo::register_capabilities(&mut session); }
+                        "custom/server/init" => { Odoo::init(&mut session); }
+                        Shutdown::METHOD => { warn!("Main thread - got shutdown."); return;} // should be already caught
+                        _ => {error!("Notification not handled by main thread: {}", n.method)}
+                    }
+                },
+                Message::Response(_) => {
+                    error!("Error: Responses should not arrives in generic channel. Exiting thread");
+                    return;
+                }
             }
         }
     }
 }
 
 pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
+    let mut buffer = VecDeque::new();
     loop {
-        let msg = generic_receiver.recv();
-        if msg.is_err() {
-            error!("Got an RecvError, exiting thread");
-            break;
-        }
-        let msg = msg.unwrap();
-        let mut session = SessionInfo{
-            sender: sender.clone(),
-            receiver: receiver.clone(),
-            sync_odoo: &mut sync_odoo.lock().unwrap(), //TODO work on read access
-            delayed_process_sender: Some(delayed_process_sender.clone()),
-            noqas_stack: vec![],
-            current_noqa: NoqaInfo::None,
-        };
-        match msg {
-            Message::Request(r) => {
-                let (value, error) = match r.method.as_str() {
-                    HoverRequest::METHOD => {
-                        to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
-                    },
-                    GotoDefinition::METHOD => {
-                        to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
-                    },
-                    References::METHOD => {
-                        to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
-                    },
-                    DocumentSymbolRequest::METHOD => {
-                        to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
-                    },
-                    _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
-                        code: 1,
-                        message: S!("Request not handled by the server"),
-                        data: None
-                    }))}
-                };
-                sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
-            },
-            Message::Notification(r) => {
-                match r.method.as_str() {
-                    Shutdown::METHOD => { warn!("Read thread - got shutdown."); break;}
-                    _ => {error!("Notification not handled by read thread: {}", r.method)}
+        // Drain all available messages into buffer
+        loop {
+            let maybe_msg = generic_receiver.try_recv();
+            match maybe_msg {
+                Ok(msg) => {
+                    // Check for shutdown
+                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
+                        warn!("Read thread - got shutdown.");
+                        return;
+                    }
+                    buffer.push_back(msg);
+                },
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    error!("Generic channel disconnected, exiting thread");
+                    return;
                 }
-            },
-            Message::Response(_) => {
-                error!("Error: Responses should not arrives in generic channel. Exiting thread");
-                break;
+            }
+        }
+        // If buffer is empty, block for next message so we do not busy wait
+        if buffer.is_empty() {
+            match generic_receiver.recv() {
+                Ok(msg) => {
+                    // Check for shutdown
+                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
+                        warn!("Read thread - got shutdown.");
+                        return;
+                    }
+                    buffer.push_back(msg);
+                },
+                Err(_) => {
+                    error!("Got an RecvError, exiting thread");
+                    break;
+                }
+            }
+        }
+        // Process buffered messages
+        if let Some(msg) = buffer.pop_front() {
+            let mut session = SessionInfo{
+                sender: sender.clone(),
+                receiver: receiver.clone(),
+                sync_odoo: &mut sync_odoo.lock().unwrap(),
+                delayed_process_sender: Some(delayed_process_sender.clone()),
+                noqas_stack: vec![],
+                current_noqa: NoqaInfo::None,
+            };
+            match msg {
+                Message::Request(r) => {
+                    let (value, error) = match r.method.as_str() {
+                        HoverRequest::METHOD => {
+                            to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        GotoDefinition::METHOD => {
+                            to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        References::METHOD => {
+                            to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        DocumentSymbolRequest::METHOD => {
+                            to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
+                            code: 1,
+                            message: S!("Request not handled by the server"),
+                            data: None
+                        }))}
+                    };
+                    sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
+                },
+                Message::Notification(r) => {
+                    match r.method.as_str() {
+                        Shutdown::METHOD => { warn!("Read thread - got shutdown."); return;}
+                        _ => {error!("Notification not handled by read thread: {}", r.method)}
+                    }
+                },
+                Message::Response(_) => {
+                    error!("Error: Responses should not arrives in generic channel. Exiting thread");
+                    return;
+                }
             }
         }
     }
