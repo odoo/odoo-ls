@@ -327,7 +327,8 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             // Production - Client is going to run the server (for use within `.vsix` package)
             const cwd = path.join(__dirname, "..", "..");
             let log_level = String(workspace.getConfiguration().get("Odoo.serverLogLevel"));
-            client = startLangServer(serverPath, ["--log-level", log_level], cwd, outputChannel);
+            let config_path = String(workspace.getConfiguration().get("Odoo.serverConfigPath"));
+            client = startLangServer(serverPath, ["--log-level", log_level, "--config-path", config_path], cwd, outputChannel);
         }
 
         context.subscriptions.push(
@@ -459,6 +460,17 @@ async function initializeSubscriptions(context: ExtensionContext): Promise<void>
                 if (event.affectsConfiguration("Odoo.disablePythonLanguageServerPopup") && !workspace.getConfiguration('Odoo').get("disablePythonLanguageServerPopup", false)){
                     displayDisablePythonLSMessage()
                 }
+               // Restart LS client if log_level or config_path changes
+               if (
+                   event.affectsConfiguration("Odoo.serverLogLevel") ||
+                   event.affectsConfiguration("Odoo.serverConfigPath")
+               ) {
+                   await stopClient();
+                   global.LSCLIENT = await initLanguageServerClient(context, global.OUTPUT_CHANNEL);
+                   await global.LSCLIENT.start();
+                   await setStatusConfig(context);
+                   return;
+               }
             }
             catch (error) {
                 global.LSCLIENT?.error(error);
