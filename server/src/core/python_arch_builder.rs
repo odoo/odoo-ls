@@ -415,11 +415,18 @@ impl PythonArchBuilder {
             Expr::FString(expr_fstring) => {
                 expr_fstring.value.iter().for_each(|fstring_part|{
                     match fstring_part{
-                        FStringPart::FString(fstr) => fstr.elements.expressions().for_each(
-                            |fstring_expr| self.visit_expr(session, &fstring_expr.expression)
+                        FStringPart::FString(fstr) => fstr.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
+                            |expression| self.visit_expr(session, expression)
                         ),
                         FStringPart::Literal(_) => {},
                     }
+                });
+            },
+            Expr::TString(expr_tstring) => {
+                expr_tstring.value.iter().for_each(|tstring_part|{
+                    tstring_part.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
+                        |expression| self.visit_expr(session, expression)
+                    );
                 });
             },
             Expr::Subscript(expr_subscript) => {

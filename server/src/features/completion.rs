@@ -390,6 +390,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Compare(expr_compare) => complete_compare(session, file, expr_compare, offset, is_param, expected_type),
         Expr::Call(expr_call) => complete_call(session, file, expr_call, offset, is_param, expected_type),
         Expr::FString(_) => None,
+        Expr::TString(_) => None,
         Expr::StringLiteral(expr_string_literal) => complete_string_literal(session, file, expr_string_literal, offset, is_param, expected_type),
         Expr::BytesLiteral(_) => None,
         Expr::NumberLiteral(_) => None,

@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use ruff_text_size::{TextRange, TextSize};
-use ruff_python_ast::{Alias, Identifier};
+use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
@@ -57,15 +57,16 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbo
  */
 pub fn manual_import(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt:Option<String>, name: &str, asname: Option<String>, level: Option<u32>, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     let name_aliases = vec![Alias {
-        name: Identifier { id: Name::new(name), range: TextRange::new(TextSize::new(0), TextSize::new(0)) },
+        name: Identifier { id: Name::new(name), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() },
         asname: match asname {
-            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)) }),
+            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() }),
             None => None,
         },
         range: TextRange::new(TextSize::new(0), TextSize::new(0)),
+        node_index: AtomicNodeIndex::dummy()
     }];
     let from_stmt = match from_stmt {
-        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)) }),
+        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() }),
         None => None,
     };
     resolve_import_stmt(session, source_file_symbol, from_stmt.as_ref(), &name_aliases, level, diagnostics)

@@ -280,11 +280,18 @@ impl PythonArchEval {
             Expr::FString(expr_fstring) => {
                 expr_fstring.value.iter().for_each(|fstring_part|{
                     match fstring_part{
-                        FStringPart::FString(fstr) => fstr.elements.expressions().for_each(
-                            |fstring_expr| self.visit_expr(session, &fstring_expr.expression)
+                        FStringPart::FString(fstr) => fstr.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
+                            |expression| self.visit_expr(session, expression)
                         ),
                         FStringPart::Literal(_) => {},
                     }
+                });
+            },
+            Expr::TString(expr_tstring) => {
+                expr_tstring.value.iter().for_each(|tstring_part|{
+                    tstring_part.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
+                        |expression| self.visit_expr(session, expression)
+                    );
                 });
             },
             Expr::Subscript(expr_subscript) => {
@@ -1004,7 +1011,7 @@ impl PythonArchEval {
         if func_sym.borrow().as_func().evaluations.is_empty() {
             let has_implementation = !matches!(
                 func_body.first(),
-                Some(Stmt::Expr(StmtExpr { range: _, value:  x})) if matches!(**x, Expr::EllipsisLiteral(_))
+                Some(Stmt::Expr(StmtExpr { range: _, value:  x, node_index: _})) if matches!(**x, Expr::EllipsisLiteral(_))
             );
             func_sym.borrow_mut().as_func_mut().evaluations  = vec![
                 if has_implementation {
