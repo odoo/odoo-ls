@@ -123,6 +123,12 @@
           "scope": "window",
           "type": "string",
           "description": "Profile active in this workspace"
+        },
+        "Odoo.serverConfigPath": {
+          "scope": "window",
+          "type": "string",
+          "default": "",
+          "description": "Optional path to the server configuration file"
         }
       }
     }
