@@ -327,8 +327,13 @@ async function initLanguageServerClient(context: ExtensionContext, outputChannel
             // Production - Client is going to run the server (for use within `.vsix` package)
             const cwd = path.join(__dirname, "..", "..");
             let log_level = String(workspace.getConfiguration().get("Odoo.serverLogLevel"));
-            let config_path = String(workspace.getConfiguration().get("Odoo.serverConfigPath"));
-            client = startLangServer(serverPath, ["--log-level", log_level, "--config-path", config_path], cwd, outputChannel);
+            let config_path_result = workspace.getConfiguration().get("Odoo.serverConfigPath");
+            let config_path: string = config_path_result === undefined ? "" : config_path_result as string;
+            let args = ["--log-level", log_level];
+            if (config_path.trim() !== "") {
+                args.push("--config-path", config_path);
+            }
+            client = startLangServer(serverPath, args, cwd, outputChannel);
         }
 
         context.subscriptions.push(
@@ -711,6 +716,7 @@ async function waitForClientStop() {
 async function stopClient() {
     if (global.LSCLIENT && !global.CLIENT_IS_STOPPING) {
         global.LSCLIENT.info("Stopping LS Client.");
+        global.IS_LOADING = false;
         global.CLIENT_IS_STOPPING = true;
         await global.LSCLIENT.stop(15000);
         global.CLIENT_IS_STOPPING = false;
