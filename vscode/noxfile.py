@@ -100,6 +100,10 @@ def build_specific_target(session: nox.Session, target: str, debug: bool) -> Non
         else:
             print(f"Unable to find odoo_ls_server.pdb for {target}, please build the server first.")
             return
+    if take_pdb:
+        session.run("zip", f"build/{session.posargs[0]}/odoo-{target}-{session.posargs[0]}.zip", file_name, "odoo_ls_server.pdb", external=True)
+    else:
+        session.run("zip", f"build/{session.posargs[0]}/odoo-{target}-{session.posargs[0]}.zip", file_name, external=True)
     if debug:
         session.run("vsce", "package", "--pre-release", "--target", target, external=True)
     else:
