@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1 - 2025/08/11 - Quick fix
+
+### Fixes
+
+- Invalid context value type that can cause crashes.
+
 ## 0.10.0 - 2025/08/08 - Better configuration and XML features
 
 Following your feedbacks, we are adding some new features and ways to configure your odools.toml files. If you still think that some changes would be interesting, do not hesitate to contact us !
