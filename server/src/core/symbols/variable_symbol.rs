@@ -1,3 +1,4 @@
+use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::TextRange;
 
 use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, Sy, S};
@@ -10,7 +11,6 @@ pub struct VariableSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub is_import_variable: bool,
@@ -26,7 +26,6 @@ impl VariableSymbol {
             name,
             is_external,
             doc_string: None,
-            ast_indexes: vec![],
             weak_self: None,
             parent: None,
             range,

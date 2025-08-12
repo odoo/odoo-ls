@@ -51,7 +51,7 @@ impl CompletionFeature {
         let offset = file_info.borrow().position_to_offset(line, character);
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
-        let ast = file_info_ast.ast.as_ref().unwrap();
+        let ast = file_info_ast.get_stmts().unwrap();
         complete_vec_stmt(ast, session, file_symbol, offset).or_else(|| complete_name(session, file_symbol, offset, false, &S!("")))
     }
 }

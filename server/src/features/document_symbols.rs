@@ -15,7 +15,7 @@ impl DocumentSymbolFeature {
         let mut results = vec![];
         let file_info_bw = file_info.borrow();
         let file_info_ast = file_info_bw.file_info_ast.borrow();
-        if let Some(ast) = &file_info_ast.ast {
+        if let Some(ast) = &file_info_ast.get_stmts() {
             for stmt in ast.iter() {
                 DocumentSymbolFeature::visit_stmt(session, stmt, &mut results, file_info);
             }

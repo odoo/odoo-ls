@@ -1,4 +1,5 @@
 use byteyarn::{yarn, Yarn};
+use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
@@ -729,10 +730,10 @@ impl Symbol {
         }
     }
 
-    pub fn has_ast_indexes(&self) -> bool {
+    pub fn has_node_index(&self) -> bool {
         match self {
-            Symbol::Variable(_) => true,
-            Symbol::Class(_) => true,
+            Symbol::Variable(_) => false,
+            Symbol::Class(_) => false,
             Symbol::Function(_) => true,
             Symbol::DiskDir(_) => false,
             Symbol::File(_) => false,
@@ -745,11 +746,11 @@ impl Symbol {
         }
     }
 
-    pub fn ast_indexes(&self) -> Option<&Vec<u16>> {
+    pub fn node_index(&self) -> Option<&AtomicNodeIndex> {
         match self {
-            Symbol::Variable(v) => Some(&v.ast_indexes),
-            Symbol::Class(c) => Some(&c.ast_indexes),
-            Symbol::Function(f) => Some(&f.ast_indexes),
+            Symbol::Variable(v) => None,
+            Symbol::Class(c) => None,
+            Symbol::Function(f) => Some(&f.node_index),
             Symbol::DiskDir(_) => None,
             Symbol::File(_) => None,
             Symbol::Compiled(_) => None,
@@ -761,11 +762,11 @@ impl Symbol {
         }
     }
 
-    pub fn ast_indexes_mut(&mut self) -> &mut Vec<u16> {
+    pub fn node_index_mut(&mut self) -> &mut AtomicNodeIndex {
         match self {
-            Symbol::Variable(v) => &mut v.ast_indexes,
-            Symbol::Class(c) => &mut c.ast_indexes,
-            Symbol::Function(f) => &mut f.ast_indexes,
+            Symbol::Variable(v) => panic!(),
+            Symbol::Class(c) => panic!(),
+            Symbol::Function(f) => &mut f.node_index,
             Symbol::DiskDir(_) => panic!(),
             Symbol::File(_) => panic!(),
             Symbol::Compiled(_) => panic!(),
