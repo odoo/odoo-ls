@@ -117,10 +117,10 @@ impl ModuleSymbol {
         }
         let (updated, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        if manifest_file_info.file_info_ast.borrow().ast.is_none() {
+        if manifest_file_info.file_info_ast.borrow().indexed_module.is_none() {
             manifest_file_info.prepare_ast(session);
         }
-        if manifest_file_info.file_info_ast.borrow().ast.is_none() {
+        if manifest_file_info.file_info_ast.borrow().indexed_module.is_none() {
             return None;
         }
         let diags = module._load_manifest(session, &manifest_file_info);
@@ -161,7 +161,7 @@ impl ModuleSymbol {
     fn _load_manifest(&mut self, session: &mut SessionInfo, file_info: &FileInfo) -> Vec<Diagnostic> {
         let mut res = vec![];
         let file_info_ast = file_info.file_info_ast.borrow();
-        let ast = file_info_ast.ast.as_ref().unwrap();
+        let ast = file_info_ast.get_stmts().unwrap();
         if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
             if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04001, &[]) {
                 res.push(Diagnostic {

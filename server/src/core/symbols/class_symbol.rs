@@ -1,4 +1,5 @@
 use byteyarn::Yarn;
+use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::{TextRange, TextSize};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -21,7 +22,6 @@ pub struct ClassSymbol {
     pub is_external: bool,
     pub doc_string: Option<String>,
     pub bases: Vec<Weak<RefCell<Symbol>>>,
-    pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub range: TextRange,
@@ -49,7 +49,6 @@ impl ClassSymbol {
             parent: None,
             range,
             body_range: TextRange::new(body_start, range.end()),
-            ast_indexes: vec![],
             doc_string: None,
             sections: vec![],
             symbols: HashMap::new(),

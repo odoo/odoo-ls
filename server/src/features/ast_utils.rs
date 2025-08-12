@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
+use crate::features::node_index_ast::IndexedModule;
 use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
@@ -20,7 +21,7 @@ impl AstUtils {
         let mut call_expr: Option<ExprCall> = None;
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
-        for stmt in file_info_ast.ast.as_ref().unwrap().iter() {
+        for stmt in file_info_ast.get_stmts().unwrap().iter() {
             (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
@@ -58,85 +59,8 @@ impl AstUtils {
         }
     }
 
-    pub fn find_stmt_from_ast<'a>(ast: &'a [Stmt], indexes: &[u16]) -> &'a Stmt {
-        let mut stmt = ast.get(indexes[0] as usize).expect("index not found in ast");
-        let mut i_index = 1;
-        while i_index < indexes.len() {
-            match stmt {
-                Stmt::ClassDef(c) => {
-                    stmt = c.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
-                },
-                Stmt::FunctionDef(f) => {
-                    stmt = f.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in ast");
-                },
-                Stmt::If(if_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    if *bloc == 0 {
-                        stmt = if_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
-                    } else {
-                        stmt = if_stmt.elif_else_clauses.get((bloc-1) as usize).expect("Bloc not found in if stmt").body.get(*stmt_index as usize).expect("index not found in ast");
-                    }
-                },
-                Stmt::Try(try_stmt) => {
-                    let first_index = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let second_index = indexes.get(i_index).unwrap();
-                    if *first_index == 0 {
-                        stmt = try_stmt.body.get(*second_index as usize).expect("index not found in ast");
-                    } else if *first_index == 1 {
-                        stmt = try_stmt.orelse.get(*second_index as usize).expect("index not found in ast");
-                    } else if *first_index == 2 {
-                        stmt = try_stmt.finalbody.get(*second_index as usize).expect("index not found in ast");
-                    } else if *first_index == 3 {
-                        i_index += 1;
-                        let third_index = indexes.get(i_index).unwrap();
-                        let handler = try_stmt.handlers.get(*second_index as usize).expect("Handler not found in ast");
-                        stmt = handler.as_except_handler().unwrap().body.get(*third_index as usize).expect("index not found in handler ast");
-                    } else {
-                        panic!("Wrong try bloc");
-                    }
-                },
-                Stmt::For(for_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    if *bloc == 0 {
-                        stmt = for_stmt.body.get(*stmt_index as usize).expect("index not found in ast");
-                    } else if *bloc == 1 {
-                        stmt = for_stmt.orelse.get(*stmt_index as usize).expect("index not found in ast");
-                    } else {
-                        panic!("Wrong for bloc");
-                    }
-                },
-                Stmt::With(with_stmt) => {
-                    stmt = with_stmt.body.get(*indexes.get(i_index).unwrap() as usize).expect("index not found in with stmt");
-                },
-                Stmt::Match(match_stmt) => {
-                    let case_index = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    stmt = match_stmt.cases.get(*case_index as usize).expect("Case not found in match stmt").body.get(*stmt_index as usize).expect("Stmt not found in match body");
-                },
-                Stmt::While(while_stmt) => {
-                    let bloc = indexes.get(i_index).unwrap();
-                    i_index += 1;
-                    let stmt_index = indexes.get(i_index).unwrap();
-                    stmt = match bloc {
-                        0 => while_stmt.body.get(*stmt_index as usize).expect("index not found in while stmt body"),
-                        1 => while_stmt.orelse.get(*stmt_index as usize).expect("index not found in while stmt orelse"),
-                        _ => panic!("Wrong while bloc")
-                    }
-                }
-                _ => {}
-            }
-            i_index += 1;
-        }
-        stmt
-    }
-
 }
+
 
 pub struct ExprFinderVisitor<'a> {
     offset: TextSize,

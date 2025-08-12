@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, AtomicNodeIndex, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, NodeIndex, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -39,7 +39,6 @@ pub struct PythonArchBuilder {
     sym_stack: Vec<Rc<RefCell<Symbol>>>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>,
-    ast_indexes: Vec<u16>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
@@ -53,7 +52,6 @@ impl PythonArchBuilder {
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],
-            ast_indexes: vec![],
             file_info: None,
         }
     }
@@ -70,7 +68,6 @@ impl PythonArchBuilder {
             self.file = file.clone();
             self.file_mode = Rc::ptr_eq(&file, &symbol);
             self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
-            self.ast_indexes = symbol.borrow().ast_indexes().unwrap_or(&vec![]).clone(); //copy current ast_indexes if we are not evaluating a file
         }
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol.borrow().is_external()) {
             trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
@@ -102,19 +99,26 @@ impl PythonArchBuilder {
             let mut file_info = file_info_rc.borrow_mut();
             file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
         }
-        if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+        if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
             file_info_rc.borrow_mut().prepare_ast(session);
         }
         let file_info = file_info_rc.borrow();
-        if file_info.file_info_ast.borrow().ast.is_some() {
+        if file_info.file_info_ast.borrow().indexed_module.is_some() {
             let file_info_ast= file_info.file_info_ast.borrow();
             let ast = match self.file_mode {
                 true => {
-                    file_info_ast.ast.as_ref().unwrap()
+                    file_info_ast.get_stmts().as_ref().unwrap()
                 },
                 false => {
-                    if !self.sym_stack[0].borrow().ast_indexes().unwrap().is_empty() {
-                        &AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap().body
+                    let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                    if ast_index.as_u32() != u32::MAX {
+                        let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
+                        match func {
+                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
+                                &func_stmt.body
+                            },
+                            _ => panic!("Expected function definition")
+                        }
                     } else {
                         //if ast_index is empty, this is because the function has been added manually and do not belong to the ast. Skip it's building
                         &vec![]
@@ -255,7 +259,6 @@ impl PythonArchBuilder {
 
     fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) -> Result<(), Error> {
         for (index, stmt) in nodes.iter().enumerate() {
-            self.ast_indexes.push(index as u16);
             match stmt {
                 Stmt::Import(import_stmt) => {
                     self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
@@ -325,7 +328,6 @@ impl PythonArchBuilder {
                 Stmt::Pass(_) => {},
                 Stmt::IpyEscapeCommand(_) => {},
             }
-            self.ast_indexes.pop();
         }
         Ok(())
     }
@@ -655,8 +657,7 @@ impl PythonArchBuilder {
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
 
-        sym_bw.ast_indexes_mut().clear();
-        sym_bw.ast_indexes_mut().extend(self.ast_indexes.iter());
+        sym_bw.node_index_mut().set(func_def.node_index.load().as_u32());
 
         let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
@@ -774,9 +775,6 @@ impl PythonArchBuilder {
         let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
             session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
-
-        sym_bw.ast_indexes_mut().clear();
-        sym_bw.ast_indexes_mut().extend(self.ast_indexes.iter());
 
         let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
@@ -933,9 +931,7 @@ impl PythonArchBuilder {
                 if check_version.1 {
                     body_version_ok = true;
                 }
-                self.ast_indexes.push(0 as u16); //0 for body
                 self.visit_node(session, &if_stmt.body)?;
-                self.ast_indexes.pop();
                 vec![ SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())]
             } else {
                 vec![]
@@ -968,15 +964,11 @@ impl PythonArchBuilder {
                     if version_check.1 {
                         body_version_ok = true;
                     }
-                    self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
                     self.visit_node(session, &elif_else_clause.body)?;
-                    self.ast_indexes.pop();
                 }
             }
             else if !body_version_ok { //else clause
-                self.ast_indexes.push((index + 1) as u16); //0 for body, so index + 1
                 self.visit_node(session, &elif_else_clause.body)?;
-                self.ast_indexes.pop();
             }
             let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             Ok::<Option<SectionIndex>, Error>(Some(clause_section))
@@ -1020,9 +1012,7 @@ impl PythonArchBuilder {
             );
         }
 
-        self.ast_indexes.push(0 as u16);
         self.visit_node(session, &for_stmt.body)?;
-        self.ast_indexes.pop();
         let mut stmt_sections = vec![SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())];
 
         if !for_stmt.orelse.is_empty(){
@@ -1030,9 +1020,7 @@ impl PythonArchBuilder {
                 for_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
-            self.ast_indexes.push(1 as u16);
             self.visit_node(session, &for_stmt.orelse)?;
-            self.ast_indexes.pop();
             stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
@@ -1050,9 +1038,7 @@ impl PythonArchBuilder {
         // try block is always executed, so it has the same section as the one preceding it.
         // Finally is always executed if it exists, so it belongs to the lower section
         let scope = self.sym_stack.last().unwrap().clone();
-        self.ast_indexes.push(0 as u16);
         self.visit_node(session, &try_stmt.body)?;
-        self.ast_indexes.pop();
         if !try_stmt.handlers.is_empty(){
             // Branching around except _T, except, and else act similar to if-elif-else
             // The direct link (eq. to empty section) to previous scope is always there
@@ -1060,7 +1046,6 @@ impl PythonArchBuilder {
             let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             let mut stmt_sections = vec![previous_section.clone()];
             let mut catch_all_except_exists = false;
-            self.ast_indexes.push(3 as u16);
             for (index, handler) in try_stmt.handlers.iter().enumerate() {
                 match handler {
                     ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
@@ -1072,14 +1057,11 @@ impl PythonArchBuilder {
                             h.body[0].range().start(),
                             Some(previous_section.clone())
                         );
-                        self.ast_indexes.push(index as u16);
                         self.visit_node(session, &h.body)?;
                         stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
-                        self.ast_indexes.pop();
                     }
                 }
             }
-            self.ast_indexes.pop();
             if !try_stmt.orelse.is_empty(){
                 if catch_all_except_exists{
                     stmt_sections.remove(0);
@@ -1088,9 +1070,7 @@ impl PythonArchBuilder {
                     try_stmt.orelse[0].range().start(),
                     Some(previous_section.clone())
                 );
-                self.ast_indexes.push(1 as u16);
                 self.visit_node(session, &try_stmt.orelse)?;
-                self.ast_indexes.pop();
                 stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
             }
             // Next section is either the start of the finally block, or right after the try block if finally does not exist
@@ -1100,9 +1080,7 @@ impl PythonArchBuilder {
                 Some(SectionIndex::OR(stmt_sections))
             );
         }
-        self.ast_indexes.push(2 as u16);
         self.visit_node(session, &try_stmt.finalbody)?;
-        self.ast_indexes.pop();
         Ok(())
     }
 
@@ -1169,9 +1147,7 @@ impl PythonArchBuilder {
                 Some(previous_section.clone())
             );
             traverse_match(&case.pattern, session, &scope);
-            self.ast_indexes.push(case_ix as u16);
             self.visit_node(session, &case.body)?;
-            self.ast_indexes.pop();
             stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         }
         scope.borrow_mut().as_mut_symbol_mgr().add_section(
@@ -1192,9 +1168,7 @@ impl PythonArchBuilder {
             );
         }
         self.visit_expr(session, &while_stmt.test);
-        self.ast_indexes.push(0 as u16); // 0 for body
         self.visit_node(session, &while_stmt.body)?;
-        self.ast_indexes.pop();
         let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
         let mut stmt_sections = vec![body_section];
         if !while_stmt.orelse.is_empty(){
@@ -1202,9 +1176,7 @@ impl PythonArchBuilder {
                 while_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
-            self.ast_indexes.push(1 as u16); // 1 for else
             self.visit_node(session, &while_stmt.orelse)?;
-            self.ast_indexes.pop();
             stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());

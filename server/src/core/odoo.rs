@@ -1172,13 +1172,13 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
                     let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
                     match ast_type {
                         AstType::Python => {
-                            if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                            if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
                                 return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                             }
                         },
@@ -1209,13 +1209,13 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
                     let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
                     match ast_type {
                         AstType::Python => {
-                            if file_info.borrow().file_info_ast.borrow().ast.is_some() {
+                            if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
                                 return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                             }
                         },
@@ -1246,13 +1246,13 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
                     let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
                     match ast_type {
                         AstType::Python => {
-                            if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                            if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
                                 return Ok(ReferenceFeature::get_references(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                             }
                         },
@@ -1284,10 +1284,10 @@ impl Odoo {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    if file_info.borrow_mut().file_info_ast.borrow().ast.is_some() {
+                    if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
                         return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                     }
                 }
@@ -1598,7 +1598,7 @@ impl Odoo {
         if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if file_info.borrow().file_info_ast.borrow().ast.is_none() {
+                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
                 return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));

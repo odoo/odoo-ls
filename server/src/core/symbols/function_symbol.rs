@@ -1,7 +1,7 @@
 use std::{cell::RefCell, cmp::min, collections::HashMap, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
-use ruff_python_ast::{Expr, ExprCall};
+use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
@@ -34,7 +34,7 @@ pub struct FunctionSymbol {
     pub is_static: bool,
     pub is_property: bool,
     pub doc_string: Option<String>,
-    pub ast_indexes: Vec<u16>, //list of index to reach the corresponding ast node from file ast
+    pub node_index: AtomicNodeIndex,
     pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>,
@@ -73,7 +73,7 @@ impl FunctionSymbol {
             is_static: false,
             is_property: false,
             diagnostics: HashMap::new(),
-            ast_indexes: vec![],
+            node_index: AtomicNodeIndex::dummy(),
             doc_string: None,
             evaluations: vec![],
             arch_status: BuildStatus::PENDING,

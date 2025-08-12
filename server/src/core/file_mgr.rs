@@ -1,6 +1,6 @@
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
-use ruff_python_ast::Mod;
+use ruff_python_ast::{AnyRootNodeRef, Mod, ModModule, PySourceType, Stmt};
 use ruff_python_parser::{Mode, ParseOptions, Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
@@ -9,9 +9,11 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{collections::HashMap, fs};
 use crate::core::config::DiagnosticFilter;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
+use crate::features::node_index_ast::IndexedModule;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
 use std::rc::Rc;
@@ -58,8 +60,14 @@ pub enum AstType {
 pub struct FileInfoAst {
     pub text_hash: u64,
     pub text_rope: Option<ropey::Rope>,
-    pub ast: Option<Vec<ruff_python_ast::Stmt>>,
+    pub indexed_module: Option<Arc<IndexedModule>>,
     pub ast_type: AstType,
+}
+
+impl FileInfoAst {
+    pub fn get_stmts(&self) -> Option<&Vec<Stmt>> {
+        self.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+    }
 }
 
 #[derive(Debug)]
@@ -87,7 +95,7 @@ impl FileInfo {
             file_info_ast: Rc::new(RefCell::new(FileInfoAst {
                 text_hash: 0,
                 text_rope: None,
-                ast: None,
+                indexed_module: None,
                 ast_type: AstType::Python,
             })),
             diagnostics: HashMap::new(),
@@ -159,14 +167,20 @@ impl FileInfo {
         let content = &fia.text_rope.as_ref().unwrap().slice(..);
         let source = content.to_string(); //cast to string to get a version with all changes
         drop(fia);
-        let ast = ruff_python_parser::parse_unchecked(source.as_str(), ParseOptions::from(Mode::Module));
+        let mut python_source_type = PySourceType::Python;
+        if self.uri.ends_with(".pyi") {
+            python_source_type = PySourceType::Stub;
+        } else if self.uri.ends_with(".ipynb") {
+            python_source_type = PySourceType::Ipynb;
+        }
+        let parsed_module = ruff_python_parser::parse_unchecked_source(source.as_str(), python_source_type);
         if in_workspace {
             self.noqas_blocs.clear();
             self.noqas_lines.clear();
-            self.extract_tokens(&ast, &source);
+            self.extract_tokens(&parsed_module, &source);
         }
         self.valid = true;
-        for error in ast.errors().iter() {
+        for error in parsed_module.errors().iter() {
             self.valid = false;
             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01000, &[]) {
                 diagnostics.push(Diagnostic {
@@ -179,15 +193,7 @@ impl FileInfo {
                 });
             }
         }
-        match ast.into_syntax() {
-            Mod::Expression(_expr) => {
-                warn!("No support for expression-file only");
-                self.file_info_ast.borrow_mut().ast = None
-            },
-            Mod::Module(module) => {
-                self.file_info_ast.borrow_mut().ast = Some(module.body);
-            }
-        }
+        self.file_info_ast.borrow_mut().indexed_module = Some(IndexedModule::new(parsed_module));
         self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
     }
 
@@ -209,11 +215,11 @@ impl FileInfo {
         self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
     }
 
-    pub fn extract_tokens(&mut self, ast: &Parsed<Mod>, source: &String) {
+    pub fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String) {
         let mut is_first_expr: bool = true;
         let mut noqa_to_add = None;
         let mut previous_token: Option<&Token> = None;
-        for token in ast.tokens().iter() {
+        for token in parsed_module.tokens().iter() {
             match token.kind() {
                 TokenKind::Comment => {
                     let text = &source[token.range()];

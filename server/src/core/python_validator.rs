@@ -1,5 +1,5 @@
 use byteyarn::{yarn, Yarn};
-use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
@@ -83,7 +83,7 @@ impl PythonValidator {
                 }
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+                if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
@@ -91,11 +91,11 @@ impl PythonValidator {
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if file_info.file_info_ast.borrow().ast.is_some() {
+                if file_info.file_info_ast.borrow().indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = self.sym_stack[0].borrow().get_noqas();
                     let file_info_ast = file_info.file_info_ast.borrow();
-                    self.validate_body(session, file_info_ast.ast.as_ref().unwrap());
+                    self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info);
@@ -129,15 +129,15 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+                if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
-                if file_info.file_info_ast.borrow().ast.is_some() {
+                if file_info.file_info_ast.borrow().indexed_module.is_some() {
                     let file_info_ast = file_info.file_info_ast.borrow();
-                    let stmt = AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap());
+                    let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
                     let body = match stmt {
-                        Stmt::FunctionDef(s) => {
+                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
                             &s.body
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
@@ -147,7 +147,7 @@ impl PythonValidator {
                     self.validate_body(session, body);
                     session.current_noqa = old_noqa;
                     match stmt {
-                        Stmt::FunctionDef(_) => {
+                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
                             self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
@@ -175,7 +175,7 @@ impl PythonValidator {
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path) {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
-                            manifest_file.file_info_ast.borrow_mut().ast = None;
+                            manifest_file.file_info_ast.borrow_mut().indexed_module = None;
                             manifest_file.file_info_ast.borrow_mut().text_rope = None;
                             manifest_file.file_info_ast.borrow_mut().text_hash = 0;
                         }
@@ -184,7 +184,7 @@ impl PythonValidator {
                 if let Some(file) = self.file_info.as_ref() {
                     if ! file.borrow().opened {
                         let f = file.borrow();
-                        f.file_info_ast.borrow_mut().ast = None;
+                        f.file_info_ast.borrow_mut().indexed_module = None;
                         f.file_info_ast.borrow_mut().text_rope = None;
                         f.file_info_ast.borrow_mut().text_hash = 0;
                     }

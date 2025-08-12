@@ -5,7 +5,7 @@ use std::{u32, vec};
 
 use byteyarn::{yarn, Yarn};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, Expr, ExprNamed, FStringPart, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, ExprNamed, FStringPart, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -84,11 +84,11 @@ impl PythonArchEval {
             warn!("File info not found for {}", path);
             return;
         };
-        if file_info_rc.borrow().file_info_ast.borrow().ast.is_none() {
+        if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
             file_info_rc.borrow_mut().prepare_ast(session);
         }
         let file_info = (*file_info_rc).borrow();
-        if file_info.file_info_ast.borrow().ast.is_some() {
+        if file_info.file_info_ast.borrow().indexed_module.is_some() {
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = symbol.borrow().get_noqas();
             let file_info_ast  = file_info.file_info_ast.borrow();
@@ -98,11 +98,16 @@ impl PythonArchEval {
                         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                         return;
                     }
-                    (file_info_ast.ast.as_ref().unwrap(), None)
+                    (file_info_ast.get_stmts().unwrap(), None)
                 },
                 false => {
-                    let func_stmt = AstUtils::find_stmt_from_ast(file_info_ast.ast.as_ref().unwrap(), self.sym_stack[0].borrow().ast_indexes().unwrap()).as_function_def_stmt().unwrap();
-                    (&func_stmt.body, Some(func_stmt))
+                    let func_stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
+                    match func_stmt {
+                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
+                            (&func_stmt.body, Some(func_stmt))
+                        },
+                        _ => panic!("Expected function definition")
+                    }
                 }
             };
             self.visit_sub_stmts(session, &ast);
@@ -128,11 +133,6 @@ impl PythonArchEval {
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if symbol.is_external() && (!self.file_mode  || !file_info_rc.borrow().opened) {
-            for sym in symbol.all_symbols() {
-                if sym.borrow().has_ast_indexes() {
-                    sym.borrow_mut().ast_indexes_mut().clear(); //TODO isn't it make it invalid? should set to None?
-                }
-            }
             if self.file_mode {
                 FileMgr::delete_path(session, &path);
             }
