@@ -984,33 +984,33 @@ impl PythonArchEvalHooks {
         let mut contexts_to_add = HashMap::new();
         if relational {
             if let Some(first_param) = parameters.args.get(0) {
-                contexts_to_add.insert("comodel_name", (first_param, first_param.range()));
+                contexts_to_add.insert("comodel_name", (first_param, first_param.range(), true));
             }
         }
 
         // Keyword Arguments for fields that we would like to keep in the context
         let context_arguments = [
-            "comodel_name",
-            "related",
-            "compute",
-            "delegate",
-            "required",
-            "default",
+            ("comodel_name", true),
+            ("related", true),
+            ("compute", true),
+            ("delegate", false),
+            ("required", false),
+            ("default", false),
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
-            .filter_map(|arg_name|
+            .filter_map(|(arg_name, only_str)|
                 PythonArchEvalHooks::find_special_arguments(&parameters, arg_name)
-                .map(|(field_name_expr, arg_range)| (arg_name, (field_name_expr, arg_range)))
+                .map(|(field_name_expr, arg_range)| (arg_name, (field_name_expr, arg_range, only_str)))
             )
         );
 
-        for (arg_name, (field_name_expr, arg_range)) in contexts_to_add {
+        for (arg_name, (field_name_expr, arg_range, only_str)) in contexts_to_add {
             let maybe_related_string = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
             if let Some(related_string) = maybe_related_string {
                 context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
                 context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
-            } else {
+            } else if !only_str {
                 let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
                 if let Some(boolean) = maybe_boolean {
                     context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
