@@ -113,9 +113,8 @@ impl SyncOdoo {
             has_valid_python: false,
             main_entry_tree: vec![],
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
-            stubs_dirs: vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
-            env::current_dir().unwrap().join("additional_stubs").sanitize()],
-            stdlib_dir: env::current_dir().unwrap().join("typeshed").join("stdlib").sanitize(),
+            stubs_dirs: SyncOdoo::default_stubs(),
+            stdlib_dir: SyncOdoo::default_stdlib(),
             modules: HashMap::new(),
             models: HashMap::new(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
@@ -144,9 +143,8 @@ impl SyncOdoo {
         session.sync_odoo.full_version = "0.0.0".to_string();
         session.sync_odoo.config = ConfigEntry::new();
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
-        session.sync_odoo.stubs_dirs = vec![env::current_dir().unwrap().join("typeshed").join("stubs").sanitize(),
-            env::current_dir().unwrap().join("additional_stubs").sanitize()];
-        session.sync_odoo.stdlib_dir = env::current_dir().unwrap().join("typeshed").join("stdlib").sanitize();
+        session.sync_odoo.stubs_dirs = SyncOdoo::default_stubs();
+        session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::new();
         session.sync_odoo.models = HashMap::new();
         session.sync_odoo.rebuild_arch = PtrWeakHashSet::new();
@@ -159,6 +157,32 @@ impl SyncOdoo {
         //drop all entries, except entries of opened files
         session.sync_odoo.entry_point_mgr.borrow_mut().reset_entry_points(false);
         SyncOdoo::init(session, config);
+    }
+
+    pub fn default_stdlib() -> String {
+        let next_to_exe = env::current_exe().unwrap().parent().unwrap().join("typeshed").join("stdlib");
+        if next_to_exe.exists() {
+            next_to_exe.sanitize()
+        } else {
+            env::current_dir().unwrap().join("typeshed").join("stdlib").sanitize()
+        }
+    }
+
+    pub fn default_stubs() -> Vec<String> {
+        let mut result = vec![];
+        let next_to_exe = env::current_exe().unwrap().parent().unwrap().join("typeshed").join("stubs");
+        if next_to_exe.exists() {
+            result.push(next_to_exe.sanitize());
+        } else {
+            result.push(env::current_dir().unwrap().join("typeshed").join("stubs").sanitize());
+        }
+        let next_to_exe = env::current_exe().unwrap().parent().unwrap().join("typeshed").join("additional_stubs");
+        if next_to_exe.exists() {
+            result.push(next_to_exe.sanitize());
+        } else {
+            result.push(env::current_dir().unwrap().join("typeshed").join("additional_stubs").sanitize());
+        }
+        result
     }
 
     pub fn init(session: &mut SessionInfo, config: ConfigEntry) {
