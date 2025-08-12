@@ -51,6 +51,10 @@ OLS01007, DiagnosticSetting::Error, "{0} takes {1} positional arguments but {2} 
 */
 OLS01008, DiagnosticSetting::Error, "{0} got an unexpected keyword argument '{1}'",
 /**
+ * Arguments are not valid for all function or method definitions
+ */
+OLS01009, DiagnosticSetting::Warning, "Arguments are not valid for all function or method definitions",
+/**
 * Check your python environment, the effective your sys.path and your addon paths.
 */
 OLS02001, DiagnosticSetting::Warning, "{0} not found",

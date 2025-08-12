@@ -740,7 +740,7 @@ impl Evaluation {
                 evals.push(Evaluation::new_dict(odoo, values, expr.range));
             },
             ExprOrIdent::Expr(Expr::Call(expr)) => {
-                let (base_eval, diags) = Evaluation::eval_from_ast(session, &expr.func, parent.clone(), max_infer, false, required_dependencies);
+                let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.func, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 //TODO actually we only evaluate if there is only one function behind the evaluation.
                 // we could evaluate the result of each function and filter results by signature matching.
@@ -764,13 +764,25 @@ impl Evaluation {
 
                 print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
                 */
-                if base_eval.len() == 0 {
+                if base_evals.len() == 0 {
                     /*TODO if multiple evals are found, we could maybe try to validate that they all have the same signature in case of diamond inheritance?
                     However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_sym_weak_eval_base= base_eval[0].symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
-                let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, &mut diagnostics);
+                let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().map(|base_eval| {
+                    let base_sym_weak_eval_base = base_eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
+                    Symbol::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, &mut diagnostics)
+                }).flatten().collect();
+
+                let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                    SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                        parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                    },
+                    _ => {false}
+                };
+
+                let mut call_argument_diagnostics = Vec::new();
                 for base_eval_ptr in base_eval_ptrs.iter() {
                     let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                     let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
@@ -904,15 +916,6 @@ impl Evaluation {
                                         }
                                         //It allows us to check parameters validity too if we are in validation step
                                         /*let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
-                                        let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                                            SymType::FILE | SymType::PACKAGE(_) => {
-                                                parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                                            },
-                                            SymType::FUNCTION => {
-                                                true //functions are always evaluated at validation step
-                                            }
-                                            _ => {false}
-                                        };
                                         if is_in_validation {
                                             let from_module = parent.borrow().find_module();
                                             diagnostics.extend(Evaluation::validate_call_arguments(session,
@@ -972,20 +975,13 @@ impl Evaluation {
                             }
                         }
                         if base_sym.borrow().evaluations().is_some() {
-                            let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
-                            let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                                SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
-                                    parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                                },
-                                _ => {false}
-                            };
                             let call_parent = match base_sym_weak_eval.context.get(&S!("base_attr")){
                                 Some(ContextValue::SYMBOL(s)) => s.clone(),
                                 _ => Weak::new()
                             };
                             if is_in_validation {
                                 let on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool());
-                                diagnostics.extend(Evaluation::validate_call_arguments(session,
+                                call_argument_diagnostics.extend(Evaluation::validate_call_arguments(session,
                                     &base_sym.borrow().as_func(),
                                     expr,
                                     call_parent.clone(),
@@ -1013,6 +1009,7 @@ impl Evaluation {
                         }
                     }
                 }
+                diagnostics.extend(Evaluation::process_argument_diagnostics(&session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent.clone(), max_infer, false, required_dependencies);
@@ -1426,6 +1423,36 @@ impl Evaluation {
             return diagnostics;
         }
         diagnostics
+    }
+
+    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Diagnostic>, eval_count: usize) -> Vec<Diagnostic> {
+        let mut filtered_diagnostics = vec![];
+        let mut arg_diagnostic = diagnostics.iter().filter(|d|
+            d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
+            d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string()))
+        );
+        let arg_diagnostic_count = arg_diagnostic.clone().count();
+        if arg_diagnostic_count > 0 {
+            if arg_diagnostic_count == eval_count {
+                // if all evaluations have some argument error, we keep the first one
+                filtered_diagnostics.push(arg_diagnostic.next().unwrap().clone());
+            } else {
+                // if not all evaluations have it, it means at least one is valid.
+                // We use a different code warning
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01009, &[]) {
+                    filtered_diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
+                        ..diagnostic
+                    });
+                }
+            }
+        }
+        // we add the rest of the diagnostics as is
+        filtered_diagnostics.extend(diagnostics.into_iter().filter(|d| {
+            d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) &&
+            d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string()))
+        }));
+        filtered_diagnostics
     }
 
     fn validate_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, value: &Expr) -> Vec<Diagnostic> {
