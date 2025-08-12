@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.2 - 2025/08/12 - Update code and fix
+
+### Upgrade
+
+- Update the code to use node_indexes from ruff_python_parser (available since last update) instead of our own ast index implementation to avoid duplicating computation
+
+### Fixes
+
+- Invalid context value type that cause crashes (in Odoo < 18.0)
+- Fix the hook for the field 'global' on IrRule for versions < 18.1
+
 ## 0.10.1 - 2025/08/11 - Quick fix
 
 ### Fixes
