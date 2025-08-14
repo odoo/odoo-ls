@@ -89,6 +89,9 @@ impl Model {
     }
 
     pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+        if self.symbols.contains(&symbol) {
+            return;
+        }
         self.symbols.insert(symbol.clone());
         let from_module = symbol.borrow().find_module();
         self.add_dependents_to_validation(session, from_module);
@@ -182,6 +185,11 @@ impl Model {
             }
         }
         res
+    }
+
+    pub fn has_symbols(&mut self) -> bool {
+        self.symbols.remove_expired();
+        !self.symbols.is_empty()
     }
 
     /* Return all symbols that build this model.

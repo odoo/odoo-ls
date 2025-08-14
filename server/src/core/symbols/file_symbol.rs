@@ -17,6 +17,7 @@ pub struct FileSymbol {
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
+    pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
     in_workspace: bool,
     pub self_import: bool,
@@ -59,6 +60,7 @@ impl FileSymbol {
             dependencies: vec![],
             dependents: vec![],
             processed_text_hash: 0,
+            not_found_models: HashMap::new(),
             noqas: NoqaInfo::None,
         };
         res._init_symbol_mgr();

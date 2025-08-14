@@ -449,31 +449,33 @@ impl PythonValidator {
 
                         }
                     } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) {
-                        let Some(module) = class_ref.find_module() else {
+                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                             continue;
                         };
-                        if !ModuleSymbol::is_in_deps(session, &module, &oyarn!("{}", comodel_field_name)){
-                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
-                                continue;
-                            };
-                            if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", comodel_field_name)){
-                                let Some(ref from_module) = maybe_from_module else {continue};
-                                if !model.clone().borrow().model_in_deps(session, from_module) {
-                                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03015, &[&comodel_field_name]) {
-                                        self.diagnostics.push(Diagnostic {
-                                            range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
-                                            ..diagnostic_base.clone()
-                                        });
-                                    }
-                                }
-                            } else {
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03016, &[&comodel_field_name]) {
+                        let maybe_model = session.sync_odoo.models.get(&Sy!(comodel_field_name.clone()));
+                        if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false){
+                            let model = maybe_model.unwrap().clone();
+                            let Some(ref from_module) = maybe_from_module else {continue};
+                            if !model.clone().borrow().model_in_deps(session, from_module) {
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03015, &[&comodel_field_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
                                     });
                                 }
                             }
+                        } else {
+                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03016, &[&comodel_field_name]) {
+                                self.diagnostics.push(Diagnostic {
+                                    range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                    ..diagnostic_base.clone()
+                                });
+                            }
+                            let Some(file_symbol) = class_ref.get_file().and_then(|file| file.upgrade()) else {
+                            return;
+                            };
+                            file_symbol.borrow_mut().as_file_mut().not_found_models.insert(Sy!(comodel_field_name.clone()), BuildSteps::ARCH_EVAL);
+                            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
                         }
                     }
                     for special_fn_field_name in ["compute", "inverse", "search"]{
@@ -518,19 +520,19 @@ impl PythonValidator {
                 if let Some(inherit_value) = inherit_value {
                     match inherit_value {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                            self._check_module_dependency(session, &s.value.to_string(), &s.range());
+                            self._check_module_dependency(session, class, &s.value.to_string(), &s.range());
                         },
                         EvaluationValue::LIST(l) => {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
-                                    self._check_module_dependency(session, &s.value.to_string(), &s.range());
+                                    self._check_module_dependency(session, class, &s.value.to_string(), &s.range());
                                 }
                             }
                         },
                         EvaluationValue::TUPLE(l) => {
                             for e in l {
                                 if let Expr::StringLiteral(s) = e {
-                                    self._check_module_dependency(session, &s.value.to_string(), &s.range());
+                                    self._check_module_dependency(session, class, &s.value.to_string(), &s.range());
                                 }
                             }
                         },
@@ -573,54 +575,81 @@ impl PythonValidator {
                 }
             }
         }
+        // check inherits
+        let inherits = class_ref.get_symbol(&(vec![], vec![Sy!("_inherits")]), u32::MAX);
+        if let Some(inherits) = inherits.last() {
+            let inherits = inherits.borrow();
+            let inherits_evals = &inherits.evaluations().unwrap();
+            for inherits_eval in inherits_evals.iter() {
+                let inherits_value = inherits_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
+                if let Some(inherits_value) = inherits_value {
+                    match inherits_value {
+                        EvaluationValue::DICT(d) => {
+                            for (key, _value) in d.iter() {
+                                if let Expr::StringLiteral(s) = key {
+                                    self._check_module_dependency(session, class, &s.value.to_string(), &s.range());
+                                }
+                            }
+                        },
+                        _ => {warn!("wrong _inherits value");}
+                    }
+                }
+            }
+        }
     }
 
-    fn _check_module_dependency(&mut self, session: &mut SessionInfo, model: &String, range: &TextRange) {
-        if let Some(from) = self.current_module.as_ref() {
-            let model = session.sync_odoo.models.get(&oyarn!("{}", model));
-            if let Some(model) = model {
-                let model = model.clone();
-                let borrowed_model = model.borrow();
-                let mut main_modules = vec![];
-                let mut found_one = false;
-                for main_sym in borrowed_model.get_main_symbols(session, None).iter() {
-                    let main_sym = main_sym.borrow();
-                    let main_sym_module = main_sym.find_module();
-                    if let Some(main_sym_module) = main_sym_module {
-                        let module_name = main_sym_module.borrow().as_module_package().dir_name.clone();
-                        main_modules.push(module_name.clone());
-                        if ModuleSymbol::is_in_deps(session, from, &module_name) {
-                            found_one = true;
-                        }
+    fn _check_module_dependency(&mut self, session: &mut SessionInfo, class_sym_rc: &Rc<RefCell<Symbol>>, model: &String, range: &TextRange) {
+        let Some(from) = self.current_module.as_ref() else {
+            return; //TODO do we want to raise something?
+        };
+        let model_name = Sy!(model.clone());
+        let model = session.sync_odoo.models.get(&model_name);
+        if model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
+            let model = model.unwrap().clone();
+            let borrowed_model = model.borrow();
+            let mut main_modules = vec![];
+            let mut found_one = false;
+            for main_sym in borrowed_model.get_main_symbols(session, None).iter() {
+                let main_sym = main_sym.borrow();
+                let main_sym_module = main_sym.find_module();
+                if let Some(main_sym_module) = main_sym_module {
+                    let module_name = main_sym_module.borrow().as_module_package().dir_name.clone();
+                    main_modules.push(module_name.clone());
+                    if ModuleSymbol::is_in_deps(session, from, &module_name) {
+                        found_one = true;
+                        break;
                     }
                 }
-                if !found_one {
-                    if !main_modules.is_empty() {
-                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03004, &[]) {
-                            self.diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
-                    } else {
-                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
-                            self.diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
+            }
+            if !found_one {
+                if !main_modules.is_empty() {
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03004, &[]) {
+                        self.diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
                     }
-                }
-            } else {
-                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-                        ..diagnostic_base
-                    });
+                } else {
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
+                        self.diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
+                    }
                 }
             }
         } else {
-            //TODO do we want to raise something?
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
+                self.diagnostics.push(Diagnostic {
+                    range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                    ..diagnostic_base
+                });
+            }
+            let Some(file_symbol) = class_sym_rc.borrow().get_file().and_then(|file| file.upgrade()) else {
+              return;
+            };
+            file_symbol.borrow_mut().as_file_mut().not_found_models.insert(model_name.clone(), BuildSteps::ARCH_EVAL);
+            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
         }
     }
 

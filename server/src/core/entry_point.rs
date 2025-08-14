@@ -320,6 +320,7 @@ pub struct EntryPoint {
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
     pub root: Rc<RefCell<Symbol>>,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub not_found_symbols_for_models: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
     pub data_symbols: HashMap<String, Weak<RefCell<Symbol>>>, //key is path, weak to Rc that is hold by the module symbol
 }
@@ -333,6 +334,7 @@ impl EntryPoint {
             addon_to_odoo_path,
             addon_to_odoo_tree,
             not_found_symbols: PtrWeakHashSet::new(),
+            not_found_symbols_for_models: PtrWeakHashSet::new(),
             root: root.clone(),
             to_delete: false,
             data_symbols: HashMap::new(),
@@ -376,16 +378,13 @@ impl EntryPoint {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: &Tree) -> bool {
+    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: &Tree) {
         let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
-        let mut found_sym: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
-        let mut need_rebuild = false;
         let mut to_add = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
-        'loop_symbols: for s in self.not_found_symbols.iter() {
+        for s in self.not_found_symbols.iter() {
             if s.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
                 let mut sym = s.borrow_mut();
                 if let Some(step) = sym.as_module_package().not_found_data.get(path) {
-                    need_rebuild = true;
                     match step {
                         BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
                             to_add[*step as usize].push(s.clone());
@@ -393,16 +392,13 @@ impl EntryPoint {
                         _ => {}
                     }
                     sym.as_module_package_mut().not_found_data.remove(path);
+                    continue; //as if a data has been found, we won't find anything later, so we can continue the loop
                 }
-            }
-            if need_rebuild {
-                continue 'loop_symbols; //as if a data has been found, we won't find anything later, so we can continue the loop
             }
             let mut index: i32 = 0; //i32 sa we could go in negative values
             while (index as usize) < s.borrow().not_found_paths().len() {
                 let (step, not_found_tree) = s.borrow().not_found_paths()[index as usize].clone();
                 if flat_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] == not_found_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] {
-                    need_rebuild = true;
                     match step {
                         BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
                             to_add[step as usize].push(s.clone());
@@ -413,9 +409,6 @@ impl EntryPoint {
                     index -= 1;
                 }
                 index += 1;
-            }
-            if s.borrow().not_found_paths().len() == 0 {
-                found_sym.insert(s.clone());
             }
         }
         for s in to_add[BuildSteps::ARCH as usize].iter() {
@@ -428,11 +421,43 @@ impl EntryPoint {
             s.borrow_mut().invalidate_sub_functions(session);
             session.sync_odoo.add_to_validations(s.clone());
         }
-        for sym in found_sym.iter() {
-            if sym.borrow().not_found_paths().is_empty() && (sym.borrow().typ() != SymType::PACKAGE(PackageType::MODULE) || sym.borrow().as_module_package().not_found_data.is_empty()) {
-                self.not_found_symbols.remove(&sym);
+        self.not_found_symbols.retain(|sym| {
+            !sym.borrow().not_found_paths().is_empty() || (sym.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) && !sym.borrow().as_module_package().not_found_data.is_empty())
+        });
+    }
+
+    pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn){
+        let mut to_add: [Vec<Rc<RefCell<Symbol>>>; 4] = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
+        for sym_rc in self.not_found_symbols_for_models.iter() {
+            let mut sym_ref = sym_rc.borrow_mut();
+            let Some(not_found_models) = sym_ref.not_found_models_mut() else {
+                continue;
+            };
+            let Some(step) = not_found_models.get(&model_name) else {
+                continue;
+            };
+            match step {
+                BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
+                    to_add[*step as usize].push(sym_rc.clone());
+                }
+                _ => {} // unreachable
             }
+            not_found_models.remove(&model_name);
+
         }
-        need_rebuild
+        for s in to_add[BuildSteps::ARCH as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch(s.clone());
+        }
+        for s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
+        }
+        for s in to_add[BuildSteps::VALIDATION as usize].iter() {
+            s.borrow_mut().invalidate_sub_functions(session);
+            session.sync_odoo.add_to_validations(s.clone());
+        }
+        self.not_found_symbols_for_models.retain(|sym| {
+            !sym.borrow().not_found_models().map(|models| models.is_empty()).unwrap_or(true)
+        });
+
     }
 }
