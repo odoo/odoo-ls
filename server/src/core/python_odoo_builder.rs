@@ -76,7 +76,9 @@ impl PythonOdooBuilder {
             Some(model) => {
                 let inherited_model_names = sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
                 if !inherited_model_names.contains(&model_name)
-                && !model.borrow().get_main_symbols(session, sym.borrow().find_module()).is_empty(){
+                && model.borrow().get_main_symbols(session, sym.borrow().find_module()).into_iter().filter(|main_sym| {
+                    !Rc::ptr_eq(main_sym, &sym)
+                }).count() > 0 {
                     // This a model with a name that already exists in models and in dependencies,
                     // and it is not inherited, so it is basically shadowing the existing model.
                     let _name = sym.borrow().get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
@@ -106,6 +108,7 @@ impl PythonOdooBuilder {
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
+        session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_models(session, model_name);
         self.process_fields(session, sym);
         diagnostics
     }
