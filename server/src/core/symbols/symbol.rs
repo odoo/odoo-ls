@@ -2561,7 +2561,7 @@ impl Symbol {
             return false;
         }
         let tree = flatten_tree(&self.get_main_entry_tree(session));
-        if session.sync_odoo.full_version <= S!("18.0") {
+        if compare_semver(session.sync_odoo.full_version.as_str(), "18.0") <= Ordering::Equal {
             if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
                 if tree[2].as_str() == "Field" {
                     return true;
