@@ -1226,6 +1226,38 @@ impl Symbol {
         }
     }
 
+    pub fn not_found_models(&self) -> Option<&HashMap<OYarn, BuildSteps>> {
+        match self {
+            Symbol::File(f) => Some(&f.not_found_models),
+            Symbol::XmlFileSymbol(f) => Some(&f.not_found_models),
+            Symbol::Root(_) => None,
+            Symbol::Namespace(_) => None,
+            Symbol::DiskDir(_) => None,
+            Symbol::Package(_) => None,
+            Symbol::Compiled(_) => None,
+            Symbol::Class(_) => None,
+            Symbol::Function(_) => None,
+            Symbol::Variable(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
+        }
+    }
+
+    pub fn not_found_models_mut(&mut self) -> Option<&mut HashMap<OYarn, BuildSteps>> {
+        match self {
+            Symbol::File(f) => Some(&mut f.not_found_models),
+            Symbol::XmlFileSymbol(f) => Some(&mut f.not_found_models),
+            Symbol::Root(_) => None,
+            Symbol::Namespace(_) => None,
+            Symbol::DiskDir(_) => None,
+            Symbol::Package(_) => None,
+            Symbol::Compiled(_) => None,
+            Symbol::Class(_) => None,
+            Symbol::Function(_) => None,
+            Symbol::Variable(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
+        }
+    }
+
     pub fn get_main_entry_tree(&self, session: &mut SessionInfo) -> Tree {
         let mut tree = self.get_tree();
         let len_first_part = tree.0.len();
@@ -1731,7 +1763,7 @@ impl Symbol {
         }
     }
 
-    //unload a symbol and subsymbols. Return a list of paths of files and packages that have been deleted
+    //unload a symbol and subsymbols.
     pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
@@ -2581,6 +2613,7 @@ impl Symbol {
                     return true;
                 }
             }
+
         } else {
             if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
                     tree[2] == "fields" && tree[3] == "Field"

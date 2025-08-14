@@ -79,6 +79,7 @@ impl PythonOdooBuilder {
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
+        session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_models(session, model_name);
         self.process_fields(session, sym);
         diagnostics
     }
