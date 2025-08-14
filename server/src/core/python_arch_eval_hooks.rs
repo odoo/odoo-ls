@@ -1,13 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::ops::Index;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::rc::Weak;
 use std::cell::RefCell;
 use lsp_types::Diagnostic;
-use lsp_types::DiagnosticSeverity;
-use lsp_types::NumberOrString;
 use once_cell::sync::Lazy;
 use ruff_python_ast::Arguments;
 use ruff_python_ast::Expr;
@@ -23,8 +19,6 @@ use crate::constants::*;
 use crate::oyarn;
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
-use crate::utils::is_file_cs;
-use crate::utils::PathSanitizer;
 use crate::Sy;
 use crate::S;
 
@@ -32,7 +26,6 @@ use super::entry_point::EntryPoint;
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
 use super::python_arch_eval::PythonArchEval;
-use super::symbols::module_symbol::ModuleSymbol;
 
 type PythonArchEvalHookFile = fn (odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>);
 
@@ -704,100 +697,86 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
-    pub fn eval_env_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
     {
-        if let Some(context) = context {
-            let in_validation = context.get(&S!("is_in_validation")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
-            let arg = context.get(&S!("args"));
-            if let Some(arg) = arg {
-                match arg {
-                    ContextValue::STRING(s) => {
-                        let model = session.sync_odoo.models.get(&oyarn!("{}", s));
-                        let mut has_class_in_parents = false;
-                        if let Some(scope) = scope.as_ref() {
-                            has_class_in_parents = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some();
+        let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Weak::new(), Some(true), false)));
+        let Some(context) = context else {
+            return res
+        };
+        let in_validation = context.get(&S!("is_in_validation")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
+        let Some(ContextValue::STRING(s)) = context.get(&S!("args")) else {
+            return res
+        };
+        let maybe_model = session.sync_odoo.models.get(&oyarn!("{}", s));
+        let has_class_in_parents = scope.as_ref().map(|scope| scope.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some()).unwrap_or(false);
+        if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
+            let Some(model) = maybe_model else {unreachable!()};
+            let module = context.get(&S!("module"));
+            let from_module = if let Some(ContextValue::MODULE(m)) = module {
+                m.upgrade().clone()
+            } else {
+                None
+            };
+            if let Some(scope) = scope {
+                let mut f = scope.borrow_mut();
+                f.add_model_dependencies(model);
+            }
+            let model = model.clone();
+            let model = model.borrow();
+            let symbols = model.get_main_symbols(session, from_module.clone());
+            if let Some(first_symbol) = symbols.first() {
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Rc::downgrade(first_symbol), Some(true), false)));
+            }
+            if in_validation && has_class_in_parents { //we don't want to show error for functions outside of a model body
+                if from_module.is_some(){
+                    //retry without from_module to see if model exists elsewhere
+                    let symbols = model.get_main_symbols(session, None);
+                    if symbols.is_empty() {
+                        // Model exists, but has no main symbols
+                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) { // Is this error code correct?
+                            diagnostics.push(Diagnostic {
+                                range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                ..diagnostic_base.clone()
+                            });
                         }
-                        if let Some(model) = model {
-                            let module = context.get(&S!("module"));
-                            let from_module;
-                            if let Some(ContextValue::MODULE(m)) = module {
-                                if let Some(m) = m.upgrade() {
-                                    from_module = Some(m.clone());
-                                } else {
-                                    from_module = None;
-                                }
-                            } else {
-                                from_module = None;
-                            }
-                            if let Some(scope) = scope {
-                                let mut f = scope.borrow_mut();
-                                f.add_model_dependencies(model);
-                            }
-                            let model = model.clone();
-                            let model = model.borrow();
-                            let symbols = model.get_main_symbols(session, from_module.clone());
-                            if !symbols.is_empty() {
-                                for s in symbols.iter() {
-                                    if from_module.is_none() || ModuleSymbol::is_in_deps(session, &from_module.as_ref().unwrap(),&s.borrow().find_module().unwrap().borrow().as_module_package().dir_name) {
-                                        return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Rc::downgrade(s), Some(true), false)));
-                                    }
-                                }
-                            } else {
-                                if from_module.is_some() && has_class_in_parents { //we don't want to show error for functions outside of a model body
-                                    //retry without from_module to see if model exists elsewhere
-                                    let symbols = model.get_main_symbols(session, None);
-                                    if symbols.is_empty() {
-                                        if in_validation {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
-                                                diagnostics.push(Diagnostic {
-                                                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
-                                                    ..diagnostic_base.clone()
-                                                });
-                                            }
-                                        }
-                                    } else {
-                                        if in_validation {
-                                            let valid_modules: Vec<OYarn> = symbols.iter().map(|s| match s.borrow().find_module() {
-                                                Some(sym) => sym.borrow().name().clone(),
-                                                None => Sy!("Unknown").clone()
-                                            }).collect();
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
-                                                diagnostics.push(Diagnostic {
-                                                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
-                                                    ..diagnostic_base.clone()
-                                                });
-                                            }
-                                        }
-                                    }
-                                } else if has_class_in_parents {
-                                    if in_validation {
-                                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
-                                                diagnostics.push(Diagnostic {
-                                                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
-                                                    ..diagnostic_base
-                                                });
-                                        };
-                                    }
-                                }
-                            }
-                        } else if has_class_in_parents {
-                            if in_validation {
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
-                                    diagnostics.push(Diagnostic {
-                                        range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
-                                        ..diagnostic_base
-                                    });
-                                };
-                            }
+                    } else {
+                        // Model exists but not in dependencies
+                        let valid_modules: Vec<OYarn> = symbols.iter().map(|s| match s.borrow().find_module() {
+                            Some(sym) => sym.borrow().name().clone(),
+                            None => Sy!("Unknown").clone()
+                        }).collect();
+                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
+                            diagnostics.push(Diagnostic {
+                                range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                ..diagnostic_base.clone()
+                            });
                         }
                     }
-                    _ => {
-                        //NOT A STRING
+                } else {
+                    // Model exists, but has no main symbols
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                                ..diagnostic_base
+                            });
                     }
                 }
             }
+        } else if in_validation && has_class_in_parents {
+            // Model Unknown
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&context.get(&S!("range")).unwrap().as_text_range()),
+                    ..diagnostic_base
+                });
+            }
+            let Some(file_symbol) = scope.and_then(|scope| scope.borrow().get_file()).and_then(|file| file.upgrade()) else {
+              return res
+            };
+            file_symbol.borrow_mut().as_file_mut().not_found_models.insert(Sy!(s.clone()), BuildSteps::VALIDATION);
+            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
         }
-        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Weak::new(), Some(true), false)))
+        res
     }
 
     pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
