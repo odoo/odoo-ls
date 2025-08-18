@@ -1,6 +1,3 @@
-out
-node_modules
-client/server
 .idea
 .vscode-test
 .vscode/settings.json
@@ -8,16 +5,7 @@ server/libs/
 server/target/
 server/logs/
 server/cross/
-env
 *.pyc
 *.log
 *.vsix
 *.lock
-vscode/package-lock.json
-vscode/.nox
-vscode/__pycache__
-vscode/requirements.txt
-vscode/server
-vscode/CHANGELOG.md
-vscode/package-lock.json
-vscode/build
