@@ -89,7 +89,8 @@ impl XmlValidator {
         for main_sym in main_symbols.iter() {
             dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
         }
-        let all_fields = Symbol::all_fields(&main_symbols[0], session, Some(module.clone()));
+        let Some(main_symbol) = main_symbols.get(0) else { return; };
+        let all_fields = Symbol::all_fields(main_symbol, session, Some(module.clone()));
         self.validate_fields(session, xml_data_record, &all_fields, diagnostics, missing_model_dependencies);
     }
 
