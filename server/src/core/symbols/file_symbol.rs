@@ -14,9 +14,9 @@ pub struct FileSymbol {
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
-    pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
+    pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub xml_ids: HashMap<OYarn, Vec<XmlData>>, //used for dynamic XML_ID records, like ir.models
     in_workspace: bool,
     pub self_import: bool,
@@ -45,7 +45,6 @@ impl FileSymbol {
             parent: None,
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
-            odoo_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             xml_ids: HashMap::new(),
@@ -59,6 +58,7 @@ impl FileSymbol {
             dependencies: vec![],
             dependents: vec![],
             processed_text_hash: 0,
+            not_found_models: HashMap::new(),
             noqas: NoqaInfo::None,
         };
         res._init_symbol_mgr();

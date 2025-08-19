@@ -1212,6 +1212,38 @@ impl Symbol {
         }
     }
 
+    pub fn not_found_models(&self) -> Option<&HashMap<OYarn, BuildSteps>> {
+        match self {
+            Symbol::File(f) => Some(&f.not_found_models),
+            Symbol::XmlFileSymbol(f) => Some(&f.not_found_models),
+            Symbol::Root(_) => None,
+            Symbol::Namespace(_) => None,
+            Symbol::DiskDir(_) => None,
+            Symbol::Package(_) => None,
+            Symbol::Compiled(_) => None,
+            Symbol::Class(_) => None,
+            Symbol::Function(_) => None,
+            Symbol::Variable(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
+        }
+    }
+
+    pub fn not_found_models_mut(&mut self) -> Option<&mut HashMap<OYarn, BuildSteps>> {
+        match self {
+            Symbol::File(f) => Some(&mut f.not_found_models),
+            Symbol::XmlFileSymbol(f) => Some(&mut f.not_found_models),
+            Symbol::Root(_) => None,
+            Symbol::Namespace(_) => None,
+            Symbol::DiskDir(_) => None,
+            Symbol::Package(_) => None,
+            Symbol::Compiled(_) => None,
+            Symbol::Class(_) => None,
+            Symbol::Function(_) => None,
+            Symbol::Variable(_) => None,
+            Symbol::CsvFileSymbol(_) => None,
+        }
+    }
+
     pub fn get_main_entry_tree(&self, session: &mut SessionInfo) -> Tree {
         let mut tree = self.get_tree();
         let len_first_part = tree.0.len();
@@ -1649,7 +1681,7 @@ impl Symbol {
     }
 
     pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
-        //signals that a change occured to this symbol. "step" indicates which level of change occured.
+        //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
         //It will trigger rebuild on all dependencies
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
@@ -1699,6 +1731,14 @@ impl Symbol {
                     }
                 }
             }
+            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && sym_to_inv.dependents().len() > 2 {
+                for sym in sym_to_inv.dependents()[BuildSteps::VALIDATION as usize].iter().flatten().flatten() {
+                    if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
+                        sym.borrow_mut().invalidate_sub_functions(session);
+                        session.sync_odoo.add_to_validations(sym.clone());
+                    }
+                }
+            }
             if sym_to_inv.has_modules() {
                 for sym in sym_to_inv.all_module_symbol() {
                     vec_to_invalidate.push_back(sym.clone());
@@ -1717,7 +1757,7 @@ impl Symbol {
         }
     }
 
-    //unload a symbol and subsymbols. Return a list of paths of files and packages that have been deleted
+    //unload a symbol and subsymbols.
     pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
@@ -2567,6 +2607,7 @@ impl Symbol {
                     return true;
                 }
             }
+
         } else {
             if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
                     tree[2] == "fields" && tree[3] == "Field"
