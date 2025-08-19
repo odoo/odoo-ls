@@ -45,7 +45,6 @@ pub struct ModuleSymbol {
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
-    pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<Weak<RefCell<Symbol>>>,
@@ -92,7 +91,6 @@ impl ModuleSymbol {
             module_symbols: HashMap::new(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
-            odoo_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::new(),
