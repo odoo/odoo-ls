@@ -16,19 +16,25 @@ Please consult the readme of each directory to learn more about each project.
 
 ### Language Server
 
-A generic language server that can be used to provide common IDE features to your IDE: autocompletion, Hovering, go to definition, etc...
+A generic language server that can be used to provide common IDE features to your IDE as well as a command line tool.
+It can provide autocompletion, hovering, go to definition, diagnostics, document symbols, etc...
 
 ### VsCode Extension
 
 An extension that will bundle the Odoo Language Server and give needed settings and some UI improvements to your vscode.
+The VsCode extension can be found here: https://github.com/odoo/odoo-ls-vscode
+
+### PyCharm plugin
+
+That plugin integrates OdooLS to PyCharm. You can find it here: https://github.com/odoo/odoo-ls-pycharm
 
 ### Vim extension
 
-An integration of OdooLS is available in a side-project for now. Check it out here: https://github.com/Whenrow/odoo-ls.nvim
+An integration of OdooLS is available for neovim. Check it out here: https://github.com/odoo/odoo-ls-neovim
 
 ## State of the project
 
-All modules in this repository are actually in development and not released in a stable and valid version. You can face crashs or inconsistent results by using it. Please consult each directory to get a better idea of the state of each project.
+All modules in these repositories are actually in development and not released in a stable and valid version. You can face crashs or inconsistent results by using it. Please consult each repository to get a better idea of the state of each project.
 
 ## Branches description
 
