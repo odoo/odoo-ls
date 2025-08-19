@@ -1695,7 +1695,7 @@ impl Symbol {
     }
 
     pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
-        //signals that a change occured to this symbol. "step" indicates which level of change occured.
+        //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
         //It will trigger rebuild on all dependencies
         let mut vec_to_invalidate: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
@@ -1742,6 +1742,14 @@ impl Symbol {
                                 model.borrow().add_dependents_to_validation(session, from_module);
                             }
                         }
+                    }
+                }
+            }
+            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && sym_to_inv.dependents().len() > 2 {
+                for sym in sym_to_inv.dependents()[BuildSteps::VALIDATION as usize].iter().flatten().flatten() {
+                    if !Symbol::is_symbol_in_parents(&sym, &ref_to_inv) {
+                        sym.borrow_mut().invalidate_sub_functions(session);
+                        session.sync_odoo.add_to_validations(sym.clone());
                     }
                 }
             }
