@@ -717,9 +717,15 @@ impl PythonArchEvalHooks {
             } else {
                 None
             };
-            if let Some(scope) = scope {
-                let mut f = scope.borrow_mut();
-                f.add_model_dependencies(model);
+            if let Some(scope) = scope
+                .and_then(|s| s.borrow().get_file())
+                .and_then(|w| w.upgrade()) {
+                let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
+                let env_file = env_files.last().unwrap();
+                if !Rc::ptr_eq(env_file, &scope) {
+                    let mut f = scope.borrow_mut();
+                    f.add_model_dependencies(model);
+                }
             }
             let model = model.clone();
             let model = model.borrow();
@@ -876,10 +882,17 @@ impl PythonArchEvalHooks {
         None
     }
 
-    fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
+    fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>{
         let comodel = oyarn!("{}", comodel.as_string());
         let comodel_sym = session.sync_odoo.models.get(&comodel).cloned();
         if let Some(comodel_sym) = comodel_sym {
+            // Add dependency
+            if let Some(scope) = scope
+                .and_then(|s| s.borrow().get_file())
+                .and_then(|w| w.upgrade()) {
+                let mut f = scope.borrow_mut();
+                f.add_model_dependencies(&comodel_sym);
+            }
             let module = context.get(&S!("module"));
             let mut from_module = None;
             if let Some(ContextValue::MODULE(m)) = module {
@@ -895,13 +908,13 @@ impl PythonArchEvalHooks {
         Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(true), is_super: false}))
     }
 
-    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
+    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>
     {
         let Some(context) = context else {
             return None;
         };
         if let Some(comodel) = context.get(&S!("comodel_name")) {
-            return PythonArchEvalHooks::eval_relational_with_comodel(session, comodel, context);
+            return PythonArchEvalHooks::eval_relational_with_comodel(session, comodel, context, scope);
         }
         if let Some(related_field) = context.get(&S!("related")) {
             return PythonArchEvalHooks::eval_relational_with_related(session, related_field, context);
