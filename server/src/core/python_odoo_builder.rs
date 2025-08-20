@@ -73,34 +73,7 @@ impl PythonOdooBuilder {
             }));
         }
         match session.sync_odoo.models.get(&model_name).cloned(){
-            Some(model) => {
-                let inherited_model_names = sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
-                if !inherited_model_names.contains(&model_name)
-                && !model.borrow().get_main_symbols(session, sym.borrow().find_module()).is_empty(){
-                    // This a model with a name that already exists in models and in dependencies,
-                    // and it is not inherited, so it is basically shadowing the existing model.
-                    let _name = sym.borrow().get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
-                    if let Some(_name) = _name.last() {
-                        let mut range = _name.borrow().range().clone();
-                        // Try to get the string value range, otherwise stick to _name var range.
-                        if let Some(eval_range) = _name.borrow().evaluations().unwrap().iter().find_map(|e|
-                            match e.follow_ref_and_get_value(session, &mut None, &mut diagnostics) {
-                                Some(EvaluationValue::CONSTANT(Expr::StringLiteral(_))) => e.range,
-                                _ => None,
-                            }
-                        ) {
-                            range = TextRange::new(range.start(), eval_range.end());
-                        }
-                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03020, &[&model_name]) {
-                            diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&range),
-                                ..diagnostic
-                            });
-                        }
-                    }
-                }
-                model.borrow_mut().add_symbol(session, sym.clone())
-            },
+            Some(model) => model.borrow_mut().add_symbol(session, sym.clone()),
             None => {
                 let model = Model::new(model_name.clone(), sym.clone());
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
