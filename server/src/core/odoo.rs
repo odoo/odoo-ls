@@ -1,7 +1,6 @@
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
-use crate::core::symbols::file_symbol;
 use crate::core::xml_data::XmlData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -191,7 +190,7 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
-        if session.sync_odoo.config.no_typeshed {
+        if session.sync_odoo.config.no_typeshed_stubs {
             session.sync_odoo.stubs_dirs.clear();
         }
         for stub in session.sync_odoo.config.additional_stubs.iter() {
