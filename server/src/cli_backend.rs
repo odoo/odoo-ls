@@ -49,7 +49,7 @@ impl CliBackend {
             } else {
                 error!("Unable to resolve tracked folder: {}", tracked_folder);
             }
-            
+
         }
 
         let mut config = ConfigEntry::new();
@@ -57,7 +57,7 @@ impl CliBackend {
         config.odoo_path = Some(fs::canonicalize(community_path.unwrap_or(S!(""))).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize());
         config.refresh_mode = crate::core::config::RefreshMode::Off;
         config.diag_missing_imports = DiagMissingImportsMode::All;
-        config.no_typeshed = self.cli.no_typeshed;
+        config.no_typeshed_stubs = self.cli.no_typeshed_stubs;
         config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]).into_iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).collect();
         config.stdlib = self.cli.stdlib.clone().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).unwrap_or(S!(""));
         config.python_path = self.cli.python.clone().unwrap_or(get_python_command().unwrap_or(S!("")));

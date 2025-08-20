@@ -183,6 +183,13 @@ impl ConfigFile {
             val.get("value").is_some() && val.get("sources").is_some() && val.get("sources").unwrap().is_array()
         }
 
+        fn sourced_info(val: &serde_json::Value) -> Option<String> {
+            val.get("info")
+                .and_then(|info| info.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| format!("<span class=\"toml-info\">{}</span>", s))
+        }
+
         fn render_field(key: &str, value: &serde_json::Value, ident: usize) -> String {
             let mut rows = String::new();
             if is_sourced_field(value) {
@@ -193,9 +200,10 @@ impl ConfigFile {
                     .map(render_source)
                     .collect::<Vec<_>>()
                     .join(", ");
+                let info_html = sourced_info(value).unwrap_or_default();
                 if val.is_object() && !val.is_null() {
                     // Nested object
-                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {{</div><div class=\"toml-right\"></div></div>\n", key));
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = {{</div><div class=\"toml-right\">{}</div></div>\n", key, info_html));
                     for (k, v) in val.as_object().unwrap() {
                         for line in render_field(k, v, ident + 1).lines() {
                             rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">  {}</div></div>\n", line));
@@ -204,7 +212,7 @@ impl ConfigFile {
                     rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">}</div><div class=\"toml-right\"></div></div>\n");
                 } else if val.is_array() {
                     // Array of values
-                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = [</div><div class=\"toml-right\"></div></div>\n", key));
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{} = [</div><div class=\"toml-right\">{}</div></div>\n", key, info_html));
                     for item in val.as_array().unwrap() {
                         if is_sourced_field(item) {
                             let item_val = &item["value"];
@@ -214,7 +222,8 @@ impl ConfigFile {
                                 .map(render_source)
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat((ident + 1) * 2), item_val, item_rendered_src));
+                            let item_info_html = sourced_info(item).unwrap_or_default();
+                            rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}{}</div></div>\n", " ".repeat((ident + 1) * 2), item_val, item_rendered_src, item_info_html));
                         } else {
                             rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat((ident + 1) * 2), item, rendered_src));
                         }
@@ -222,7 +231,7 @@ impl ConfigFile {
                     rows.push_str("<div class=\"toml-row\"><div class=\"toml-left\">]</div><div class=\"toml-right\"></div></div>\n");
                 } else {
                     // Single value
-                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{} = {}</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat(ident * 2), key, val, rendered_src));
+                    rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{} = {}</div><div class=\"toml-right\">{}{}</div></div>\n", " ".repeat(ident * 2), key, val, rendered_src, info_html));
                 }
             } else if value.is_array() {
                 // Array of Sourced or primitive values
@@ -236,7 +245,8 @@ impl ConfigFile {
                             .map(render_source)
                             .collect::<Vec<_>>()
                             .join(", ");
-                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}</div></div>\n", " ".repeat((ident + 1) * 2), item_val, item_rendered_src));
+                        let item_info_html = sourced_info(item).unwrap_or_default();
+                        rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\">{}{}</div></div>\n", " ".repeat((ident + 1) * 2), item_val, item_rendered_src, item_info_html));
                     } else {
                         rows.push_str(&format!("<div class=\"toml-row\"><div class=\"toml-left\">{}{},</div><div class=\"toml-right\"></div></div>\n", " ".repeat((ident + 1) * 2), item));
                     }
@@ -281,6 +291,12 @@ impl ConfigFile {
     color: #888;
     font-size: 0.9em;
   }
+    .toml-info {
+        color: #c00;
+        font-size: 0.9em;
+        margin-left: 10px;
+        font-style: italic;
+    }
   .config-wiki-link {
     margin-bottom: 10px;
     display: block;
@@ -302,10 +318,10 @@ impl ConfigFile {
             if let serde_json::Value::Object(map) = entry_val {
                 let order = [
                     "name", "extends", "odoo_path", "abstract", "addons_paths", "addons_merge",
-                    "python_path", "additional_stubs", "additional_stubs_merge",
+                    "python_path", "stdlib", "additional_stubs", "additional_stubs_merge",
                     "refresh_mode", "file_cache", "diag_missing_imports",
                     "ac_filter_model_names", "auto_refresh_delay", "add_workspace_addon_path",
-                    "diagnostic_settings", "diagnostic_filters"
+                    "diagnostic_settings", "diagnostic_filters", "no_typeshed_stubs"
                 ];
                 for key in order {
                     if let Some(val) = map.get(key) {
@@ -592,7 +608,13 @@ pub struct ConfigEntryRaw {
     diagnostic_settings: HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
 
     #[serde(default)]
-    pub diagnostic_filters: Vec<Sourced<DiagnosticFilter>>,
+    diagnostic_filters: Vec<Sourced<DiagnosticFilter>>,
+
+    #[serde(default, serialize_with = "serialize_option_as_default")]
+    stdlib: Option<Sourced<String>>,
+
+    #[serde(default, serialize_with = "serialize_option_as_default")]
+    no_typeshed_stubs: Option<Sourced<bool>>,
 
     #[serde(skip_deserializing, rename(serialize = "abstract"))]
     abstract_: bool
@@ -620,6 +642,8 @@ impl Default for ConfigEntryRaw {
             diagnostic_settings: Default::default(),
             abstract_: false,
             diagnostic_filters: vec![],
+            stdlib: None,
+            no_typeshed_stubs: None,
         }
     }
 }
@@ -660,7 +684,7 @@ pub struct ConfigEntry {
     pub ac_filter_model_names: bool,
     pub auto_refresh_delay: u64,
     pub stdlib: String,
-    pub no_typeshed: bool,
+    pub no_typeshed_stubs: bool,
     pub abstract_: bool,
     pub diagnostic_settings: HashMap<DiagnosticCode, DiagnosticSetting>,
     pub diagnostic_filters: Vec<DiagnosticFilter>,
@@ -680,7 +704,7 @@ impl Default for ConfigEntry {
             ac_filter_model_names: true,
             auto_refresh_delay: 1000,
             stdlib: S!(""),
-            no_typeshed: false,
+            no_typeshed_stubs: false,
             abstract_: false,
             diagnostic_settings: Default::default(),
             diagnostic_filters: vec![],
@@ -754,6 +778,18 @@ fn process_paths(
                 fill_or_canonicalize(p, ws_folders, workspace_name, &is_python_path, var_map.clone())
             }
         });
+    entry.stdlib.as_mut().map(|std|{
+        let maybe_value = std::fs::canonicalize(PathBuf::from(&std.value)).map(|p| p.sanitize());
+        match maybe_value {
+            Ok(path) => {
+                std.value = path;
+            }
+            Err(err) => {
+                std.value = S!("");
+                std.info = format!("Failed to canonicalize stdlib path: {}", err);
+            }
+        }
+    });
 }
 
 fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, ConfigEntryRaw>, String> {
@@ -799,6 +835,8 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         entry.diagnostic_filters.iter_mut().for_each(|filter| {
             filter.sources.insert(path.sanitize());
         });
+        entry.stdlib.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
+        entry.no_typeshed_stubs.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
 
         (entry.name.clone(), entry)
     }).collect();
@@ -875,8 +913,11 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
     let base = child.base.clone().or(parent.base.clone());
     let diagnostic_settings = merge_sourced_diagnostic_setting_map(&child.diagnostic_settings, &parent.diagnostic_settings);
     let diagnostic_filters = child.diagnostic_filters.iter().chain(parent.diagnostic_filters.iter()).cloned().collect::<Vec<_>>();
+    let stdlib = child.stdlib.clone().or(parent.stdlib.clone());
+    let no_typeshed_stubs = child.no_typeshed_stubs.clone().or(parent.no_typeshed_stubs.clone());
 
     ConfigEntryRaw {
+        name: child.name.clone(),
         odoo_path,
         python_path,
         addons_paths,
@@ -888,13 +929,14 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         addons_merge,
         additional_stubs_merge,
         extends,
-        name: child.name.clone(),
         auto_refresh_delay,
         add_workspace_addon_path,
         version,
         base,
-        diagnostic_settings: diagnostic_settings,
-        diagnostic_filters: diagnostic_filters,
+        diagnostic_settings,
+        diagnostic_filters,
+        stdlib,
+        no_typeshed_stubs,
         ..Default::default()
     }
 }
@@ -1228,6 +1270,18 @@ fn merge_all_workspaces(
             );
             merged_entry.abstract_ = merged_entry.abstract_ || raw_entry.abstract_;
             merged_entry.diagnostic_filters.extend(raw_entry.diagnostic_filters.iter().cloned());
+            merged_entry.stdlib =  merge_sourced_options(
+                merged_entry.stdlib.clone(),
+                raw_entry.stdlib.clone(),
+                key.clone(),
+                "stdlib".to_string(),
+            )?;
+            merged_entry.no_typeshed_stubs =  merge_sourced_options(
+                merged_entry.no_typeshed_stubs.clone(),
+                raw_entry.no_typeshed_stubs.clone(),
+                key.clone(),
+                "no_typeshed_stubs".to_string(),
+            )?;
         }
     }
     // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
@@ -1269,6 +1323,8 @@ fn merge_all_workspaces(
                     .map(|(k, v)| (k, v.value))
                     .collect(),
                 diagnostic_filters: raw_entry.diagnostic_filters.into_iter().map(|f| f.value).collect(),
+                stdlib: raw_entry.stdlib.into_iter().map(|f| f.value).collect(),
+                no_typeshed_stubs: raw_entry.no_typeshed_stubs.map(|f| f.value).unwrap_or_default(),
                 ..Default::default()
             },
         );
@@ -1301,7 +1357,10 @@ pub fn needs_restart(old: &ConfigEntry, new: &ConfigEntry) -> bool {
     old.odoo_path != new.odoo_path ||
     old.addons_paths != new.addons_paths ||
     old.python_path != new.python_path ||
-    old.additional_stubs != new.additional_stubs
+    old.additional_stubs != new.additional_stubs ||
+    old.stdlib != new.stdlib ||
+    old.no_typeshed_stubs != new.no_typeshed_stubs
+
 }
 
 fn clamp_auto_refresh_delay(val: u64) -> u64 {
