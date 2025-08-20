@@ -12,25 +12,25 @@
                     "build"
                 ]
             },
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/server",
             "console": "externalTerminal"
         },
         {
             "name": "Debug Test (lldb)",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/deps/test_ls-7a1baaf6ea83c2e3",
+            "program": "${workspaceRoot}/server/target/debug/deps/test_ls-7a1baaf6ea83c2e3",
             "args": ["--use-tcp"],
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/server",
             "console": "externalTerminal"
         },
         {
             "name": "Launch Server (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/odoo_ls_server.exe",
+            "program": "${workspaceRoot}/server/target/debug/odoo_ls_server.exe",
             "args": ["--use-tcp"],
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/server",
             "console": "externalTerminal",
             "preLaunchTask": "cargo build"
         },
@@ -38,8 +38,8 @@
             "name": "Debug Test (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/target/debug/deps/test_ls-41ae513a18d41487.exe",
-            "cwd": "${workspaceFolder}",
+            "program": "${workspaceRoot}/server/target/debug/deps/test_ls-41ae513a18d41487.exe",
+            "cwd": "${workspaceFolder}/server",
             "console": "externalTerminal",
             "preLaunchTask": "cargo build"
         },

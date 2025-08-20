@@ -14,7 +14,10 @@
             },
             "problemMatcher": [
                 "$rustc"
-            ]
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/server"
+            }
         }
     ]
 }
