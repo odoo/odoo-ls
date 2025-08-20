@@ -541,6 +541,38 @@ impl PythonValidator {
                 }
             }
         }
+        // Check name for shadowing warning
+        let model_name = model_data.name.clone();
+        let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
+            return;
+        };
+        let inherited_model_names = class_ref.as_class_sym()._model.as_ref().unwrap().inherit.clone();
+        if !inherited_model_names.contains(&model_name)
+        && model.borrow().get_main_symbols(session, class_ref.find_module()).into_iter().filter(|main_sym| {
+            !Rc::ptr_eq(main_sym, class)
+        }).count() > 0 {
+            // This a model with a name that already exists in models and in dependencies,
+            // and it is not inherited, so it is basically shadowing the existing model.
+            let _name = class_ref.get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
+            if let Some(_name) = _name.last() {
+                let mut range = _name.borrow().range().clone();
+                // Try to get the string value range, otherwise stick to _name var range.
+                if let Some(eval_range) = _name.borrow().evaluations().unwrap().iter().find_map(|e|
+                    match e.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics) {
+                        Some(EvaluationValue::CONSTANT(Expr::StringLiteral(_))) => e.range,
+                        _ => None,
+                    }
+                ) {
+                    range = TextRange::new(range.start(), eval_range.end());
+                }
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03020, &[&model_name]) {
+                    self.diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&range),
+                        ..diagnostic
+                    });
+                }
+            }
+        }
     }
 
     fn _check_module_dependency(&mut self, session: &mut SessionInfo, model: &String, range: &TextRange) {
