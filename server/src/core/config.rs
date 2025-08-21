@@ -10,9 +10,10 @@ use regex::Regex;
 use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 
 use crate::constants::{DEFAULT_PYTHON, CONFIG_WIKI_URL};
-use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting};
+use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
 use crate::utils::{fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
@@ -21,7 +22,7 @@ static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r#"^(\D+~)?\d+\.\d+$"#).unwrap()
 });
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RefreshMode {
     OnSave,
@@ -49,7 +50,7 @@ impl FromStr for RefreshMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, Clone, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagMissingImportsMode {
     None,
@@ -77,7 +78,7 @@ impl FromStr for DiagMissingImportsMode {
 }
 
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum MergeMethod {
     Merge,
@@ -90,12 +91,24 @@ impl Default for MergeMethod {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct DiagnosticFilter {
+    #[schemars(with = "String")]
     pub paths: Pattern,
+    #[schemars(default, schema_with = "regex_vec_schema")]
     pub codes: Vec<Regex>,
+    #[schemars(default)]
     pub types: Vec<DiagnosticSetting>,
+    #[schemars(skip_deserializing)]
     pub negation: bool,
+}
+
+/// Serialize the schema as Vec<String> and adds the default
+fn regex_vec_schema(gen: &mut SchemaGenerator) -> Schema {
+    let mut schema = <Vec<String>>::json_schema(gen);
+    schema.insert("default".into(), serde_json::json!([]));
+    schema
 }
 
 impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
@@ -105,17 +118,17 @@ impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
     {
         #[derive(serde::Deserialize)]
         struct Helper {
-            path: String,
+            paths: String,
             #[serde(default)]
             codes: Vec<String>,
             #[serde(default)]
             types: Vec<DiagnosticSetting>,
         }
         let helper = Helper::deserialize(deserializer)?;
-        let (path_str, negation) = if let Some(stripped) = helper.path.strip_prefix('!') {
+        let (path_str, negation) = if let Some(stripped) = helper.paths.strip_prefix('!') {
             (stripped, true)
         } else {
-            (helper.path.as_str(), false)
+            (helper.paths.as_str(), false)
         };
         let sanitized_path = PathBuf::from(path_str).sanitize();
         let path_pattern = Pattern::new(&sanitized_path).map_err(serde::de::Error::custom)?;
@@ -156,7 +169,9 @@ impl Serialize for DiagnosticFilter {
         s.end()
     }
 }
-#[derive(Debug, Deserialize, Clone, Serialize)]
+
+#[derive(Debug, Deserialize, Clone, Serialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct ConfigFile {
     #[serde(default)]
     pub config: Vec<ConfigEntryRaw>,
@@ -338,7 +353,7 @@ impl ConfigFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct Sourced<T> {
     value: T,
     sources: HashSet<String>,
@@ -354,7 +369,7 @@ impl<T> Sourced<T> {
     }
 }
 
-impl<'a, T: Default> Default for Sourced<T> {
+impl<T: Default> Default for Sourced<T> {
     fn default() -> Self {
         Sourced {
             value: T::default(),
@@ -553,7 +568,8 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
 
 // Raw structure for initial deserialization
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[schemars(transform = transform_defaults, deny_unknown_fields)]
 pub struct ConfigEntryRaw {
     #[serde(default = "default_profile_name")]
     pub name: String,
@@ -562,52 +578,68 @@ pub struct ConfigEntryRaw {
     extends: Option<String>, // Allowed to extend from another config
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<String>")]
     odoo_path: Option<Sourced<String>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<MergeMethod>")]
     addons_merge: Option<Sourced<MergeMethod>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<Vec<String>>")]
     addons_paths: Option<Vec<Sourced<String>>>,
 
     #[serde(default, serialize_with = "serialize_python_path")]
+    #[schemars(with = "Option<String>")]
     python_path: Option<Sourced<String>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<Vec<String>>")]
     additional_stubs: Option<Vec<Sourced<String>>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<MergeMethod>")]
     additional_stubs_merge: Option<Sourced<MergeMethod>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<RefreshMode>")]
     refresh_mode: Option<Sourced<RefreshMode>>,
 
     #[serde(default, serialize_with = "serialize_file_cache")]
+    #[schemars(with = "Option<bool>")]
     file_cache: Option<Sourced<bool>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<DiagMissingImportsMode>")]
     diag_missing_imports: Option<Sourced<DiagMissingImportsMode>>,
 
     #[serde(default, serialize_with = "serialize_ac_filter_model_names")]
+    #[schemars(with = "Option<bool>")]
     ac_filter_model_names: Option<Sourced<bool>>,
 
     #[serde(default, serialize_with = "serialize_auto_refresh_delay")]
+    #[schemars(with = "Option<u64>")]
     auto_refresh_delay: Option<Sourced<u64>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<bool>")]
     add_workspace_addon_path: Option<Sourced<bool>>,
 
 
     #[serde(default, rename(serialize = "$version", deserialize = "$version"), serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<String>")]
     version: Option<Sourced<String>>,
 
     #[serde(default, rename(serialize = "$base", deserialize = "$base"), serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<String>")]
     base: Option<Sourced<String>>,
 
     #[serde(default)]
+    #[schemars(with = "SchemaDiagnosticCodes")]
     diagnostic_settings: HashMap<DiagnosticCode, Sourced<DiagnosticSetting>>,
 
     #[serde(default)]
+    #[schemars(with = "Vec<DiagnosticFilter>")]
     diagnostic_filters: Vec<Sourced<DiagnosticFilter>>,
 
     #[serde(default, serialize_with = "serialize_option_as_default")]
@@ -618,6 +650,37 @@ pub struct ConfigEntryRaw {
 
     #[serde(skip_deserializing, rename(serialize = "abstract"))]
     abstract_: bool
+}
+
+fn transform_defaults(schema: &mut Schema) {
+    use serde_json::Value;
+    fn recurse(val: &mut Value) {
+        match val {
+            Value::Object(map) => {
+                for (k, v) in map.iter_mut() {
+                    if k == "default" {
+                        if let Value::Object(def_map) = v {
+                            if def_map.contains_key("info") && def_map.contains_key("sources") && def_map.contains_key("value")
+                            {
+                                *v = def_map.get("value").cloned().unwrap();
+                            }
+                        }
+                    } else {
+                        recurse(v);
+                    }
+                }
+            }
+            Value::Array(arr) => {
+                for v in arr {
+                    recurse(v);
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(value) = schema.pointer_mut("/properties") {
+        recurse(value);
+    }
 }
 
 impl Default for ConfigEntryRaw {
