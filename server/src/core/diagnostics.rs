@@ -1,5 +1,6 @@
 
 use lsp_types::{Diagnostic, DiagnosticSeverity};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
@@ -13,12 +14,22 @@ macro_rules! diagnostic_codes {
         ),* $(,)?
     ) => {
         use serde::{Deserialize, Serialize};
+        use schemars::JsonSchema;
         use super::{DiagnosticInfo, DiagnosticSetting};
 
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, JsonSchema)]
         pub enum DiagnosticCode {
             $(
                 #[doc = $msg] $(#[$meta])* $name,
+            )*
+        }
+
+        #[derive(JsonSchema)]
+        #[allow(non_snake_case)]
+        #[schemars(deny_unknown_fields)]
+        pub struct SchemaDiagnosticCodes {
+            $(
+                #[doc = $msg] pub $name: Option<DiagnosticSetting>,
             )*
         }
 
@@ -57,7 +68,7 @@ pub static DEFAULT_DIAGNOSTIC: LazyLock<Diagnostic> = LazyLock::new(|| Diagnosti
     ..Default::default()
 });
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub enum DiagnosticSetting {
     Error,
     Warning,
