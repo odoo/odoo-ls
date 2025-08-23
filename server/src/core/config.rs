@@ -285,6 +285,10 @@ impl ConfigFile {
 
         let mut html = String::from(
             r#"<style>
+  body {
+    background: #1F1F1F;
+    color: #d6d6d6ff;
+  }
   .toml-table {
     font-family: monospace;
     width: 100%;
@@ -320,6 +324,9 @@ impl ConfigFile {
     color: #2d5fa4;
     text-decoration: none;
     font-weight: bold;
+  }
+  a:visited {
+    color: #2d5fa4 !important;  /* visited links same as normal */
   }
 </style>
 <a class="config-wiki-link" href=""#);
