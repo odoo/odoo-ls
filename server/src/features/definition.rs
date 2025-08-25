@@ -1,4 +1,4 @@
-use lsp_types::{GotoDefinitionResponse, Location, Position, Range};
+use lsp_types::{GotoDefinitionResponse, Location, LocationLink, Position, Range};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
 use std::path::PathBuf;
@@ -161,7 +161,7 @@ impl DefinitionFeature {
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();
-            let (symbols, _range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
+            let (symbols, link_range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             if symbols.is_empty() {
                 return None;
             }
@@ -179,7 +179,18 @@ impl DefinitionFeature {
                                     SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                                     _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range()),
                                 };
-                                links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
+                                let link_range = if link_range.is_some() {
+                                    Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, link_range.as_ref().unwrap()))
+                                } else {
+                                    None
+                                };
+                                println!("linkrange: {:?}", link_range);
+                                links.push(LocationLink{
+                                    origin_selection_range: link_range,
+                                    target_uri: FileMgr::pathname2uri(&full_path),
+                                    target_range: range,
+                                    target_selection_range: range
+                                });
                             }
                         }
                     },
@@ -196,14 +207,24 @@ impl DefinitionFeature {
                                         SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                                         _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
                                     };
-                                    links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
+                                    let link_range = if link_range.is_some() {
+                                        Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, link_range.as_ref().unwrap()))
+                                    } else {
+                                        None
+                                    };
+                                    links.push(LocationLink{
+                                        origin_selection_range: link_range,
+                                        target_uri: FileMgr::pathname2uri(&full_path),
+                                        target_range: range,
+                                        target_selection_range: range
+                                    });
                                 }
                             }
                         }
                     }
                 }
             }
-            return Some(GotoDefinitionResponse::Array(links));
+            return Some(GotoDefinitionResponse::Link(links));
         }
         None
     }
