@@ -984,18 +984,18 @@ impl PythonArchEvalHooks {
         let mut contexts_to_add = HashMap::new();
         if relational {
             if let Some(first_param) = parameters.args.get(0) {
-                contexts_to_add.insert("comodel_name", (first_param, first_param.range(), true));
+                contexts_to_add.insert("comodel_name", (first_param, first_param.range(), "str"));
             }
         }
 
         // Keyword Arguments for fields that we would like to keep in the context
         let context_arguments = [
-            ("comodel_name", true),
-            ("related", true),
-            ("compute", true),
-            ("delegate", false),
-            ("required", false),
-            ("default", false),
+            ("comodel_name", "str"),
+            ("related", "str"),
+            ("compute", "str"),
+            ("delegate", "bool"),
+            ("required", "bool"),
+            ("default", "bool"),
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
@@ -1005,19 +1005,22 @@ impl PythonArchEvalHooks {
             )
         );
 
-        for (arg_name, (field_name_expr, arg_range, only_str)) in contexts_to_add {
-            let maybe_related_string = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
-            if let Some(related_string) = maybe_related_string {
-                context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
-                context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
-            } else if !only_str {
-                let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
-                if let Some(boolean) = maybe_boolean {
-                    context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
-                }
-                if arg_name == "default" {
-                    context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
-                }
+        for (arg_name, (field_name_expr, arg_range, bool_or_str)) in contexts_to_add {
+            match bool_or_str {
+                "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0 {
+                    context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
+                    context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
+                },
+                "bool" => {
+                    let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
+                    if let Some(boolean) = maybe_boolean {
+                        context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                    }
+                    if arg_name == "default" {
+                        context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
+                    }
+                },
+                _ => {}
             }
         }
 
