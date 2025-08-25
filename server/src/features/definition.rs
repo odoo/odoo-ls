@@ -1,4 +1,4 @@
-use lsp_types::{GotoDefinitionResponse, Location, Position, Range};
+use lsp_types::{GotoDefinitionResponse, Location, LocationLink, Position, Range};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
 use std::path::PathBuf;
@@ -20,7 +20,7 @@ pub struct DefinitionFeature {}
 
 impl DefinitionFeature {
 
-    fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<Location>) -> bool {
+    fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<LocationLink>) -> bool {
         let (field_name, field_range) = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 (expr.value.to_string(), expr.range)
@@ -38,13 +38,18 @@ impl DefinitionFeature {
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
-                links.push(Location{uri: FileMgr::pathname2uri(&path), range});
+                links.push(LocationLink{
+                    origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &field_range)),
+                    target_uri: FileMgr::pathname2uri(&path),
+                    target_selection_range: range,
+                    target_range: range,
+                });
             }
         });
         string_domain_fields.len() > 0
     }
 
-    fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<Location>) -> bool {
+    fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<LocationLink>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 oyarn!("{}", expr.value.to_string())
@@ -66,13 +71,18 @@ impl DefinitionFeature {
                 let path = model_file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
                 model_found = true;
-                links.push(Location{uri: FileMgr::pathname2uri(&path), range});
+                links.push(LocationLink{
+                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r)),
+                    target_uri: FileMgr::pathname2uri(&path),
+                    target_selection_range: range,
+                    target_range: range,
+                });
             }
         }
         model_found
     }
 
-    fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<Location>) -> bool {
+    fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<LocationLink>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 expr.value.to_string()
@@ -90,7 +100,12 @@ impl DefinitionFeature {
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
-                links.push(Location{uri: FileMgr::pathname2uri(&path), range});
+                links.push(LocationLink{
+                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r)),
+                    target_uri: FileMgr::pathname2uri(&path),
+                    target_selection_range: range,
+                    target_range: range,
+                });
             }
         });
         compute_symbols.len() > 0
@@ -142,12 +157,17 @@ impl DefinitionFeature {
                         SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                         _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range()),
                     };
-                    links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
+                    links.push(LocationLink{
+                        origin_selection_range: None,
+                        target_uri: FileMgr::pathname2uri(&full_path),
+                        target_selection_range: range,
+                        target_range: range,
+                    });
                 }
             }
             index += 1;
         }
-        Some(GotoDefinitionResponse::Array(links))
+        Some(GotoDefinitionResponse::Link(links))
     }
 
     pub fn get_location_xml(session: &mut SessionInfo,
@@ -161,7 +181,7 @@ impl DefinitionFeature {
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();
-            let (symbols, _range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
+            let (symbols, link_range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             if symbols.is_empty() {
                 return None;
             }
@@ -179,7 +199,17 @@ impl DefinitionFeature {
                                     SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                                     _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range()),
                                 };
-                                links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
+                                let link_range = if link_range.is_some() {
+                                    Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
+                                } else {
+                                    None
+                                };
+                                links.push(LocationLink{
+                                    origin_selection_range: link_range,
+                                    target_uri: FileMgr::pathname2uri(&full_path),
+                                    target_range: range,
+                                    target_selection_range: range
+                                });
                             }
                         }
                     },
@@ -196,14 +226,24 @@ impl DefinitionFeature {
                                         SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                                         _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
                                     };
-                                    links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
+                                    let link_range = if link_range.is_some() {
+                                        Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, link_range.as_ref().unwrap()))
+                                    } else {
+                                        None
+                                    };
+                                    links.push(LocationLink{
+                                        origin_selection_range: link_range,
+                                        target_uri: FileMgr::pathname2uri(&full_path),
+                                        target_range: range,
+                                        target_selection_range: range
+                                    });
                                 }
                             }
                         }
                     }
                 }
             }
-            return Some(GotoDefinitionResponse::Array(links));
+            return Some(GotoDefinitionResponse::Link(links));
         }
         None
     }
