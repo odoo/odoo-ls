@@ -1577,22 +1577,7 @@ impl Odoo {
         if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave || session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
-        //Before dropping the cache and reload file content, let's be sure that the new content contains a valid AST. Else, we would prefer to use previous one.
-        let text_rope = match fs::read_to_string(path.clone()) {
-            Ok(content) => {
-                ropey::Rope::from(content.as_str())
-            },
-            Err(_) => {
-                session.log_message(MessageType::ERROR, format!("Failed to read file {}", path.to_str().unwrap_or("[invalid path]")));
-                return;
-            },
-        };
-        let content = text_rope.slice(..);
-        let source = content.to_string(); //cast to string to get a version with all changes
-        let ast = ruff_python_parser::parse_unchecked(source.as_str(), ParseOptions::from(Mode::Module));
-        if ast.errors().is_empty() {
-            Odoo::update_file_index(session, path,true, false, false);
-        }
+        Odoo::update_file_index(session, path,true, false, false);
     }
 
     // return (valid, updated) booleans
