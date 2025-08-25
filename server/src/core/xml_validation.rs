@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::HashMap, hash::Hash, path::
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{XmlData, XmlDataDelete, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy, S};
+use crate::{constants::{BuildSteps, OYarn, SymType, DEBUG_STEPS, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, XmlDataDelete, XmlDataMenuItem, OdooDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy, S};
 
 
 
@@ -53,20 +53,20 @@ impl XmlValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, data: &XmlData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
+    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         let Some(xml_file) = data.get_xml_file_symbol() else {
             return;
         };
         let path = xml_file.borrow().paths()[0].clone();
         match data {
-            XmlData::RECORD(xml_data_record) => self.validate_record(session, module, xml_data_record, diagnostics, dependencies, model_dependencies),
-            XmlData::MENUITEM(xml_data_menu_item) => self.validate_menu_item(session, module, xml_data_menu_item, diagnostics, dependencies, model_dependencies),
-            XmlData::TEMPLATE(xml_data_template) => self.validate_template(session, module, xml_data_template, diagnostics, dependencies, model_dependencies),
-            XmlData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, diagnostics, dependencies, model_dependencies),
+            OdooData::RECORD(xml_data_record) => self.validate_record(session, module, xml_data_record, diagnostics, dependencies, model_dependencies),
+            OdooData::MENUITEM(xml_data_menu_item) => self.validate_menu_item(session, module, xml_data_menu_item, diagnostics, dependencies, model_dependencies),
+            OdooData::TEMPLATE(xml_data_template) => self.validate_template(session, module, xml_data_template, diagnostics, dependencies, model_dependencies),
+            OdooData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, diagnostics, dependencies, model_dependencies),
         }
     }
 
-    fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &XmlDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
+    fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>) {
         let Some(model) = session.sync_odoo.models.get(&xml_data_record.model.0).cloned() else {
             //TODO register to not_found_models
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_data_record.model.0, module.borrow().name()]) {
@@ -87,7 +87,7 @@ impl XmlValidator {
         self.validate_fields(session, xml_data_record, &all_fields, diagnostics);
     }
 
-    fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: &XmlDataRecord, all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: &OdooDataRecord, all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>) {
         //Compute mandatory fields
         let mut mandatory_fields: Vec<String> = vec![];
         for (field_name, field_sym) in all_fields.iter() {

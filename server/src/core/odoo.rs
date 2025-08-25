@@ -1,7 +1,8 @@
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
-use crate::core::xml_data::XmlData;
+use crate::core::symbols::file_symbol;
+use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::features::references::ReferenceFeature;
@@ -988,7 +989,7 @@ impl SyncOdoo {
     /**
      * search for an xml_id in the already registered xml files.
      * */
-    pub fn get_xml_ids(session: &mut SessionInfo, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+    pub fn get_xml_ids(session: &mut SessionInfo, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
         if !from_file.borrow().get_entry().unwrap().borrow().is_main() {
             return vec![];
         }

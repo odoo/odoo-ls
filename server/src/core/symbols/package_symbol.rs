@@ -1,6 +1,6 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::XmlData}, oyarn, threads::SessionInfo, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn, threads::SessionInfo, S};
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -111,7 +111,7 @@ pub struct PythonPackageSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub in_workspace: bool,
     pub self_import: bool,
-    pub xml_ids: HashMap<OYarn, Vec<XmlData>>, //used for dynamic XML_ID records, like ir.models
+    pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,

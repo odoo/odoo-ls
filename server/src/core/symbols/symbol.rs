@@ -6,7 +6,7 @@ use weak_table::traits::WeakElement;
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::file_mgr::NoqaInfo;
-use crate::core::xml_data::XmlData;
+use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -561,6 +561,20 @@ impl Symbol {
         match self {
             Symbol::XmlFileSymbol(x) => x,
             _ => {panic!("Not an XML file symbol")}
+        }
+    }
+
+    pub fn as_csv_file_sym(&self) -> &CsvFileSymbol {
+        match self {
+            Symbol::CsvFileSymbol(x) => x,
+            _ => {panic!("Not a CSV file symbol")}
+        }
+    }
+
+    pub fn as_csv_file_sym_mut(&mut self) -> &mut CsvFileSymbol {
+        match self {
+            Symbol::CsvFileSymbol(x) => x,
+            _ => {panic!("Not a CSV file symbol")}
         }
     }
 
@@ -2910,17 +2924,18 @@ impl Symbol {
         res
     }
 
-    pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<XmlData>> {
+    pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<OdooData>> {
         match self {
             Symbol::XmlFileSymbol(xml_file) => xml_file.xml_ids.get(xml_id).cloned(),
             Symbol::Package(PackageSymbol::Module(module)) => module.xml_ids.get(xml_id).cloned(),
             Symbol::Package(PackageSymbol::PythonPackage(package)) => package.xml_ids.get(xml_id).cloned(),
             Symbol::File(file) => file.xml_ids.get(xml_id).cloned(),
+            Symbol::CsvFileSymbol(file) => file.xml_ids.get(xml_id).cloned(),
             _ => None,
         }
     }
 
-    pub fn insert_xml_id(&mut self, xml_id: OYarn, xml_data: XmlData) {
+    pub fn insert_xml_id(&mut self, xml_id: OYarn, xml_data: OdooData) {
         match self {
             Symbol::File(file) => {
                 file.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);

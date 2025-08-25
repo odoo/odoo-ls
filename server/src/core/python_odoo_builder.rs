@@ -13,7 +13,7 @@ use crate::core::file_mgr::{FileMgr};
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
-use crate::core::xml_data::{XmlData, XmlDataRecord};
+use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
@@ -58,7 +58,7 @@ impl PythonOdooBuilder {
             set.insert(file.clone());
             drop(module); //in case of file being same than module
             let mut file = file.borrow_mut();
-            file.insert_xml_id(xml_id_model_name.clone(), XmlData::RECORD(XmlDataRecord {
+            file.insert_xml_id(xml_id_model_name.clone(), OdooData::RECORD(OdooDataRecord {
                 file_symbol: Rc::downgrade(&sym),
                 model: (Sy!("ir.model"), std::ops::Range::<usize> {
                     start: 0,

@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use roxmltree::Node;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{XmlData, XmlDataDelete, XmlDataField, XmlDataMenuItem, XmlDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{OdooData, XmlDataDelete, OdooDataField, XmlDataMenuItem, OdooDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -173,9 +173,10 @@ impl XmlArchBuilder {
                 self.load_menuitem(session, &child, true, diagnostics);
             }
         }
-        let data = XmlData::MENUITEM(XmlDataMenuItem {
+        let data = OdooData::MENUITEM(XmlDataMenuItem {
             file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            range: node.range().clone()
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
@@ -212,15 +213,12 @@ impl XmlArchBuilder {
             }
             return false;
         }
-        let mut data = XmlDataRecord {
+        let mut data = OdooDataRecord {
             file_symbol: Rc::downgrade(&self.xml_symbol),
             model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             fields: vec![],
-            range: std::ops::Range::<usize> {
-                start: node.range().start as usize,
-                end: node.range().end as usize,
-            }
+            range: node.range().clone()
         };
         for child in node.children().filter(|n| n.is_element()) {
             if let Some(field) = self.load_field(session, &child, diagnostics) {
@@ -234,12 +232,12 @@ impl XmlArchBuilder {
                 }
             }
         }
-        let data = XmlData::RECORD(data);
+        let data = OdooData::RECORD(data);
         self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 
-    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlDataField> {
+    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<OdooDataField> {
         if node.tag_name().name() != "field" { return None; }
         if node.attribute("name").is_none() {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {
@@ -379,7 +377,7 @@ impl XmlArchBuilder {
                 text_range = Some(child.range());
             }
         }
-        Some(XmlDataField {
+        Some(OdooDataField {
             name: oyarn!("{}", node.attribute("name").unwrap()),
             range: node.attribute_node("name").unwrap().range(),
             text: text,
@@ -462,9 +460,10 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
-        let data = XmlData::TEMPLATE(XmlDataTemplate {
+        let data = OdooData::TEMPLATE(XmlDataTemplate {
             file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            range: node.range().clone(),
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
@@ -498,9 +497,10 @@ impl XmlArchBuilder {
                 });
             }
         }
-        let data = XmlData::DELETE(XmlDataDelete {
+        let data = OdooData::DELETE(XmlDataDelete {
             file_symbol: Rc::downgrade(&self.xml_symbol),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            range: node.range().clone(),
             model: Sy!(node.attribute("model").unwrap().to_string()),
         });
         self.on_operation_creation(session, found_id, node, data, diagnostics);
