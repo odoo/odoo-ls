@@ -911,6 +911,7 @@ impl PythonArchBuilder {
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
         let scope = self.sym_stack.last().unwrap().clone();
+        let prefix_section = scope.borrow().as_symbol_mgr().get_last_index();
         let test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
             if_stmt.test.range().start(),
             None // Take preceding section (before if stmt)
@@ -980,6 +981,10 @@ impl PythonArchBuilder {
             // If there is no else clause, the there is an implicit else clause
             // Which bypasses directly to the last test section
             stmt_sections.push(SectionIndex::INDEX(last_test_section));
+        }
+        if stmt_sections.is_empty(){
+            // If there are no valid bodies or tests, point to the section before the if-stmt
+            stmt_sections.push(SectionIndex::INDEX(prefix_section));
         }
         scope.borrow_mut().as_mut_symbol_mgr().add_section(
             if_stmt.range().end() + TextSize::new(1),
