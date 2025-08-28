@@ -272,14 +272,11 @@ fn test_workspacefolder_template_ws2_in_ws1_add_workspace_addon_path_behavior() 
     assert!(!config.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(config.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
 
-    // Now set add_workspace_addon_path = true, ws1 should be added as well
+    // Now set $autoDetectAddons = true, ws1 should be added as well
     let toml_content_with_flag = r#"
         [[config]]
         name = "default"
-        addons_paths = [
-            "${workspaceFolder:ws2}"
-        ]
-        add_workspace_addon_path = true
+        addons_paths = ["$autoDetectAddons"]
     "#;
     ws1.child("odools.toml").write_str(toml_content_with_flag).unwrap();
 
@@ -1494,7 +1491,7 @@ fn test_addons_paths_unset_vs_empty_behavior() {
 
     let (config_map, _) = get_configuration(&ws_folders, &None).unwrap();
     let config = config_map.get("default").unwrap();
-    assert!(config.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when addons_paths is unset");
+    assert!(config.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when addons_paths is not set");
 
     // Case 2: addons_paths is set to empty list (should NOT add workspace)
     let toml_empty = r#"
@@ -1507,19 +1504,6 @@ fn test_addons_paths_unset_vs_empty_behavior() {
     let (config_map2, _) = get_configuration(&ws_folders, &None).unwrap();
     let config2 = config_map2.get("default").unwrap();
     assert!(!config2.addons_paths.contains(&ws.path().sanitize()), "Workspace should NOT be added to addons_paths when addons_paths is set to []");
-
-    // Case 3: addons_paths is set to empty list  but add_workspace_addon_path to true (should add workspace)
-    let toml_empty = r#"
-        [[config]]
-        name = "default"
-        addons_paths = []
-        add_workspace_addon_path = true
-    "#;
-    ws.child("odools.toml").write_str(toml_empty).unwrap();
-
-    let (config_map3, _) = get_configuration(&ws_folders, &None).unwrap();
-    let config3 = config_map3.get("default").unwrap();
-    assert!(config3.addons_paths.contains(&ws.path().sanitize()), "Workspace should be added to addons_paths when add_workspace_addon_path is true");
 }
 
 
