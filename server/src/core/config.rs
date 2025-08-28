@@ -335,7 +335,7 @@ impl ConfigFile {
                     "name", "extends", "odoo_path", "abstract", "addons_paths", "addons_merge",
                     "python_path", "stdlib", "additional_stubs", "additional_stubs_merge",
                     "refresh_mode", "file_cache", "diag_missing_imports",
-                    "ac_filter_model_names", "auto_refresh_delay", "add_workspace_addon_path",
+                    "ac_filter_model_names", "auto_refresh_delay",
                     "diagnostic_settings", "diagnostic_filters", "no_typeshed_stubs"
                 ];
                 for key in order {
@@ -621,11 +621,6 @@ pub struct ConfigEntryRaw {
     #[schemars(with = "Option<u64>")]
     auto_refresh_delay: Option<Sourced<u64>>,
 
-    #[serde(default, serialize_with = "serialize_option_as_default")]
-    #[schemars(with = "Option<bool>")]
-    add_workspace_addon_path: Option<Sourced<bool>>,
-
-
     #[serde(default, rename(serialize = "$version", deserialize = "$version"), serialize_with = "serialize_option_as_default")]
     #[schemars(with = "Option<String>")]
     version: Option<Sourced<String>>,
@@ -699,7 +694,6 @@ impl Default for ConfigEntryRaw {
             diag_missing_imports: None,
             ac_filter_model_names: None,
             auto_refresh_delay: None,
-            add_workspace_addon_path: None,
             version: None,
             base: None,
             diagnostic_settings: Default::default(),
@@ -828,11 +822,24 @@ fn process_paths(
     entry.odoo_path =  entry.odoo_path.as_ref()
         .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone()));
 
+    let infer = entry.addons_paths.as_mut().map_or(true, |ps| ps.pop_if(|v| v.value == S!("$autoDetectAddons")).is_some());
     entry.addons_paths = entry.addons_paths.as_ref().map(|paths|
         paths.iter().filter_map(|sourced| {
             fill_or_canonicalize(sourced, ws_folders, workspace_name, &is_addon_path, var_map.clone())
         }).collect()
     );
+    if infer {
+        if let Some((name, workspace_path)) = workspace_name.and_then(|name| ws_folders.get(name).map(|p| (name, p))) {
+            let workspace_path = PathBuf::from(workspace_path).sanitize();
+            if is_addon_path(&workspace_path) {
+                let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()};
+                match entry.addons_paths {
+                    Some(ref mut paths) => paths.push(addon_path),
+                    None => entry.addons_paths = Some(vec![addon_path]),
+                }
+            }
+        }
+    }
     entry.python_path = entry.python_path.as_ref()
         .and_then(|p| {
             if is_python_path(&p.value) {
@@ -890,7 +897,6 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         entry.diag_missing_imports.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.ac_filter_model_names.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.auto_refresh_delay.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
-        entry.add_workspace_addon_path.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.version.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.diagnostic_settings.values_mut().for_each(|sourced| {
             sourced.sources.insert(path.sanitize());
@@ -971,7 +977,6 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
     let additional_stubs_merge = child.additional_stubs_merge.clone().or(parent.additional_stubs_merge.clone());
     let extends = child.extends.clone().or(parent.extends.clone());
     let auto_refresh_delay = child.auto_refresh_delay.clone().or(parent.auto_refresh_delay.clone());
-    let add_workspace_addon_path = child.add_workspace_addon_path.clone().or(parent.add_workspace_addon_path.clone());
     let version = child.version.clone().or(parent.version.clone());
     let base = child.base.clone().or(parent.base.clone());
     let diagnostic_settings = merge_sourced_diagnostic_setting_map(&child.diagnostic_settings, &parent.diagnostic_settings);
@@ -993,7 +998,6 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         additional_stubs_merge,
         extends,
         auto_refresh_delay,
-        add_workspace_addon_path,
         version,
         base,
         diagnostic_settings,
@@ -1208,18 +1212,8 @@ fn load_config_from_workspace(
     for new_entry in new_configs {
         merged_config.insert(new_entry.name.clone(), new_entry);
     }
-    let mut merged_config = process_config(merged_config, ws_folders, Some(workspace_name))?;
+    let merged_config = process_config(merged_config, ws_folders, Some(workspace_name))?;
 
-    for entry in merged_config.values_mut() {
-        if entry.abstract_ { continue; }
-        if (matches!(entry.add_workspace_addon_path.as_ref().map(|a| a.value), Some(true)) || entry.addons_paths.is_none()) && is_addon_path(workspace_path) {
-            let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{workspace_name}"))]), ..Default::default()};
-            match entry.addons_paths {
-                Some(ref mut paths) => paths.push(addon_path),
-                None => entry.addons_paths = Some(vec![addon_path]),
-            }
-        }
-    }
     Ok(merged_config)
 }
 
