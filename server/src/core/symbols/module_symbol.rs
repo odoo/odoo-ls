@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::xml_arch_builder::XmlArchBuilder;
-use crate::core::xml_data::XmlData;
+use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
@@ -42,7 +42,7 @@ pub struct ModuleSymbol {
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub xml_id_locations: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
-    pub xml_ids: HashMap<OYarn, Vec<XmlData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
+    pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub odoo_status: BuildStatus,
@@ -530,7 +530,7 @@ impl ModuleSymbol {
 
     //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
     //For example, stock could create an xml_id called "account.my_xml_id", and so be returned by this function called on "account" module with xml_id "my_xml_id"
-    pub fn get_xml_id(&self, xml_id: &OYarn) -> Vec<XmlData> {
+    pub fn get_xml_id(&self, xml_id: &OYarn) -> Vec<OdooData> {
         let mut res = vec![];
         if let Some(xml_file_set) = self.xml_id_locations.get(xml_id) {
             for xml_file in xml_file_set.iter() {

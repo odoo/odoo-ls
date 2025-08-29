@@ -39,6 +39,7 @@ roxmltree = "0.20.0"
 dirs = "5.0"
 toml = "0.8.23"
 schemars = "1.0.4"
+csv = "1.3.1"
 # ittapi = "0.3" # profiling with VTune profiler
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.29.0", features = ["process"] }
