@@ -162,7 +162,7 @@ impl Serialize for DiagnosticFilter {
         if self.negation {
             path_str = format!("!{}", path_str);
         }
-        s.serialize_field("path", &path_str)?;
+        s.serialize_field("paths", &path_str)?;
         let codes: Vec<String> = self.codes.iter().map(|r| r.as_str().to_string()).collect();
         s.serialize_field("codes", &codes)?;
         s.serialize_field("types", &self.types)?;
