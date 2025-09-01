@@ -1,6 +1,6 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::XmlData}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -17,7 +17,7 @@ pub struct FileSymbol {
     pub odoo_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
-    pub xml_ids: HashMap<OYarn, Vec<XmlData>>, //used for dynamic XML_ID records, like ir.models
+    pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
     in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required

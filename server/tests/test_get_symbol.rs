@@ -194,45 +194,45 @@ fn test_definition() {
     // Test definition for model class BaseTestModel compute something
     let compute_arg_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 8, 50);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
-    assert_eq!(compute_arg_locs[0].uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
+    assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_compute_something = m1_tf_file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("BaseTestModel"), Sy!("_compute_something")]), u32::MAX);
     assert_eq!(sym_compute_something.len(), 1, "Expected 1 symbol for _compute_something");
-    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()), compute_arg_locs[0].range, "Expected _compute_something to be at the same location as the compute argument");
+    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Test definition for model class BaseTestModel compute something in module_2, first on the super call
     let compute_arg_locs = test_utils::get_definition_locs(&mut session, &m2_tf_file_symbol, &m2_tf_file_info, 6, 36);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
-    assert_eq!(compute_arg_locs[0].uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in module_1 file");
-    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()), compute_arg_locs[0].range, "Expected _compute_something to be at the same location as the compute argument");
+    assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in module_1 file");
+    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Then on the compute keyword argument in module_2, it should point to both methods in module_1 and module_2
     let compute_kwarg_locs = test_utils::get_definition_locs(&mut session, &m2_tf_file_symbol, &m2_tf_file_info, 3, 50);
     assert_eq!(compute_kwarg_locs.len(), 2, "Expected 2 locations for compute method '_compute_something'");
-    assert!(compute_kwarg_locs.iter().any(|loc| loc.uri.to_file_path().unwrap().sanitize() == module1_test_file), "Expected one location to be in module_1 file");
-    assert!(compute_kwarg_locs.iter().any(|loc| loc.uri.to_file_path().unwrap().sanitize() == module2_test_file), "Expected one location to be in module_2 file");
+    assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module1_test_file), "Expected one location to be in module_1 file");
+    assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module2_test_file), "Expected one location to be in module_2 file");
     let sym_compute_something_m2 = m2_tf_file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("BaseTestModel"), Sy!("_compute_something")]), u32::MAX);
     assert_eq!(sym_compute_something_m2.len(), 1, "Expected 1 symbol for _compute_something in module_2");
 
     // Check that compute_kwarg_locs contains the range of the compute something syms from both files
-    assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()) == loc.range), "Expected _compute_something to be at the same location as the compute keyword argument in module_1");
-    assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, sym_compute_something_m2[0].borrow().range()) == loc.range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
+    assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_1");
+    assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, sym_compute_something_m2[0].borrow().range()) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
 
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
     let partner_id_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 31, 25);
     assert_eq!(partner_id_locs.len(), 1, "Expected 1 location for partner_id");
-    assert_eq!(partner_id_locs[0].uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
+    assert_eq!(partner_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_partner_id = m1_tf_file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("BaseTestModel"), Sy!("partner_id")]), u32::MAX);
     assert_eq!(sym_partner_id.len(), 1, "Expected 1 symbol for partner_id");
-    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_partner_id[0].borrow().range()), partner_id_locs[0].range, "Expected partner_id to be at the same location as the field");
+    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_partner_id[0].borrow().range()), partner_id_locs[0].target_range, "Expected partner_id to be at the same location as the field");
 
     let country_id_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 10, 74);
     let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_partner")], vec![Sy!(partner_class_name), Sy!("country_id")]), u32::MAX);
     assert_eq!(country_id_field_sym.len(), 1, "Expected 1 location for country_id");
     let country_id_field_sym = country_id_field_sym[0].clone();
     let country_id_file = country_id_field_sym.borrow().get_file().unwrap().upgrade().unwrap().borrow().paths()[0].clone();
-    assert_eq!(country_id_locs[0].uri.to_file_path().unwrap().sanitize(), country_id_file);
+    assert_eq!(country_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), country_id_file);
     // check that one of the country_id_locs is the same as the country_id field symbol
-    assert!(country_id_locs.iter().any(|loc| loc.range == file_mgr.borrow().text_range_to_range(&mut session, &country_id_file, country_id_field_sym.borrow().range())), "Expected country_id to be at the same location as the field");
+    assert!(country_id_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &country_id_file, country_id_field_sym.borrow().range())), "Expected country_id to be at the same location as the field");
 
     // now the same for phone_code
     let phone_code_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 10, 86);
@@ -240,7 +240,7 @@ fn test_definition() {
     assert_eq!(phone_code_field_sym.len(), 1, "Expected 1 location for phone_code");
     let phone_code_field_sym = phone_code_field_sym[0].clone();
     let phone_code_file = phone_code_field_sym.borrow().get_file().unwrap().upgrade().unwrap().borrow().paths()[0].clone();
-    assert_eq!(phone_code_locs[0].uri.to_file_path().unwrap().sanitize(), phone_code_file);
+    assert_eq!(phone_code_locs[0].target_uri.to_file_path().unwrap().sanitize(), phone_code_file);
     // check that one of the phone_code_locs is the same as the phone_code field
-    assert!(phone_code_locs.iter().any(|loc| loc.range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, phone_code_field_sym.borrow().range())), "Expected phone_code to be at the same location as the field");
+    assert!(phone_code_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, phone_code_field_sym.borrow().range())), "Expected phone_code to be at the same location as the field");
 }

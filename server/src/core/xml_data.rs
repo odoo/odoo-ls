@@ -6,24 +6,24 @@ use crate::{constants::{OYarn, SymType}, core::symbols::symbol::Symbol};
 
 
 #[derive(Debug, Clone)]
-pub enum XmlData {
-    RECORD(XmlDataRecord),
+pub enum OdooData {
+    RECORD(OdooDataRecord),
     MENUITEM(XmlDataMenuItem),
     TEMPLATE(XmlDataTemplate),
     DELETE(XmlDataDelete),
 }
 
 #[derive(Debug, Clone)]
-pub struct XmlDataRecord {
+pub struct OdooDataRecord {
     pub file_symbol: Weak<RefCell<Symbol>>,
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
-    pub fields: Vec<XmlDataField>,
+    pub fields: Vec<OdooDataField>,
     pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
-pub struct XmlDataField {
+pub struct OdooDataField {
     pub name: OYarn,
     pub range: Range<usize>,
     pub text: Option<String>,
@@ -34,37 +34,49 @@ pub struct XmlDataField {
 pub struct XmlDataMenuItem {
     pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
+    pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataTemplate {
     pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
+    pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataDelete {
     pub file_symbol: Weak<RefCell<Symbol>>,
     pub xml_id: Option<OYarn>,
+    pub range: Range<usize>,
     pub model: OYarn,
 }
 
-impl XmlData {
+impl OdooData {
 
     pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
         match self {
-            XmlData::RECORD(ref mut record) => {
+            OdooData::RECORD(ref mut record) => {
                 record.file_symbol = Rc::downgrade(xml_symbol);
             },
-            XmlData::MENUITEM(ref mut menu_item) => {
+            OdooData::MENUITEM(ref mut menu_item) => {
                 menu_item.file_symbol = Rc::downgrade(xml_symbol);
             },
-            XmlData::TEMPLATE(ref mut template) => {
+            OdooData::TEMPLATE(ref mut template) => {
                 template.file_symbol = Rc::downgrade(xml_symbol);
             },
-            XmlData::DELETE(ref mut delete) => {
+            OdooData::DELETE(ref mut delete) => {
                 delete.file_symbol = Rc::downgrade(xml_symbol);
             },
+        }
+    }
+
+    pub fn get_range(&self) -> Range<usize> {
+        match self {
+            OdooData::RECORD(ref record) => record.range.clone(),
+            OdooData::MENUITEM(ref menu_item) => menu_item.range.clone(),
+            OdooData::TEMPLATE(ref template) => template.range.clone(),
+            OdooData::DELETE(ref delete) => delete.range.clone(),
         }
     }
 
@@ -81,16 +93,16 @@ impl XmlData {
     /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
     pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
         match self {
-            XmlData::RECORD(ref record) => {
+            OdooData::RECORD(ref record) => {
                 Some(record.file_symbol.clone())
             },
-            XmlData::MENUITEM(ref menu_item) => {
+            OdooData::MENUITEM(ref menu_item) => {
                 Some(menu_item.file_symbol.clone())
             },
-            XmlData::TEMPLATE(ref template) => {
+            OdooData::TEMPLATE(ref template) => {
                 Some(template.file_symbol.clone())
             },
-            XmlData::DELETE(ref delete) => {
+            OdooData::DELETE(ref delete) => {
                 Some(delete.file_symbol.clone())
             }
         }

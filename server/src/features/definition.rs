@@ -7,6 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::constants::SymType;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
+use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::symbols::xml_file_symbol;
 use crate::features::ast_utils::AstUtils;
@@ -82,6 +83,35 @@ impl DefinitionFeature {
         model_found
     }
 
+    fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<LocationLink>) -> bool {
+        let value = if let Some(eval_value) = eval.value.as_ref() {
+            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+                oyarn!("{}", expr.value.to_string())
+            } else {
+                return false;
+            }
+        } else {
+            return  false;
+        };
+        let mut xml_found = false;
+        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, value.as_str(), &std::ops::Range{start: 0, end: 0}, &mut vec![]);
+        for xml_id in xml_ids {
+            let file = xml_id.get_file_symbol();
+            if let Some(file) = file {
+                if let Some(file) = file.upgrade() {
+                    let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &file.borrow().paths()[0], &xml_id.get_range());
+                    xml_found = true;
+                    links.push(LocationLink {
+                        origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r)),
+                        target_uri: FileMgr::pathname2uri(&file.borrow().paths()[0]),
+                        target_range: range,
+                        target_selection_range: range });
+                }
+            }
+        }
+        xml_found
+    }
+
     fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, links: &mut Vec<LocationLink>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
@@ -129,7 +159,8 @@ impl DefinitionFeature {
             let eval = evaluations[index].clone();
             if DefinitionFeature::check_for_domain_field(session, &eval, file_symbol, &call_expr, offset, &mut links) ||
               DefinitionFeature::check_for_compute_string(session, &eval, file_symbol,&call_expr, offset, &mut links) ||
-              DefinitionFeature::check_for_model_string(session, &eval, file_symbol, &mut links){
+              DefinitionFeature::check_for_model_string(session, &eval, file_symbol, &mut links) ||
+              DefinitionFeature::check_for_xml_id_string(session, &eval, file_symbol, &mut links) {
                 index += 1;
                 continue;
             }

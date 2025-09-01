@@ -1,6 +1,7 @@
+use lsp_types::Range;
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -16,6 +17,9 @@ pub struct CsvFileSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     in_workspace: bool,
+    pub xml_ids: HashMap<OYarn, Vec<OdooData>>,
+    pub model_name: OYarn,
+    pub headers: Vec<OYarn>,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
@@ -43,6 +47,9 @@ impl CsvFileSymbol {
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             in_workspace: false,
+            model_name: OYarn::default(),
+            headers: Vec::new(),
+            xml_ids: HashMap::new(),
             self_import: false,
             sections: vec![],
             symbols: HashMap::new(),
