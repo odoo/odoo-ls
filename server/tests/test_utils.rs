@@ -44,7 +44,7 @@ pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Sy
 }
 
 /// Helper to get hover markdown string at a given (line, character)
-pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>>, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::Location> {
+pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>>, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::LocationLink> {
     let locations = odoo_ls_server::features::definition::DefinitionFeature::get_location(
         session,
         f_sym,
@@ -54,8 +54,8 @@ pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>
     );
     let locations = locations.map(|l| {
         match l {
-            lsp_types::GotoDefinitionResponse::Array(locs) => locs,
-            _ => unreachable!("Expected GotoDefinitionResponse::Array"),
+            lsp_types::GotoDefinitionResponse::Link(locs) => locs,
+            _ => unreachable!("Expected GotoDefinitionResponse::Link"),
         }
     }).into_iter().flatten().collect::<Vec<_>>();
     locations

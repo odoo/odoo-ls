@@ -7,7 +7,7 @@ use tracing::{error, warn};
 use weak_table::PtrWeakHashSet;
 
 use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{entry_point::EntryPointType, xml_data::XmlData}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{entry_point::EntryPointType, xml_data::OdooData}, oyarn, threads::SessionInfo, Sy, S};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
 
@@ -46,7 +46,7 @@ impl XmlArchBuilder {
         session: &mut SessionInfo,
         id: Option<String>,
         node: &Node,
-        mut xml_data: XmlData,
+        mut xml_data: OdooData,
         diagnostics: &mut Vec<Diagnostic>
     ) {
         if !self.is_in_main_ep {
@@ -86,12 +86,12 @@ impl XmlArchBuilder {
         }
     }
 
-    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlData> {
+    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
         let xml_ids = SyncOdoo::get_xml_ids(session, &self.xml_symbol, xml_id, &attr.range(), diagnostics);
         let mut res = vec![];
         for data in xml_ids.iter() {
             match data {
-                XmlData::RECORD(r) => {
+                OdooData::RECORD(r) => {
                     if r.model.0 == "res.groups" {
                         res.push(data.clone());
                     }
