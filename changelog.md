@@ -1,6 +1,40 @@
 # Changelog
 
-## 0.10.2 - 2025/08/12 - Update code and fix
+## [0.12.0] - 2025/08/28 - PyCharm, Csv and configurations
+
+This patch includes somes changes required for the new [PyCharm](https://github.com/odoo/odoo-ls-pycharm) plugin.
+We changed some keys in the configurations files to improve clarity and added a TomL schema helper. Install a TomL extension to get
+syntax diagnostics, as well as validation of your configuration files. (You'll have the best by installing "Even Better TOML" AND "Tombi" on vscode)
+
+### PyCharm
+
+- Start and manage the lifecycle of OdooLS in Pycharm.
+- Add a Profile Selector
+- Add a Crash Report
+- Add a webview to display configuration resumes.
+
+### VsCode
+
+- Code has been moved to its own repository: https://github.com/odoo/odoo-ls-vscode
+- Automatically link toml schema to odools.toml files
+
+### Server
+
+- New parameters available in configuration: "no_typeshed_stubs" that prevents the loading of typeshed stubs, if you want to provide yours, and "stdlib", that allows you to provide a different location for your stdlib stubs.
+- Remove parameter "add_workspace_addon_path" from configs. Addons path now contains the value "$autoDetectAddons" by default, that means that server will automatically try to detect addons. When setting addon paths in your configuration, you can add this value to the list to keep this behaviour.
+- Load CSV files and extract xml_id from it
+- Improve reloading and cache update of files with invalid syntax
+- Handle If..else statements with an empty bloc in the if and else (invalid ast)
+- OLS03020 is now evaluated later in the process to give accurate results
+- Improve dynamic reloading on creation of missing models
+
+### Fixes
+
+- Server will now search for stubs and additional files next to its exe, and not in the current working directory. If not present, it will search then in current working directory
+- Fix a version verification in is_inheriting method
+- Fix crashes that can happen if one of the following field has a value that is not of the right type ("False" instead of False for example): "comodel_name", "related", "compute", "delegate", "required", "default"
+
+## [0.10.2] - 2025/08/12 - Update code and fix
 
 ### Upgrade
 
@@ -11,13 +45,13 @@
 - Invalid context value type that cause crashes (in Odoo < 18.0)
 - Fix the hook for the field 'global' on IrRule for versions < 18.1
 
-## 0.10.1 - 2025/08/11 - Quick fix
+## [0.10.1] - 2025/08/11 - Quick fix
 
 ### Fixes
 
 - Invalid context value type that can cause crashes.
 
-## 0.10.0 - 2025/08/08 - Better configuration and XML features
+## [0.10.0] - 2025/08/08 - Better configuration and XML features
 
 Following your feedbacks, we are adding some new features and ways to configure your odools.toml files. If you still think that some changes would be interesting, do not hesitate to contact us !
 Alongside these changes, we added some features to XML files, like gotodefinition, hover, and new diagnostics. Everything we want is not there yet, but it's coming soon!
@@ -66,13 +100,13 @@ We focused a lot too on improving the exactness of various diagnostics, so you s
 - Fix crash on reloading functions created by hooks (only in orm files)
 - Various things that would be too hard to explain here. You really read all the changelog?
 
-## 0.8.1 - 2025/09/07 - Quick fix
+## [0.8.1] - 2025/09/07 - Quick fix
 
 ### Fix
 
 - Fix an issue that prevent OdooLS to correctly detect Odoo Models on some version.
 
-## 0.8.0 - 2025/04/07 - Configuration files and XML Support (part 1)
+## [0.8.0] - 2025/04/07 - Configuration files and XML Support (part 1)
 
 This update introduces two new big changes in OdooLS.
 
@@ -113,7 +147,7 @@ This is actually mainly used for new Odoo changes on master, and is not dynamica
 - Autocompletion is now better localized, and can not suggest variables declared later in a bloc.
 - Fix various borrow errors.
 
-## 0.6.3 - 2025/23/05 - Bugfixs
+## [0.6.3] - 2025/23/05 - Bugfixs
 
 ### Fixs
 
@@ -122,7 +156,7 @@ This is actually mainly used for new Odoo changes on master, and is not dynamica
 - Fix various crashes when hovering some part of the code
 - Provide PDB alongside exe on windows to get better tracebacks.
 
-## 0.6.2 - 2025/28/04 - Bugfixs
+## [0.6.2] - 2025/28/04 - Bugfixs
 
 ### Fixs
 
@@ -135,7 +169,7 @@ This is actually mainly used for new Odoo changes on master, and is not dynamica
 - Fix crash on lazy loading invalid `__all__` variable
 - Clean some logs
 
-## 0.6.1 - 2025/24/04 - File cache option and bugfixs
+## [0.6.1] - 2025/24/04 - File cache option and bugfixs
 
 ### Key features
 
@@ -160,7 +194,7 @@ default to not stress your disk, but you can activate it in your settings if you
 - Fix path comparison. "account_account" will not be considered below "account" because it shares the same start. Now path components are properly used
 for the comparison. 
 
-## 0.6.0 - 2025/15/04 - Entrypoints and NOQA Update
+## [0.6.0] - 2025/15/04 - Entrypoints and NOQA Update
 
 ### Key features
 
@@ -222,7 +256,7 @@ still rely on the disk path to identify a file (will change in next updates)
 - Check that related field is the same type
 - New errors to express the invalid dot notation in strings used for related, domains...
 
-## 0.4.1 - 2025/12/02
+## [0.4.1] - 2025/12/02
 
 Small patch that address crashes we got from your reports
 
@@ -250,7 +284,7 @@ Small patch that address crashes we got from your reports
 - Test if odoo package is found or not and log it if not
 - Fix hook that transform Cursor into TestCursor in tests directories
 
-## 0.4.0 - 2025/05/02
+## [0.4.0] - 2025/05/02
 
 0.4.0 is the first Rust version of the tool that is coming to Beta. It means that if you didn't update to alpha version manually, this changelog is new for you since the 0.2.4 version (last published Python version of the tool, not maintained anymore)
 Some configuration migrations could fail while upgrading from the Python version. We apologize in advance if you have to set up them again !
@@ -295,7 +329,7 @@ computation on each change.
 - fix crash on importation of compiled files
 - Remove autocompletion items that are not in module dependencies
 
-## 0.2.8 - 2024/18/12
+## [0.2.8] - 2024/18/12
 
 ### VsCode
 
@@ -337,7 +371,7 @@ computation on each change.
 - New hook for Odoo registry.
 - Add "magic" fields to models (id, create_date, etc...)
 
-## 0.2.7 - 2024/31/10
+## [0.2.7] - 2024/31/10
 
 ### Server
 
@@ -362,7 +396,7 @@ computation on each change.
 - Add deprecation warning on any use/import of odoo.tests.common.Form after Odoo 17.0
 - Autocompletion of Model names in self.env[""] expressions. Autocompleted model names will indicates if a new dependency is required. This comes with a new settings allowing you to choose between 'only available models' or 'all models with an hint'
 
-## 0.2.6 - 2024/01/10
+## [0.2.6] - 2024/01/10
 
 ### Server
 
@@ -379,7 +413,7 @@ but the code is ready to support new python expressions!
 - Better logs for investigations: used settings, build name, etc...
 
 
-## 0.2.5 - Beta Candidate - 2024/07/10
+## [0.2.5] - Beta Candidate - 2024/07/10
 ### Rustpocalypse
 
 This update bring a completely new rewritten version of the extension.
@@ -411,7 +445,7 @@ As this is a first version, there is some known issues:
 ### Fixs
 - Odoo configuration selected does not match the odoo path popup fixed
 
-## 0.2.4 - 2023/01/10
+## [0.2.4] - 2023/01/10
 
 ### Fixs
 
@@ -422,7 +456,7 @@ As this is a first version, there is some known issues:
 - Fix crash when creating a symbol that was previously missing
 - Fix infinite log generation on BrokenPipeError
 
-## 0.2.3 - 2023/12/19
+## [0.2.3] - 2023/12/19
 
 Last update of 2023 ! We wish you all an happy new year !
 
@@ -446,7 +480,7 @@ This value is used to for the autocompletion, and so you won't have suggestions 
 - Update int to proper enums in module.py for the 'severity' option of diagnostics
 
 
-## 0.2.2 - 2023/11/20
+## [0.2.2] - 2023/11/20
 
 ### VsCode
 
@@ -457,7 +491,7 @@ This value is used to for the autocompletion, and so you won't have suggestions 
 - update code to work with cattrs==23.2.1
 - Fix diagnostic crash in non-module addon
 
-## 0.2.1 - 2023/11/15
+## [0.2.1] - 2023/11/15
 
 This version contains various fixs based on the reports we got. No new features here.
 
@@ -469,7 +503,7 @@ This version contains various fixs based on the reports we got. No new features 
 - Fix crash on some file edit due to the thread queue that was missing some context
 - Fix character index on Hover and Definition feature that created a crash if you hover the last character of the file
 
-## 0.2.0 - 2023/11/07
+## [0.2.0] - 2023/11/07
 
 Update to version numbers: "0.x.0" if x is even, it will be a beta (or pre-release) version, odd numbers will be release version.
 There will be no more tag to version (-beta or -alpha)
@@ -499,7 +533,7 @@ There will be no more tag to version (-beta or -alpha)
 - Python 3.10+: IndentationError is using -1 character index (despite the documentation indicating [1-MAX_INT]), so a special case has been added to handle it.
 - The server will not try to release a non-acquired lock anymore
 
-## 0.1.1-alpha.1 - 2023/09/27
+## [0.1.1-alpha.1] - 2023/09/27
 
 ### Fixs
 - Language server: Various fixs on asynchronous jobs:
@@ -507,7 +541,7 @@ There will be no more tag to version (-beta or -alpha)
   - prevent EventQueue to hold the access during update
   - A acquired lock on a queue can not be on a Null queue anymore
 
-## 0.1.1-alpha.0 - 2023/09/23
+## [0.1.1-alpha.0] - 2023/09/23
 
 ### VSCode
 #### Configurations
@@ -545,7 +579,7 @@ There will be no more tag to version (-beta or -alpha)
 - Prevent any completion/hover feature on non-py file
 
 
-## 0.1.0-alpha.3 - 2023/08/28
+## [0.1.0-alpha.3] - 2023/08/28
 Last update to the 0.1.0 that is discontinued now and won't go to beta phase. We will wait at least for the 0.1.1 before testing a beta version (for the venv support)
 
 ### VSCode
@@ -559,7 +593,7 @@ Last update to the 0.1.0 that is discontinued now and won't go to beta phase. We
 - Improve SyntaxError reporting and make code more robust to invalid files (python 3.10+)
 
 
-## 0.1.0-alpha.2 - 2023/08/22
+## [0.1.0-alpha.2] - 2023/08/22
 
 ### Language Server
 #### Fixs
@@ -567,14 +601,14 @@ Last update to the 0.1.0 that is discontinued now and won't go to beta phase. We
 - Fix crash on external dependencies evaluation on references
 
 
-## 0.1.0-alpha.1 - 2023/08/21
+## [0.1.0-alpha.1] - 2023/08/21
 
 ### VSCode
 - Prevent the crash reporter to crash if the opened file is not a real file (like config page)
 - Prevent the language server to crash when evaluating a non-workspace file, but log it instead (help debugging the configurations)
 
 
-## 0.1.0-alpha.0 - 2023/08/13
+## [0.1.0-alpha.0] - 2023/08/13
 
 ### VSCode
 - Configuration page, that allow editing configurations
