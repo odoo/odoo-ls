@@ -822,7 +822,11 @@ fn process_paths(
     entry.odoo_path =  entry.odoo_path.as_ref()
         .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone()));
 
-    let infer = entry.addons_paths.as_mut().map_or(true, |ps| ps.pop_if(|v| v.value == S!("$autoDetectAddons")).is_some());
+    let infer = entry.addons_paths.as_mut().map_or(true, |ps| {
+        let initial_len = ps.len();
+        ps.retain(|v| v.value != S!("$autoDetectAddons"));
+        initial_len != ps.len() // $autoDetectAddons is found
+    });
     entry.addons_paths = entry.addons_paths.as_ref().map(|paths|
         paths.iter().filter_map(|sourced| {
             fill_or_canonicalize(sourced, ws_folders, workspace_name, &is_addon_path, var_map.clone())
