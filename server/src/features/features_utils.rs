@@ -106,7 +106,7 @@ impl FeaturesUtils {
         field_range: &TextRange,
         field_name: &String,
         offset: &usize,
-    ) ->  Vec<Rc<RefCell<Symbol>>>{
+    ) ->  Vec<(Rc<RefCell<Symbol>>, TextRange)>{
         if base_symbol.borrow().as_class_sym()._model.is_none(){
             return vec![];
         }
@@ -120,7 +120,7 @@ impl FeaturesUtils {
             let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
             if cursor_section {
                 let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
-                return fields;
+                return fields.into_iter().map(|f| (f, TextRange::new(range_start, range_end - TextSize::new(1)))).collect();
             } else {
                 let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
                     &name.to_string(),
@@ -157,7 +157,7 @@ impl FeaturesUtils {
         field_range: &TextRange,
         field_name: &String,
         offset: &usize,
-    ) ->  Vec<Rc<RefCell<Symbol>>>{
+    ) ->  Vec<(Rc<RefCell<Symbol>>, TextRange)>{
         let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
             return vec![];
         };
@@ -171,7 +171,7 @@ impl FeaturesUtils {
         field_name: &String,
         offset: &usize,
         from_module: &Option<Rc<RefCell<Symbol>>>,
-    ) -> Vec<Rc<RefCell<Symbol>>> {
+    ) -> Vec<(Rc<RefCell<Symbol>>, TextRange)> {
         let Some(parent_object) = callable.context.get(&S!("base_attr")).and_then(|parent_object| parent_object.as_symbol().upgrade()) else {
             return vec![];
         };
@@ -187,8 +187,8 @@ impl FeaturesUtils {
         offset: usize,
         field_range: TextRange,
         arg_index: usize,
-    ) -> Vec<Rc<RefCell<Symbol>>>{
-        let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
+    ) -> Vec<(Rc<RefCell<Symbol>>, TextRange)> {
+        let mut arg_symbols: Vec<(Rc<RefCell<Symbol>>, TextRange)> = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
@@ -215,6 +215,7 @@ impl FeaturesUtils {
                 if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
                     arg_symbols.extend(
                         FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
+                        .into_iter().map(|symbol| (symbol, field_range.clone()))
                     );
                     continue;
                 } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
@@ -255,12 +256,12 @@ impl FeaturesUtils {
         offset: usize,
         field_range: TextRange,
         keyword: &Keyword,
-    ) -> Vec<Rc<RefCell<Symbol>>>{
+    ) -> Vec<(Rc<RefCell<Symbol>>, TextRange)> {
         // We only process the `related` keyword argument
         if keyword.arg.as_ref().filter(|kw_arg| kw_arg.id == "related").is_none(){
             return vec![];
         }
-        let mut arg_symbols: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut arg_symbols = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
@@ -291,7 +292,7 @@ impl FeaturesUtils {
         call_expr: &ExprCall,
         offset: usize,
         field_range: TextRange,
-    ) -> Vec<Rc<RefCell<Symbol>>>{
+    ) -> Vec<(Rc<RefCell<Symbol>>, TextRange)>{
         if let Some((arg_index, _)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
             offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
         ){
@@ -310,7 +311,7 @@ impl FeaturesUtils {
         let scope = Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false);
         let string_domain_fields_syms = FeaturesUtils::find_argument_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, offset, field_range);
         if string_domain_fields_syms.len() >= 1 {
-            return string_domain_fields_syms;
+            return string_domain_fields_syms.into_iter().map(|(sym, _)| sym).collect();
         }
         let compute_kwarg_syms = FeaturesUtils::find_field_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, &offset);
         if compute_kwarg_syms.len() >= 1{

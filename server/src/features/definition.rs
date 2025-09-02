@@ -1,4 +1,4 @@
-use lsp_types::{GotoDefinitionResponse, Location, LocationLink, Position, Range};
+use lsp_types::{GotoDefinitionResponse, LocationLink, Range};
 use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::TextSize;
 use std::path::PathBuf;
@@ -9,7 +9,6 @@ use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
-use crate::core::symbols::xml_file_symbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
 use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
@@ -35,7 +34,7 @@ impl DefinitionFeature {
         let string_domain_fields = FeaturesUtils::find_argument_symbols(
             session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &field_name, call_expr, offset, field_range
         );
-        string_domain_fields.iter().for_each(|field|{
+        string_domain_fields.iter().for_each(|(field, field_range)|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
