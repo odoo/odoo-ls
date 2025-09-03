@@ -378,6 +378,18 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             match msg {
                 Message::Request(r) => {
                     let (value, error) = match r.method.as_str() {
+                        HoverRequest::METHOD => {
+                            to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        GotoDefinition::METHOD => {
+                            to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        References::METHOD => {
+                            to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        DocumentSymbolRequest::METHOD => {
+                            to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
                         Completion::METHOD => {
                             to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
@@ -415,104 +427,3 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
         }
     }
 }
-
-pub fn message_processor_thread_read(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
-    let mut buffer = VecDeque::new();
-    loop {
-        // Drain all available messages into buffer
-        loop {
-            let maybe_msg = generic_receiver.try_recv();
-            match maybe_msg {
-                Ok(msg) => {
-                    // Check for shutdown
-                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
-                        warn!("Read thread - got shutdown.");
-                        return;
-                    }
-                    buffer.push_back(msg);
-                },
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    error!("Generic channel disconnected, exiting thread");
-                    return;
-                }
-            }
-        }
-        // If buffer is empty, block for next message so we do not busy wait
-        if buffer.is_empty() {
-            match generic_receiver.recv() {
-                Ok(msg) => {
-                    // Check for shutdown
-                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
-                        warn!("Read thread - got shutdown.");
-                        return;
-                    }
-                    buffer.push_back(msg);
-                },
-                Err(_) => {
-                    error!("Got an RecvError, exiting thread");
-                    break;
-                }
-            }
-        }
-        // Process buffered messages
-        if let Some(msg) = buffer.pop_front() {
-            let mut session = SessionInfo{
-                sender: sender.clone(),
-                receiver: receiver.clone(),
-                sync_odoo: &mut sync_odoo.lock().unwrap(),
-                delayed_process_sender: Some(delayed_process_sender.clone()),
-                noqas_stack: vec![],
-                current_noqa: NoqaInfo::None,
-            };
-            match msg {
-                Message::Request(r) => {
-                    let (value, error) = match r.method.as_str() {
-                        HoverRequest::METHOD => {
-                            to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
-                        },
-                        GotoDefinition::METHOD => {
-                            to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
-                        },
-                        References::METHOD => {
-                            to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
-                        },
-                        DocumentSymbolRequest::METHOD => {
-                            to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
-                        },
-                        _ => {error!("Request not handled by read thread: {}", r.method); (None, Some(ResponseError{
-                            code: 1,
-                            message: S!("Request not handled by the server"),
-                            data: None
-                        }))}
-                    };
-                    sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
-                },
-                Message::Notification(r) => {
-                    match r.method.as_str() {
-                        Shutdown::METHOD => { warn!("Read thread - got shutdown."); return;}
-                        _ => {error!("Notification not handled by read thread: {}", r.method)}
-                    }
-                },
-                Message::Response(_) => {
-                    error!("Error: Responses should not arrives in generic channel. Exiting thread");
-                    return;
-                }
-            }
-        }
-    }
-}
-
-// pub fn message_processor_thread_reactive(sender: Sender<Message>, receiver: Receiver<Message>) {
-//     loop {
-//         let msg = receiver.recv();
-//         match msg {
-//             Ok(msg) => {
-//                 println!("Not handled for now");
-//             },
-//             Err(e) => {
-//                 break;
-//             }
-//         }
-//     }
-// }
