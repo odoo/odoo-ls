@@ -9,10 +9,8 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, message_processor_thread_read, DelayedProcessingMessage}, S};
+use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S};
 
-const THREAD_MAIN_COUNT: u16 = 1;
-const THREAD_READ_COUNT: u16 = 1;
 
 /**
  * Server handle connection between the client and the extension.
@@ -22,15 +20,11 @@ const THREAD_READ_COUNT: u16 = 1;
 pub struct Server {
     pub connection: Option<Connection>,
     client_process_id: u32,
-    io_threads: IoThreads,
     receivers_w_to_s: Vec<Receiver<Message>>,
     msg_id: i32,
-    id_list: HashMap<RequestId, u16>, //map each request to its thread. firsts ids for main thread, nexts for read ones, last for delayed_process thread
-    threads: Vec<JoinHandle<()>>,
-    senders_s_to_main: Vec<Sender<Message>>, // specific channel to threads, to handle responses
-    sender_s_to_main: Sender<Message>, //unique channel server to all main threads. Will handle new request message
-    senders_s_to_read: Vec<Sender<Message>>, // specific channel to threads, to handle responses
-    sender_s_to_read: Sender<Message>, //unique channel server to all read threads
+    main_thread: JoinHandle<()>,
+    res_sender_s_to_main: Sender<Message>, // specific channel to threads, to handle responses (main -> s -> client and back)
+    req_sender_s_to_main: Sender<Message>, //channel server to main threads. Will handle new request message (client -> s -> main and back)
     delayed_process_thread: JoinHandle<()>,
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
@@ -75,47 +69,24 @@ impl Server {
         Server::init(conn, io_threads)
     }
 
-    fn init(conn: Connection, io_threads: IoThreads) -> Self {
-        let mut threads = vec![];
+    fn init(conn: Connection, _io_threads: IoThreads) -> Self {
         let sync_odoo = Arc::new(Mutex::new(SyncOdoo::new()));
         let interrupt_rebuild_boolean = sync_odoo.lock().unwrap().interrupt_rebuild.clone();
         let terminate_rebuild_boolean = sync_odoo.lock().unwrap().terminate_rebuild.clone();
         let mut receivers_w_to_s = vec![];
-        let mut senders_s_to_main = vec![];
         let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
-        let (generic_sender_s_to_main, generic_receiver_s_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
-        for _ in 0..THREAD_MAIN_COUNT {
-            let (sender_s_to_main, receiver_s_to_main) = crossbeam_channel::unbounded();
-            let (sender_main_to_s, receiver_main_to_s) = crossbeam_channel::unbounded();
-            senders_s_to_main.push(sender_s_to_main);
-            receivers_w_to_s.push(receiver_main_to_s);
+        let (req_sender_s_to_main, generic_receiver_s_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
+        let (res_sender_s_to_main, receiver_s_to_main) = crossbeam_channel::unbounded();
+        let (sender_main_to_s, receiver_main_to_s) = crossbeam_channel::unbounded();
+        receivers_w_to_s.push(receiver_main_to_s);
 
-            threads.push({
-                let sync_odoo = sync_odoo.clone();
-                let generic_receiver_s_to_main = generic_receiver_s_to_main.clone();
-                let sender_to_delayed_process = sender_to_delayed_process.clone();
-                std::thread::spawn(move || {
-                    message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone(), sender_to_delayed_process);
-                })
-            });
-        }
-
-        let mut senders_s_to_read = vec![];
-        let (generic_sender_s_to_read, generic_receiver_s_to_read) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready read thread
-        for _ in 0..THREAD_READ_COUNT {
-            let (sender_s_to_read, receiver_s_to_read) = crossbeam_channel::unbounded();
-            let (sender_read_to_s, receiver_read_to_s) = crossbeam_channel::unbounded();
-            senders_s_to_read.push(sender_s_to_read);
-            receivers_w_to_s.push(receiver_read_to_s);
-            threads.push({
-                let sync_odoo = sync_odoo.clone();
-                let generic_receiver_s_to_read = generic_receiver_s_to_read.clone();
-                let sender_to_delayed_process = sender_to_delayed_process.clone();
-                std::thread::spawn(move || {
-                    message_processor_thread_read(sync_odoo, generic_receiver_s_to_read.clone(), sender_read_to_s.clone(), receiver_s_to_read.clone(), sender_to_delayed_process);
-                })
-            });
-        }
+        let main_thread = {
+            let sync_odoo = sync_odoo.clone();
+            let sender_to_delayed_process = sender_to_delayed_process.clone();
+            std::thread::spawn(move || {
+                message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone(), sender_to_delayed_process);
+            })
+        };
 
         let (_, receiver_s_to_delayed) = crossbeam_channel::unbounded();
         let (sender_delayed_to_s, receiver_delayed_to_s) = crossbeam_channel::unbounded();
@@ -125,27 +96,14 @@ impl Server {
         let delayed_process_thread = std::thread::spawn(move || {
             delayed_changes_process_thread(sender_delayed_to_s, receiver_s_to_delayed, receiver_delayed_process, so, delayed_process_sender_to_delayed_process)
         });
-
-        // let (sender_to_server, receiver_to_server) = crossbeam_channel::unbounded();
-        // let (sender_from_server_reactive, receiver_from_server) = crossbeam_channel::unbounded();
-        // server.add_receiver(receiver_to_server.clone());
-        // for i in 0..THREAD_REACTIVE_COUNT {
-        //     threads.push(std::thread::spawn(move || {
-        //         message_processor_thread_reactive(sender_to_server.clone(), receiver_from_server.clone());
-        //     }));
-        // }
         Self {
             connection: Some(conn),
             client_process_id: 0,
-            io_threads: io_threads,
-            id_list: HashMap::new(),
             msg_id: 0,
             receivers_w_to_s: receivers_w_to_s,
-            threads: threads,
-            senders_s_to_main: senders_s_to_main,
-            sender_s_to_main: generic_sender_s_to_main,
-            senders_s_to_read: senders_s_to_read,
-            sender_s_to_read: generic_sender_s_to_read,
+            main_thread,
+            req_sender_s_to_main,
+            res_sender_s_to_main,
             sender_to_delayed_process: sender_to_delayed_process,
             delayed_process_thread,
             sync_odoo: sync_odoo,
@@ -207,8 +165,8 @@ impl Server {
                     ..CompletionOptions::default()
                 }),
                 references_provider: Some(OneOf::Right(ReferencesOptions {
-                    work_done_progress_options: WorkDoneProgressOptions { 
-                        work_done_progress: Some(false) 
+                    work_done_progress_options: WorkDoneProgressOptions {
+                        work_done_progress: Some(false)
                     }
                 })),
                 document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions{
@@ -272,8 +230,8 @@ impl Server {
             })
         }));
         info!("End of connection initalization.");
-        self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null })).unwrap();
-        self.sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null })).unwrap();
+        self.req_sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null })).unwrap();
+        self.req_sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null })).unwrap();
         Ok(())
     }
 
@@ -283,14 +241,8 @@ impl Server {
             method: Shutdown::METHOD.to_string(),
             params: serde_json::Value::Null,
         });
-        for specific_sender in self.senders_s_to_main.iter() {
-            self.sender_s_to_main.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
-            specific_sender.send(shutdown_notification.clone()).unwrap(); //send to specific channels too to close pending requests
-        }
-        for specific_sender in self.senders_s_to_read.iter() {
-            self.sender_s_to_read.send(shutdown_notification.clone()).unwrap(); //sent as notification as we already handled the request for the client
-            specific_sender.send(shutdown_notification.clone()).unwrap(); //send to specific channels too to close pending requests
-        }
+        self.req_sender_s_to_main.send(shutdown_notification.clone()).unwrap();
+        self.res_sender_s_to_main.send(shutdown_notification.clone()).unwrap();
         info!(message);
     }
 
@@ -360,13 +312,12 @@ impl Server {
                         break;
                     }
                 }
-                self.dispatch(msg);
+                self.forward_message(msg);
             } else { // comes from threads
                 match msg {
                     Message::Request(mut r) => {
                         r.id = RequestId::from(self.msg_id);
                         self.msg_id += 1;
-                        self.id_list.insert(r.id.clone(), index as u16);
                         self.connection.as_ref().unwrap().sender.send(Message::Request(r)).unwrap();
                     },
                     Message::Notification(n) => {
@@ -391,39 +342,31 @@ impl Server {
         if let Some(pid_join_handle) = pid_thread {
             pid_join_handle.join().unwrap();
         }
-        for thread in self.threads {
-            thread.join().unwrap();
-        }
+        self.main_thread.join().unwrap();
         let _ = self.sender_to_delayed_process.send(DelayedProcessingMessage::EXIT);
         self.delayed_process_thread.join().unwrap();
         exit_no_error_code
     }
 
     /* address a message to the right thread. */
-    fn dispatch(&mut self, msg: Message) {
+    fn forward_message(&mut self, msg: Message) {
         match msg {
             Message::Request(r) => {
                 match r.method.as_str() {
-                    HoverRequest::METHOD | GotoDefinition::METHOD | References::METHOD => {
+                    HoverRequest::METHOD | GotoDefinition::METHOD | References::METHOD | DocumentSymbolRequest::METHOD=> {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
-                            info!("Sending request to read thread : {} - {}", r.method, r.id);
+                            info!("Sending request to main thread : {} - {}", r.method, r.id);
                         }
-                        self.sender_s_to_read.send(Message::Request(r)).unwrap();
+                        self.req_sender_s_to_main.send(Message::Request(r)).unwrap();
                     },
                     Completion::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
                             info!("Sending request to main thread : {} - {}", r.method, r.id);
                         }
-                        self.sender_s_to_main.send(Message::Request(r)).unwrap();
+                        self.req_sender_s_to_main.send(Message::Request(r)).unwrap();
                     },
-                    DocumentSymbolRequest::METHOD => {
-                        if DEBUG_THREADS {
-                            info!("Sending request to read thread : {} - {}", r.method, r.id);
-                        }
-                        self.sender_s_to_read.send(Message::Request(r)).unwrap();
-                    }
                     ResolveCompletionItem::METHOD => {
                         info!("Got ignored CompletionItem/resolve")
                     }
@@ -431,37 +374,8 @@ impl Server {
                 }
             },
             Message::Response(r) => {
-                let thread_id = self.id_list.get(&r.id);
-                if let Some(thread_id) = thread_id {
-                    if *thread_id == 0_u16 {
-                        panic!("thread_id can't be equal to 0. Client can't respond to itself");
-                    } else {
-                        let mut t_id = thread_id - 1;
-                        if t_id < THREAD_MAIN_COUNT {
-                            if DEBUG_THREADS {
-                                info!("Sending response to main thread : {}", r.id);
-                            }
-                            self.senders_s_to_main.get(t_id as usize).unwrap().send(Message::Response(r)).unwrap();
-                            return;
-                        }
-                        t_id -= THREAD_MAIN_COUNT;
-                        if t_id < THREAD_READ_COUNT {
-                            if DEBUG_THREADS {
-                                info!("Sending response to read thread : {}", r.id);
-                            }
-                            self.senders_s_to_read.get(t_id as usize).unwrap().send(Message::Response(r)).unwrap();
-                            return;
-                        }
-                        // t_id -= THREAD_READ_COUNT;
-                        // if t_id < THREAD_REACTIVE_COUNT {
-                        //     self.senders_s_to_react.get(t_id as usize).unwrap().send(msg);
-                        //     return;
-                        // }
-                        panic!("invalid thread id");
-                    }
-                } else {
-                    panic!("Got a response for an unknown request: {:?}", r);
-                }
+                info!("Sending response to main thread : {}", r.id);
+                self.res_sender_s_to_main.send(Message::Response(r)).unwrap();
             },
             Message::Notification(n) => {
                 match n.method.as_str() {
@@ -472,15 +386,10 @@ impl Server {
                             info!("Sending notification to main thread : {}", n.method);
                         }
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
-                        self.sender_s_to_main.send(Message::Notification(n)).unwrap();
+                        self.req_sender_s_to_main.send(Message::Notification(n)).unwrap();
                     }
-                    _ => {
-                        if n.method.starts_with("$/") {
-                            warn!("Not handled message id: {}", n.method);
-                        } else {
-                            error!("Not handled Notification Id: {}", n.method)
-                        }
-                    }
+                    method if method.starts_with("$/") => warn!("Not handled message id: {}", n.method),
+                    method => error!("Not handled Notification Id: {}", method),
                 }
             }
         }
