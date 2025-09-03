@@ -10,7 +10,11 @@
             "cargo": {
                 "args": [
                     "build"
-                ]
+                ],
+                "cwd": "${workspaceFolder}/server",
+                "filter": {
+                    "name": "odoo_ls_server"
+                }
             },
             "cwd": "${workspaceFolder}/server",
             "console": "externalTerminal"
