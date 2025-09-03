@@ -388,7 +388,7 @@ impl FeaturesUtils {
                     for main_class_rc in main_classes.iter() {
                         let main_class = main_class_rc.borrow();
                         if let Some(main_class_module) = main_class.find_module() {
-                            block += format!("Model in {}: {}  \n", main_class_module.borrow().name(), main_class.name()).as_str();
+                            block += format!("Model in {}: {}", main_class_module.borrow().name(), main_class.name()).as_str();
                             if main_class.doc_string().is_some() {
                                 block = block + "  \n***  \n" + main_class.doc_string().as_ref().unwrap();
                             }
@@ -412,8 +412,8 @@ impl FeaturesUtils {
                                 })
                                 .map(|(mod_name, needed_module)| {
                                     match needed_module {
-                                        Some(module) => format!("inherited in {} (require {})  \n", mod_name, module),
-                                        None => format!("inherited in {}  \n", mod_name)
+                                        Some(module) => format!("inherited in {} (require {}){}", mod_name, module, FeaturesUtils::get_line_break(session)),
+                                        None => format!("inherited in {}{}", mod_name, FeaturesUtils::get_line_break(session))
                                     }
                                 }).collect::<String>();
                         }
@@ -453,11 +453,11 @@ impl FeaturesUtils {
             let inferred_types = info_pieces.iter().flat_map(|info| info.inferred_types.clone()).collect::<Vec<_>>();
             let from_modules = info_pieces.iter().filter_map(|info| info.from_module.clone().map(|module_rc| module_rc.borrow().name().clone())).unique().collect::<Vec<_>>();
             // BLOCK 1: (type) **name** -> inferred_type
-            block += FeaturesUtils::build_block_1(id.type_, &id.name, sym_type_tag, &inferred_types).as_str();
+            block += FeaturesUtils::build_block_1(session, id.type_, &id.name, sym_type_tag, &inferred_types).as_str();
             // BLOCK 2: useful links
-            block += inferred_types.iter().map(|typ| FeaturesUtils::get_useful_link(&typ.eval_ptr)).collect::<String>().as_str();
+            block += inferred_types.iter().map(|typ| FeaturesUtils::get_useful_link(session, &typ.eval_ptr)).collect::<String>().as_str();
             // BLOCK 3: documentation
-            if let Some(documentation_block) = FeaturesUtils::get_documentation_block(&from_modules, &inferred_types){
+            if let Some(documentation_block) = FeaturesUtils::get_documentation_block(session, &from_modules, &inferred_types){
                 block = block + "  \n***  \n" + &documentation_block;
             }
             blocks.push(block);
@@ -563,9 +563,9 @@ impl FeaturesUtils {
     parameters:   (type_sym)  symbol: inferred_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &Vec<InferredType>) -> String {
+    fn build_block_1(session: &mut SessionInfo, symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &Vec<InferredType>) -> String {
         //python code balise
-        let mut value = S!("```python  \n");
+        let mut value = S!(format!("```python{}", FeaturesUtils::get_line_break(session)));
         //type name
         value += &format!("({}) ", type_sym.iter().join(" | "));
         let mut single_func_eval = false;
@@ -596,7 +596,7 @@ impl FeaturesUtils {
             },
             TypeInfo::VALUE(value) => value.clone(),
         }).unique().collect::<Vec<_>>();
-        value += &format!("{}  \n```", FeaturesUtils::represent_return_types(return_types_string));
+        value += &format!("{}{}```", FeaturesUtils::represent_return_types(return_types_string), FeaturesUtils::get_line_break(session));
         //end block
         value
     }
@@ -621,7 +621,7 @@ impl FeaturesUtils {
     }
 
     /// Finds and returns useful links for an evaluation
-    fn get_useful_link(typ: &EvaluationSymbolPtr) -> String {
+    fn get_useful_link(session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
         // Possibly add more links in the future
         let Some(typ) = typ.upgrade_weak() else {
             return S!("")
@@ -635,14 +635,14 @@ impl FeaturesUtils {
             };
             let path = FileMgr::pathname2uri(&base_path);
             let range = if type_ref.is_file_content() { type_ref.range().start().to_u32() } else { 0 };
-            format!("  \n***  \nSee also: [{}]({}#{})  \n", type_ref.name().as_str(), path.as_str(), range)
+            format!("  \n***  \nSee also: [{}]({}#{}){}", type_ref.name().as_str(), path.as_str(), range, FeaturesUtils::get_line_break(session))
         } else {
             S!("")
         }
     }
 
     /// Documentation block that includes the source module(s) and docstrings if found
-    fn get_documentation_block(from_modules: &Vec<OYarn>, type_refs: &Vec<InferredType>) -> Option<String> {
+    fn get_documentation_block(session: &mut SessionInfo, from_modules: &Vec<OYarn>, type_refs: &Vec<InferredType>) -> Option<String> {
         let mut documentation_block = None;
         if !from_modules.is_empty(){
             documentation_block = Some(
@@ -664,14 +664,22 @@ impl FeaturesUtils {
                         format!("{}{}", nbsp_replacement, &line[leading_spaces..])
                     })
                     .collect::<Vec<String>>()
-                    .join("  \n");
+                    .join(FeaturesUtils::get_line_break(session));
                     documentation_block = match documentation_block {
-                        Some(from_module_str) => Some(from_module_str + "  \n" + &ds),
+                        Some(from_module_str) => Some(from_module_str + "<br/>" + &ds),
                         None => Some(ds)
                     };
                 }
             }
         }
         documentation_block
+    }
+
+    pub fn get_line_break(session: &mut SessionInfo<'_>) -> &'static str {
+        if session.sync_odoo.capabilities.general.is_none() ||
+        session.sync_odoo.capabilities.general.as_ref().unwrap().markdown.is_none() {
+            return "<br/>"
+        }
+        "  \n"
     }
 }
