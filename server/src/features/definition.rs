@@ -65,8 +65,15 @@ impl DefinitionFeature {
         };
         let mut model_found = false;
         let from_module = file_symbol.borrow().find_module();
-        for class_symbol_rc in model.borrow().get_symbols(session, from_module.clone()){
+        let classes = model.borrow().get_symbols(session, from_module.clone());
+        let len_classes = classes.len();
+        for class_symbol_rc in classes {
             let class_symbol = class_symbol_rc.borrow();
+            if let (Some(eval_range), Some(class_file)) = (eval.range, class_symbol.get_file().and_then(|file_sym_weak| file_sym_weak.upgrade())) {
+                if Rc::ptr_eq(file_symbol, &class_file) && class_symbol.range().contains(eval_range.start()) && len_classes > 1{
+                    continue; // if we are already on the class, skip, unless it is the only result
+                }
+            }
             if let Some(model_file_sym) = class_symbol.get_file().and_then(|model_file_sym_weak| model_file_sym_weak.upgrade()){
                 let path = model_file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
