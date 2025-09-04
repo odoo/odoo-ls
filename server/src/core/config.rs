@@ -12,9 +12,9 @@ use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 
-use crate::constants::{DEFAULT_PYTHON, CONFIG_WIKI_URL};
+use crate::constants::{CONFIG_WIKI_URL};
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
-use crate::utils::{fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
+use crate::utils::{fill_validate_path, get_python_command, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
 
@@ -469,7 +469,7 @@ where
 {
     match opt {
         Some(val) => val.serialize(serializer),
-        None => (Sourced { value: S!(DEFAULT_PYTHON), ..Default::default() }).serialize(serializer),
+        None => (Sourced { value: S!(get_python_command().unwrap_or_default()), ..Default::default() }).serialize(serializer),
     }
 }
 
@@ -760,7 +760,7 @@ impl Default for ConfigEntry {
             name: default_profile_name(),
             odoo_path: None,
             addons_paths: HashSet::new(),
-            python_path: S!(DEFAULT_PYTHON),
+            python_path: S!(get_python_command().unwrap_or_default()),
             additional_stubs: HashSet::new(),
             refresh_mode: RefreshMode::default(),
             file_cache: true,
@@ -1379,7 +1379,7 @@ fn merge_all_workspaces(
                 name: key.clone(),
                 odoo_path: raw_entry.odoo_path.map(|op| op.value),
                 addons_paths: raw_entry.addons_paths.into_iter().flatten().map(|op| op.value).collect(),
-                python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!(DEFAULT_PYTHON)),
+                python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!(get_python_command().unwrap_or_default())),
                 additional_stubs: raw_entry.additional_stubs.into_iter().flatten().map(|op| op.value).collect(),
                 refresh_mode: raw_entry.refresh_mode.map(|op| op.value).unwrap_or_default(),
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
