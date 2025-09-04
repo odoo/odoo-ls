@@ -187,6 +187,7 @@ impl SyncOdoo {
 
     pub fn init(session: &mut SessionInfo, config: ConfigEntry) {
         info!("Initializing odoo");
+        info!("Full Config: {:?}", config);
         let start_time = Instant::now();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
