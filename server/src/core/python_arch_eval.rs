@@ -134,7 +134,7 @@ impl PythonArchEval {
         symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if symbol.is_external() && (!self.file_mode  || !file_info_rc.borrow().opened) {
             if self.file_mode {
-                FileMgr::delete_path(session, &path);
+                FileMgr::delete_path(session, &path); //OUCHHHHHHHH
             }
         } else {
             drop(symbol);
