@@ -105,8 +105,8 @@ pub struct DiagnosticFilter {
 }
 
 /// Serialize the schema as Vec<String> and adds the default
-fn regex_vec_schema(gen: &mut SchemaGenerator) -> Schema {
-    let mut schema = <Vec<String>>::json_schema(gen);
+fn regex_vec_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = <Vec<String>>::json_schema(generator);
     schema.insert("default".into(), serde_json::json!([]));
     schema
 }
@@ -1404,7 +1404,7 @@ fn merge_all_workspaces(
 pub fn get_configuration(ws_folders: &HashMap<String, String>, cli_config_file: &Option<String>)  -> Result<(ConfigNew, ConfigFile), String> {
     let mut ws_confs: Vec<HashMap<String, ConfigEntryRaw>> = Vec::new();
 
-    if let Some(ref path) = cli_config_file {
+    if let Some(path) = cli_config_file {
         let config_from_file = load_config_from_file(path.clone(), ws_folders)?;
         ws_confs.push(config_from_file);
     }

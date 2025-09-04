@@ -56,16 +56,16 @@ impl OdooData {
 
     pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
         match self {
-            OdooData::RECORD(ref mut record) => {
+            OdooData::RECORD(record) => {
                 record.file_symbol = Rc::downgrade(xml_symbol);
             },
-            OdooData::MENUITEM(ref mut menu_item) => {
+            OdooData::MENUITEM(menu_item) => {
                 menu_item.file_symbol = Rc::downgrade(xml_symbol);
             },
-            OdooData::TEMPLATE(ref mut template) => {
+            OdooData::TEMPLATE(template) => {
                 template.file_symbol = Rc::downgrade(xml_symbol);
             },
-            OdooData::DELETE(ref mut delete) => {
+            OdooData::DELETE(delete) => {
                 delete.file_symbol = Rc::downgrade(xml_symbol);
             },
         }
@@ -73,10 +73,10 @@ impl OdooData {
 
     pub fn get_range(&self) -> Range<usize> {
         match self {
-            OdooData::RECORD(ref record) => record.range.clone(),
-            OdooData::MENUITEM(ref menu_item) => menu_item.range.clone(),
-            OdooData::TEMPLATE(ref template) => template.range.clone(),
-            OdooData::DELETE(ref delete) => delete.range.clone(),
+            OdooData::RECORD(record) => record.range.clone(),
+            OdooData::MENUITEM(menu_item) => menu_item.range.clone(),
+            OdooData::TEMPLATE(template) => template.range.clone(),
+            OdooData::DELETE(delete) => delete.range.clone(),
         }
     }
 
@@ -93,16 +93,16 @@ impl OdooData {
     /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
     pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
         match self {
-            OdooData::RECORD(ref record) => {
+            OdooData::RECORD(record) => {
                 Some(record.file_symbol.clone())
             },
-            OdooData::MENUITEM(ref menu_item) => {
+            OdooData::MENUITEM(menu_item) => {
                 Some(menu_item.file_symbol.clone())
             },
-            OdooData::TEMPLATE(ref template) => {
+            OdooData::TEMPLATE(template) => {
                 Some(template.file_symbol.clone())
             },
-            OdooData::DELETE(ref delete) => {
+            OdooData::DELETE(delete) => {
                 Some(delete.file_symbol.clone())
             }
         }

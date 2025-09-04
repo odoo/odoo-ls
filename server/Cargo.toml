@@ -1,7 +1,7 @@
 [package]
 name = "odoo_ls_server"
 version = "0.12.0"
-edition = "2021"
+edition = "2024"
 authors = ["Odoo"]
 readme = "../README.md"
 repository = "https://github.com/odoo/odoo-ls"

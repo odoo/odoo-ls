@@ -105,24 +105,21 @@ impl PythonArchBuilder {
         let file_info = file_info_rc.borrow();
         if file_info.file_info_ast.borrow().indexed_module.is_some() {
             let file_info_ast= file_info.file_info_ast.borrow();
-            let ast = match self.file_mode {
-                true => {
-                    file_info_ast.get_stmts().as_ref().unwrap()
-                },
-                false => {
-                    let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
-                    if ast_index.as_u32() != u32::MAX {
-                        let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
-                        match func {
-                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
-                                &func_stmt.body
-                            },
-                            _ => panic!("Expected function definition")
-                        }
-                    } else {
-                        //if ast_index is empty, this is because the function has been added manually and do not belong to the ast. Skip it's building
-                        &vec![]
+            let ast = if self.file_mode {
+                file_info_ast.get_stmts().unwrap()
+            } else {
+                let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                if ast_index.as_u32() != u32::MAX {
+                    let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
+                    match func {
+                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
+                            &func_stmt.body
+                        },
+                        _ => panic!("Expected function definition")
                     }
+                } else {
+                    //if ast_index is empty, this is because the function has been added manually and do not belong to the ast. Skip it's building
+                    &vec![]
                 }
             };
             let old_stack_noqa = session.noqas_stack.clone();

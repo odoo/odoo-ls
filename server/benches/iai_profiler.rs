@@ -23,7 +23,8 @@ run cargo install --version 0.14.0 iai-callgrind-runner
 
 #[library_benchmark]
 fn iai_main() {
-    env::set_var("RUST_BACKTRACE", "full");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { env::set_var("RUST_BACKTRACE", "full") };
 
     let log_level = LogLevel::INFO;
     let log_level = match log_level {
