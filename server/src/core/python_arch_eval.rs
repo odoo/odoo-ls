@@ -974,7 +974,7 @@ impl PythonArchEval {
             );
             for eval in evaluations.iter_mut() { //as this is an evaluation, we need to set the instance to true
                 match eval.symbol.get_mut_symbol_ptr() {
-                    EvaluationSymbolPtr::WEAK(ref mut sym_weak) => {
+                    EvaluationSymbolPtr::WEAK(sym_weak) => {
                         sym_weak.instance = Some(true);
                     },
                     _ => {}

@@ -15,7 +15,8 @@ use odoo_ls_server::allocator::TrackingAllocator;
 static GLOBAL: TrackingAllocator = TrackingAllocator;
 
 fn main() {
-    env::set_var("RUST_BACKTRACE", "full");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { env::set_var("RUST_BACKTRACE", "full") };
     let cli = Cli::parse();
 
     let use_debug = cli.use_tcp;

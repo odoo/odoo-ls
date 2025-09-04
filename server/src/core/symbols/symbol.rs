@@ -2137,7 +2137,7 @@ impl Symbol {
                                     if !get_result.weak.is_expired() {
                                         let mut eval = Evaluation::eval_from_symbol(&get_result.weak, get_result.instance);
                                         match eval.symbol.get_mut_symbol_ptr() {
-                                            EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                            EvaluationSymbolPtr::WEAK(weak) => {
                                                 if let Some(eval_sym_rc) = weak.weak.upgrade(){
                                                     if Rc::ptr_eq(&eval_sym_rc, &symbol_rc){
                                                         continue;
@@ -2308,7 +2308,7 @@ impl Symbol {
         }
     }
 
-    pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> {
+    pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> + use<> {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
         //be returned.
         let mut iter: Vec<Rc<RefCell<Symbol>>> = Vec::new();
@@ -2545,7 +2545,7 @@ impl Symbol {
         }
     }
 
-    pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> {
+    pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> + use<> {
         let mut symbols: Vec<Rc<RefCell<Symbol>>> = Vec::new();
         match self {
             Symbol::Class(_) | Symbol::Function(_) | Symbol::File(_) | Symbol::Package(PackageSymbol::Module(_)) |

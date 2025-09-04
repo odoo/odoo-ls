@@ -347,7 +347,7 @@ impl FeaturesUtils {
                         special_string_syms.iter_mut().for_each(|sym_rc| {
                             sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
                                 match eval.symbol.get_mut_symbol_ptr() {
-                                    EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                    EvaluationSymbolPtr::WEAK(weak) => {
                                         if let Some(field_parent) = weak.context.get(&S!("field_parent")) {
                                             if !weak.context.contains_key(&S!("base_attr")) {
                                                 weak.context.insert(S!("base_attr"), field_parent.clone());
@@ -370,7 +370,7 @@ impl FeaturesUtils {
                         special_string_syms.iter_mut().for_each(|sym_rc| {
                             sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
                                 match eval.symbol.get_mut_symbol_ptr() {
-                                    EvaluationSymbolPtr::WEAK(ref mut weak) => {
+                                    EvaluationSymbolPtr::WEAK(weak) => {
                                         if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(&S!("base_attr_inserted")) {
                                             // If we found a field parent, we can use it
                                             weak.context.remove(&S!("base_attr"));

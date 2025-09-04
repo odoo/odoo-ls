@@ -1675,7 +1675,7 @@ impl EvaluationSymbol {
 
     pub fn get_weak_mut(&mut self) -> &mut EvaluationSymbolWeak {
         match &mut self.sym {
-            EvaluationSymbolPtr::WEAK(ref mut w) => w,
+            EvaluationSymbolPtr::WEAK(w) => w,
             _ => panic!("Not an EvaluationSymbolWeak")
         }
     }

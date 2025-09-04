@@ -194,7 +194,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                     _ => &None
                 };
 
-                if let Some(ref ident) = ident {
+                if let Some(ident) = ident {
                     if ident.range().contains(self.offset) {
                         self.expr = Some(ExprOrIdent::Ident(ident));
                     }
