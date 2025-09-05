@@ -1,10 +1,10 @@
-use std::{cell::RefCell, fs::File, path::PathBuf, rc::{Rc, Weak}};
+use std::{cell::RefCell, path::PathBuf, rc::{Rc, Weak}};
 
-use csv::{StringRecord, StringRecordIter};
-use lsp_types::{Diagnostic, Position, Range};
+use csv::StringRecord;
+use lsp_types::Diagnostic;
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::FileInfo, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::xml_data::{OdooData, OdooDataField, OdooDataRecord}, oyarn, threads::SessionInfo, Sy};
 
 use super::{symbols::{symbol::Symbol}};
 
@@ -19,7 +19,7 @@ impl CsvArchBuilder {
     }
 
     pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: Rc<RefCell<Symbol>>, content: &String) -> Vec<Diagnostic> {
-        let mut diagnostics = vec![];
+        let diagnostics = vec![];
         csv_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let model_name_pb = PathBuf::from(&csv_symbol.borrow().paths()[0]);
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
@@ -32,7 +32,7 @@ impl CsvArchBuilder {
             let csv = csv_sym.as_csv_file_sym_mut();
             let mut rdr = csv::Reader::from_reader(content.as_bytes());
             if rdr.has_headers() {
-                for header in rdr.headers() {
+                if let Ok(header) = rdr.headers() {
                     for h in header.iter() {
                         csv.headers.push(oyarn!("{}", h));
                     }
@@ -42,14 +42,13 @@ impl CsvArchBuilder {
                 for result in rdr.records() {
                     if let Ok(result) = result {
                         let record = self.extract_record(Rc::downgrade(&csv_symbol), model_name.clone(), &csv.headers, &result);
-                        if let Some(mut record) = record {
+                        if let Some(record) = record {
                             if let Some(xml_id) = record.xml_id.as_ref() {
                                 let id_split = xml_id.split(".").collect::<Vec<&str>>();
                                 if id_split.len() > 2 {
                                     //TODO diagnostic
                                     continue;
                                 }
-                                let id = id_split.last().unwrap().to_string();
                                 let mut csv_module = csv_module.clone();
                                 if id_split.len() == 2 {
                                     let module_name = Sy!(id_split.first().unwrap().to_string());

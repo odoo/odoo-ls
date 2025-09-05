@@ -1,18 +1,16 @@
-use byteyarn::{yarn, Yarn};
 use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::{constants::*, oyarn, Sy};
+use crate::{constants::*, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
-use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use crate::S;
@@ -147,7 +145,7 @@ impl PythonValidator {
                     self.validate_body(session, body);
                     session.current_noqa = old_noqa;
                     match stmt {
-                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
+                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
                             self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
                         },
                         _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
@@ -300,7 +298,7 @@ impl PythonValidator {
         self.safe_imports.pop();
     }
 
-    fn _resolve_import(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
+    fn _resolve_import(&mut self, session: &mut SessionInfo, _from_stmt: Option<&Identifier>, name_aliases: &[Alias], _level: Option<u32>, _range: &TextRange) {
         let file_symbol = self.sym_stack[0].borrow().get_file();
         let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
         for alias in name_aliases.iter() {
@@ -384,13 +382,13 @@ impl PythonValidator {
             };
             for eval in evals.iter() {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
                 for eval_weak in eval_weaks.iter() {
                     let Some(symbol) = eval_weak.upgrade_weak() else {continue};
                     if !symbol.borrow().is_field_class(session){
                         continue;
                     }
-                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(s))).map(|ctx_val| ctx_val.as_string()) {
+                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(_))).map(|ctx_val| ctx_val.as_string()) {
                         let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                             continue;
                         };
@@ -422,7 +420,7 @@ impl PythonValidator {
                                 Rc::downgrade(&sym),
                                 None,
                                 false,
-                            )), session, &mut None, true, true, None, &mut vec![]);
+                            )), session, &mut None, true, true, None);
                             related_eval_weaks.iter().any(|related_eval_weak|{
                                 let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
                                     return false
@@ -655,7 +653,7 @@ impl PythonValidator {
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
         let mut deps = vec![vec![], vec![], vec![]];
-        let (eval, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer, false, &mut deps);
+        let (_, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer, false, &mut deps);
         Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::VALIDATION);
         self.diagnostics.extend(diags);
     }

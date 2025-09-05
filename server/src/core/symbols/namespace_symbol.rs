@@ -1,9 +1,8 @@
-use byteyarn::Yarn;
 use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use crate::constants::{BuildSteps, OYarn};
+use crate::constants::OYarn;
 
 use super::symbol::Symbol;
 

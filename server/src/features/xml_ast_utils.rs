@@ -6,6 +6,7 @@ use crate::{constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, s
 
 pub enum XmlAstResult {
     SYMBOL(Rc<RefCell<Symbol>>),
+    #[allow(non_camel_case_types)]
     XML_DATA(Rc<RefCell<Symbol>>, Range<usize>), //xml file symbol and range of the xml data
 }
 
@@ -13,7 +14,7 @@ impl XmlAstResult {
     pub fn as_symbol(&self) -> Rc<RefCell<Symbol>> {
         match self {
             XmlAstResult::SYMBOL(sym) => sym.clone(),
-            XmlAstResult::XML_DATA(sym, _) =>panic!("Xml Data is not a symbol"),
+            XmlAstResult::XML_DATA(_, _) =>panic!("Xml Data is not a symbol"),
         }
     }
 

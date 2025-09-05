@@ -1,10 +1,9 @@
-use lsp_types::Range;
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
-use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
+use super::{symbol::Symbol, symbol_mgr::SectionRange};
 
 #[derive(Debug)]
 pub struct CsvFileSymbol {
@@ -37,7 +36,7 @@ pub struct CsvFileSymbol {
 impl CsvFileSymbol {
 
     pub fn new(name: String, path: String, is_external: bool) -> Self {
-        let mut res = Self {
+        let res = Self {
             name: oyarn!("{}", name),
             path,
             is_external,

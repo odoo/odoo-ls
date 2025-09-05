@@ -3,7 +3,6 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::{u32, vec};
 
-use byteyarn::{yarn, Yarn};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, ExprNamed, FStringPart, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
@@ -357,7 +356,7 @@ impl PythonArchEval {
         let sym_ref_cl = sym_ref.clone();
         let syms_followed = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
             Rc::downgrade(&sym_ref_cl), None, false
-        )), session, &mut None, false, false, None, &mut self.diagnostics);
+        )), session, &mut None, false, false, None);
         for sym in syms_followed.iter() {
             let sym = sym.upgrade_weak();
             if let Some(sym) = sym {
@@ -380,7 +379,7 @@ impl PythonArchEval {
         false
     }
 
-    fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) {
+    fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, _range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
@@ -619,18 +618,6 @@ impl PythonArchEval {
         self.handle_assigns(session, assigns, &named_expr.range);
     }
 
-    fn create_diagnostic_base_not_found(&mut self, session: &mut SessionInfo, file: &mut Symbol, tree_not_found: &Tree, range: &TextRange) {
-        let tree = flatten_tree(tree_not_found);
-        file.not_found_paths_mut().push((BuildSteps::ARCH_EVAL, tree.clone()));
-        self.entry_point.borrow_mut().not_found_symbols.insert(file.get_rc().unwrap());
-        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01001, &[&tree.join(".")]) {
-            self.diagnostics.push(Diagnostic {
-                range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
-                ..diagnostic
-            });
-        }
-    }
-
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
             let mut deps = vec![vec![], vec![]];
@@ -656,7 +643,7 @@ impl PythonArchEval {
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
+            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
             if ref_sym.len() > 1 {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
@@ -819,7 +806,7 @@ impl PythonArchEval {
             let eval = &eval_iter_node[0];
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             if !eval_symbol.is_expired_if_weak() {
-                let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
+                let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
                 if symbol_eval.len() == 1 && symbol_eval[0].upgrade_weak().is_some() {
                     let symbol_type_rc = symbol_eval[0].upgrade_weak().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
@@ -986,7 +973,7 @@ impl PythonArchEval {
             diagnostics.extend(diags);
             // Check for type annotation `typing.Self`, if so, return a `self` evaluation
             let final_evaluations = evaluations.into_iter().map(|eval|{
-                let sym_ptrs = Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, diagnostics, None), session, &mut None, false, false, file_sym.clone(), diagnostics);
+                let sym_ptrs = Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, diagnostics, None), session, &mut None, false, false, file_sym.clone());
                 for sym_ptr in sym_ptrs.iter(){
                     let EvaluationSymbolPtr::WEAK(sym_weak) = sym_ptr else {continue};
                     let Some(sym_rc) = sym_weak.weak.upgrade() else {continue};

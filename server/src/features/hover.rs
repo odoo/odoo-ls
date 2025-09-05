@@ -1,4 +1,4 @@
-use lsp_types::{Hover, HoverContents, MarkupContent, Position, Range};
+use lsp_types::{Hover, HoverContents, MarkupContent};
 use crate::core::evaluation::Evaluation;
 use crate::core::file_mgr::FileInfo;
 use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
@@ -52,7 +52,7 @@ impl HoverFeature {
         None
     }
 
-    pub fn hover_csv(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
+    pub fn hover_csv(_session: &mut SessionInfo, _file_symbol: &Rc<RefCell<Symbol>>, _file_info: &Rc<RefCell<FileInfo>>, _line: u32, _character: u32) -> Option<Hover> {
         None
     }
 }

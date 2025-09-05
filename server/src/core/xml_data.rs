@@ -1,7 +1,5 @@
 use std::{cell::RefCell, ops::Range, rc::{Rc, Weak}};
 
-use ruff_text_size::TextRange;
-
 use crate::{constants::{OYarn, SymType}, core::symbols::symbol::Symbol};
 
 

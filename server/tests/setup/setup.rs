@@ -1,5 +1,4 @@
 use core::str;
-use std::process::Command;
 use std::{env, fs};
 
 use std::path::PathBuf;
@@ -9,7 +8,6 @@ use lsp_types::TextDocumentContentChangeEvent;
 use odoo_ls_server::utils::get_python_command;
 use odoo_ls_server::{core::{config::{ConfigEntry, DiagMissingImportsMode}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
 
-use odoo_ls_server::S;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::rolling::RollingFileAppender;
 use tracing_subscriber::{fmt, layer::SubscriberExt, FmtSubscriber};

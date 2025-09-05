@@ -1,15 +1,11 @@
 use std::rc::Rc;
 
 use lsp_types::{Diagnostic, Position, Range};
-use once_cell::sync::Lazy;
-use regex::Regex;
 use roxmltree::Node;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{OdooData, XmlDataDelete, OdooDataField, XmlDataMenuItem, OdooDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::OYarn, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{OdooData, XmlDataDelete, OdooDataField, XmlDataMenuItem, OdooDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy};
 
 use super::xml_arch_builder::XmlArchBuilder;
-
-static BINDING_VIEWS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([a-z]+(,[a-z]+)*)?$").unwrap());
 
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
 impl XmlArchBuilder {

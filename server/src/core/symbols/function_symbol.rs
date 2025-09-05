@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp::min, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
 use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
@@ -11,10 +11,12 @@ use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ArgumentType {
+    #[allow(non_camel_case_types)]
     POS_ONLY,
     ARG,
     KWARG,
     VARARG,
+    #[allow(non_camel_case_types)]
     KWORD_ONLY,
 }
 
@@ -147,8 +149,8 @@ impl FunctionSymbol {
     /**
      * Given a specific context (with args, parent), adapt the evaluations of the function to get a more precise answer
      */
-    pub fn get_return_type(&self, session: &mut SessionInfo, func_context: Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Vec<Evaluation> {
-        let mut res = vec![];
+    pub fn get_return_type(&self, _session: &mut SessionInfo, _func_context: Option<Context>, _diagnostics: &mut Vec<Diagnostic>) -> Vec<Evaluation> {
+        let res = vec![];
         /*for eval in self.evaluations.iter() {
             let mut new_eval = eval.clone();
             let symbol = new_eval.symbol.get_symbol(session, func_context.clone(), diagnostics);

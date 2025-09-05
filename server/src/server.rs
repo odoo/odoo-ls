@@ -1,7 +1,6 @@
-use std::{collections::HashMap, fmt, io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
+use std::{collections::HashMap, io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
 
-use clap::error;
-use crossbeam_channel::{Receiver, RecvTimeoutError, Select, Sender};
+use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
 use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument,
     DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
@@ -176,7 +175,7 @@ impl Server {
                 let path = FileMgr::uri2pathname(added.uri.as_str());
                 file_mgr.add_workspace_folder(added.name.clone(), path);
             }
-        } else if let Some( root_uri) = initialize_params.root_uri.as_ref() {
+        } else if let Some( root_uri) = initialize_params.root_uri.as_ref() { //keep for backward compatibility
             let sync_odoo = self.sync_odoo.lock().unwrap();
             let file_mgr = sync_odoo.get_file_mgr();
             let mut file_mgr = file_mgr.borrow_mut();

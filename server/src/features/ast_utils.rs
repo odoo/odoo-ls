@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
-use crate::features::node_index_ast::IndexedModule;
 use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
@@ -75,7 +74,7 @@ impl<'a> ExprFinderVisitor<'a> {
         expr: the expr being searched for
         last_call_expr: The last call expr preceding the expr we are searching for
      */
-    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent>, Option<ExprCall>) {
+    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<ExprCall>) {
         let mut visitor = Self {
             offset: TextSize::new(offset),
             expr: None,

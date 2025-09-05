@@ -1,7 +1,7 @@
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
-use ruff_python_ast::{AnyRootNodeRef, Mod, ModModule, PySourceType, Stmt};
-use ruff_python_parser::{Mode, ParseOptions, Parsed, Token, TokenKind};
+use ruff_python_ast::{ModModule, PySourceType, Stmt};
+use ruff_python_parser::{Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;

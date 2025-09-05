@@ -1,4 +1,3 @@
-use byteyarn::{yarn, Yarn};
 use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
@@ -9,10 +8,9 @@ use crate::core::file_mgr::NoqaInfo;
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
-use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr};
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
-use crate::core::python_arch_eval::PythonArchEval;
 use crate::threads::SessionInfo;
 use crate::utils::{compare_semver, PathSanitizer as _};
 use crate::S;
@@ -24,7 +22,7 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::vec;
-use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 
 use crate::core::symbols::function_symbol::FunctionSymbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -69,7 +67,7 @@ impl Symbol {
     }
 
     //Create a sub-symbol that is representing a file
-    pub fn add_new_file(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_file(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let file = Rc::new(RefCell::new(Symbol::File(FileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         file.borrow_mut().set_weak_self(Rc::downgrade(&file));
         file.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -92,7 +90,7 @@ impl Symbol {
     }
 
     //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_python_package(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let package = Rc::new(
             RefCell::new(
                 Symbol::Package(
@@ -151,7 +149,7 @@ impl Symbol {
         Some(package)
     }
 
-    pub fn add_new_namespace(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_namespace(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let namespace = Rc::new(RefCell::new(Symbol::Namespace(NamespaceSymbol::new(name.clone(), vec![path.clone()], self.is_external()))));
         namespace.borrow_mut().set_weak_self(Rc::downgrade(&namespace));
         namespace.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -195,7 +193,7 @@ impl Symbol {
         namespace
     }
 
-    pub fn add_new_compiled(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_compiled(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let compiled = Rc::new(RefCell::new(Symbol::Compiled(CompiledSymbol::new(name.clone(), path.clone(), self.is_external()))));
         compiled.borrow_mut().set_weak_self(Rc::downgrade(&compiled));
         compiled.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -250,7 +248,7 @@ impl Symbol {
         variable
     }
 
-    pub fn add_new_ext_symbol(&mut self, session: &mut SessionInfo, name: OYarn, range: &TextRange, owner: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {
+    pub fn add_new_ext_symbol(&mut self, _session: &mut SessionInfo, name: OYarn, range: &TextRange, owner: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {
         let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name.clone(), range.clone(), self.is_external()))));
         variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));
         variable.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -396,7 +394,7 @@ impl Symbol {
         class
     }
 
-    pub fn add_new_xml_file(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_xml_file(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let xml_sym = Rc::new(RefCell::new(Symbol::XmlFileSymbol(XmlFileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         xml_sym.borrow_mut().set_weak_self(Rc::downgrade(&xml_sym));
         xml_sym.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -407,7 +405,7 @@ impl Symbol {
         xml_sym
     }
 
-    pub fn add_new_csv_file(&mut self, session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
+    pub fn add_new_csv_file(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let csv_sym = Rc::new(RefCell::new(Symbol::CsvFileSymbol(CsvFileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         csv_sym.borrow_mut().set_weak_self(Rc::downgrade(&csv_sym));
         csv_sym.borrow_mut().set_parent(Some(self.weak_self().unwrap()));
@@ -643,7 +641,7 @@ impl Symbol {
             Symbol::Class(c) => &c.doc_string,
             Symbol::Function(f) => &f.doc_string,
             Symbol::Variable(v) => &v.doc_string,
-            Symbol::XmlFileSymbol(x) => &None,
+            Symbol::XmlFileSymbol(_) => &None,
             Symbol::CsvFileSymbol(_) => &None,
         }
     }
@@ -723,8 +721,8 @@ impl Symbol {
             Symbol::Class(c) => &c.range,
             Symbol::Function(f) => &f.range,
             Symbol::Variable(v) => &v.range,
-            Symbol::XmlFileSymbol(x) => panic!(),
-            Symbol::CsvFileSymbol(c) => panic!(),
+            Symbol::XmlFileSymbol(_) => panic!(),
+            Symbol::CsvFileSymbol(_) => panic!(),
         }
     }
 
@@ -762,8 +760,8 @@ impl Symbol {
 
     pub fn node_index(&self) -> Option<&AtomicNodeIndex> {
         match self {
-            Symbol::Variable(v) => None,
-            Symbol::Class(c) => None,
+            Symbol::Variable(_) => None,
+            Symbol::Class(_) => None,
             Symbol::Function(f) => Some(&f.node_index),
             Symbol::DiskDir(_) => None,
             Symbol::File(_) => None,
@@ -778,8 +776,8 @@ impl Symbol {
 
     pub fn node_index_mut(&mut self) -> &mut AtomicNodeIndex {
         match self {
-            Symbol::Variable(v) => panic!(),
-            Symbol::Class(c) => panic!(),
+            Symbol::Variable(_) => panic!(),
+            Symbol::Class(_) => panic!(),
             Symbol::Function(f) => &mut f.node_index,
             Symbol::DiskDir(_) => panic!(),
             Symbol::File(_) => panic!(),
@@ -878,7 +876,7 @@ impl Symbol {
         match self{
             Symbol::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext().as_str(),
             Symbol::File(f) => f.path.clone(),
-            Symbol::DiskDir(d) => panic!("invalid symbol type to extract path"),
+            Symbol::DiskDir(_) => panic!("invalid symbol type to extract path"),
             Symbol::Root(_) => panic!("invalid symbol type to extract path"),
             Symbol::Namespace(_) => panic!("invalid symbol type to extract path"),
             Symbol::Compiled(_) => panic!("invalid symbol type to extract path"),
@@ -894,7 +892,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => &n.dependencies(),
-            Symbol::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Symbol::DiskDir(_) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies(),
             Symbol::File(f) => &f.dependencies(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -909,7 +907,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => n.dependencies_mut(),
-            Symbol::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Symbol::DiskDir(_) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependencies_as_mut(),
             Symbol::File(f) => f.dependencies_mut(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -924,7 +922,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => n.dependents(),
-            Symbol::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Symbol::DiskDir(_) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents(),
             Symbol::File(f) => f.dependents(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -939,7 +937,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
             Symbol::Namespace(n) => n.dependents_mut(),
-            Self::DiskDir(d) => panic!("No dependencies on DiskDir"),
+            Self::DiskDir(_) => panic!("No dependencies on DiskDir"),
             Symbol::Package(p) => p.dependents_as_mut(),
             Symbol::File(f) => f.dependents_mut(),
             Symbol::Compiled(_) => panic!("No dependencies on Compiled"),
@@ -1406,7 +1404,7 @@ impl Symbol {
     pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
         let symbol_tree_files: &Vec<OYarn> = &tree.0;
         let symbol_tree_content: &Vec<OYarn> = &tree.1;
-        let mut iter_sym: Vec<Rc<RefCell<Symbol>>> = vec![];
+        let mut iter_sym: Vec<Rc<RefCell<Symbol>>>;
         if symbol_tree_files.len() != 0 {
             let _mod_iter_sym = self.get_module_symbol(&symbol_tree_files[0]);
             if _mod_iter_sym.is_none() {
@@ -1587,7 +1585,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => n.get_dependencies(step as usize, level as usize),
-            Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
+            Symbol::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
             Symbol::Package(PackageSymbol::Module(m)) => m.get_dependencies(step as usize, level as usize),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.get_dependencies(step as usize, level as usize),
             Symbol::File(f) => f.get_dependencies(step as usize, level as usize),
@@ -1607,7 +1605,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => n.get_all_dependencies(step as usize),
-            Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
+            Symbol::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
             Symbol::Package(PackageSymbol::Module(m)) => m.get_all_dependencies(step as usize),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.get_all_dependencies(step as usize),
             Symbol::File(f) => f.get_all_dependencies(step as usize),
@@ -1631,7 +1629,7 @@ impl Symbol {
         match self {
             Symbol::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Symbol::Namespace(n) => n.get_dependents(level as usize, step as usize),
-            Symbol::DiskDir(d) => panic!("There is no dependencies on DiskDir Symbol"),
+            Symbol::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
             Symbol::Package(PackageSymbol::Module(m)) => m.get_dependents(level as usize, step as usize),
             Symbol::Package(PackageSymbol::PythonPackage(p)) => p.get_dependents(level as usize, step as usize),
             Symbol::File(f) => f.get_dependents(level as usize, step as usize),
@@ -2086,7 +2084,7 @@ impl Symbol {
     }
 
     pub fn find_module(&self) -> Option<Rc<RefCell<Symbol>>> {
-        if let Symbol::Package(PackageSymbol::Module(m)) = self {return self.get_rc();}
+        if let Symbol::Package(PackageSymbol::Module(_)) = self {return self.get_rc();}
         if let Some(parent) = self.parent().as_ref() {
             return parent.upgrade().unwrap().borrow().find_module();
         }
@@ -2190,7 +2188,7 @@ impl Symbol {
     Follow evaluation of current symbol until type, value or end of the chain, depending or the parameters.
     If a symbol in the chain is a descriptor, return the __get__ return evaluation.
      */
-    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolPtr> {
+    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>) -> Vec<EvaluationSymbolPtr> {
         match evaluation {
             EvaluationSymbolPtr::WEAK(w) => {
                 let Some(symbol) = w.weak.upgrade() else {
@@ -2461,7 +2459,7 @@ impl Symbol {
     pub fn get_scope_symbol(file_symbol: Rc<RefCell<Symbol>>, offset: u32, is_param: bool) -> Rc<RefCell<Symbol>> {
         let mut result = file_symbol.clone();
         let section_id = file_symbol.borrow().as_symbol_mgr().get_section_for(offset);
-        for (sym_name, sym_map) in file_symbol.borrow().iter_symbols() {
+        for (_, sym_map) in file_symbol.borrow().iter_symbols() {
             match sym_map.get(&section_id.index) {
                 Some(symbols) => {
                     for symbol in symbols.iter() {
@@ -2551,11 +2549,9 @@ impl Symbol {
             Symbol::Class(_) | Symbol::Function(_) | Symbol::File(_) | Symbol::Package(PackageSymbol::Module(_)) |
             Symbol::Package(PackageSymbol::PythonPackage(_)) => {
                 let syms = self.iter_symbols();
-                for (sym_name, map) in syms {
-                    for (index, syms) in map.iter() {
-                        for sym in syms.iter() {
+                for (_, map) in syms {
+                    for sym in map.values().flatten() {
                             symbols.push(sym.clone());
-                        }
                     }
                 }
             },
@@ -2593,7 +2589,7 @@ impl Symbol {
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
                                 if symbol.borrow().is_field_class(session){
@@ -2706,7 +2702,7 @@ impl Symbol {
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, &mut vec![]);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
                                 if symbol.borrow().is_specific_field_class(session, field_names){
@@ -2949,7 +2945,7 @@ impl Symbol {
                         }
                     }
                 },
-                Symbol::DiskDir(d) => {},
+                Symbol::DiskDir(_) => {},
                 Symbol::Root(_) => {},
                 Symbol::Namespace(_) => {},
                 Symbol::Package(_) => {},

@@ -1,5 +1,4 @@
 use std::{cell::RefCell, rc::Rc, collections::{HashMap, HashSet}};
-use byteyarn::Yarn;
 
 use ruff_text_size::TextSize;
 

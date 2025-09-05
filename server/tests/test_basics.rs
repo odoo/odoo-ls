@@ -7,7 +7,7 @@ use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
 
-use odoo_ls_server::{Sy, S};
+use odoo_ls_server::Sy;
 
 mod setup;
 

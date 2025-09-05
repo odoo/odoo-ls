@@ -285,11 +285,11 @@ impl DefinitionFeature {
         None
     }
 
-    pub fn get_location_csv(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
-        file_info: &Rc<RefCell<FileInfo>>,
-        line: u32,
-        character: u32
+    pub fn get_location_csv(_session: &mut SessionInfo,
+        _file_symbol: &Rc<RefCell<Symbol>>,
+        _file_info: &Rc<RefCell<FileInfo>>,
+        _line: u32,
+        _character: u32
     ) -> Option<GotoDefinitionResponse> {
         None
     }

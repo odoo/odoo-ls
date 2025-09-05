@@ -1,7 +1,6 @@
 #![allow(non_camel_case_types)]
 use core::fmt;
 
-use byteyarn::{yarn, Yarn};
 
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "0.12.0";
@@ -34,6 +33,8 @@ macro_rules! oyarn {
 
 #[cfg(all(feature="debug_yarn", debug_assertions))]
 pub type OYarn = String;
+#[cfg(not(all(feature="debug_yarn", debug_assertions)))]
+use byteyarn::Yarn;
 #[cfg(not(all(feature="debug_yarn", debug_assertions)))]
 pub type OYarn = Yarn;
 

@@ -1,14 +1,11 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::cell::RefCell;
 use ruff_python_ast::Expr;
 use lsp_types::Diagnostic;
-use ruff_text_size::TextRange;
 use tracing::error;
 use weak_table::PtrWeakHashSet;
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::file_mgr::{FileMgr};
 
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
@@ -442,7 +439,7 @@ impl PythonOdooBuilder {
             };
             for eval in evals.iter() {
                 let eval_sym_ptr = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, &mut vec![]);
+                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None);
                 for eval_ptr in eval_ptrs.iter() {
                     let eval_weak = match &eval_ptr {
                         EvaluationSymbolPtr::WEAK(w) => w,
