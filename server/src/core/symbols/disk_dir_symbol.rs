@@ -1,8 +1,7 @@
-use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use crate::{constants::OYarn, oyarn, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::OYarn, oyarn, utils::PathSanitizer};
 
 use super::symbol::Symbol;
 

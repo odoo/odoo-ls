@@ -1,4 +1,4 @@
-use lsp_types::{Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{error, info};
@@ -113,7 +113,7 @@ impl ModuleSymbol {
         if !manifest_path.exists() {
             return None
         }
-        let (updated, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
+        let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.file_info_ast.borrow().indexed_module.is_none() {
             manifest_file_info.prepare_ast(session);
@@ -411,7 +411,7 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &OYarn) -> bool {
+    pub fn is_in_deps(_session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &OYarn) -> bool {
         symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().all_depends.contains(dir_name)
     }
 

@@ -328,7 +328,7 @@ impl Evaluation {
         }
     }
 
-    pub fn new_domain(odoo: &mut SyncOdoo) -> Evaluation {
+    pub fn new_domain(_odoo: &mut SyncOdoo) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::DOMAIN,
@@ -438,7 +438,7 @@ impl Evaluation {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
                 let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.clone()));
-                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, false, false, Some(function.clone()), &mut vec![]);
+                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, false, false, Some(function.clone()));
                 for sym in out_of_scope {
                     if !sym.is_expired_if_weak() {
                         res.push(Evaluation {
@@ -467,7 +467,7 @@ impl Evaluation {
             if eval_symbol.is_expired_if_weak() {
                 return None;
             }
-            let evals = Symbol::follow_ref(&eval_symbol, session, context, false, true, None, diagnostics);
+            let evals = Symbol::follow_ref(&eval_symbol, session, context, false, true, None);
             if evals.len() == 1 {
                 let eval = &evals[0];
                 match eval {
@@ -771,7 +771,7 @@ impl Evaluation {
                 }
                 let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().map(|base_eval| {
                     let base_sym_weak_eval_base = base_eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
-                    Symbol::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, &mut diagnostics)
+                    Symbol::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None)
                 }).flatten().collect();
 
                 let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
@@ -802,7 +802,7 @@ impl Evaluation {
                                     let res = class_sym_weak_eval.weak.upgrade().and_then(|class_sym|{
                                         let class_sym_weak_eval = &Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             Rc::downgrade(&class_sym), None, false
-                                        )), session, &mut None, false, false, None, &mut diagnostics)[0];
+                                        )), session, &mut None, false, false, None)[0];
                                         if class_sym_weak_eval.upgrade_weak().unwrap().borrow().typ() != SymType::CLASS{
                                             return None;
                                         }
@@ -831,7 +831,7 @@ impl Evaluation {
                                                 let object_or_type_weak_eval = &Symbol::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
                                                         session, context, &mut diagnostics, Some(parent.clone())),
-                                                        session, &mut None, false, false, None, &mut diagnostics)[0];
+                                                        session, &mut None, false, false, None)[0];
                                                 if object_or_type_weak_eval.is_weak() {
                                                     is_instance = Some(object_or_type_weak_eval.as_weak().instance.unwrap_or(default_instance));
                                                 } else {
@@ -1022,7 +1022,7 @@ impl Evaluation {
                     if base_ref.is_expired_if_weak() {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                     }
-                    let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None, &mut diagnostics);
+                    let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None);
                     for ibase in bases.iter() {
                         let base_loc = ibase.upgrade_weak();
                         if let Some(base_loc) = base_loc {
@@ -1144,7 +1144,7 @@ impl Evaluation {
                 if base.is_expired_if_weak() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let bases = Symbol::follow_ref(&base, session, &mut None, false, false, None, &mut diagnostics);
+                let bases = Symbol::follow_ref(&base, session, &mut None, false, false, None);
                 if bases.len() != 1 {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
@@ -1261,7 +1261,7 @@ impl Evaluation {
                 diagnostics.extend(diags);
                 for base in bases.into_iter(){
                     let base_sym_weak_eval= base.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
-                    let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval, session, context, true, false, None, &mut diagnostics);
+                    let base_eval_ptrs = Symbol::follow_ref(&base_sym_weak_eval, session, context, true, false, None);
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                         let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
@@ -1531,7 +1531,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         //parameter 1
         if let Some(on_object) = on_object.upgrade() { //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
             match elt1 {
@@ -1763,7 +1763,7 @@ impl EvaluationSymbolPtr {
 
     pub(crate) fn is_weak(&self) -> bool {
         match self {
-            EvaluationSymbolPtr::WEAK(w) => true,
+            EvaluationSymbolPtr::WEAK(_) => true,
             _ => false
         }
     }

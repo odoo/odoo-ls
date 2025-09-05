@@ -1,8 +1,7 @@
-use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::TextRange;
 
-use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, Sy, S};
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}, u32};
+use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, S};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
 
@@ -68,7 +67,7 @@ impl VariableSymbol {
                 context = Some(HashMap::new());
                 context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.clone()));
             }
-            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None, &mut vec![]);
+            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak() {
                     if ["Many2one", "One2many", "Many2many"].contains(&symbol.borrow().name().as_str()) {

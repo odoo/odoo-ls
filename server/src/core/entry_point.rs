@@ -1,6 +1,5 @@
-use std::{cell::RefCell, cmp, collections::HashMap, path::{self, PathBuf}, rc::{Rc, Weak}, u32};
+use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc, Weak}, u32};
 
-use byteyarn::Yarn;
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 

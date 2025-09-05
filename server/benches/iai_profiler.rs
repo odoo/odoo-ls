@@ -1,13 +1,12 @@
 use lsp_server::Notification;
 use serde_json::json;
-use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer};
-use clap::Parser;
+use odoo_ls_server::{args::LogLevel, constants::*, server::Server, utils::PathSanitizer};
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
-use std::{env, path::PathBuf};
+use std::env;
 
 use iai_callgrind::{
     library_benchmark, library_benchmark_group, main, LibraryBenchmarkConfig,
@@ -38,7 +37,7 @@ fn iai_main() {
     let mut exe_dir = env::current_exe().expect("Unable to get binary directory... aborting");
     exe_dir.pop();
 
-    let mut log_dir = exe_dir.join("logs").sanitize();
+    let log_dir = exe_dir.join("logs").sanitize();
 
     let file_appender = RollingFileAppender::builder()
         .max_log_files(5) // only the most recent 5 log files will be kept

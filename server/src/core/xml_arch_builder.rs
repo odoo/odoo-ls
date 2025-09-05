@@ -1,13 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, fmt, fs, path::PathBuf, rc::{Rc, Weak}};
+use std::{cell::RefCell, rc::Rc};
 
-use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
-use regex::Regex;
+use lsp_types::Diagnostic;
 use roxmltree::{Attribute, Node};
-use tracing::{error, warn};
+use tracing::warn;
 use weak_table::PtrWeakHashSet;
 
 use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, EXTENSION_NAME}, core::{entry_point::EntryPointType, xml_data::OdooData}, oyarn, threads::SessionInfo, Sy, S};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, xml_data::OdooData}, threads::SessionInfo, Sy};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
 

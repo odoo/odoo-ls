@@ -1,5 +1,3 @@
-use byteyarn::Yarn;
-use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::{TextRange, TextSize};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -9,8 +7,7 @@ use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use crate::constants::{OYarn, SymType};
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
-use crate::threads::SessionInfo;
-use crate::{Sy, S};
+use crate::Sy;
 
 use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};

@@ -1,7 +1,6 @@
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
-use crate::core::symbols::file_symbol;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -20,7 +19,6 @@ use std::time::Instant;
 use lsp_server::ResponseError;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
-use ruff_python_parser::{Mode, ParseOptions};
 use serde_json::Value;
 use tracing::{error, warn, info, trace};
 
@@ -1321,7 +1319,7 @@ impl Odoo {
         Ok(None)
     }
 
-    pub fn handle_did_change_configuration(session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
+    pub fn handle_did_change_configuration(_session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
         return;
     }
 
@@ -1593,7 +1591,7 @@ impl Odoo {
         (false, false)
     }
 
-    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, is_open: bool, force_delay: bool) {
+    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, _is_open: bool, force_delay: bool) {
         if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
             SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
         }

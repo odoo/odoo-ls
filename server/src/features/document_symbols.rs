@@ -4,7 +4,7 @@ use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind};
 use ruff_python_ast::{Expr, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtGlobal, StmtIf, StmtImport, StmtImportFrom, StmtMatch, StmtNonlocal, StmtTry, StmtTypeAlias, StmtWhile, StmtWith};
 use ruff_text_size::Ranged;
 
-use crate::{constants::SymType, core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign, AssignTargetType}, symbols::symbol::Symbol}, threads::SessionInfo, S};
+use crate::{core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign, AssignTargetType}}, threads::SessionInfo, S};
 
 
 pub struct DocumentSymbolFeature;
@@ -69,6 +69,7 @@ impl DocumentSymbolFeature {
                 detail: None,
                 kind: SymbolKind::VARIABLE,
                 tags: None,
+                #[allow(deprecated)]
                 deprecated: None,
                 range: file_info.borrow().text_range_to_range(&arg.range),
                 selection_range: file_info.borrow().text_range_to_range(&arg.range),
@@ -83,6 +84,7 @@ impl DocumentSymbolFeature {
             detail: None,
             kind: SymbolKind::FUNCTION,
             tags: None,
+            #[allow(deprecated)]
             deprecated: None,
             range: file_info.borrow().text_range_to_range(&stmt_function_def.range),
             selection_range: file_info.borrow().text_range_to_range(&stmt_function_def.range),
@@ -103,6 +105,7 @@ impl DocumentSymbolFeature {
             detail: None,
             kind: SymbolKind::CLASS,
             tags: None,
+            #[allow(deprecated)]
             deprecated: None,
             range: file_info.borrow().text_range_to_range(&stmt_class_def.range),
             selection_range: file_info.borrow().text_range_to_range(&stmt_class_def.range),
@@ -125,7 +128,7 @@ impl DocumentSymbolFeature {
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
-    fn build_assign_results(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, assigns: Vec<Assign>) {
+    fn build_assign_results(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, assigns: Vec<Assign>) {
         for assign in assigns.iter() {
             match assign.target {
                 AssignTargetType::Name(ref target_name) => {
@@ -134,20 +137,21 @@ impl DocumentSymbolFeature {
                         detail: None,
                         kind: SymbolKind::VARIABLE,
                         tags: None,
+                        #[allow(deprecated)]
                         deprecated: None,
                         range: file_info.borrow().text_range_to_range(&target_name.range),
                         selection_range: file_info.borrow().text_range_to_range(&target_name.range),
                         children: None,
                     });
                 },
-                AssignTargetType::Attribute(ref attr_target) => {
+                AssignTargetType::Attribute(_) => {
 
                 }
             }
         }
     }
 
-    fn visit_type_alias(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_type_alias: &StmtTypeAlias) {
+    fn visit_type_alias(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_type_alias: &StmtTypeAlias) {
         let name = match *stmt_type_alias.name {
             Expr::Name(ref name) => name.clone(),
             _ => {return;}
@@ -157,6 +161,7 @@ impl DocumentSymbolFeature {
             detail: None,
             kind: SymbolKind::VARIABLE,
             tags: None,
+            #[allow(deprecated)]
             deprecated: None,
             range: file_info.borrow().text_range_to_range(&stmt_type_alias.range),
             selection_range: file_info.borrow().text_range_to_range(&stmt_type_alias.range),
@@ -212,6 +217,7 @@ impl DocumentSymbolFeature {
                     detail: None,
                     kind: SymbolKind::VARIABLE,
                     tags: None,
+                    #[allow(deprecated)]
                     deprecated: None,
                     range: file_info.borrow().text_range_to_range(&var.range()),
                     selection_range: file_info.borrow().text_range_to_range(&var.range()),
@@ -245,6 +251,7 @@ impl DocumentSymbolFeature {
                         detail: None,
                         kind: SymbolKind::VARIABLE,
                         tags: None,
+                        #[allow(deprecated)]
                         deprecated: None,
                         range: file_info.borrow().text_range_to_range(&name.range()),
                         selection_range: file_info.borrow().text_range_to_range(&name.range()),
@@ -264,13 +271,14 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_import(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import: &StmtImport) {
+    fn visit_import(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import: &StmtImport) {
         for name in stmt_import.names.iter() {
             results.push(DocumentSymbol{
                 name: name.name.to_string(),
                 detail: None,
                 kind: SymbolKind::VARIABLE,
                 tags: None,
+                #[allow(deprecated)]
                 deprecated: None,
                 range: file_info.borrow().text_range_to_range(&name.range),
                 selection_range: file_info.borrow().text_range_to_range(&name.range),
@@ -279,13 +287,14 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_import_from(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import_from: &StmtImportFrom) {
+    fn visit_import_from(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import_from: &StmtImportFrom) {
         for name in stmt_import_from.names.iter() {
             results.push(DocumentSymbol{
                 name: name.name.to_string(),
                 detail: None,
                 kind: SymbolKind::VARIABLE,
                 tags: None,
+                #[allow(deprecated)]
                 deprecated: None,
                 range: file_info.borrow().text_range_to_range(&name.range),
                 selection_range: file_info.borrow().text_range_to_range(&name.range),
@@ -294,13 +303,14 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_global(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_global: &StmtGlobal) {
+    fn visit_global(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_global: &StmtGlobal) {
         for name in stmt_global.names.iter() {
             results.push(DocumentSymbol{
                 name: name.id.to_string(),
                 detail: None,
                 kind: SymbolKind::VARIABLE,
                 tags: None,
+                #[allow(deprecated)]
                 deprecated: None,
                 range: file_info.borrow().text_range_to_range(&name.range),
                 selection_range: file_info.borrow().text_range_to_range(&name.range),
@@ -309,13 +319,14 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_nonlocal(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_nonlocal: &StmtNonlocal) {
+    fn visit_nonlocal(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_nonlocal: &StmtNonlocal) {
         for name in stmt_nonlocal.names.iter() {
             results.push(DocumentSymbol{
                 name: name.id.to_string(),
                 detail: None,
                 kind: SymbolKind::VARIABLE,
                 tags: None,
+                #[allow(deprecated)]
                 deprecated: None,
                 range: file_info.borrow().text_range_to_range(&name.range),
                 selection_range: file_info.borrow().text_range_to_range(&name.range),
@@ -344,6 +355,7 @@ impl DocumentSymbolFeature {
             detail: None,
             kind: SymbolKind::STRUCT,
             tags: None,
+            #[allow(deprecated)]
             deprecated: None,
             range,
             selection_range: range.clone(),
@@ -391,6 +403,7 @@ impl DocumentSymbolFeature {
             detail: None,
             kind: kind,
             tags: None,
+            #[allow(deprecated)]
             deprecated: None,
             range,
             selection_range: range.clone(),

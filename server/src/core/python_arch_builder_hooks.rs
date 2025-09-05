@@ -9,7 +9,7 @@ use crate::core::entry_point::EntryPoint;
 use crate::core::import_resolver::manual_import;
 use crate::core::symbols::symbol::Symbol;
 use crate::threads::SessionInfo;
-use crate::utils::{compare_semver, is_file_cs, PathSanitizer};
+use crate::utils::compare_semver;
 use crate::{Sy, S};
 use crate::constants::OYarn;
 
@@ -31,7 +31,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]))
         ],
-        func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
             // ----------- env ------------
             let env = symbol.borrow().get_symbol(&(vec![], vec![Sy!("env")]), u32::MAX);
             if env.is_empty() {
@@ -52,7 +52,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
-        func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
             let new_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__new__")]), u32::MAX);
             let mut range = symbol.borrow().range().clone();
             if new_sym.len() == 1 {
@@ -78,8 +78,8 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
         trees: vec![
             (Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule")])),
         ],
-        func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-            let mut range = symbol.borrow().range().clone();
+        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+            let range = symbol.borrow().range().clone();
             // ----------- env.cr ------------
             symbol.borrow_mut().add_new_variable(session, Sy!("global"), &range);
         }
@@ -130,7 +130,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id")])),
         ],
-        func: |session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
             // ----------- __get__ ------------
             let get_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__get__")]), u32::MAX);
             if get_sym.is_empty() {

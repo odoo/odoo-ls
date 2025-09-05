@@ -1,9 +1,8 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-use lsp_server::ResponseError;
 use lsp_types::{Location, Range};
 
-use crate::{constants::SymType, core::{file_mgr::{FileInfo, FileMgr}, symbols::{file_symbol::FileSymbol, symbol::Symbol}}, features::xml_ast_utils::{XmlAstResult, XmlAstUtils}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::SymType, core::{file_mgr::{FileInfo, FileMgr}, symbols::symbol::Symbol}, features::xml_ast_utils::{XmlAstResult, XmlAstUtils}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -12,7 +11,7 @@ pub struct ReferenceFeature {
 }
 
 impl ReferenceFeature {
-    pub fn get_references(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+    pub fn get_references(_session: &mut SessionInfo, _file_symbol: &Rc<RefCell<Symbol>>, _file_info: &Rc<RefCell<FileInfo>>, _line: u32, _character: u32) -> Option<Vec<Location>> {
         // Implementation for getting references
         None
     }
@@ -65,7 +64,7 @@ impl ReferenceFeature {
         None
     }
 
-    pub fn get_references_csv(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+    pub fn get_references_csv(_session: &mut SessionInfo, _file_symbol: &Rc<RefCell<Symbol>>, _file_info: &Rc<RefCell<FileInfo>>, _line: u32, _character: u32) -> Option<Vec<Location>> {
         None
     }
 }

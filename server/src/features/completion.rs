@@ -7,10 +7,9 @@ use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, Exp
 use ruff_text_size::{Ranged, TextSize};
 
 use crate::constants::{OYarn, SymType};
-use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
+use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
-use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
@@ -189,7 +188,7 @@ fn complete_ann_assign_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Sym
     None
 }
 
-fn complete_type_alias_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>>, stmt_type_alias: &ruff_python_ast::StmtTypeAlias, offset: usize) -> Option<CompletionResponse> {
+fn complete_type_alias_stmt(_session: &mut SessionInfo<'_>, _file: &Rc<RefCell<Symbol>>, _stmt_type_alias: &ruff_python_ast::StmtTypeAlias, _offset: usize) -> Option<CompletionResponse> {
     None
 }
 
@@ -358,11 +357,11 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol
     }))
 }
 
-fn complete_global_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_global: &StmtGlobal, offset: usize) -> Option<CompletionResponse> {
+fn complete_global_stmt(_session: &mut SessionInfo, _file: &Rc<RefCell<Symbol>>, _stmt_global: &StmtGlobal, _offset: usize) -> Option<CompletionResponse> {
     None
 }
 
-fn complete_nonlocal_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_nonlocal: &StmtNonlocal, offset: usize) -> Option<CompletionResponse> {
+fn complete_nonlocal_stmt(_session: &mut SessionInfo, _file: &Rc<RefCell<Symbol>>, _stmt_nonlocal: &StmtNonlocal, _offset: usize) -> Option<CompletionResponse> {
     None
 }
 
@@ -541,7 +540,7 @@ fn complete_decorator_call(
     let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
-        followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+        followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
     }
     for decorator_eval in followed_evals{
         let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
@@ -667,7 +666,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
     None
 }
 
-fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let mut items = vec![];
     let current_module = file.borrow().find_module();
     let models = session.sync_odoo.models.clone();
@@ -720,7 +719,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     }
                 }
             },
-            ExpectedType::DOMAIN(parent) => {},
+            ExpectedType::DOMAIN(_) => {},
             ExpectedType::DOMAIN_OPERATOR => {
                 for operator in vec!["!", "&", "|"].iter() {
                     items.push(CompletionItem {
@@ -733,7 +732,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     });
                 }
             },
-            ExpectedType::DOMAIN_LIST(parent) => {},
+            ExpectedType::DOMAIN_LIST(_) => {},
             ExpectedType::DOMAIN_COMPARATOR => {
                 for (operator, sort_text) in vec![("=", "a"), ("!=", "b"), (">", "c"), (">=", "d"), ("<", "e"), ("<=", "f"), ("=?", "g"),  ("like", "h"), ("=like", "i"), ("not like", "j"), ("ilike", "k"),
                     ("=ilike", "l"),  ("not ilike", "m"),  ("in", "n"),  ("not in", "o"), ("child_of", "p"), ("parent_of", "q"), ("any", "r"), ("not any", "s")].iter() {
@@ -795,7 +794,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
             //TODO shouldn't we set and clean context here?
             let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval.is_expired_if_weak() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, &mut vec![]);
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
                     add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str(), &None)
@@ -809,13 +808,13 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
     }))
 }
 
-fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, _expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope.clone(), &expr_subscript.value.range().start(), false, &mut vec![]).0;
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.is_expired_if_weak() {
-            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, &mut vec![]);
+            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
@@ -824,8 +823,10 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
                         if get_item.borrow().evaluations().as_ref().unwrap().len() == 1 {
                             let get_item_bw = get_item.borrow();
                             let get_item_eval = get_item_bw.evaluations().as_ref().unwrap().first().unwrap();
-                            if get_item_eval.symbol.get_symbol_hook == Some(PythonArchEvalHooks::eval_env_get_item) {
-                                return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                            if let EvaluationSymbolPtr::WEAK(w) = get_item_eval.symbol.get_symbol_ptr() {
+                                if matches!(w.context.get(&S!("hook_name")), Some(hook_name) if hook_name.as_string() == "eval_env_get_item") {
+                                    return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                                }
                             }
                         }
                     }
@@ -873,10 +874,10 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
                             Expr::StringLiteral(expr_string_literal) => {
                                 return complete_string_literal(session, file, expr_string_literal, offset, is_param, &vec![ExpectedType::DOMAIN_OPERATOR]);
                             },
-                            Expr::Tuple(t) => {
+                            Expr::Tuple(_) => {
                                 return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::DOMAIN_LIST(parent.clone())]);
                             },
-                            Expr::List(l) => {
+                            Expr::List(_) => {
                                 return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::DOMAIN_LIST(parent.clone())]);
                             }
                             _ => {}
@@ -1062,7 +1063,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
             Rc::downgrade(symbol),
             None,
             false,
-        )), session, &mut None, false, false, None, &mut vec![])
+        )), session, &mut None, false, false, None)
     ).collect::<Vec<_>>();
     let type_details = typ.iter().map(|eval|
         FeaturesUtils::get_inferred_types(session, eval, &mut Some(context_of_symbol.clone()), &symbols[0].borrow().typ())
@@ -1106,7 +1107,7 @@ fn get_sort_text_for_symbol(sym: &Rc<RefCell<Symbol>>/*, cl: Option<Rc<RefCell<S
     // return the text used for sorting the result for "symbol". cl is the class owner of symbol, and cl_to_complete the class
     // of the symbol to complete
     // ~ is used as last char of ascii table and } before last one
-    let mut base_dist = 0;
+    let base_dist = 0;
     /*if cl_to_complete.is_some() {
         base_dist = cl_to_complete.as_ref().unwrap().borrow().get_base_distance(&sym.borrow().name().clone(),0);
         if base_dist == -1 {

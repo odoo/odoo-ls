@@ -74,7 +74,7 @@ impl FeaturesUtils {
         let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in evaluations {
-            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
         }
         if !followed_evals.iter().any(|eval|
             eval.is_weak() && eval.as_weak().weak.upgrade().map(|sym| sym.borrow().is_field_class(session)).unwrap_or(false)
@@ -192,7 +192,7 @@ impl FeaturesUtils {
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
-            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
         }
         for callable_eval in followed_evals {
             let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
@@ -265,7 +265,7 @@ impl FeaturesUtils {
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
-            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, &mut vec![]));
+            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
         }
         for callable_eval in followed_evals {
             let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
@@ -435,7 +435,7 @@ impl FeaturesUtils {
                 continue;
             };
             let mut context = Some(eval_symbol.as_weak().context.clone());
-            let evaluation_ptrs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None, &mut vec![]);
+            let evaluation_ptrs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None);
 
             let symbol_type = symbol.borrow().typ();
             let symbol_name = symbol.borrow().name().clone();
@@ -528,7 +528,7 @@ impl FeaturesUtils {
                                 Some(func_eval) => {
                                     let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
                                         let eval_symbol = eval.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None);
-                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, &mut vec![]);
+                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None);
                                         weak_eval_symbols.iter().map(|weak_eval_symbol| match weak_eval_symbol.upgrade_weak(){
                                             //if fct is a variable, it means that evaluation is None.
                                             Some(s_type) if s_type.borrow().typ() != SymType::VARIABLE => s_type.borrow().name().to_string(),

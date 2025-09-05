@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, AtomicNodeIndex, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, NodeIndex, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -15,13 +14,12 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
-use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
-use super::file_mgr::{combine_noqa_info, FileInfo, NoqaInfo};
+use super::file_mgr::{combine_noqa_info, FileInfo};
 use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::python_utils::AssignTargetType;
@@ -140,7 +138,7 @@ impl PythonArchBuilder {
                 session.current_noqa = symbol.borrow().get_noqas().clone();
                 old
             };
-            self.visit_node(session, &ast);
+            let _ = self.visit_node(session, &ast);
             session.current_noqa = old_noqa;
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
@@ -157,7 +155,7 @@ impl PythonArchBuilder {
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
     }
 
-    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, _range: &TextRange) -> Result<(), Error> {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -181,13 +179,12 @@ impl PythonArchBuilder {
                 if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
                     let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                         Rc::downgrade(&all), None, false
-                    )), session, &mut None, false, true, None, &mut self.diagnostics);
+                    )), session, &mut None, false, true, None);
                     if let Some(all_value_first) = all_value.get(0) {
                         if !all_value_first.is_expired_if_weak() {
                             let all_upgraded = all_value_first.upgrade_weak();
                             if let Some(all_upgraded_unwrapped) = all_upgraded {
                                 let all_upgraded_unwrapped_bw = (*all_upgraded_unwrapped).borrow();
-                                let evals = all_upgraded_unwrapped_bw.evaluations();
                                 if all_upgraded_unwrapped_bw.evaluations().is_some() && all_upgraded_unwrapped_bw.evaluations().unwrap().len() == 1 {
                                     let value = &all_upgraded_unwrapped_bw.evaluations().unwrap()[0].value;
                                     if value.is_some() {
@@ -247,7 +244,7 @@ impl PythonArchBuilder {
                 } else {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
-                let mut variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(var_name), &import_name.range);
+                let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(var_name), &import_name.range);
                 variable.borrow_mut().as_variable_mut().is_import_variable = true;
             }
         }
@@ -255,7 +252,7 @@ impl PythonArchBuilder {
     }
 
     fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) -> Result<(), Error> {
-        for (index, stmt) in nodes.iter().enumerate() {
+        for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
                     self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
@@ -533,7 +530,7 @@ impl PythonArchBuilder {
                 AssignTargetType::Name(ref name_expr) => {
                     self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
                 },
-                AssignTargetType::Attribute(ref attr_expr) => {
+                AssignTargetType::Attribute(ref _attr_expr) => {
                 }
             }
         }
@@ -583,7 +580,7 @@ impl PythonArchBuilder {
                         }
                     }
                 },
-                AssignTargetType::Attribute(ref attr_expr) => {
+                AssignTargetType::Attribute(ref _attr_expr) => {
                     //take base evals
                     // let mut required_dependencies = if self.file_mode {
                     //     vec![vec![], vec![]] //arch level and eval level
@@ -804,7 +801,7 @@ impl PythonArchBuilder {
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
             if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).symbols.is_empty() {
-                let all_var = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", symbol_name), &range);
+                self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", symbol_name), &range);
             }
         }
     }
@@ -938,7 +935,7 @@ impl PythonArchBuilder {
 
         let mut else_clause_exists = false;
 
-        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().enumerate().map(|(index, elif_else_clause)|{
+        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
             match elif_else_clause.test {
                 Some(ref test_clause) => {
                     last_test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
@@ -1048,7 +1045,7 @@ impl PythonArchBuilder {
             let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
             let mut stmt_sections = vec![previous_section.clone()];
             let mut catch_all_except_exists = false;
-            for (index, handler) in try_stmt.handlers.iter().enumerate() {
+            for handler in try_stmt.handlers.iter() {
                 match handler {
                     ruff_python_ast::ExceptHandler::ExceptHandler(h) => {
                         if !catch_all_except_exists { catch_all_except_exists = h.type_.is_none()};
@@ -1139,7 +1136,7 @@ impl PythonArchBuilder {
         let scope = self.sym_stack.last().unwrap().clone();
         let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
-        for (case_ix, case) in match_stmt.cases.iter().enumerate() {
+        for case in match_stmt.cases.iter() {
             case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed

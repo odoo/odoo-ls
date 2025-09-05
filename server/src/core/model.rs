@@ -12,7 +12,6 @@ use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::constants::SymType;
 use crate::threads::SessionInfo;
-use crate::Sy;
 
 use super::symbols::module_symbol::ModuleSymbol;
 use super::symbols::symbol::Symbol;
