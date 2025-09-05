@@ -91,17 +91,30 @@ impl Default for MergeMethod {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagnosticFilterPathType {
+    IN,
+    NOT_IN
+}
+
+impl Default for DiagnosticFilterPathType {
+    fn default() -> Self {
+        DiagnosticFilterPathType::IN
+    }
+}
+
 #[derive(Debug, Clone, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct DiagnosticFilter {
-    #[schemars(with = "String")]
-    pub paths: Pattern,
+    #[schemars(default, schema_with = "regex_vec_schema")]
+    pub paths: Vec<Pattern>,
     #[schemars(default, schema_with = "regex_vec_schema")]
     pub codes: Vec<Regex>,
     #[schemars(default)]
     pub types: Vec<DiagnosticSetting>,
-    #[schemars(skip_deserializing)]
-    pub negation: bool,
+    #[schemars(default)]
+    pub path_type: DiagnosticFilterPathType,
 }
 
 /// Serialize the schema as Vec<String> and adds the default
@@ -118,20 +131,21 @@ impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
     {
         #[derive(serde::Deserialize)]
         struct Helper {
-            paths: String,
+            paths: Vec<String>,
             #[serde(default)]
             codes: Vec<String>,
             #[serde(default)]
             types: Vec<DiagnosticSetting>,
+            #[serde(default)]
+            path_type: DiagnosticFilterPathType,
         }
         let helper = Helper::deserialize(deserializer)?;
-        let (path_str, negation) = if let Some(stripped) = helper.paths.strip_prefix('!') {
-            (stripped, true)
-        } else {
-            (helper.paths.as_str(), false)
-        };
-        let sanitized_path = PathBuf::from(path_str).sanitize();
-        let path_pattern = Pattern::new(&sanitized_path).map_err(serde::de::Error::custom)?;
+        let mut paths = vec![];
+        for path in helper.paths.iter() {
+            let sanitized_path = PathBuf::from(path).sanitize();
+            let path_pattern = Pattern::new(&sanitized_path).map_err(serde::de::Error::custom)?;
+            paths.push(path_pattern);
+        }
         let mut code_regexes = Vec::with_capacity(helper.codes.len());
         for code in &helper.codes {
             let regex = Regex::new(code).map_err(serde::de::Error::custom)?;
@@ -143,10 +157,10 @@ impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
             }
         }
         Ok(DiagnosticFilter {
-            paths: path_pattern,
+            paths: paths,
             codes: code_regexes,
             types: helper.types,
-            negation,
+            path_type: helper.path_type,
         })
     }
 }
@@ -158,14 +172,12 @@ impl Serialize for DiagnosticFilter {
     {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("DiagnosticFilter", 3)?;
-        let mut path_str = self.paths.as_str().to_string();
-        if self.negation {
-            path_str = format!("!{}", path_str);
-        }
-        s.serialize_field("paths", &path_str)?;
+        let paths: Vec<String> = self.paths.iter().map(|p| p.as_str().to_string()).collect();
+        s.serialize_field("paths", &paths)?;
         let codes: Vec<String> = self.codes.iter().map(|r| r.as_str().to_string()).collect();
         s.serialize_field("codes", &codes)?;
         s.serialize_field("types", &self.types)?;
+        s.serialize_field("path_type", &self.path_type)?;
         s.end()
     }
 }

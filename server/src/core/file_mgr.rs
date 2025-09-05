@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{collections::HashMap, fs};
-use crate::core::config::DiagnosticFilter;
+use crate::core::config::{DiagnosticFilter, DiagnosticFilterPathType};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::features::node_index_ast::IndexedModule;
 use crate::threads::SessionInfo;
@@ -298,7 +298,14 @@ impl FileInfo {
     }
     pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
         self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters.iter().cloned().filter(|filter| {
-            (filter.negation && !filter.paths.matches(&self.uri)) || (!filter.negation && filter.paths.matches(&self.uri))
+            match filter.path_type {
+                DiagnosticFilterPathType::IN => {
+                    filter.paths.iter().any(|p| p.matches(&self.uri))
+                }
+                DiagnosticFilterPathType::NOT_IN => {
+                    !filter.paths.iter().any(|p| p.matches(&self.uri))
+                }
+            }
         }).collect::<Vec<_>>();
     }
 
