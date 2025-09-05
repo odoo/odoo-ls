@@ -261,7 +261,7 @@ impl Server {
             pid_thread = Some(self.spawn_pid_thread(pid, stop_receiver));
         }
         let mut wait_exit_notification = false;
-        let mut exit_no_error_code = false;
+        let mut exit_no_error_code = true;
         loop {
             let index = select.ready();
             let res = if index == 0 {
