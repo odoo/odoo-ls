@@ -3,7 +3,7 @@ use core::fmt;
 
 
 pub const EXTENSION_NAME: &str = "Odoo";
-pub const EXTENSION_VERSION: &str = "0.12.0";
+pub const EXTENSION_VERSION: &str = "0.12.1";
 
 pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
