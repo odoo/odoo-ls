@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.12.1] - 2025/09/05 - Hotfixes
+
+### PyCharm
+
+- Fix the button that lead to OdooLS settings
+
+### VsCode
+
+- Update the version check that display the "Beta warning" to fit the post 1.0 format
+
+### Server
+
+- Upgrade Rust edition from 2021 to 2024
+- Configuration files: Diagnostics filter paths is now an array instead of a String, and we can choose if the filter is applied to any file in the list of paths or not in the list of path
+- Improve the the origin_range (the underlined part of the test) in chains of relational fields when doing a gotodefinition on a String
+- Improve the detection of the detection of python (choose python or python3 depending on availability)
+- Remove self from list of models implementation in gotodefinition
+- Improve the line breaks in Hovers depending on the capabilities of the client. VsCode is supporting markdown and so `  \n`, but PyCharm only support `<br/>` that VsCode is escaping. The server now uses the given parser name from the client to choose the right line break
+- Force color background and font for 'all configuration page' to ensure clear visibility on all clients.
+- Log the full config of the user in the logs to help debugging
+- Remove compilation warnings
+
+### Fixes
+
+- New $autoDetectAddons was not always properly detected
+- Fix launch.json on linux since the repository structure update
+- Refactor the threadpool to fix concurrency issue in the way some LSP messages were handled, causing random rare crashes.
+
 ## [0.12.0] - 2025/08/28 - PyCharm, Csv and configurations
 
 This patch includes somes changes required for the new [PyCharm](https://github.com/odoo/odoo-ls-pycharm) plugin.
