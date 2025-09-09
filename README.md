@@ -22,15 +22,15 @@ It can provide autocompletion, hovering, go to definition, diagnostics, document
 ### VsCode Extension
 
 An extension that will bundle the Odoo Language Server and give needed settings and some UI improvements to your vscode.
-The VsCode extension can be found here: https://github.com/odoo/odoo-ls-vscode
+The VsCode extension can be found here: https://github.com/odoo/odoo-vscode
 
 ### PyCharm plugin
 
-That plugin integrates OdooLS to PyCharm. You can find it here: https://github.com/odoo/odoo-ls-pycharm
+That plugin integrates OdooLS to PyCharm. You can find it here: https://github.com/odoo/odoo-pycharm
 
 ### Vim extension
 
-An integration of OdooLS is available for neovim. Check it out here: https://github.com/odoo/odoo-ls-neovim
+An integration of OdooLS is available for neovim. Check it out here: https://github.com/odoo/odoo-neovim
 
 ## State of the project
 

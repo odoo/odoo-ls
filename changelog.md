@@ -30,7 +30,7 @@
 
 ## [0.12.0] - 2025/08/28 - PyCharm, Csv and configurations
 
-This patch includes somes changes required for the new [PyCharm](https://github.com/odoo/odoo-ls-pycharm) plugin.
+This patch includes somes changes required for the new [PyCharm](https://github.com/odoo/odoo-pycharm) plugin.
 We changed some keys in the configurations files to improve clarity and added a TomL schema helper. Install a TomL extension to get
 syntax diagnostics, as well as validation of your configuration files. (You'll have the best by installing "Even Better TOML" AND "Tombi" on vscode)
 
@@ -43,7 +43,7 @@ syntax diagnostics, as well as validation of your configuration files. (You'll h
 
 ### VsCode
 
-- Code has been moved to its own repository: https://github.com/odoo/odoo-ls-vscode
+- Code has been moved to its own repository: https://github.com/odoo/odoo-vscode
 - Automatically link toml schema to odools.toml files
 
 ### Server
