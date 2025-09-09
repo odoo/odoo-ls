@@ -513,7 +513,7 @@ impl FileMgr {
         let return_info = file_info.clone();
         //Do not modify the file if a version is not given but the file is opened
         let mut updated: bool = false;
-        if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened {
+        if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened || force {
             let mut file_info_mut = (*return_info).borrow_mut();
             updated = file_info_mut.update(session, uri, content, version, self.is_in_workspace(uri), force);
             drop(file_info_mut);
