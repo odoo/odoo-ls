@@ -32,6 +32,10 @@ That plugin integrates OdooLS to PyCharm. You can find it here: https://github.c
 
 An integration of OdooLS is available for neovim. Check it out here: https://github.com/odoo/odoo-neovim
 
+### Zed extension
+
+A light integration of OdooLS is available for Zed. Check it out here: https://github.com/odoo/odoo-zed
+
 ## State of the project
 
 All modules in these repositories are actually in development and not released in a stable and valid version. You can face crashs or inconsistent results by using it. Please consult each repository to get a better idea of the state of each project.
