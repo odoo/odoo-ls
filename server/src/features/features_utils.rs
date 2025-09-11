@@ -667,7 +667,7 @@ impl FeaturesUtils {
                     .collect::<Vec<String>>()
                     .join(FeaturesUtils::get_line_break(session));
                     documentation_block = match documentation_block {
-                        Some(from_module_str) => Some(from_module_str + "<br/>" + &ds),
+                        Some(from_module_str) => Some(from_module_str + FeaturesUtils::get_line_break(session) + &ds),
                         None => Some(ds)
                     };
                 }
