@@ -1,5 +1,5 @@
 use ruff_python_ast::{Expr, ExprAttribute, ExprName};
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(Debug, Clone)]
 pub enum AssignTargetType {
@@ -146,7 +146,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
                 // if we have a tuple, we want to untuple the value if possible. If not or because we don't know
                 // the type of the value, we return the value with an index
                 if value.is_none() {
-                    error!("Invalid stmt: can't annotate a tuple");
+                    debug!("Invalid stmt: can't annotate a tuple");
                     continue;
                 }
                 let value = value.unwrap();
@@ -173,7 +173,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
             Expr::List(expr) => {
                 // Same code than for Tuple
                 if value.is_none() {
-                    error!("Invalid stmt: can't annotate a List");
+                    debug!("Invalid stmt: can't annotate a List");
                     continue;
                 }
                 let value = value.unwrap();
