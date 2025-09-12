@@ -11,6 +11,7 @@ pub const DEBUG_THREADS: bool = false;
 pub const DEBUG_STEPS: bool = false;
 pub const DEBUG_STEPS_ONLY_INTERNAL: bool = true;
 pub const DEBUG_REBUILD_NOW: bool = false;
+pub const DEBUG_BORROW_GUARDS: bool = false;
 
 pub type Tree = (Vec<OYarn>, Vec<OYarn>);
 

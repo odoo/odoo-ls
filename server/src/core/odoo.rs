@@ -719,6 +719,10 @@ impl SyncOdoo {
     return true if a rebuild has been done
      */
     pub fn build_now(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
+        if DEBUG_BORROW_GUARDS {
+            //Symbol must be borrowable in this function
+            symbol.borrow_mut();
+        }
         match symbol.borrow().typ() {
             SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE => return false,
             _ => {}
