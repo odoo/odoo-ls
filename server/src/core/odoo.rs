@@ -1501,7 +1501,7 @@ impl Odoo {
             SyncOdoo::process_rebuilds(session);
             let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(new_path.clone()));
             if let Some(tree) = tree {
-                if session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree, u32::MAX).is_empty() {
+                if  PathBuf::from(new_path).is_file() &&  session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree, u32::MAX).is_empty() {
                     //file has not been added to main entry. Let's build a new entry point
                     EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated);
                     SyncOdoo::process_rebuilds(session);
@@ -1528,12 +1528,10 @@ impl Odoo {
             let path = FileMgr::uri2pathname(&f.uri);
             let path_updated = PathBuf::from(path.clone()).to_tree_path().to_str().unwrap().to_string();
             let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
-            if tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty() {
+            if PathBuf::from(path).is_file() && (tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty()) {
                 //file has not been added to main entry. Let's build a new entry point
-                if PathBuf::from(path).is_file() { //test from raw path, to check that this is not a directory that has been created.
-                    EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated);
-                    SyncOdoo::process_rebuilds(session);
-                }
+                EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated);
+                SyncOdoo::process_rebuilds(session);
             }
         }
     }
