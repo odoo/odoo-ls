@@ -148,9 +148,10 @@ impl EntryPointMgr {
         EntryPointMgr::create_dir_symbols_from_path_to_entry(session, &PathBuf::from(path), entry)
     }
 
-    pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, path: &String) -> bool {
-        let path_sanitized = PathBuf::from(path).sanitize();
-        let new_sym = EntryPointMgr::add_entry_to_customs(session, path_sanitized.clone());
+    /// Create a new custom entry point for a given tree path and file path.
+    /// tree_path can possibly be the path stripped from __manifest__/__init__.py
+    pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &String, file_path: &String) -> bool {
+        let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path.clone());
         if let Some(new_sym) = new_sym {
             new_sym.borrow_mut().set_is_external(false);
             let new_sym_typ = new_sym.borrow().typ();
@@ -162,9 +163,9 @@ impl EntryPointMgr {
                     new_sym.borrow_mut().as_file_mut().self_import = true;
                 },
                 SymType::NAMESPACE => {
-                    if PathBuf::from(path.clone()).join("__manifest__.py").exists() {
+                    if file_path.ends_with("__manifest__.py") {
                         warn!("new custom entry point for manifest without related init.py is not supported outside of main entry point. skipping...");
-                        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path_sanitized);
+                        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(tree_path);
                         return false;
                     } else {
                         panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", new_sym.borrow().paths());
