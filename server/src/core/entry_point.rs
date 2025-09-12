@@ -90,6 +90,19 @@ impl EntryPointMgr {
      */
     pub fn add_entry_to_public(session: &mut SessionInfo, path: String) -> Option<Rc<RefCell<Symbol>>> {
         info!("Adding new public entry point: {}", path);
+        //Prevent adding entry point from sys.path or other config that is matching odoo or addons paths
+        if let Some(odoo_path) = &session.sync_odoo.config.odoo_path {
+            if &path == odoo_path {
+                warn!("Public entry point {} is equal to odoo path {}, this is not supported and will be ignored", path, odoo_path);
+                return None;
+            }
+        }
+        for addon_path in &session.sync_odoo.config.addons_paths {
+            if &path == addon_path {
+                warn!("Public entry point {} is equal to addon path {}, this is not supported and will be ignored", path, addon_path);
+                return None;
+            }
+        }
         let entry_point_tree = PathBuf::from(&path).to_tree();
         let entry = EntryPoint::new(path.clone(),
         flatten_tree(&entry_point_tree),
