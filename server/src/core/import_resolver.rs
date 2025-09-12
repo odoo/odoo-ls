@@ -359,6 +359,10 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
 }
 
 fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &OYarn, asname: Option<String>) -> Result<Rc<RefCell<Symbol>>, String> {
+    if DEBUG_BORROW_GUARDS {
+        //Parent must be borrowable in this function
+        parent.borrow_mut();
+    }
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
         None => name.to_string()
