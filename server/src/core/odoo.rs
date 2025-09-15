@@ -576,6 +576,7 @@ impl SyncOdoo {
                 let in_addons = parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]);
                 let new_symbol = Symbol::create_from_path(session, &PathBuf::from(path), parent, in_addons);
                 if new_symbol.is_some() {
+                    session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
                     let new_symbol = new_symbol.as_ref().unwrap().clone();
                     new_symbol.borrow_mut().set_is_external(false);
                     let new_sym_typ = new_symbol.borrow().typ();
@@ -587,12 +588,12 @@ impl SyncOdoo {
                             new_symbol.borrow_mut().as_file_mut().self_import = true;
                         },
                         SymType::PACKAGE(PackageType::MODULE) => {},
+                        SymType::NAMESPACE => continue, // A module became a namespace, due to __init__ deletion/renaming
                         _ => {panic!("Unexpected symbol type: {:?}", new_sym_typ);}
                     }
                     if matches!(new_symbol.borrow().typ(), SymType::PACKAGE(PackageType::MODULE)) {
                         session.sync_odoo.modules.insert(new_symbol.borrow().name().clone(), Rc::downgrade(&new_symbol));
                     }
-                    session.sync_odoo.must_reload_paths.retain(|x| !Weak::ptr_eq(&x.0, weak_sym));
                     session.sync_odoo.add_to_rebuild_arch(new_symbol.clone());
                 }
             }
