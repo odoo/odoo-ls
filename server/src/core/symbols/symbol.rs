@@ -2064,7 +2064,7 @@ impl Symbol {
     }
 
     pub fn get_file(&self) -> Option<Weak<RefCell<Symbol>>> {
-        if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) {
+        if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) || self.typ() == SymType::XML_FILE || self.typ() == SymType::CSV_FILE {
             return self.weak_self().clone();
         }
         if self.parent().is_some() {
