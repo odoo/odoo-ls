@@ -222,9 +222,9 @@ impl PythonArchBuilderHooks {
                 let full_path_monkeypatches = S!("odoo._monkeypatches");
                 let mut main_odoo_symbol = None;
                 if let Some(main_ep) = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref() {
-                    //To import from main entry point, we have to import 'from' a symbol coming from main entry point. 
+                    //To import from main entry point, we have to import 'from' a symbol coming from main entry point.
                     //We then use the main symbol of the main entry point to achieve that, instead of the werkzeug symbol
-                    main_odoo_symbol = Some(main_ep.borrow().get_symbol().unwrap());
+                    main_odoo_symbol = main_ep.borrow().get_symbol();
                 }
                 if let Some(main_odoo_symbol) = main_odoo_symbol {
                     let werkzeug_patch = manual_import(session, &main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, None, &mut None);
