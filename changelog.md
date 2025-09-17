@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1] - 2025/09/17 - Day 1 fixes
+
+### Fixes
+
+- Crash that can occur when doing a gotodefinition in an XML file
+- Fix origin of gotodefinition for some links in XML files.
+- Change back `<br/>` line breaks that sometimes break PyCharm to escaped `  \\\n`
+
 ## [1.0.0] - 2025/09/16 - Release
 
 This project is far from finished, but it has reached a level of maturity where we’re introducing two update channels: **Release** and **Pre-release** (Beta).
