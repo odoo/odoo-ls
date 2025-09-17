@@ -265,7 +265,7 @@ impl DefinitionFeature {
                                         _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
                                     };
                                     let link_range = if link_range.is_some() {
-                                        Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, link_range.as_ref().unwrap()))
+                                        Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
                                     } else {
                                         None
                                     };
