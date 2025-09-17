@@ -597,7 +597,7 @@ impl FeaturesUtils {
             },
             TypeInfo::VALUE(value) => value.clone(),
         }).unique().collect::<Vec<_>>();
-        value += &format!("{}{}```", FeaturesUtils::represent_return_types(return_types_string), FeaturesUtils::get_line_break(session));
+        value += &format!("{}{}```", FeaturesUtils::represent_return_types(return_types_string), "  \n"); //No need to put an escaped \n in code bloc
         //end block
         value
     }
@@ -636,7 +636,7 @@ impl FeaturesUtils {
             };
             let path = FileMgr::pathname2uri(&base_path);
             let range = if type_ref.is_file_content() { type_ref.range().start().to_u32() } else { 0 };
-            format!("  \n***  \nSee also: [{}]({}#{}){}", type_ref.name().as_str(), path.as_str(), range, FeaturesUtils::get_line_break(session))
+            format!("  \n***  \nSee also: [{}]({}#{}){}", type_ref.name().as_str(), path.as_str(), range, "  \n")
         } else {
             S!("")
         }
@@ -679,7 +679,7 @@ impl FeaturesUtils {
     pub fn get_line_break(session: &mut SessionInfo<'_>) -> &'static str {
         if session.sync_odoo.capabilities.general.is_none() ||
         session.sync_odoo.capabilities.general.as_ref().unwrap().markdown.is_none() {
-            return "<br/>"
+            return "  \\\n"
         }
         "  \n"
     }
