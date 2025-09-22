@@ -143,6 +143,9 @@ impl Symbol {
             },
             Symbol::Root(r) => {
                 r.add_file(&package)
+            },
+            Symbol::DiskDir(d) => {
+                d.add_file(&package);
             }
             _ => { panic!("Impossible to add a package to a {}", self.typ()); }
         }
