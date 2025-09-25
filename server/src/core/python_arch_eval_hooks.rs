@@ -312,91 +312,111 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         let url_decode = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_decode")]), u32::MAX);
         let werkzeug_url_decode = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_decode")]), u32::MAX);
         if let Some(werkzeug_url_decode) = werkzeug_url_decode.first() {
-            if let Some(eval_1) = url_decode.first() {
-                werkzeug_url_decode.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_decode.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_decode.first() {
+                    werkzeug_url_decode.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_encode = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_encode")]), u32::MAX);
         let werkzeug_url_encode = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_encode")]), u32::MAX);
         if let Some(werkzeug_url_encode) = werkzeug_url_encode.first() {
-            if let Some(eval_1) = url_encode.first() {
-                werkzeug_url_encode.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_encode.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_encode.first() {
+                    werkzeug_url_encode.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_join = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_join")]), u32::MAX);
         let werkzeug_url_join = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_join")]), u32::MAX);
         if let Some(werkzeug_url_join) = werkzeug_url_join.first() {
-            if let Some(eval_1) = url_join.first() {
-                werkzeug_url_join.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_join.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_join.first() {
+                    werkzeug_url_join.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_parse = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_parse")]), u32::MAX);
         let werkzeug_url_parse = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_parse")]), u32::MAX);
         if let Some(werkzeug_url_parse) = werkzeug_url_parse.first() {
-            if let Some(eval_1) = url_parse.first() {
-                werkzeug_url_parse.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_parse.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_parse.first() {
+                    werkzeug_url_parse.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_quote = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_quote")]), u32::MAX);
         let werkzeug_url_quote = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_quote")]), u32::MAX);
         if let Some(werkzeug_url_quote) = werkzeug_url_quote.first() {
-            if let Some(eval_1) = url_quote.first() {
-                werkzeug_url_quote.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_quote.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_quote.first() {
+                    werkzeug_url_quote.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_unquote = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_unquote")]), u32::MAX);
         let werkzeug_url_unquote = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_unquote")]), u32::MAX);
         if let Some(werkzeug_url_unquote) = werkzeug_url_unquote.first() {
-            if let Some(eval_1) = url_unquote.first() {
-                werkzeug_url_unquote.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_unquote.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_unquote.first() {
+                    werkzeug_url_unquote.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_quote_plus = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_quote_plus")]), u32::MAX);
         let werkzeug_url_quote_plus = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_quote_plus")]), u32::MAX);
         if let Some(werkzeug_url_quote_plus) = werkzeug_url_quote_plus.first() {
-            if let Some(eval_1) = url_quote_plus.first() {
-                werkzeug_url_quote_plus.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_quote_plus.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_quote_plus.first() {
+                    werkzeug_url_quote_plus.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_unquote_plus = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_unquote_plus")]), u32::MAX);
         let werkzeug_url_unquote_plus = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_unquote_plus")]), u32::MAX);
         if let Some(werkzeug_url_unquote_plus) = werkzeug_url_unquote_plus.first() {
-            if let Some(eval_1) = url_unquote_plus.first() {
-                werkzeug_url_unquote_plus.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_unquote_plus.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_unquote_plus.first() {
+                    werkzeug_url_unquote_plus.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url_unparse = symbol.borrow().get_symbol(&(vec![], vec![Sy!("url_unparse")]), u32::MAX);
         let werkzeug_url_unparse = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("url_unparse")]), u32::MAX);
         if let Some(werkzeug_url_unparse) = werkzeug_url_unparse.first() {
-            if let Some(eval_1) = url_unparse.first() {
-                werkzeug_url_unparse.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url_unparse.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url_unparse.first() {
+                    werkzeug_url_unparse.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
         let url = symbol.borrow().get_symbol(&(vec![], vec![Sy!("URL")]), u32::MAX);
         let werkzeug_url_syms = odoo.get_symbol(_file_symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![Sy!("URL")]), u32::MAX);
         if let Some(werkzeug_url) = werkzeug_url_syms.first() {
-            if let Some(eval_1) = url.first() {
-                werkzeug_url.borrow_mut().set_evaluations(vec![
-                    Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
-                ]);
+            if werkzeug_url.borrow().typ() == SymType::VARIABLE { //if not variable, no need to patch it
+                if let Some(eval_1) = url.first() {
+                    werkzeug_url.borrow_mut().set_evaluations(vec![
+                        Evaluation::eval_from_symbol(&Rc::downgrade(&eval_1), Some(false))
+                    ]);
+                }
             }
         }
     }},

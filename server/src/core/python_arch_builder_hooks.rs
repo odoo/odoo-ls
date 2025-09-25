@@ -201,17 +201,20 @@ impl PythonArchBuilderHooks {
                 //doing this patch like this imply that an odoo project will make these functions available for all entrypoints, but heh
                 let werkzeug_url = session.sync_odoo.get_symbol(symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![]), u32::MAX);
                 if let Some(werkzeug_url) = werkzeug_url.first() {
-                    //fake variable, as ext_symbols are not seen through get_symbol, etc...
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_decode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_encode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_join"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_parse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unparse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                    werkzeug_url.borrow_mut().add_new_variable(session, Sy!("URL"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    let url_join = werkzeug_url.borrow().get_symbol(&(vec![], vec![Sy!("url_join")]), u32::MAX);
+                    if url_join.is_empty() { //else, installed version is already patched
+                        //fake variable, as ext_symbols are not seen through get_symbol, etc...
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_decode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_encode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_join"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_parse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unparse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("URL"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                    }
                 } else {
                     warn!("Unable to find werkzeug.urls to monkeypatch it");
                 }
