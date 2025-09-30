@@ -124,3 +124,17 @@ pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "un
 "pipes", "smtpd", "sndhdr", "spwd", "sunau", "telnetlib", "uu", "xdrlib", "struct", "codecs"];
 
 pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/Configuration-files";
+
+use std::sync::LazyLock;
+
+/// True if the minor part of EXTENSION_VERSION is even, false otherwise.
+pub static IS_RELEASE: LazyLock<bool> = LazyLock::new(|| {
+    let parts: Vec<&str> = EXTENSION_VERSION.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    if let Ok(minor) = parts[1].parse::<u32>() {
+        return minor % 2 == 0;
+    }
+    false
+});

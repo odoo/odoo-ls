@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc, Weak
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic};
 
 use super::{odoo::SyncOdoo, symbols::symbol::Symbol};
 
@@ -179,10 +179,12 @@ impl EntryPointMgr {
                     if file_path.ends_with("__manifest__.py") {
                         warn!("new custom entry point for manifest without related init.py is not supported outside of main entry point. skipping...");
                         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(tree_path);
-                        return false;
                     } else {
-                        panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", new_sym.borrow().paths());
+                        // There was an __init__.py, that was renamed or deleted.
+                        // Another notification will come for the deletion of the file, so we just warn here.
+                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", new_sym.borrow().paths());
                     }
+                    return false;
                 }
                 _ => {panic!("Unexpected symbol type: {:?}", new_sym_typ);}
             }

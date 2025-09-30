@@ -334,3 +334,14 @@ pub fn is_python_path(path: &String) -> bool {
     }
 }
 
+#[macro_export]
+macro_rules! warn_or_panic {
+    ($($arg:tt)*) => {
+        if *crate::constants::IS_RELEASE {
+            let bt = std::backtrace::Backtrace::force_capture();
+            tracing::warn!("{}\nBacktrace:\n{:?}", format!($($arg)*), bt);
+        } else {
+            panic!($($arg)*);
+        }
+    }
+}
