@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.2] - 2025/10/03 - Hotfixes and github actions
+
+### Packaging
+
+- use Github Actions to build all files: OdooLS binaries, Vsix and Pycharm plugin. Removing the dependency on cross-rs to build executables.
+
+### Fixes
+
+- Fix starting file version number for PyCharm, that is starting at 0, while vscode is starting at 1
+- Fix crash of package creation on custom tree
+- Fix crash on Odoo > 19 that happen if werkzeug is installed and up-to-date
+- Remove panic on missing `__init__.py` file for custom entry creation, happening if user removed/renamed the file during the initialization of the server, and warn it instead
+
+
 ## [1.0.1] - 2025/09/17 - Day 1 fixes
 
 ### Fixes
