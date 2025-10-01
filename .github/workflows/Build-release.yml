@@ -1,0 +1,199 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            name: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            arch: aarch64
+            name: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            arch: x86_64
+            name: alpine-x86_64
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-22.04
+            arch: aarch64
+            name: alpine-aarch64
+            target: aarch64-unknown-linux-musl
+          - os: macos-latest
+            arch: x86_64
+            name: darwin-x86_64
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            arch: aarch64
+            name: darwin-aarch64
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            arch: x86_64
+            name: win32-x86_64
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            arch: aarch64
+            name: win32-aarch64
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Install AArch64 cross-linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install dependencies (Linux MUSL)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install dependencies (Linux MUSL ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+
+      - name: Build
+        working-directory: server
+        run: cargo build --bin odoo_ls_server --release --target ${{ matrix.target }}
+
+      - name: Build schema
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        working-directory: server
+        run: cargo run --bin print_config_schema --release --target ${{ matrix.target }}
+
+      - name: Upload binary
+        shell: bash
+        run: |
+          mkdir -p artifacts/${{ matrix.name }}
+          BIN_NAME=odoo_ls_server
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp server/target/${{ matrix.target }}/release/${BIN_NAME}.exe artifacts/${{ matrix.name }}/
+            cp server/target/${{ matrix.target }}/release/${BIN_NAME}.pdb artifacts/${{ matrix.name }}/ || true
+          else
+            cp -p server/target/${{ matrix.target }}/release/${BIN_NAME} artifacts/${{ matrix.name }}/
+          fi
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]]; then
+            cp server/config_schema.json artifacts/
+          fi
+        continue-on-error: false
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: artifacts/${{ matrix.name }}
+
+      - name: Upload config schema
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: config_schema
+          path: artifacts/config_schema.json
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Extract version info
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          MINOR=$(echo "$TAG" | cut -d. -f2)
+          if [ $((MINOR % 2)) -eq 1 ]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "title=$TAG - Beta" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "title=$TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          awk "/^## \\[$TAG\\]/ {flag=1; next} /^## \\[/ {flag=0} flag {print}" changelog.md > RELEASE_NOTES.md
+
+      - name: Ensure executables have +x
+        shell: bash
+        run: |
+          for dir in artifacts/*; do
+            [ -d "$dir" ] || continue
+            for file in "$dir"/*; do
+              case "$file" in
+                *.exe|*.pdb|*.json|*.zip)
+                  ;;
+                *)
+                  chmod +x "$file"
+                  ;;
+              esac
+            done
+          done
+
+      - name: Zip all artifacts
+        shell: bash
+        run: |
+          for dir in artifacts/*; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            if [ "$name" = "config_schema" ]; then
+              continue
+            fi
+            TAG="${GITHUB_REF_NAME}"
+            case "$name" in
+              win32-*)
+                zip -j artifacts/odoo-${name}-${TAG}.zip "$dir"/*
+                ;;
+              *)        # tar.gz to keep permissions
+                tar -czf artifacts/odoo-${name}-${TAG}.tar.gz -C "$dir" .
+                ;;
+            esac
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.title }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            ./artifacts/*.zip
+            ./artifacts/*.tar.gz
+            ./artifacts/config_schema/config_schema.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
