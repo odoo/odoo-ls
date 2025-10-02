@@ -72,7 +72,7 @@ impl FileInfoAst {
 
 #[derive(Debug)]
 pub struct FileInfo {
-    pub version: i32,
+    pub version: Option<i32>,
     pub uri: String,
     pub valid: bool, // indicates if the file contains syntax error or not
     pub opened: bool,
@@ -87,7 +87,7 @@ pub struct FileInfo {
 impl FileInfo {
     fn new(uri: String) -> Self {
         Self {
-            version: 0,
+            version: None,
             uri,
             valid: true,
             opened: false,
@@ -112,18 +112,25 @@ impl FileInfo {
         // -100 can be given as version number to indicates that the file has not been opened yet, and that we have to load it ourself
         // See https://github.com/Microsoft/language-server-protocol/issues/177
         // Return true if the update has been done and not discarded
-        if let Some(version) = version {
-            if version == -100 {
-                self.version = 1;
-            } else {
+        match version {
+            // -100, we set FileInfo to -100 if it was not opened yet. Otherwise, we do not change the version
+            Some(-100) => if !self.opened {
+                self.version = Some(-100);
+            } else if !force { // If opened, with -100, we do not update
+                return false;
+            },
+            // normal version number, we update if higher, and set to opened anyway
+            Some(version) => {
                 self.opened = true;
-                if version <= self.version && !force {
+                if self.version.map(|v| version <= v).unwrap_or(false) && !force {
+                    // If the version is not higher, we do not update the file
                     return false;
                 }
-                self.version = version;
+                self.version = Some(version);
             }
-        } else if self.version != 0 && !force {
-            return false;
+            // no version provided, we update only if the file is not opened or on force
+            None if self.version.is_some() && !force => return false,
+            _ => {},
         }
         self.diagnostics.clear();
         if let Some(content) = content {
@@ -376,7 +383,7 @@ impl FileInfo {
             session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
                 uri: FileMgr::pathname2uri(&self.uri),
                 diagnostics: all_diagnostics,
-                version: Some(self.version),
+                version: self.version,
             });
             self.need_push = false;
         }
