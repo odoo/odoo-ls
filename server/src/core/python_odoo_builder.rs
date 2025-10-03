@@ -17,6 +17,15 @@ use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
 
+pub const MAGIC_FIELDS: [&str; 6] = [
+    "id",
+    "display_name",
+    "create_uid",
+    "create_date",
+    "write_uid",
+    "write_date"
+];
+
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
 }

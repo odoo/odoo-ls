@@ -8,6 +8,7 @@ use crate::constants::SymType;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::odoo::SyncOdoo;
+use crate::core::python_odoo_builder::MAGIC_FIELDS;
 use crate::core::symbols::symbol::Symbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
@@ -161,6 +162,20 @@ impl DefinitionFeature {
         }
         let mut links = vec![];
         let mut evaluations = analyse_ast_result.evaluations.clone();
+        // Filter out magic fields
+        evaluations.retain(|eval| {
+            // Filter out, variables, whose parents are a class, whose name is one of the magic fields, and have the same range as their parent
+            let eval_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let Some(eval_sym) = eval_sym.upgrade_weak() else { return true; };
+            if !MAGIC_FIELDS.contains(&eval_sym.borrow().name().as_str()) || eval_sym.borrow().typ() != SymType::VARIABLE || !eval_sym.borrow().is_field(session) {
+                return true;
+            }
+            let Some(parent_sym) = eval_sym.borrow().parent().and_then(|parent| parent.upgrade()) else { return true; };
+            if parent_sym.borrow().typ() != SymType::CLASS {
+                return true;
+            }
+            eval_sym.borrow().range() != parent_sym.borrow().range()
+        });
         let mut index = 0;
         while index < evaluations.len() {
             let eval = evaluations[index].clone();
