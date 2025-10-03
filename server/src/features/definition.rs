@@ -176,16 +176,6 @@ impl DefinitionFeature {
                 continue;
             };
             if let Some(file) = symbol.borrow().get_file() {
-                //if the symbol is at the given offset, let's take the next evaluation instead
-                if Rc::ptr_eq(&file.upgrade().unwrap(), file_symbol) && symbol.borrow().has_range() && symbol.borrow().range().contains(TextSize::new(offset as u32)) {
-                    evaluations.remove(index);
-                    let symbol = symbol.borrow();
-                    let sym_eval = symbol.evaluations();
-                    if let Some(sym_eval) = sym_eval {
-                        evaluations = [evaluations.clone(), sym_eval.clone()].concat();
-                    }
-                    continue;
-                }
                 for path in file.upgrade().unwrap().borrow().paths().iter() {
                     let full_path = match file.upgrade().unwrap().borrow().typ() {
                         SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
