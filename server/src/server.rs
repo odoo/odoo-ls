@@ -9,7 +9,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S};
+use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S, crash_buffer};
 
 
 /**
@@ -293,6 +293,8 @@ impl Server {
             }
 
             if index == 0 { //comes from client
+                // Save messages to crash buffer
+                crash_buffer::push_message(msg.clone());
                 if let Message::Request(r) = &msg {
                     if r.method == "shutdown" {
                         let resp = lsp_server::Response::new_ok(r.id.clone(), ());

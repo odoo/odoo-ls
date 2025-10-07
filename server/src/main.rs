@@ -1,6 +1,6 @@
 use lsp_server::Notification;
 use serde_json::json;
-use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer};
+use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer, crash_buffer};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -17,6 +17,7 @@ static GLOBAL: TrackingAllocator = TrackingAllocator;
 fn main() {
     // TODO: Audit that the environment access only happens in single-threaded code.
     unsafe { env::set_var("RUST_BACKTRACE", "full") };
+    crash_buffer::init_crash_buffer();
     let cli = Cli::parse();
 
     let use_debug = cli.use_tcp;
@@ -99,10 +100,13 @@ fn main() {
         std::panic::set_hook(Box::new(move |panic_info| {
             let backtrace = std::backtrace::Backtrace::capture();
             panic_hook(panic_info);
+            let recent_msgs = crash_buffer::get_messages();
+            let recent_msgs_json = serde_json::to_string_pretty(&recent_msgs).unwrap_or_default();
             let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
                 method: "Odoo/displayCrashNotification".to_string(),
                 params: json!({
                     "crashInfo": format!("{panic_info}\n\nTraceback:\n{backtrace}"),
+                    "recentMessages": recent_msgs_json,
                     "pid": std::process::id()
                 })
             }));
