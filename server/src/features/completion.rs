@@ -309,12 +309,13 @@ fn complete_assert_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>
 fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImport, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
     for alias in stmt_import.names.iter() {
-        if alias.name.range().end().to_usize() == offset {
-            let names = import_resolver::get_all_valid_names(session, file, None, S!(alias.name.id.as_str()), None);
-            for name in names {
+        if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
+            let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
+            let names = import_resolver::get_all_valid_names(session, file, None, to_complete, None, false);
+            for (name, sym_typ) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
-                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    kind: Some(get_completion_item_kind(&sym_typ)),
                     ..Default::default()
                 });
             }
@@ -329,24 +330,26 @@ fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, s
 fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImportFrom, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
     if let Some(module) = stmt_import.module.as_ref() {
-        if module.range.end().to_usize() == offset && !stmt_import.names.is_empty() {
-            let names = import_resolver::get_all_valid_names(session, file, None, S!(stmt_import.names[0].name.id.as_str()), Some(stmt_import.level));
-            for name in names {
+        if module.range.start().to_usize() < offset && module.range.end().to_usize() >= offset {
+            let to_complete = module.id.to_string().get(0 .. offset - module.range.start().to_usize()).unwrap_or("").to_string();
+            let names = import_resolver::get_all_valid_names(session, file, Some(to_complete), S!(""), Some(stmt_import.level), true);
+            for (name, sym_type) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
-                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    kind: Some(get_completion_item_kind(&sym_type)),
                     ..Default::default()
                 });
             }
         }
     }
     for alias in stmt_import.names.iter() {
-        if alias.name.range().end().to_usize() == offset {
-            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref(), S!(alias.name.id.as_str()), Some(stmt_import.level));
-            for name in names {
+        if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
+            let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
+            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref().map(|m| m.id.to_string()), to_complete, Some(stmt_import.level), false);
+            for (name, sym_type) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
-                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    kind: Some(get_completion_item_kind(&sym_type)),
                     ..Default::default()
                 });
             }
@@ -1091,7 +1094,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
             description: label_details_description,
         }),
         detail: Some(type_details.iter().map(|detail| detail.to_string()).join(" | ").to_string()),
-        kind: Some(get_completion_item_kind(&symbols[0])),
+        kind: Some(get_completion_item_kind(&symbols[0].borrow().typ())),
         sort_text: Some(get_sort_text_for_symbol(&symbols[0])),
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
@@ -1136,8 +1139,8 @@ fn get_sort_text_for_symbol(sym: &Rc<RefCell<Symbol>>/*, cl: Option<Rc<RefCell<S
     text
 }
 
-fn get_completion_item_kind(symbol: &Rc<RefCell<Symbol>>) -> CompletionItemKind {
-    match symbol.borrow().typ() {
+fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
+    match typ {
         SymType::ROOT => CompletionItemKind::TEXT,
         SymType::DISK_DIR => CompletionItemKind::FOLDER,
         SymType::NAMESPACE => CompletionItemKind::FOLDER,
