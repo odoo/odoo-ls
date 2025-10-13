@@ -112,9 +112,9 @@ impl FileInfo {
             diagnostic_filters: Vec::new(),
         }
     }
-    pub fn update(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, in_workspace: bool, force: bool) -> bool {
+    pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, in_workspace: bool, force: bool, is_untitled: bool) -> bool {
         // update the file info with the given information.
-        // uri: indicates the path of the file
+        // path: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
         // version: if the version is provided, the file_info wil be updated only if the new version is higher.
         // -100 can be given as version number to indicates that the file has not been opened yet, and that we have to load it ourself
@@ -150,13 +150,16 @@ impl FileInfo {
             } else {
                 self.file_info_ast.borrow_mut().text_document.as_mut().unwrap().apply_changes(content.clone(), version.unwrap(), session.sync_odoo.encoding);
             }
+        } else if is_untitled {
+            session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
+            return false;
         } else {
-            match fs::read_to_string(uri) {
+            match fs::read_to_string(path) {
                 Ok(content) => {
                     self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
                 },
                 Err(e) => {
-                    session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", uri, e));
+                    session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", path, e));
                     return false;
                 },
             };
@@ -462,6 +465,7 @@ impl FileInfo {
 #[derive(Debug)]
 pub struct FileMgr {
     pub files: HashMap<String, Rc<RefCell<FileInfo>>>,
+    untitled_files: HashMap<String, Rc<RefCell<FileInfo>>>, // key: untitled URI or unique name
     workspace_folders: HashMap<String, String>,
     has_repeated_workspace_folders: bool,
 }
@@ -471,6 +475,7 @@ impl FileMgr {
     pub fn new() -> Self {
         Self {
             files: HashMap::new(),
+            untitled_files: HashMap::new(),
             workspace_folders: HashMap::new(),
             has_repeated_workspace_folders: false,
         }
@@ -484,16 +489,29 @@ impl FileMgr {
     }
 
     pub fn get_file_info(&self, path: &String) -> Option<Rc<RefCell<FileInfo>>> {
-        self.files.get(path).cloned()
+        if Self::is_untitled(path) {
+            self.untitled_files.get(path).cloned()
+        } else {
+            self.files.get(path).cloned()
+        }
     }
 
     pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
-        let file = self.files.get(path);
+        let file = if Self::is_untitled(path) {
+            self.untitled_files.get(path)
+        } else {
+            self.files.get(path)
+        };
         if let Some(file) = file {
             if file.borrow().file_info_ast.borrow().text_document.is_none() {
                 file.borrow_mut().prepare_ast(session);
             }
             return file.borrow().text_range_to_range(range, session.sync_odoo.encoding);
+        }
+        // For untitled, never try to read from disk
+        if Self::is_untitled(path) {
+            session.log_message(MessageType::ERROR, format!("Untitled file {} not found in memory", path));
+            return Range::default();
         }
         //file not in cache, let's load text_document on the fly
         match fs::read_to_string(path) {
@@ -511,12 +529,21 @@ impl FileMgr {
     
 
     pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &std::ops::Range<usize>) -> Range {
-        let file = self.files.get(path);
+        let file = if Self::is_untitled(path) {
+            self.untitled_files.get(path)
+        } else {
+            self.files.get(path)
+        };
         if let Some(file) = file {
             if file.borrow().file_info_ast.borrow().text_document.is_none() {
                 file.borrow_mut().prepare_ast(session);
             }
             return file.borrow().std_range_to_range(range, session.sync_odoo.encoding);
+        }
+        // For untitled, never try to read from disk
+        if Self::is_untitled(path) {
+            session.log_message(MessageType::ERROR, format!("Untitled file {} not found in memory", path));
+            return Range::default();
         }
         //file not in cache, let's load text_document on the fly
         match fs::read_to_string(path) {
@@ -532,8 +559,20 @@ impl FileMgr {
         Range::default()
     }
 
+    /// Returns true if the path/uri is an untitled (in-memory) file.
+    /// by convention, untitled files start with "untitled:".
+    pub fn is_untitled(path: &str) -> bool {
+        path.starts_with("untitled:")
+    }
+
     pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> (bool, Rc<RefCell<FileInfo>>) {
-        let file_info = self.files.entry(uri.to_string()).or_insert_with(|| {
+        let is_untitled = Self::is_untitled(uri);
+        let entry = if is_untitled {
+            self.untitled_files.entry(uri.to_string())
+        } else {
+            self.files.entry(uri.to_string())
+        };
+        let file_info = entry.or_insert_with(|| {
             let mut file_info = FileInfo::new(uri.to_string());
             file_info.update_diagnostic_filters(session);
             Rc::new(RefCell::new(file_info))
@@ -543,7 +582,7 @@ impl FileMgr {
         let mut updated: bool = false;
         if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened || force {
             let mut file_info_mut = (*return_info).borrow_mut();
-            updated = file_info_mut.update(session, uri, content, version, self.is_in_workspace(uri), force);
+            updated = file_info_mut.update(session, uri, content, version, self.is_in_workspace(uri), force, is_untitled);
             drop(file_info_mut);
         }
         (updated, return_info)
@@ -633,28 +672,35 @@ impl FileMgr {
     }
 
     pub fn pathname2uri(s: &String) -> lsp_types::Uri {
-        let mut slash = "";
-        if cfg!(windows) {
-            slash = "/";
-        }
-        // If the path starts with \\\\, we want to remove it and also set slash to empty string
-        // Such that we have file://wsl.localhost/<path> for example
-        // For normal paths we do want file:///C:/...
-        // For some editors like PyCharm they use the legacy windows UNC urls so we have file:////wsl.localhost/<path>
-        let (replaced, unc) = if s.starts_with("\\\\") {
-            slash = "";
-            (s.replacen("\\\\", "", 1), true)
+        let pre_uri = if s.starts_with("untitled:"){
+            s.clone()
         } else {
-            (s.clone(), false)
+            let mut slash = "";
+            if cfg!(windows) {
+                slash = "/";
+            }
+            // If the path starts with \\\\, we want to remove it and also set slash to empty string
+            // Such that we have file://wsl.localhost/<path> for example
+            // For normal paths we do want file:///C:/...
+            // For some editors like PyCharm they use the legacy windows UNC urls so we have file:////wsl.localhost/<path>
+            let (replaced, unc) = if s.starts_with("\\\\") {
+                slash = "";
+                (s.replacen("\\\\", "", 1), true)
+            } else {
+                (s.clone(), false)
+            };
+            // Use legacy UNC flag to determine if we need four slashes
+            match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
+                Ok(pre_uri) => {
+                    if unc && legacy_unc_paths().load(Ordering::Relaxed){
+                        pre_uri.to_string().replace("file://", "file:////")
+                    } else {
+                        pre_uri.to_string()
+                    }
+                },
+                Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
+            }
         };
-        // Use legacy UNC flag to determine if we need four slashes
-        let mut pre_uri = match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
-            Ok(pre_uri) => pre_uri.to_string(),
-            Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
-        };
-        if unc && legacy_unc_paths().load(Ordering::Relaxed){
-            pre_uri = pre_uri.replace("file://", "file:////");
-        }
         match lsp_types::Uri::from_str(&pre_uri) {
             Ok(url) => url,
             Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)

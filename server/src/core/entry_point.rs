@@ -14,6 +14,7 @@ pub struct EntryPointMgr {
     pub main_entry_point: Option<Rc<RefCell<EntryPoint>>>,
     pub addons_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
     pub custom_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
+    pub untitled_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
 }
 
 impl EntryPointMgr {
@@ -25,7 +26,26 @@ impl EntryPointMgr {
             main_entry_point: None,
             addons_entry_points: vec![],
             custom_entry_points: vec![],
+            untitled_entry_points: vec![],
         }
+    }
+    /// Create a new entry for an untitled (in-memory) file.
+    /// Returns the file symbol for the untitled entry.
+    pub fn add_entry_to_untitled(session: &mut SessionInfo, path: String) -> Rc<RefCell<Symbol>> {
+        // For untitled files, we use a minimal tree: just the name as a single OYarn
+        let tree = vec![OYarn::from(path.clone())];
+        let entry = EntryPoint::new(
+            path.clone(),
+            tree,
+            EntryPointType::UNTITLED,
+            None,
+            None,
+        );
+        session.sync_odoo.entry_point_mgr.borrow_mut().untitled_entry_points.push(entry.clone());
+        // Create one file symbol under the root for the untitled file
+        let name: String = PathBuf::from(&path).with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
+        let file_sym = entry.borrow().root.borrow_mut().add_new_file(session, &name, &path);
+        file_sym.clone()
     }
 
     /**
@@ -193,6 +213,13 @@ impl EntryPointMgr {
         true
     }
 
+    pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &String) -> bool {
+        let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.clone());
+        new_sym.borrow_mut().as_file_mut().self_import = true;
+        SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
+        true
+    }
+
     pub fn iter_for_import(&self, current_entry: &Rc<RefCell<EntryPoint>>) -> Box<dyn Iterator<Item = &Rc<RefCell<EntryPoint>>> + '_> {
         let mut is_main = false;
         for entry in self.iter_main() {
@@ -214,12 +241,12 @@ impl EntryPointMgr {
     }
 
     pub fn iter_all(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>> {
-        self.addons_entry_points.iter().chain(
-        self.main_entry_point.iter()).chain(
-        self.builtins_entry_points.iter()).chain(
-        self.public_entry_points.iter()).chain(
-        self.custom_entry_points.iter()
-        )
+        self.addons_entry_points.iter()
+            .chain(self.main_entry_point.iter())
+            .chain(self.builtins_entry_points.iter())
+            .chain(self.public_entry_points.iter())
+            .chain(self.custom_entry_points.iter())
+            .chain(self.untitled_entry_points.iter())
     }
 
     //iter through all main entry points, sorted by tree length (from bigger to smaller)
@@ -250,6 +277,15 @@ impl EntryPointMgr {
     pub fn remove_entries_with_path(&mut self, path: &String) {
         for entry in self.iter_all() {
             if PathBuf::from(entry.borrow().path.clone()).starts_with(path) { //delete any entrypoint that would be in a subdirectory too
+                entry.borrow_mut().to_delete = true;
+            }
+        }
+        self.clean_entries();
+    }
+
+    pub fn remove_untitled_entries_with_path(&mut self, path: &String) {
+        for entry in self.untitled_entry_points.iter() {
+            if &entry.borrow().path.clone() == path {
                 entry.borrow_mut().to_delete = true;
             }
         }
@@ -292,12 +328,22 @@ impl EntryPointMgr {
                 entry_index += 1;
             }
         }
-        let mut entry_index = 0;
+        entry_index = 0;
         while entry_index < self.custom_entry_points.len() {
             let entry = self.custom_entry_points[entry_index].clone();
             if entry.borrow().to_delete {
                 info!("Dropping custom entry point {}", entry.borrow().path);
                 self.custom_entry_points.remove(entry_index);
+            } else {
+                entry_index += 1;
+            }
+        }
+        entry_index = 0;
+        while entry_index < self.untitled_entry_points.len() {
+            let entry = self.untitled_entry_points[entry_index].clone();
+            if entry.borrow().to_delete {
+                info!("Dropping untitled entry point {}", entry.borrow().path);
+                self.untitled_entry_points.remove(entry_index);
             } else {
                 entry_index += 1;
             }
@@ -323,7 +369,8 @@ pub enum EntryPointType {
     BUILTIN,
     PUBLIC,
     ADDON,
-    CUSTOM
+    CUSTOM,
+    UNTITLED,
 }
 
 #[derive(Debug, Clone)]
@@ -359,6 +406,9 @@ impl EntryPoint {
     }
 
     pub fn is_valid_for(&self, path: &PathBuf) -> bool {
+        if self.typ == EntryPointType::UNTITLED {
+            return false;
+        }
         path.starts_with(&self.path)
     }
 
