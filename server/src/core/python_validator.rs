@@ -115,6 +115,9 @@ impl PythonValidator {
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info);
+                if self.sym_stack[0].borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+                    ModuleSymbol::validate_manifest(&self.sym_stack[0], session);
+                }
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },

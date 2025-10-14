@@ -1231,6 +1231,7 @@ impl Symbol {
         match self {
             Symbol::File(f) => Some(&f.not_found_models),
             Symbol::XmlFileSymbol(f) => Some(&f.not_found_models),
+            Symbol::Package(PackageSymbol::Module(m)) => Some(&m.not_found_models),
             Symbol::Root(_) => None,
             Symbol::Namespace(_) => None,
             Symbol::DiskDir(_) => None,
@@ -1247,6 +1248,7 @@ impl Symbol {
         match self {
             Symbol::File(f) => Some(&mut f.not_found_models),
             Symbol::XmlFileSymbol(f) => Some(&mut f.not_found_models),
+            Symbol::Package(PackageSymbol::Module(m)) => Some(&mut m.not_found_models),
             Symbol::Root(_) => None,
             Symbol::Namespace(_) => None,
             Symbol::DiskDir(_) => None,

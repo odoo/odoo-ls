@@ -4,6 +4,7 @@ use ruff_text_size::{Ranged, TextRange};
 use tracing::{error, info};
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
@@ -50,6 +51,7 @@ pub struct ModuleSymbol {
     pub parent: Option<Weak<RefCell<Symbol>>>,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
+    pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub in_workspace: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
@@ -76,6 +78,7 @@ impl ModuleSymbol {
             is_external,
             not_found_paths: vec![],
             not_found_data: HashMap::new(),
+            not_found_models: HashMap::new(),
             in_workspace: false,
             root_path: dir_path.sanitize(),
             loaded: false,
@@ -151,7 +154,6 @@ impl ModuleSymbol {
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
-        manifest_file_info.publish_diagnostics(session);
     }
 
     /* Load manifest to identify the module characteristics.
@@ -361,6 +363,38 @@ impl ModuleSymbol {
             }
         }
         diagnostics
+    }
+
+    pub fn validate_manifest(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo){
+        let data_paths = symbol.borrow().as_module_package().data.clone();
+        let mut diagnostics = vec![];
+        for (data_url, data_range) in data_paths.iter() {
+            // validate csv file names, check that their models exist
+            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            if path.extension().unwrap_or_default() != "csv" || !path.exists(){
+                continue;
+            }
+            let Some(model_name) = path.file_stem().and_then(OsStr::to_str).map(|n| Sy!(n.to_string())) else {
+                continue;
+            };
+            let maybe_model = session.sync_odoo.models.get(&model_name).cloned();
+            let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
+            if !model_exists {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&model_name]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
+                        ..diagnostic.clone()
+                    });
+                }
+                symbol.borrow_mut().as_module_package_mut().not_found_models.insert(model_name.clone(), BuildSteps::VALIDATION);
+                session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(symbol.clone());
+            }
+        }
+        let manifest_path = PathBuf::from(symbol.borrow().as_module_package().root_path.clone()).join("__manifest__.py");
+        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
+        let mut manifest_file_info = (*manifest_file_info).borrow_mut();
+        manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::VALIDATION, diagnostics);
+        manifest_file_info.publish_diagnostics(session);
     }
 
     pub fn load_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) {
