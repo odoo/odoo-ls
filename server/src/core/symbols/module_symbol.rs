@@ -460,6 +460,10 @@ impl ModuleSymbol {
         symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().all_depends.contains(dir_name)
     }
 
+    pub fn get_all_depends(&self) -> &HashSet<OYarn> {
+        &self.all_depends
+    }
+
     pub fn get_dependencies(&self, step: usize, level: usize) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>>
     {
         self.dependencies.get(step)?.get(level)?.as_ref()

@@ -29,7 +29,7 @@ impl HoverFeature {
         Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: FeaturesUtils::build_markdown_description(session, Some(file_symbol.clone()), &evals, &call_expr, Some(offset))
+                value: FeaturesUtils::build_markdown_description(session, Some(file_symbol.clone()), Some(&file_info.borrow().uri), &evals, &call_expr, Some(offset))
             }),
             range: range
         })
@@ -48,7 +48,7 @@ impl HoverFeature {
             return Some(Hover { contents:
                 HoverContents::Markup(MarkupContent {
                     kind: lsp_types::MarkupKind::Markdown,
-                    value: FeaturesUtils::build_markdown_description(session, Some(file_symbol.clone()), &evals, &None, Some(offset))
+                    value: FeaturesUtils::build_markdown_description(session, Some(file_symbol.clone()), Some(&file_info.borrow().uri), &evals, &None, Some(offset))
                 }),
                 range: range
             })

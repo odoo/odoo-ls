@@ -4,7 +4,7 @@ use ruff_text_size::TextSize;
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::constants::SymType;
+use crate::constants::{PackageType, SymType};
 use crate::core::evaluation::{Evaluation, EvaluationValue, ExprOrIdent};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::odoo::SyncOdoo;
@@ -89,6 +89,33 @@ impl DefinitionFeature {
             }
         }
         model_found
+    }
+
+    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, file_path: &String, links: &mut Vec<LocationLink>) -> bool {
+        if file_symbol.borrow().typ() != SymType::PACKAGE(PackageType::MODULE) || !file_path.ends_with("__manifest__.py") {
+            // If not on manifest, we don't check for modules
+            return false;
+        };
+        let value = if let Some(eval_value) = eval.value.as_ref() {
+            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+                oyarn!("{}", expr.value.to_string())
+            } else {
+                return false;
+            }
+        } else {
+            return  false;
+        };
+        let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", value)).and_then(|m| m.upgrade()) else {
+            return false;
+        };
+        let path = PathBuf::from(module.borrow().paths()[0].clone()).join("__manifest__.py").sanitize();
+        links.push(LocationLink{
+            origin_selection_range: None,
+            target_uri: FileMgr::pathname2uri(&path),
+            target_selection_range: Range::default(),
+            target_range: Range::default(),
+        });
+        true
     }
 
     fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<LocationLink>) -> bool {
@@ -238,6 +265,7 @@ impl DefinitionFeature {
             let eval = evaluations[index].clone();
             if DefinitionFeature::check_for_domain_field(session, &eval, file_symbol, &call_expr, offset, &mut links) ||
               DefinitionFeature::check_for_compute_string(session, &eval, file_symbol,&call_expr, offset, &mut links) ||
+              DefinitionFeature::check_for_module_string(session, &eval, file_symbol, &file_info.borrow().uri, &mut links) ||
               DefinitionFeature::check_for_model_string(session, &eval, file_symbol, &mut links) ||
               DefinitionFeature::check_for_xml_id_string(session, &eval, file_symbol, &mut links) {
                 index += 1;

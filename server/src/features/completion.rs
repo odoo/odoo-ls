@@ -1112,7 +1112,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: FeaturesUtils::build_markdown_description(session, None, &symbols.iter().map(|symbol|
+                value: FeaturesUtils::build_markdown_description(session, None, None, &symbols.iter().map(|symbol|
                     Evaluation {
                         symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
                             context_of_symbol.clone(),

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::constants::SymType;
+use crate::constants::{PackageType, SymType};
 use crate::constants::OYarn;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::symbols::symbol::Symbol;
@@ -320,7 +320,14 @@ impl FeaturesUtils {
         vec![]
     }
 
-    pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>, call_expr: &Option<ExprCall>, offset: Option<usize>) -> String {
+    pub fn build_markdown_description(
+        session: &mut SessionInfo,
+        file_symbol: Option<Rc<RefCell<Symbol>>>,
+        file_path: Option<&String>,
+        evals: &Vec<Evaluation>,
+        call_expr: &Option<ExprCall>,
+        offset: Option<usize>
+    ) -> String {
         #[derive(Debug, Eq, PartialEq, Hash)]
         struct SymbolKey {
             name: OYarn,
@@ -339,6 +346,21 @@ impl FeaturesUtils {
             if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(expr))) = eval.value.as_ref() {
                 let mut block = S!("");
                 let str = expr.value.to_string();
+                if let Some(SymType::PACKAGE(PackageType::MODULE)) = file_symbol.as_ref().map(|fs| fs.borrow().typ())
+                && file_path.map_or(false, |fp| fp.ends_with("__manifest__.py")) {
+                    // If we are in manifest, we check if the string is a module and list the underlying module dependencies
+                    if let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", str)).and_then(|m| m.upgrade()) {
+                        block += format!("Module: {}", module.borrow().name()).as_str();
+                        let module_ref = module.borrow();
+                        let dependencies = module_ref.as_module_package().get_all_depends();
+                        if !dependencies.is_empty() {
+                            block += "  \n***  \nDependencies:  \n";
+                            block += &dependencies.iter().map(|dep| format!("- {}", dep)).join("  \n");
+                        }
+                    }
+                    blocks.push(block);
+                    continue;
+                }
                 let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
                 if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
                     let mut special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
@@ -365,7 +387,7 @@ impl FeaturesUtils {
                             .chain(evals.iter().take(index).cloned())
                             .chain(evals.iter().skip(index + 1).cloned())
                             .collect();
-                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset));
+                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, file_path, &string_domain_fields_evals, call_expr, Some(offset));
                         // remove the injected `base_attr` context value
                         special_string_syms.iter_mut().for_each(|sym_rc| {
                             sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
