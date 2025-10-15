@@ -622,7 +622,7 @@ impl FeaturesUtils {
     }
 
     /// Finds and returns useful links for an evaluation
-    fn get_useful_link(session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
+    fn get_useful_link(_session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
         // Possibly add more links in the future
         let Some(typ) = typ.upgrade_weak() else {
             return S!("")

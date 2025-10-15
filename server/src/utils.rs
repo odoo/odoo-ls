@@ -249,19 +249,22 @@ pub fn has_template(template: &str) -> bool {
     TEMPLATE_REGEX.is_match(template)
 }
 
-pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Option<String> {
-    let mut invalid = false;
+pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+    let mut invalid = None;
 
     let result = TEMPLATE_REGEX.replace_all(template, |captures: &regex::Captures| -> String{
         let key = captures[1].to_string();
         if let Some(value) = vars.get(&key) {
             value.clone()
         } else {
-            invalid = true;
+            invalid = Some(format!("Invalid key ({}) in pattern", key));
             S!("")
         }
     });
-    if invalid {None} else {Some(S!(result))}
+    match invalid {
+        Some(err) => Err(err),
+        None => Ok(S!(result)),
+    }
 }
 
 
@@ -282,7 +285,7 @@ pub fn build_pattern_map(ws_folders: &HashMap<String, String>) -> HashMap<String
 /// While also checking it with the predicate function.
 /// pass `|_| true` to skip the predicate check.
 /// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
-pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Option<String>
+pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Result<String, String>
 where
     F: Fn(&String) -> bool,
     P: AsRef<Path>
@@ -291,19 +294,18 @@ where
         if let Some(path) = workspace_name.and_then(|name| ws_folders.get(name)) {
             pattern_map.insert(S!("workspaceFolder"), path.clone());
         }
-        if let Some(path) = fill_template(template, &pattern_map) {
-            if predicate(&path) {
-                return Some(path);
-            }
-            // Attempt to convert the path to an absolute path
-            if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
-                let abs_path    = abs_path.sanitize();
-                if predicate(&abs_path) {
-                    return Some(abs_path);
-                }
+        let path = fill_template(template, &pattern_map)?;
+        if predicate(&path) {
+            return Ok(path);
+        }
+        // Attempt to convert the path to an absolute path
+        if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
+            let abs_path    = abs_path.sanitize();
+            if predicate(&abs_path) {
+                return Ok(abs_path);
             }
         }
-        None
+        Err(format!("Failed to fill and validate path: {} from template {}", path, template))
     }
 
 fn is_really_module(directory_path: &str, entry: &DirEntry) -> bool {
