@@ -59,6 +59,9 @@ impl FeaturesUtils {
             let Some(ref arg_id) = keyword.arg else {
                 return vec![];
             };
+            if arg_id.as_str() == "inverse_name" {
+                return FeaturesUtils::find_inverse_name_field_symbol(session, from_module, field_value, call_expr);
+            }
             if !["compute", "inverse", "search"].contains(&arg_id.as_str()){
                 return vec![];
             }
@@ -81,7 +84,32 @@ impl FeaturesUtils {
         ) {
             return vec![];
         }
-        parent_class.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, false, true, false).0
+        parent_class.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, false, true, true, false).0
+    }
+
+    fn find_inverse_name_field_symbol(
+        session: &mut SessionInfo,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_value: &String,
+        call_expr: &ExprCall,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        let model_name = if let Some(Expr::StringLiteral(expr)) = call_expr.arguments.args.first() {
+            expr.value.to_string()
+        } else {
+            let Some(model_name) = call_expr.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
+                .and_then(|kw| match &kw.value {
+                    Expr::StringLiteral(expr) => Some(expr.value.to_string()),
+                    _ => None
+                }) else {
+                    return vec![];
+                };
+            model_name
+        };
+        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+            return vec![];
+        };
+        let main_syms = model.borrow().get_main_symbols(session, from_module.clone());
+        main_syms.iter().flat_map(|main_sym| main_sym.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, true, false, true, false).0).collect()
     }
 
     fn find_simple_decorator_field_symbol(
@@ -96,7 +124,7 @@ impl FeaturesUtils {
         if parent_class.borrow().as_class_sym()._model.is_none(){
             return vec![];
         }
-        parent_class.clone().borrow().get_member_symbol(session, field_name, from_module.clone(), false, false, true, false).0
+        parent_class.clone().borrow().get_member_symbol(session, field_name, from_module.clone(), false, true, false, true, false).0
     }
 
     fn find_nested_fields(
@@ -119,7 +147,7 @@ impl FeaturesUtils {
             let range_end = range_start + TextSize::new((name.len() + 1) as u32);
             let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
             if cursor_section {
-                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
+                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, false,true, false).0;
                 return fields.into_iter().map(|f| (f, TextRange::new(range_start, range_end - TextSize::new(1)))).collect();
             } else {
                 let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
@@ -127,6 +155,7 @@ impl FeaturesUtils {
                     from_module.clone(),
                     false,
                     true,
+                    false,
                     true,
                     false);
                 if symbols.is_empty() {

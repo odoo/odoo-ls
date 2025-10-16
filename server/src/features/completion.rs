@@ -1022,6 +1022,7 @@ fn add_nested_field_names(
                     from_module.clone(),
                     false,
                     true,
+                    false,
                     true,
                     false);
                 if symbols.is_empty() {

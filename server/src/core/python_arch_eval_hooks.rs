@@ -1155,7 +1155,7 @@ impl PythonArchEvalHooks {
         for arg in arguments.args.iter() {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_string();
-            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
+            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, true, false, true, false);
             if syms.is_empty(){
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {

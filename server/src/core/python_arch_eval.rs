@@ -819,7 +819,7 @@ impl PythonArchEval {
                     let symbol_type_rc = symbol_eval[0].upgrade_weak().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
                     if symbol_type.typ() == SymType::CLASS {
-                        let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false);
+                        let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false, false);
                         if iter.len() == 1 {
                             SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH_EVAL);
                             SyncOdoo::build_now(session, &iter[0], BuildSteps::VALIDATION);
@@ -1049,6 +1049,7 @@ impl PythonArchEval {
                 from_module.clone(),
                 false,
                 true,
+                false,
                 true,
                 false);
             if ix == split_expr.len() - 1 {

@@ -894,7 +894,7 @@ impl Evaluation {
                                     }
                                 }
                                 //1: find __init__ method
-                                let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module.clone(), true, false, false, false);
+                                let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module.clone(), true, false, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(init) = init.0.first() {
                                     let init_sym_file = init.borrow().get_file().as_ref().unwrap().upgrade().unwrap().clone();
@@ -1052,7 +1052,7 @@ impl Evaluation {
                                 }
                             }
                             let is_super = ibase.is_weak() && ibase.as_weak().is_super;
-                            let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
+                            let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, false, true, is_super);
                             for diagnostic in attributes_diagnostics.iter_mut(){
                                 diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
                             }
@@ -1278,7 +1278,7 @@ impl Evaluation {
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                         let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
-                        let (operator_functions, diags) = base_sym.borrow().get_member_symbol(session, &S!(method), module.clone(), true, false, false, false);
+                        let (operator_functions, diags) = base_sym.borrow().get_member_symbol(session, &S!(method), module.clone(), true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter(){
                             for eval in operator_function.borrow().evaluations().unwrap_or(&vec![]).iter() {
@@ -1581,6 +1581,7 @@ impl Evaluation {
                                 from_module.clone(),
                                 false,
                                 true,
+                                false,
                                 false,
                                 false);
                             if symbols.is_empty() {

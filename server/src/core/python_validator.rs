@@ -521,9 +521,10 @@ impl PythonValidator {
                             false,
                             false,
                             true,
+                            true,
                             false
                         );
-                        let method_found = symbols.iter().any(|symbol| symbol.borrow().typ() == SymType::FUNCTION);
+                        let method_found = !symbols.is_empty();
                         if !method_found{
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
