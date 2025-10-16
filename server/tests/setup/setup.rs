@@ -51,7 +51,6 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
         panic!("Python not found")
     };
     config.python_path = python_cmd;
-    config.refresh_mode = odoo_ls_server::core::config::RefreshMode::Off;
     config.diag_missing_imports = DiagMissingImportsMode::All;
 
     let (s, r) = crossbeam_channel::unbounded();

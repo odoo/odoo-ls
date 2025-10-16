@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
 
-use crate::{core::{config::RefreshMode, file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
+use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
 pub struct SessionInfo<'a> {
     sender: Sender<Message>,
@@ -93,36 +93,21 @@ impl <'a> SessionInfo<'a> {
     /*
     * Request an update of the file in the index.
     * path: path of the file
-    * process_now: indicate if the current action is due to a save action
     * forced_delay: indicate that we want to force a delay
      */
-    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, is_save: bool, forced_delay: bool) {
+    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, forced_delay: bool) {
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
-            if session.sync_odoo.config.refresh_mode == RefreshMode::OnSave {
-                if is_save {
-                    let _ = SyncOdoo::_unload_path(session, &path, false);
-                    Odoo::search_symbols_to_rebuild(session, &path.sanitize());
-                    SyncOdoo::process_rebuilds(session);
-                }
-                return;
-            }
-            if session.sync_odoo.config.refresh_mode == RefreshMode::Adaptive &&
-            session.sync_odoo.get_rebuild_queue_size() < 10 {
+            if session.sync_odoo.get_rebuild_queue_size() < 10 {
                 let _ = SyncOdoo::_unload_path(session, &path, false);
                 Odoo::search_symbols_to_rebuild(session, &path.sanitize());
                 SyncOdoo::process_rebuilds(session);
-            } else {
-                if forced_delay {
-                    session.sync_odoo.watched_file_updates.store(session.sync_odoo.watched_file_updates.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
-                }
-                let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now(), forced_delay}));
+                return;
             }
-        } else {
-            if forced_delay {
-                session.sync_odoo.watched_file_updates.store(session.sync_odoo.watched_file_updates.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
-            }
-            let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now(), forced_delay}));
+        } 
+        if forced_delay {
+            session.sync_odoo.watched_file_updates.store(session.sync_odoo.watched_file_updates.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
         }
+        let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now(), forced_delay}));
     }
 
     pub fn request_reload(session: &mut SessionInfo) {

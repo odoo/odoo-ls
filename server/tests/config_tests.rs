@@ -562,40 +562,6 @@ fn test_no_conflict_when_config_files_point_to_same_odoo_path() {
 }
 
 #[test]
-fn test_conflict_between_config_files_on_refresh_mode() {
-    let temp = TempDir::new().unwrap();
-    let ws1 = temp.child("ws1");
-    let ws2 = temp.child("ws2");
-    ws1.create_dir_all().unwrap();
-    ws2.create_dir_all().unwrap();
-
-    // ws1 config: refresh_mode = "onSave"
-    let ws1_toml = r#"
-        [[config]]
-        name = "default"
-        refresh_mode = "on_save"
-    "#;
-    ws1.child("odools.toml").write_str(ws1_toml).unwrap();
-
-    // ws2 config: refresh_mode = "adaptive"
-    let ws2_toml = r#"
-        [[config]]
-        name = "default"
-        refresh_mode = "adaptive"
-    "#;
-    ws2.child("odools.toml").write_str(ws2_toml).unwrap();
-
-    let mut ws_folders = HashMap::new();
-    ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
-    ws_folders.insert(S!("ws2"), ws2.path().sanitize().to_string());
-
-    // Should error due to conflicting refresh_mode values
-    let result = get_configuration(&ws_folders, &None);
-    assert!(result.is_err());
-    assert!(result.err().unwrap().contains("Conflict detected"));
-}
-
-#[test]
 fn test_merge_different_odoo_paths_and_addons_paths() {
     let temp = TempDir::new().unwrap();
     let ws1 = temp.child("ws1");

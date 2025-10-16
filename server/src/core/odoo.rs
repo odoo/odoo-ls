@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, oyarn, Sy};
-use super::config::{self, default_profile_name, get_configuration, ConfigEntry, ConfigFile, RefreshMode};
+use super::config::{self, default_profile_name, get_configuration, ConfigEntry, ConfigFile};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -1372,7 +1372,7 @@ impl Odoo {
     }
 
     fn handle_file_update(session: &mut SessionInfo, file_uris: &Vec<Uri>) {
-        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         for uri in file_uris.iter() {
@@ -1383,7 +1383,7 @@ impl Odoo {
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
             let (valid, updated) = Odoo::update_file_cache(session, path.clone(), None, -100);
             if valid && updated {
-                Odoo::update_file_index(session, path, true, false, true);
+                Odoo::update_file_index(session, path, false, true);
             }
         }
     }
@@ -1399,7 +1399,7 @@ impl Odoo {
                     text: params.text_document.text}]), params.text_document.version);
             if valid {
                 session.sync_odoo.opened_files.push(path.sanitize());
-                if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+                if session.sync_odoo.state_init == InitState::NOT_READY {
                     return
                 }
                 let tree = session.sync_odoo.path_to_main_entry_tree(&path);
@@ -1413,7 +1413,7 @@ impl Odoo {
                     for custom_entry in ep_mgr.borrow().custom_entry_points.iter() {
                         if custom_entry.borrow().path == tree_path.sanitize() {
                             if updated{
-                                Odoo::update_file_index(session, path,true, true, false);
+                                Odoo::update_file_index(session, path, true, false);
                             }
                             return;
                         }
@@ -1421,7 +1421,7 @@ impl Odoo {
                     EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize(), &path.sanitize());
                     SyncOdoo::process_rebuilds(session);
                 } else if updated {
-                    Odoo::update_file_index(session, path,true, true, false);
+                    Odoo::update_file_index(session, path, true, false);
                 }
             }
         }
@@ -1487,7 +1487,7 @@ impl Odoo {
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
-        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         for f in params.files.iter() {
@@ -1518,7 +1518,7 @@ impl Odoo {
     }
 
     pub fn handle_did_create(session: &mut SessionInfo, params: CreateFilesParams) {
-        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         for f in params.files.iter() {
@@ -1543,7 +1543,7 @@ impl Odoo {
     }
 
     pub fn handle_did_delete(session: &mut SessionInfo, params: DeleteFilesParams) {
-        if session.sync_odoo.config.refresh_mode == RefreshMode::Off || session.sync_odoo.state_init == InitState::NOT_READY {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         for f in params.files.iter() {
@@ -1563,10 +1563,10 @@ impl Odoo {
             let version = params.text_document.version;
             let (valid, updated) = Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version);
             if valid && updated {
-                if (matches!(session.sync_odoo.config.refresh_mode, RefreshMode::Off | RefreshMode::OnSave)) || session.sync_odoo.state_init == InitState::NOT_READY {
+                if session.sync_odoo.state_init == InitState::NOT_READY {
                     return
                 }
-                Odoo::update_file_index(session, path, false, false, false);
+                Odoo::update_file_index(session, path, false, false);
             }
         }
     }
@@ -1577,10 +1577,9 @@ impl Odoo {
             return; //config file update, handled by the config file handler
         }
         session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
-        if session.sync_odoo.config.refresh_mode != RefreshMode::OnSave || session.sync_odoo.state_init == InitState::NOT_READY {
-            return
-        }
-        Odoo::update_file_index(session, path,true, false, false);
+        return;
+        //No need to update the index on save, as the file change event will do it
+        //Odoo::update_file_index(session, path,true, false, false);
     }
 
     // return (valid, updated) booleans
@@ -1595,9 +1594,9 @@ impl Odoo {
         (false, false)
     }
 
-    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, is_save: bool, _is_open: bool, force_delay: bool) {
+    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, _is_open: bool, force_delay: bool) {
         if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
-            SessionInfo::request_update_file_index(session, &path, is_save, force_delay);
+            SessionInfo::request_update_file_index(session, &path, force_delay);
         }
     }
 

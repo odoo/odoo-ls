@@ -22,34 +22,6 @@ static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r#"^(\D+~)?\d+\.\d+$"#).unwrap()
 });
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RefreshMode {
-    OnSave,
-    Adaptive,
-    Off
-}
-impl Default for RefreshMode {
-    fn default() -> Self {
-        RefreshMode::Adaptive
-    }
-}
-
-impl FromStr for RefreshMode {
-
-    type Err = ();
-
-    fn from_str(input: &str) -> Result<RefreshMode, Self::Err> {
-        match input {
-            "afterDelay"  => Ok(RefreshMode::Adaptive),
-            "onSave"  => Ok(RefreshMode::OnSave),
-            "adaptive" => Ok(RefreshMode::Adaptive),
-            "off"  => Ok(RefreshMode::Off),
-            _      => Err(()),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Deserialize, Serialize, Clone, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagMissingImportsMode {
@@ -620,10 +592,6 @@ pub struct ConfigEntryRaw {
     #[schemars(with = "Option<MergeMethod>")]
     additional_stubs_merge: Option<Sourced<MergeMethod>>,
 
-    #[serde(default, serialize_with = "serialize_option_as_default")]
-    #[schemars(with = "Option<RefreshMode>")]
-    refresh_mode: Option<Sourced<RefreshMode>>,
-
     #[serde(default, serialize_with = "serialize_file_cache")]
     #[schemars(with = "Option<bool>")]
     file_cache: Option<Sourced<bool>>,
@@ -708,7 +676,6 @@ impl Default for ConfigEntryRaw {
             python_path: None,
             additional_stubs: None,
             additional_stubs_merge: None,
-            refresh_mode: None,
             file_cache: None,
             diag_missing_imports: None,
             ac_filter_model_names: None,
@@ -754,7 +721,6 @@ pub struct ConfigEntry {
     pub addons_paths: HashSet<String>,
     pub python_path: String,
     pub additional_stubs: HashSet<String>,
-    pub refresh_mode: RefreshMode,
     pub file_cache: bool,
     pub diag_missing_imports: DiagMissingImportsMode,
     pub ac_filter_model_names: bool,
@@ -774,7 +740,6 @@ impl Default for ConfigEntry {
             addons_paths: HashSet::new(),
             python_path: S!(get_python_command().unwrap_or_default()),
             additional_stubs: HashSet::new(),
-            refresh_mode: RefreshMode::default(),
             file_cache: true,
             diag_missing_imports: DiagMissingImportsMode::default(),
             ac_filter_model_names: true,
@@ -915,7 +880,6 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
         // Add initial source to all fields
         entry.addons_merge.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.additional_stubs_merge.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
-        entry.refresh_mode.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.file_cache.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.diag_missing_imports.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
         entry.ac_filter_model_names.as_mut().map(|sourced| sourced.sources.insert(path.sanitize()));
@@ -992,7 +956,6 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         },
         MergeMethod::Override => child.additional_stubs.clone(),
     };
-    let refresh_mode = child.refresh_mode.clone().or(parent.refresh_mode.clone());
     let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
     let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
     let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
@@ -1013,7 +976,6 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
         python_path,
         addons_paths,
         additional_stubs,
-        refresh_mode,
         file_cache,
         diag_missing_imports,
         ac_filter_model_names,
@@ -1314,12 +1276,6 @@ fn merge_all_workspaces(
                 (Some(paths), None) | (None, Some(paths)) => Some(paths),
                 (None, None) => None,
             };
-            merged_entry.refresh_mode = merge_sourced_options(
-                merged_entry.refresh_mode.clone(),
-                raw_entry.refresh_mode.clone(),
-                key.clone(),
-                "refresh_mode".to_string(),
-            )?;
             merged_entry.file_cache = merge_sourced_options(
                 merged_entry.file_cache.clone(),
                 raw_entry.file_cache.clone(),
@@ -1393,7 +1349,6 @@ fn merge_all_workspaces(
                 addons_paths: raw_entry.addons_paths.into_iter().flatten().map(|op| op.value).collect(),
                 python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!(get_python_command().unwrap_or_default())),
                 additional_stubs: raw_entry.additional_stubs.into_iter().flatten().map(|op| op.value).collect(),
-                refresh_mode: raw_entry.refresh_mode.map(|op| op.value).unwrap_or_default(),
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
