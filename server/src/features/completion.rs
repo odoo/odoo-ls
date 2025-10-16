@@ -34,6 +34,7 @@ pub enum ExpectedType {
     CLASS(Rc<RefCell<Symbol>>),
     SIMPLE_FIELD(Option<OYarn>),
     NESTED_FIELD(Option<OYarn>),
+    EXTERNAL_FIELD(OYarn), // Like in inverse_name='field_name', we attach the comodel_name
     METHOD_NAME,
     INHERITS,
 }
@@ -641,35 +642,44 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
             return complete_expr(arg, session, file, offset, is_param, &vec![]);
         }
     }
-    for keyword in expr_call.arguments.keywords.iter(){
-        if offset <= keyword.value.range().start().to_usize() || offset > keyword.value.range().end().to_usize() {
+    let Some(keyword) = expr_call.arguments.keywords.iter().find(|arg|
+        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()) else {
+        return None;
+    };
+    for callable_eval in callable_evals.iter() {
+        let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+        let Some(callable_sym) = callable.weak.upgrade() else {continue};
+        if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
             continue;
         }
-        for callable_eval in callable_evals.iter() {
-            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-            let Some(callable_sym) = callable.weak.upgrade() else {continue};
-            if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
-                continue;
+        let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
+            match kw_arg_id.id.as_str() {
+                "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(oyarn!("{}", callable_sym.borrow().name())))]),
+                "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
+                        Some(vec![ExpectedType::MODEL_NAME])
+                    } else {
+                        None
+                    },
+                "inverse_name" => {
+                    if let Some(Expr::StringLiteral(expr)) = expr_call.arguments.args.first() {
+                        Some(vec![ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))])
+                    } else {
+                        expr_call.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
+                        .and_then(|kw| match &kw.value {
+                            Expr::StringLiteral(expr) => Some(vec![ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))]),
+                            _ => None
+                        })
+                    }
+                },
+                "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
+                _ => None,
             }
-            let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
-                match kw_arg_id.id.as_str() {
-                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(oyarn!("{}", callable_sym.borrow().name())))]),
-                    "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
-                            Some(vec![ExpectedType::MODEL_NAME])
-                        } else {
-                            None
-                        },
-                    "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
-                    _ => None,
-                }
-            ) else {
-                continue;
-            };
-            return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
-        }
-        return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
+        ) else {
+            continue;
+        };
+        return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
     }
-    None
+    return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
 }
 
 fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
@@ -773,6 +783,15 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                         session, &mut items, current_module.clone(), expr_string_literal.value.to_str(), parent_class, false, maybe_field_type),
                     _ => unreachable!()
                 }
+            },
+            ExpectedType::EXTERNAL_FIELD(model_name) => {
+                let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+                    break;
+                };
+                let main_syms = model.borrow().get_main_symbols(session, current_module.clone());
+                main_syms.iter().for_each(|model_sym| {
+                    add_model_attributes(session, &mut items, current_module.clone(), model_sym.clone(), false, true, false, expr_string_literal.value.to_str(), &Some(S!("Many2one")))
+                });
             },
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},

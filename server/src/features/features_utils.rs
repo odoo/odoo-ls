@@ -53,7 +53,7 @@ impl FeaturesUtils {
         call_expr: &ExprCall,
         offset: &usize,
     ) -> Vec<Rc<RefCell<Symbol>>>{
-        if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
+        if let Some(keyword) = call_expr.arguments.keywords.iter().find(|arg|
             *offset > arg.range().start().to_usize() && *offset <= arg.range().end().to_usize()
         ){
             let Some(ref arg_id) = keyword.arg else {
