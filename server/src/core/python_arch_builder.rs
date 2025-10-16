@@ -155,7 +155,7 @@ impl PythonArchBuilder {
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
     }
 
-    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, _range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -170,8 +170,7 @@ impl PythonArchBuilder {
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    let file_tree_flattened = [import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree_flattened));
+                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, import_result.file_tree.clone()));
                     continue;
                 }
                 let mut all_name_allowed = true;
@@ -255,10 +254,10 @@ impl PythonArchBuilder {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, 0, &import_stmt.range)?
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
                     self._visit_ann_assign(session, ann_assign_stmt);

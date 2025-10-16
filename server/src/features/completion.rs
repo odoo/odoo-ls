@@ -311,7 +311,7 @@ fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, s
     for alias in stmt_import.names.iter() {
         if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
             let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
-            let names = import_resolver::get_all_valid_names(session, file, None, to_complete, None, false);
+            let names = import_resolver::get_all_valid_names(session, file, None, to_complete, 0, false);
             for (name, sym_typ) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
@@ -332,7 +332,7 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol
     if let Some(module) = stmt_import.module.as_ref() {
         if module.range.start().to_usize() < offset && module.range.end().to_usize() >= offset {
             let to_complete = module.id.to_string().get(0 .. offset - module.range.start().to_usize()).unwrap_or("").to_string();
-            let names = import_resolver::get_all_valid_names(session, file, Some(to_complete), S!(""), Some(stmt_import.level), true);
+            let names = import_resolver::get_all_valid_names(session, file, Some(to_complete), S!(""), stmt_import.level, true);
             for (name, sym_type) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
@@ -345,7 +345,7 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol
     for alias in stmt_import.names.iter() {
         if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
             let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
-            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref().map(|m| m.id.to_string()), to_complete, Some(stmt_import.level), false);
+            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref().map(|m| m.id.to_string()), to_complete, stmt_import.level, false);
             for (name, sym_type) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),

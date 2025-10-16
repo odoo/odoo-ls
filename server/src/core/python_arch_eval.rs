@@ -146,10 +146,10 @@ impl PythonArchEval {
     fn visit_stmt(&mut self, session: &mut SessionInfo, stmt: &Stmt) {
         match stmt {
             Stmt::Import(import_stmt) => {
-                self.eval_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)
+                self.eval_symbols_from_import_stmt(session, None, &import_stmt.names, 0, &import_stmt.range)
             },
             Stmt::ImportFrom(import_from_stmt) => {
-                self.eval_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)
+                self.eval_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
             },
             Stmt::ClassDef(class_stmt) => {
                 self.visit_class_def(session, class_stmt);
@@ -379,7 +379,7 @@ impl PythonArchEval {
         false
     }
 
-    fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, _range: &TextRange) {
+    fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) {
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
@@ -413,7 +413,7 @@ impl PythonArchEval {
                         }
                     }
                 } else {
-                    let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
+                    let mut file_tree = _import_result.file_tree.clone();
                     file_tree.extend(_import_result.name.split(".").map(|s| oyarn!("{}", s)));
                     self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
@@ -428,7 +428,7 @@ impl PythonArchEval {
                 }
 
             } else {
-                let mut file_tree = [_import_result.file_tree.0.clone(), _import_result.file_tree.1.clone()].concat();
+                let mut file_tree = _import_result.file_tree.clone();
                 file_tree.extend(_import_result.name.split(".").map(|s| oyarn!("{}", s)));
                 if BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
                     continue;

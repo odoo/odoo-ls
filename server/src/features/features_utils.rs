@@ -473,6 +473,7 @@ impl FeaturesUtils {
             SymType::VARIABLE if symbol.as_variable().is_parameter => S!("parameter"),
             SymType::FUNCTION if symbol.as_func().is_property => S!("property"),
             SymType::FUNCTION if symbol.parent().unwrap().upgrade().unwrap().borrow().typ() == SymType::CLASS => S!("method"),
+            SymType::PACKAGE(_) => S!("package"),
             type_ => type_.to_string().to_lowercase()
         }
     }

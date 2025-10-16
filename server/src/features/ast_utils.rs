@@ -4,13 +4,15 @@ use std::cell::RefCell;
 use crate::constants::{BuildStatus, BuildSteps, SymType};
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::odoo::SyncOdoo;
+use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
 use crate::S;
+use ruff_python_ast::name::Name;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
-use ruff_python_ast::{Alias, ExceptHandler, Expr, ExprCall, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
-use ruff_text_size::{Ranged, TextRange, TextSize};
+use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
+use ruff_text_size::{Ranged, TextRange, TextSize, TextSlice};
 use tracing::warn;
 
 pub struct AstUtils {}
@@ -23,6 +25,10 @@ impl AstUtils {
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
         for stmt in file_info_ast.get_stmts().unwrap().iter() {
+            //we have to handle imports differently as symbols are not visible in file.
+            if let Some(test_import) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
+                return test_import;
+            }
             (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
@@ -75,6 +81,99 @@ impl AstUtils {
         }
     }
 
+    fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>, Option<ExprCall>)> {
+        match stmt {
+            //for all imports, the idea will be to check if we are on the last name of the import (then it has benn imported already and we can fallback on it),
+            //or then take the full tree to the offset symbol and resolve_import on it as it was in a 'from' clause.
+            Stmt::Import(stmt) => {
+                for alias in stmt.names.iter() {
+                    if alias.range().contains(TextSize::new(offset)) {
+                        let mut is_last = false;
+                        let (to_analyze, range) = if alias.name.range().contains(TextSize::new(offset)) {
+                            let next_dot_offset = alias.name.id.as_str()[offset as usize - alias.range().start().to_usize()..].find(".");
+                            if let Some(next_dot_offset) = next_dot_offset {
+                                let end = offset as usize + next_dot_offset;
+                                let text = &alias.name.id.as_str()[..end - alias.range().start().to_usize()];
+                                let start_range = text.rfind(".").map(|p| p+1).unwrap_or(0) + alias.name.range().start().to_usize();
+                                (text, TextRange::new(TextSize::new(start_range as u32), TextSize::new(end as u32)))
+                            } else {
+                                is_last = true;
+                                (alias.name.id.as_str(), alias.name.range())
+                            }
+                        } else if alias.asname.is_some() && alias.asname.as_ref().unwrap().range().contains(TextSize::new(offset)) {
+                            is_last = true;
+                            (alias.asname.as_ref().unwrap().id.as_str(), alias.asname.as_ref().unwrap().range())
+                        } else {
+                            return None;
+                        };
+                        if !is_last {
+                            //we import as a from_stmt, to refuse import of variables, as the import stmt is not complete
+                            let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() };
+                            let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
+                            if let Some(symbol) = from_symbol {
+                                let result = AnalyzeAstResult {
+                                    evaluations: vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), None)],
+                                    diagnostics: vec![],
+                                };
+                                return Some((result, Some(range), None));
+                            }
+                        } else {
+                            let res = resolve_import_stmt(session, file_symbol, None, &[
+                                Alias { //create a dummy alias with a asname to force full import
+                                    name: Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() },
+                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range().clone(), node_index: AtomicNodeIndex::dummy() }),
+                                    range: alias.range(),
+                                    node_index: AtomicNodeIndex::dummy()
+                                }], 0, &mut None);
+                            let res = res.into_iter().filter(|s| s.found).collect::<Vec<_>>();
+                            if !res.is_empty() {
+                                let result = AnalyzeAstResult {
+                                    evaluations: res.iter().map(
+                                        |s| Evaluation::eval_from_symbol(&Rc::downgrade(&s.symbol), None)
+                                    ).collect(),
+                                    diagnostics: vec![],
+                                };
+                                return Some((result, Some(range), None));
+                            }
+                        }
+                        return None;
+                    }
+                }
+            },
+            Stmt::ImportFrom(stmt) => {
+                //only check module as names are already supported by default ast walking and name resolution
+                if stmt.module.is_some() && stmt.module.as_ref().unwrap().range().contains(TextSize::new(offset)) {
+                    let module = stmt.module.as_ref().unwrap();
+                    let (to_analyze, range) = if module.range().contains(TextSize::new(offset)) {
+                        let next_dot_offset = module.id.as_str()[offset as usize - module.range().start().to_usize()..].find(".");
+                        if let Some(next_dot_offset) = next_dot_offset {
+                            let end = offset as usize + next_dot_offset;
+                            let text = &module.id.as_str()[..end - module.range().start().to_usize()];
+                            let start_range = text.rfind(".").map(|p| p+1).unwrap_or(0) + module.range().start().to_usize();
+                            (text, TextRange::new(TextSize::new(start_range as u32), TextSize::new(end as u32)))
+                        } else {
+                            (module.id.as_str(), module.range())
+                        }
+                    } else {
+                        return None;
+                    };
+                    let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() };
+                    let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
+                    if let Some(symbol) = from_symbol {
+                        let result = AnalyzeAstResult {
+                            evaluations: vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), None)],
+                            diagnostics: vec![],
+                        };
+                        return Some((result, Some(range), None));
+                    }
+                }
+            },
+            _ => {
+                return None;
+            }
+        }
+        None
+    }
 }
 
 
@@ -225,7 +324,6 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
             let idents = match stmt {
                 Stmt::FunctionDef(stmt) => vec![&stmt.name],
                 Stmt::ClassDef(stmt) => vec![&stmt.name],
-                Stmt::ImportFrom(stmt) => if let Some(ref module) = stmt.module {vec![module]} else {vec![]},
                 Stmt::Global(stmt) => stmt.names.iter().collect(),
                 Stmt::Nonlocal(stmt) => stmt.names.iter().collect(),
                 _ => vec![],
@@ -237,8 +335,6 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                     break;
                 }
             }
-        } else {
-            walk_stmt(self, stmt);
         }
     }
 }

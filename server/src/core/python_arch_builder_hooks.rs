@@ -230,7 +230,7 @@ impl PythonArchBuilderHooks {
                     main_odoo_symbol = main_ep.borrow().get_symbol();
                 }
                 if let Some(main_odoo_symbol) = main_odoo_symbol {
-                    let werkzeug_patch = manual_import(session, &main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, None, &mut None);
+                    let werkzeug_patch = manual_import(session, &main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, 0, &mut None);
                     for werkzeug_patch in werkzeug_patch {
                         if werkzeug_patch.found {
                             info!("monkeypatch manually found");
