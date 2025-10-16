@@ -430,7 +430,7 @@ impl PythonArchEval {
             } else {
                 let mut file_tree = _import_result.file_tree.clone();
                 file_tree.extend(_import_result.name.split(".").map(|s| oyarn!("{}", s)));
-                if BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
+                if session.sync_odoo.config.diag_missing_imports != DiagMissingImportsMode::All && BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
                     continue;
                 }
                 if !self.safe_import.last().unwrap() {
