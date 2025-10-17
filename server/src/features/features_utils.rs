@@ -45,7 +45,7 @@ struct InferredType {
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
-    pub fn find_field_symbols(
+    pub fn find_kwarg_methods_symbols(
         session: &mut SessionInfo,
         scope: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
@@ -147,7 +147,7 @@ impl FeaturesUtils {
             let range_end = range_start + TextSize::new((name.len() + 1) as u32);
             let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
             if cursor_section {
-                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, false,true, false).0;
+                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, false, true, false).0;
                 return fields.into_iter().map(|f| (f, TextRange::new(range_start, range_end - TextSize::new(1)))).collect();
             } else {
                 let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
@@ -342,9 +342,9 @@ impl FeaturesUtils {
         if string_domain_fields_syms.len() >= 1 {
             return string_domain_fields_syms.into_iter().map(|(sym, _)| sym).collect();
         }
-        let compute_kwarg_syms = FeaturesUtils::find_field_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, &offset);
-        if compute_kwarg_syms.len() >= 1{
-            return compute_kwarg_syms;
+        let kwarg_syms = FeaturesUtils::find_kwarg_methods_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, &offset);
+        if kwarg_syms.len() >= 1{
+            return kwarg_syms;
         }
         vec![]
     }

@@ -429,7 +429,7 @@ impl PythonValidator {
                             }
                             let Some(field_type) = symbol
                                 .borrow()
-                                .get_member_symbol(session, &S!("type"), None, false, false, false, false)
+                                .get_member_symbol(session, &S!("type"), None, false, false, false, false, false)
                                 .0.first()
                                 .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
                                 .and_then(|evals| evals.first().cloned())
@@ -452,7 +452,7 @@ impl PythonValidator {
                                     };
                                     let found = related_field_class_sym
                                         .borrow()
-                                        .get_member_symbol(session, &S!("type"), None, false, false, false, false)
+                                        .get_member_symbol(session, &S!("type"), None, false, false, false, false, false)
                                         .0.first()
                                         .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
                                         .and_then(|evals| evals.first().cloned())
@@ -574,7 +574,42 @@ impl PythonValidator {
                                     ..diagnostic_base.clone()
                                 });
                             }
-
+                        } else {
+                            // Check if we have a many2one field pointing to the comodel with another name than the current model
+                            let mut comodel_eval_weaks = Vec::new();
+                            for sym in symbols.iter() {
+                                let sym_ref = sym.borrow();
+                                let evals = sym_ref.evaluations().as_ref().unwrap().iter();
+                                for eval in evals {
+                                    let followed = Symbol::follow_ref(
+                                        &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                                        session,
+                                        &mut None,
+                                        true,
+                                        false,
+                                        None,
+                                    );
+                                    comodel_eval_weaks.extend(followed);
+                                }
+                            }
+                            for comodel_eval_weak in comodel_eval_weaks {
+                                let Some(model_name) = comodel_eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                                    continue;
+                                };
+                                if model_name == model_data.name.to_string() { // valid
+                                    continue;
+                                }
+                                let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                    continue;
+                                };
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[&inverse_name, &model_data.name, &model_name]) {
+                                    self.diagnostics.push(Diagnostic {
+                                        range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                        ..diagnostic_base.clone()
+                                    });
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

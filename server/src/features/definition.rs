@@ -158,10 +158,10 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let compute_symbols = FeaturesUtils::find_field_symbols(
+        let method_symbols = FeaturesUtils::find_kwarg_methods_symbols(
             session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &value, call_expr, &offset
         );
-        compute_symbols.iter().for_each(|field|{
+        method_symbols.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
@@ -173,7 +173,7 @@ impl DefinitionFeature {
                 });
             }
         });
-        compute_symbols.len() > 0
+        method_symbols.len() > 0
     }
 
     pub fn add_display_name_compute_methods(session: &mut SessionInfo, links: &mut Vec<LocationLink>, expr: &ExprOrIdent, file_symbol: &Rc<RefCell<Symbol>>, offset: usize) {
@@ -191,7 +191,7 @@ impl DefinitionFeature {
             let Some(symbol) = eval_ptr.upgrade_weak() else {
                 return  vec![];
             };
-            symbol.borrow().get_member_symbol(session, &S!("_compute_display_name"), maybe_module.clone(), false, false, true, false).0
+            symbol.borrow().get_member_symbol(session, &S!("_compute_display_name"), maybe_module.clone(), false, false, true, true, false).0
         }).collect::<Vec<_>>();
         for symbol in symbols {
             if let Some(file) = symbol.borrow().get_file() {

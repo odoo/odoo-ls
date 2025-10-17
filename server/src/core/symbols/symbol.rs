@@ -2614,6 +2614,29 @@ impl Symbol {
         }
     }
 
+    pub fn is_method(&self, session: &mut SessionInfo) -> bool {
+        match self.typ() {
+            SymType::FUNCTION => true,
+            SymType::VARIABLE => {
+                if let Some(evals) = self.evaluations().as_ref() {
+                    for eval in evals.iter() {
+                        let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
+                        for eval_weak in eval_weaks.iter() {
+                            if let Some(symbol) = eval_weak.upgrade_weak() {
+                                if symbol.borrow().typ() == SymType::FUNCTION {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                false
+            },
+            _ => false,
+        }
+    }
+
     pub fn is_inheriting_from_field(&self, session: &mut SessionInfo) -> bool {
         // if not class return false
         if !matches!(self.typ(), SymType::CLASS) {
@@ -2807,7 +2830,7 @@ impl Symbol {
                 content_syms = content_syms.iter().filter(|x| x.borrow().is_field(session)).cloned().collect();
             }
             if only_methods {
-                content_syms = content_syms.iter().filter(|x| x.borrow().typ() == SymType::FUNCTION).cloned().collect();
+                content_syms = content_syms.iter().filter(|x| x.borrow().is_method(session)).cloned().collect();
             }
             if !content_syms.is_empty() {
                 if all {

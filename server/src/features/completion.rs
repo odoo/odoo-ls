@@ -790,7 +790,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                 };
                 let main_syms = model.borrow().get_main_symbols(session, current_module.clone());
                 main_syms.iter().for_each(|model_sym| {
-                    add_model_attributes(session, &mut items, current_module.clone(), model_sym.clone(), false, true, false, expr_string_literal.value.to_str(), &Some(S!("Many2one")))
+                    add_model_attributes(session, &mut items, current_module.clone(), model_sym.clone(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
                 });
             },
             ExpectedType::CLASS(_) => {},
