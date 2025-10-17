@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::{constants::*, Sy};
+use crate::{constants::*, oyarn, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -530,6 +530,45 @@ impl PythonValidator {
                                 continue;
                             };
                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03018, &[&method_name]) {
+                                self.diagnostics.push(Diagnostic {
+                                    range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                    ..diagnostic_base.clone()
+                                });
+                            }
+
+                        }
+                    }
+                    if let Some(inverse_name) = eval_weak.as_weak().context.get(&S!("inverse_name")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(model_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                            continue;
+                        };
+                        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+                            continue;
+                        };
+                        let Some(module) = class_ref.find_module() else {
+                            continue;
+                        };
+                        let main_syms = model.borrow().get_main_symbols(session, Some(module.clone()));
+                        let symbols: Vec<_> = main_syms.iter().flat_map(|main_sym|
+                            main_sym.clone().borrow().get_member_symbol(session, &inverse_name, Some(module.clone()), false, true, false, true, false).0
+                        ).collect();
+                        let method_found = !symbols.is_empty();
+                        if !method_found{
+                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03021, &[&inverse_name, &model_name]) {
+                                self.diagnostics.push(Diagnostic {
+                                    range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                    ..diagnostic_base.clone()
+                                });
+                            }
+                        }
+                        if symbols.iter().any(|sym| !sym.borrow().is_specific_field(session, &["Many2one"])) {
+                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03022, &[]) {
                                 self.diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                     ..diagnostic_base.clone()

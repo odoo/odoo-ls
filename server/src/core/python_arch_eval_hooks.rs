@@ -1031,6 +1031,7 @@ impl PythonArchEvalHooks {
             ("comodel_name", "str"),
             ("related", "str"),
             ("compute", "str"),
+            ("inverse_name", "str"),
             ("delegate", "bool"),
             ("required", "bool"),
             ("default", "bool"),

@@ -156,6 +156,14 @@ OLS03019, DiagnosticSetting::Error, "Compute method not set to modify this field
  */
 OLS03020, DiagnosticSetting::Warning, "Model {0} is shadowing an existing model in dependencies",
 /**
+ * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model.
+ */
+OLS03021, DiagnosticSetting::Error, "Inverse field {0} does not exist on comodel {1}",
+/**
+ * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model.
+ */
+OLS03022, DiagnosticSetting::Error, "Inverse field is not a Many2one field",
+/**
 * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
 * Do not store any other information in it.
 */
