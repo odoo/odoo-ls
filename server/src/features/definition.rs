@@ -76,7 +76,7 @@ impl DefinitionFeature {
                 }
             }
             if let Some(model_file_sym) = class_symbol.get_file().and_then(|model_file_sym_weak| model_file_sym_weak.upgrade()){
-                let path = model_file_sym.borrow().paths()[0].clone();
+                let path = model_file_sym.borrow().get_symbol_first_path();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
                 model_found = true;
                 links.push(LocationLink{
