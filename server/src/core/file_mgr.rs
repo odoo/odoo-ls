@@ -616,7 +616,16 @@ impl FileMgr {
         if cfg!(windows) {
             slash = "/";
         }
-        let pre_uri = match url::Url::parse(&format!("file://{}{}", slash, s)) {
+        // If the path starts with \\\\, we want to remove it and also set slash to empty string
+        // Such that we have file://wsl.localhost for example
+        // For normal paths we do want file:///C:/...
+        let replaced = if s.starts_with("\\\\") {
+            slash = "";
+            s.replacen("\\\\", "", 1)
+        } else {
+            s.clone()
+        };
+        let pre_uri = match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
             Ok(pre_uri) => pre_uri,
             Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
         };
@@ -627,7 +636,8 @@ impl FileMgr {
     }
 
     pub fn uri2pathname(s: &str) -> String {
-        if let Ok(url) = url::Url::parse(s) {
+        let str_repr = s.replace("file:////", "file://");
+        if let Ok(url) = url::Url::parse(&str_repr) {
             if let Ok(url) = url.to_file_path() {
                 return url.sanitize();
             }

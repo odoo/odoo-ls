@@ -137,7 +137,8 @@ pub trait ToFilePath {
 impl ToFilePath for lsp_types::Uri {
 
     fn to_file_path(&self) -> Result<PathBuf, ()> {
-        let url = url::Url::from_str(self.as_str()).map_err(|_| ())?;
+        let str_repr = self.as_str().replace("file:////", "file://");
+        let url = url::Url::from_str(&str_repr).map_err(|_| ())?;
         url.to_file_path()
     }
 
