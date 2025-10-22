@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use crate::constants::{BuildStatus, BuildSteps, SymType};
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
+use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfo;
 use crate::threads::SessionInfo;
@@ -31,6 +33,7 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None, None);
         };
         let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
+        AstUtils::build_scope(session, &parent_symbol);
         let from_module;
         if let Some(module) = file_symbol.borrow().find_module() {
             from_module = ContextValue::MODULE(Rc::downgrade(&module));
@@ -55,6 +58,20 @@ impl AstUtils {
                 AstUtils::flatten_expr(&a.value) + &a.attr
             },
             _ => {S!("//Unhandled//")}
+        }
+    }
+
+    pub fn build_scope(session: &mut SessionInfo<'_>, scope: &Rc<RefCell<Symbol>>) {
+        if scope.borrow().typ() == SymType::FUNCTION {
+            let parent_func = scope.borrow().get_in_parents(&vec![SymType::FUNCTION], true);
+            let scope_to_test = parent_func.and_then(|w| w.upgrade());
+            let scope_to_test = scope_to_test.as_ref().unwrap_or(scope);
+            if scope_to_test.borrow().as_func().arch_status == BuildStatus::PENDING {
+                SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH);
+            }
+            if scope_to_test.borrow().as_func().arch_eval_status == BuildStatus::PENDING {
+                SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH_EVAL);
+            }
         }
     }
 

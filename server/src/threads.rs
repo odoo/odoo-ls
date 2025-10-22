@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, sync::{atomic::Ordering, Arc, Mutex}, time::Instant};
+use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
@@ -8,6 +8,7 @@ use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, Di
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
+use crate::{constants::MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART, create_session};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -96,37 +97,33 @@ impl <'a> SessionInfo<'a> {
     * forced_delay: indicate that we want to force a delay
      */
     pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, forced_delay: bool) {
+        if forced_delay {
+            session.sync_odoo.watched_file_updates += 1;
+        }
+        if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
+            let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::RESTART);
+            return;
+        }
+        let _ = SyncOdoo::_unload_path(session, &path, false);
+        Odoo::search_symbols_to_rebuild(session, &path.sanitize());
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
             if session.sync_odoo.get_rebuild_queue_size() < 10 {
-                let _ = SyncOdoo::_unload_path(session, &path, false);
-                Odoo::search_symbols_to_rebuild(session, &path.sanitize());
-                SyncOdoo::process_rebuilds(session);
+                SyncOdoo::process_rebuilds(session, false);
                 return;
             }
-        } 
-        if forced_delay {
-            session.sync_odoo.watched_file_updates.store(session.sync_odoo.watched_file_updates.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
         }
-        let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path: path.clone(), time: std::time::Instant::now(), forced_delay}));
-    }
-
-    pub fn request_reload(session: &mut SessionInfo) {
-        if let Some(sender) = &session.delayed_process_sender {
-            let _ = sender.send(DelayedProcessingMessage::REBUILD(std::time::Instant::now()));
-        } else {
-            SyncOdoo::reset(session, session.sync_odoo.config.clone());
-        }
-    }
-
-    pub fn update_auto_refresh_delay(&self, delay: u64) {
-        if let Some(sender) = &self.delayed_process_sender {
-            let _ = sender.send(DelayedProcessingMessage::UPDATE_DELAY(delay));
-        }
+        let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
     }
 
     pub fn request_delayed_rebuild(&self) {
         if let Some(sender) = &self.delayed_process_sender {
             let _ = sender.send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
+        }
+    }
+
+    pub fn update_delay_thread_delay_duration(&self, delay_ms: u64) {
+        if let Some(sender) = &self.delayed_process_sender {
+            let _ = sender.send(DelayedProcessingMessage::UPDATE_DELAY(delay_ms));
         }
     }
 
@@ -156,6 +153,7 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
     (value, error)
 }
 
+#[derive(Debug)]
 pub struct UpdateFileIndexData {
     pub path: PathBuf,
     pub time: Instant,
@@ -163,150 +161,93 @@ pub struct UpdateFileIndexData {
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub enum DelayedProcessingMessage {
-    UPDATE_DELAY(u64), //update the delay before starting any update
     PROCESS(Instant), //Process rebuilds after delay
-    UPDATE_FILE_INDEX(UpdateFileIndexData), //update the file after delay
-    REBUILD(Instant), //reset the database after the delay
+    RESTART, //Ask to restart server when no busy or git locked
+    UPDATE_DELAY(u64), //update the delay time
     EXIT, //exit the thread
+}
+
+pub fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>) {
+    let message = "Too many requests, possible change of branch, restarting Odoo LS";
+    info!(message);
+    {
+        let session = SessionInfo{
+            sender: sender_session.clone(),
+            receiver: receiver_session.clone(),
+            sync_odoo: &mut sync_odoo.lock().unwrap(),
+            delayed_process_sender: Some(delayed_process_sender.clone()),
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
+        };
+        // Drain channel before resetting
+        session.send_notification("$Odoo/restartNeeded", ());
+    }
 }
 
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
-    let mut restart_requested = false;
-    let mut normal_delay = std::time::Duration::from_millis(std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay, MAX_DELAY));
-    let check_reset =  |msg: Option<&DelayedProcessingMessage>| {
-        let length = sync_odoo.lock().unwrap().watched_file_updates.load(Ordering::SeqCst);
-        if length > 10 {
-            if let Some(main_entry_path) = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned() {
-                let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
-                while index_lock_path.exists(){
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                }
-            }
-            let message = "Too many requests, possible change of branch, restarting Odoo LS";
-            info!(message);
-            {
-                let session = SessionInfo{
-                    sender: sender_session.clone(),
-                    receiver: receiver_session.clone(),
-                    sync_odoo: &mut sync_odoo.lock().unwrap(),
-                    delayed_process_sender: Some(delayed_process_sender.clone()),
-                    noqas_stack: vec![],
-                    current_noqa: NoqaInfo::None,
-                };
-                session.send_notification(ShowMessage::METHOD, ShowMessageParams{
-                    typ: MessageType::INFO,
-                    message: message.to_string()
-                });
-                // Drain channel before resetting
-                session.send_notification("$Odoo/restartNeeded", ());
-            }
-            return true;
-
-        }
-        if matches!(msg, Some(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time: _, forced_delay: true}))){
-            sync_odoo.lock().unwrap().watched_file_updates.store( length - 1, Ordering::SeqCst);
-        }
-        false
-    };
-    'main_loop: loop {
-        let mut rebuild = false;
-        let mut update_file_index = None;
-        let mut delay = normal_delay;
-        let msg: Result<DelayedProcessingMessage, crossbeam_channel::RecvError> = receiver.recv();
-        if restart_requested {
-            // We just wait for the exit message, otherwise we just ignore the message
-            match msg {
-                Ok(DelayedProcessingMessage::EXIT) => return,
-                _ => continue,
-            }
-        }
-        if check_reset(msg.as_ref().ok()) {
-            restart_requested = true;
-            continue;
-        }
+    const MIN_DELAY: u64 = 1000;
+    let mut config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay, MAX_DELAY)));
+    let mut messages = VecDeque::new();
+    let mut to_wait = config_delay.clone();
+    let mut got_process = false;
+    let mut waiting_restart = false;
+    loop {
+        let msg = receiver.recv_timeout(to_wait);
+        // Check if immediate reaction is needed, else add the message to the list
         match msg {
+            Ok(DelayedProcessingMessage::RESTART) => {
+                if let Some(main_entry_path) = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned() {
+                    let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
+                    while index_lock_path.exists(){
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                }
+                if !waiting_restart {
+                    waiting_restart = true;
+                    restart_server(&sync_odoo, &sender_session, &receiver_session, &delayed_process_sender);
+                }
+                continue;
+            }
+            Ok(DelayedProcessingMessage::PROCESS(p)) => {
+                got_process = true;
+                messages.push_back(DelayedProcessingMessage::PROCESS(p));
+                to_wait = p + config_delay - std::time::Instant::now();
+                continue;
+            }
+            Ok(DelayedProcessingMessage::UPDATE_DELAY(d)) => {
+                config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(d, MAX_DELAY)));
+                to_wait = config_delay.clone();
+                continue;
+            }
             Ok(DelayedProcessingMessage::EXIT) => {
                 return;
+            }
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                // inactivity timeout, process messages
             },
-            Ok(DelayedProcessingMessage::UPDATE_DELAY(duration)) => {
-                normal_delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
-            }
-            Ok(DelayedProcessingMessage::REBUILD(time) | DelayedProcessingMessage::PROCESS(time) | DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData{path: _, time, forced_delay: _})) => {
-                match msg {
-                    Ok(DelayedProcessingMessage::REBUILD(_)) => {rebuild = true;},
-                    Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: _ , forced_delay: _})) => {update_file_index = Some(path);},
-                    _ => ()
-                }
-                let mut last_time = time;
-                let mut to_wait = (time + delay) - std::time::Instant::now();
-                while to_wait.as_millis() > 0 {
-                    std::thread::sleep(to_wait);
-                    to_wait = std::time::Duration::ZERO;
-                    loop {
-                        let new_msg: Result<DelayedProcessingMessage, TryRecvError> = receiver.try_recv();
-                        if check_reset(new_msg.as_ref().ok()) {
-                            restart_requested = true;
-                            continue 'main_loop;
-                        }
-                        match new_msg {
-                            Ok(DelayedProcessingMessage::EXIT) => {return;},
-                            Ok(DelayedProcessingMessage::UPDATE_DELAY(duration)) => {
-                                delay = std::time::Duration::from_millis(std::cmp::min(duration, MAX_DELAY));
-                            }
-                            Ok(DelayedProcessingMessage::PROCESS(t)) => {
-                                if t > last_time {
-                                    to_wait = (t + delay) - std::time::Instant::now();
-                                    last_time = t;
-                                }
-                            },
-                            Ok(DelayedProcessingMessage::REBUILD(t)) => {
-                                rebuild = true;
-                                delay = std::time::Duration::from_millis(std::cmp::max(normal_delay.as_millis() as u64, 4000));
-                                if t > last_time {
-                                    to_wait = (t + delay) - std::time::Instant::now();
-                                    last_time = t;
-                                }
-                            },
-                            Ok(DelayedProcessingMessage::UPDATE_FILE_INDEX(UpdateFileIndexData { path, time: t, forced_delay: _})) => {
-                                update_file_index = Some(path);
-                                if t > last_time {
-                                    to_wait = (t + delay) - std::time::Instant::now();
-                                    last_time = t;
-                                }
-                            },
-                            Err(TryRecvError::Empty) => {
-                                break;
-                            },
-                            Err(_) => {return;}
-                        }
-                    }
-                }
-                {
-                    let mut session = SessionInfo{
-                        sender: sender_session.clone(),
-                        receiver: receiver_session.clone(),
-                        sync_odoo: &mut sync_odoo.lock().unwrap(),
-                        delayed_process_sender: Some(delayed_process_sender.clone()),
-                        noqas_stack: vec![],
-                        current_noqa: NoqaInfo::None,
-                    };
-                    if rebuild {
-                        let config = session.sync_odoo.config.clone();
-                        SyncOdoo::reset(&mut session, config);
-                    } else {
-                        if let Some(path) = update_file_index {
-                            let _ = SyncOdoo::_unload_path(&mut session, &path, false);
-                            Odoo::search_symbols_to_rebuild(&mut session, &path.sanitize());
-                        }
-                        SyncOdoo::process_rebuilds(&mut session);
-                    }
-                }
-            }
-            Err(_) => {
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                error!("Delayed processing channel disconnected, exiting thread");
                 return;
-            }
+            },
+        }
+        if waiting_restart {
+            continue;
+        }
+        if got_process{
+            got_process = false;
+            let mut session = SessionInfo{
+                sender: sender_session.clone(),
+                receiver: receiver_session.clone(),
+                sync_odoo: &mut sync_odoo.lock().unwrap(),
+                delayed_process_sender: Some(delayed_process_sender.clone()),
+                noqas_stack: vec![],
+                current_noqa: NoqaInfo::None,
+            };
+            info!("Processing delayed file changes...");
+            SyncOdoo::process_rebuilds(&mut session, false);
         }
     }
 }
@@ -352,30 +293,31 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
         }
         // Process buffered messages
         if let Some(msg) = buffer.pop_front() {
-            let mut session = SessionInfo{
-                sender: sender.clone(),
-                receiver: receiver.clone(),
-                sync_odoo: &mut sync_odoo.lock().unwrap(),
-                delayed_process_sender: Some(delayed_process_sender.clone()),
-                noqas_stack: vec![],
-                current_noqa: NoqaInfo::None,
-            };
             match msg {
                 Message::Request(r) => {
                     let (value, error) = match r.method.as_str() {
                         HoverRequest::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
                             to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         GotoDefinition::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
                             to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         References::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
                             to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         DocumentSymbolRequest::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
                             to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         Completion::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
                             to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
@@ -388,18 +330,60 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                 },
                 Message::Notification(n) => {
                     match n.method.as_str() {
-                        DidOpenTextDocument::METHOD => { Odoo::handle_did_open(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidChangeConfiguration::METHOD => { Odoo::handle_did_change_configuration(&mut session, serde_json::from_value(n.params).unwrap()) }
-                        DidChangeWorkspaceFolders::METHOD => { Odoo::handle_did_change_workspace_folders(&mut session, serde_json::from_value(n.params).unwrap()) }
-                        DidChangeTextDocument::METHOD => { Odoo::handle_did_change(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidCloseTextDocument::METHOD => { Odoo::handle_did_close(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidSaveTextDocument::METHOD => { Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidRenameFiles::METHOD => { Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidCreateFiles::METHOD => { Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidDeleteFiles::METHOD => { Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap()); }
-                        DidChangeWatchedFiles::METHOD => { Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap())}
-                        "custom/server/register_capabilities" => { Odoo::register_capabilities(&mut session); }
-                        "custom/server/init" => { Odoo::init(&mut session); }
+                        DidOpenTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_open(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidChangeConfiguration::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_change_configuration(&mut session, serde_json::from_value(n.params).unwrap())
+                        }
+                        DidChangeWorkspaceFolders::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_change_workspace_folders(&mut session, serde_json::from_value(n.params).unwrap())
+                        }
+                        DidChangeTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_change(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidCloseTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_close(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidSaveTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, false);
+                            Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidRenameFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidCreateFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidDeleteFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidChangeWatchedFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        "custom/server/register_capabilities" => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::register_capabilities(&mut session);
+                        }
+                        "custom/server/init" => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::init(&mut session);
+                        }
                         Shutdown::METHOD => { warn!("Main thread - got shutdown."); return;} // should be already caught
                         _ => {error!("Notification not handled by main thread: {}", n.method)}
                     }
@@ -411,4 +395,18 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
             }
         }
     }
+}
+
+#[macro_export]
+macro_rules! create_session {
+    ($sender:expr, $receiver:expr, $sync_odoo:expr, $delayed_sender:expr) => {{
+        SessionInfo {
+            sender: $sender.clone(),
+            receiver: $receiver.clone(),
+            sync_odoo: &mut $sync_odoo.lock().unwrap(),
+            delayed_process_sender: Some($delayed_sender.clone()),
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
+        }
+    }};
 }

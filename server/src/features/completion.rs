@@ -6,11 +6,12 @@ use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, 
 use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::constants::{OYarn, SymType};
+use crate::constants::{BuildStatus, BuildSteps, OYarn, SymType};
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
+use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
@@ -537,6 +538,7 @@ fn complete_decorator_call(
         return None; // All the decorators we handle have at least one arg for now
     }
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, false);
+    AstUtils::build_scope(session, &scope);
     let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
@@ -580,6 +582,7 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    AstUtils::build_scope(session, &scope);
     let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start(), false, &mut vec![]).0;
     for (arg_index, arg) in expr_call.arguments.args.iter().enumerate() {
         if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
@@ -751,6 +754,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
             },
             ExpectedType::SIMPLE_FIELD(_) | ExpectedType::NESTED_FIELD(_) | ExpectedType::METHOD_NAME => 'field_block:  {
                 let scope = Symbol::get_scope_symbol(file.clone(), expr_string_literal.range().start().to_u32(), true);
+                AstUtils::build_scope(session, &scope);
                 let Some(parent_class) = scope.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|p| p.upgrade()) else {
                     break 'field_block;
                 };
@@ -784,6 +788,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
     //As symbols are not rebuilt, boundaries are not rights, and a "return self." at the end of a function/class body would be out of scope.
     //Temporary, by using the start of expr, we can hope that it is still in the right scope.
     let scope = Symbol::get_scope_symbol(file.clone(), start_expr, is_param);
+    AstUtils::build_scope(session, &scope);
     if offset > attr.value.range().start().to_usize() && offset <= attr.value.range().end().to_usize() {
         return complete_expr( &attr.value, session, file, offset, is_param, expected_type);
     } else {
@@ -810,6 +815,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
 
 fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, _expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    AstUtils::build_scope(session, &scope);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope.clone(), &expr_subscript.value.range().start(), false, &mut vec![]).0;
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
@@ -847,6 +853,7 @@ fn complete_name_expression(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>
 
 fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: usize, is_param: bool, name: &String) -> Option<CompletionResponse> {
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    AstUtils::build_scope(session, &scope);
     let symbols = Symbol::get_all_inferred_names(&scope, name, offset as u32);
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,

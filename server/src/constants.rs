@@ -5,6 +5,8 @@ use core::fmt;
 pub const EXTENSION_NAME: &str = "Odoo";
 pub const EXTENSION_VERSION: &str = "1.0.2";
 
+pub const MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART: u32 = 10;
+
 pub const DEBUG_ODOO_BUILDER: bool = false;
 pub const DEBUG_MEMORY: bool = false;
 pub const DEBUG_THREADS: bool = false;

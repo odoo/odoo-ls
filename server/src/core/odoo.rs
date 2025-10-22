@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 use std::ffi::OsStr;
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use lsp_server::ResponseError;
@@ -78,7 +78,7 @@ pub struct SyncOdoo {
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
-    pub watched_file_updates: Arc<AtomicU32>,
+    pub watched_file_updates: u32,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -117,7 +117,7 @@ impl SyncOdoo {
             models: HashMap::new(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
-            watched_file_updates: Arc::new(AtomicU32::new(0)),
+            watched_file_updates: 0,
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
             rebuild_validation: PtrWeakHashSet::new(),
@@ -151,7 +151,7 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
-        session.sync_odoo.watched_file_updates = Arc::new(AtomicU32::new(0));
+        session.sync_odoo.watched_file_updates = 0;
         //drop all entries, except entries of opened files
         session.sync_odoo.entry_point_mgr.borrow_mut().reset_entry_points(false);
         SyncOdoo::init(session, config);
@@ -297,7 +297,7 @@ impl SyncOdoo {
         }
         let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, disk_dir_builtins[0].clone(), false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
-        SyncOdoo::process_rebuilds(session)
+        SyncOdoo::process_rebuilds(session, false)
     }
 
     pub fn build_database(session: &mut SessionInfo) {
@@ -402,7 +402,7 @@ impl SyncOdoo {
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
         }
         session.sync_odoo.has_odoo_main_entry = true; // set it now has we need it to parse base addons
-        if !SyncOdoo::process_rebuilds(session){
+        if !SyncOdoo::process_rebuilds(session, false){
             return false;
         }
         //search common odoo addons path
@@ -477,7 +477,7 @@ impl SyncOdoo {
                 }
             }
         }
-        if !SyncOdoo::process_rebuilds(session){
+        if !SyncOdoo::process_rebuilds(session, false){
             return;
         }
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
@@ -601,8 +601,11 @@ impl SyncOdoo {
         session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade().is_some());
     }
 
-    pub fn process_rebuilds(session: &mut SessionInfo) -> bool {
+    pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+        if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
+            return false;
+        }
         SyncOdoo::add_from_self_reload(session);
         session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
@@ -649,12 +652,18 @@ impl SyncOdoo {
                     continue;
                 }
                 already_validation_rebuilt.insert(tree);
-                if session.sync_odoo.state_init == InitState::ODOO_READY && session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
-                    session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
-                    session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
-                    session.request_delayed_rebuild();
-                    session.sync_odoo.add_to_validations(sym_rc.clone());
-                    return true;
+                if session.sync_odoo.state_init == InitState::ODOO_READY {
+                    let mut no_validation = no_validation;
+                    if session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
+                        session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+                        session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
+                        no_validation = true;
+                    }
+                    if no_validation {
+                        session.request_delayed_rebuild();
+                        session.sync_odoo.add_to_validations(sym_rc.clone());
+                        return true;
+                    }
                 }
                 let typ = sym_rc.borrow().typ();
                 match typ {
@@ -672,9 +681,11 @@ impl SyncOdoo {
         }
         if session.sync_odoo.need_rebuild {
             session.log_message(MessageType::INFO, S!("Rebuild required. Resetting database on breaktime..."));
-            SessionInfo::request_reload(session);
+            info!("Odoo version change detected. OdooLS is restarting");
+            session.send_notification("$Odoo/restartNeeded", ());
         }
         session.sync_odoo.import_cache = None;
+        session.sync_odoo.watched_file_updates = 0;
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
     }
@@ -925,7 +936,7 @@ impl SyncOdoo {
         if !found_an_entry {
             info!("Path {} not found. Creating new entry", path.to_str().expect("unable to stringify path"));
             if EntryPointMgr::create_new_custom_entry_for_path(session, &path_in_tree.sanitize(), &path.sanitize()) {
-                SyncOdoo::process_rebuilds(session);
+                SyncOdoo::process_rebuilds(session, false);
                 return SyncOdoo::get_symbol_of_opened_file(session, path)
             }
         }
@@ -978,7 +989,7 @@ impl SyncOdoo {
                 }
             }
         }
-        SyncOdoo::process_rebuilds(session);
+        SyncOdoo::process_rebuilds(session, false);
     }
 
     pub fn get_rebuild_queue_size(&self) -> usize {
@@ -1124,6 +1135,7 @@ impl Odoo {
                     session.show_message(MessageType::ERROR, format!("Selected configuration ({}) is abstract. Please select a valid configuration and restart.", config.name));
                     return;
                 }
+                session.update_delay_thread_delay_duration(config.auto_refresh_delay);
                 SyncOdoo::init(session, config);
                 session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
                     (std::time::Instant::now() - start).as_secs(),
@@ -1419,7 +1431,7 @@ impl Odoo {
                         }
                     }
                     EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize(), &path.sanitize());
-                    SyncOdoo::process_rebuilds(session);
+                    SyncOdoo::process_rebuilds(session, false);
                 } else if updated {
                     Odoo::update_file_index(session, path, true, false);
                 }
@@ -1499,21 +1511,21 @@ impl Odoo {
             let _ = SyncOdoo::_unload_path(session, &PathBuf::from(&old_path), false);
             FileMgr::delete_path(session, &old_path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&old_path);
-            SyncOdoo::process_rebuilds(session);
+            SyncOdoo::process_rebuilds(session, false);
             //2 - create new document
             let new_path_buf = PathBuf::from(new_path.clone());
             let new_path_updated = new_path_buf.to_tree_path().sanitize();
             Odoo::search_symbols_to_rebuild(session, &new_path_updated);
-            SyncOdoo::process_rebuilds(session);
+            SyncOdoo::process_rebuilds(session, false);
             let tree = session.sync_odoo.path_to_main_entry_tree(&new_path_buf);
             if let Some(tree) = tree {
                 if  new_path_buf.is_file() &&  session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree, u32::MAX).is_empty() {
                     //file has not been added to main entry. Let's build a new entry point
                     EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated, &new_path_buf.sanitize());
-                    SyncOdoo::process_rebuilds(session);
+                    SyncOdoo::process_rebuilds(session, false);
                 }
             }
-            SyncOdoo::process_rebuilds(session);
+            SyncOdoo::process_rebuilds(session, false);
         }
     }
 
@@ -1528,7 +1540,7 @@ impl Odoo {
             Odoo::search_symbols_to_rebuild(session, &path_updated);
             session.sync_odoo.entry_point_mgr.borrow_mut().clean_entries();
         }
-        SyncOdoo::process_rebuilds(session);
+        SyncOdoo::process_rebuilds(session, false);
         //Now let's test if the symbol has been added to main entry tree or not
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
@@ -1537,7 +1549,7 @@ impl Odoo {
             if PathBuf::from(&path).is_file() && (tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty()) {
                 //file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
-                SyncOdoo::process_rebuilds(session);
+                SyncOdoo::process_rebuilds(session, false);
             }
         }
     }
@@ -1554,7 +1566,7 @@ impl Odoo {
             FileMgr::delete_path(session, &path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
         }
-        SyncOdoo::process_rebuilds(session);
+        SyncOdoo::process_rebuilds(session, false);
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
@@ -1652,6 +1664,7 @@ impl Odoo {
                         session.sync_odoo.config = new_config;
                         // Recalculate diagnostic filters
                         session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
+                        session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay);
                     }
                 }
                 Err(err) => {

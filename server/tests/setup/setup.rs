@@ -75,6 +75,6 @@ pub fn prepare_custom_entry_point<'a>(odoo: &'a mut SyncOdoo, path: &str) -> Ses
             text: text}]);
     let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(&mut session, path, content.as_ref(), Some(1), false);
     EntryPointMgr::create_new_custom_entry_for_path(&mut session, &ep_path, &ep_path);
-    SyncOdoo::process_rebuilds(&mut session);
+    SyncOdoo::process_rebuilds(&mut session, false);
     session
 }
