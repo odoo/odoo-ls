@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.3] - 2025/10/26 - Fix out-of-sync issues
+
+We rewrote the thread pool of OdooLS to get rid most of the last known crashes, as they are nearly all linked to out-of-sync issues and the way the thread pool was greedily delaying important tasks.
+It should result in a different feeling when using OdooLS, but it should be way more accurate and stable than before, and consistent.
+It was not possible to test this new core in all possible situations, so do not hesitate to give any feedback on differences you can see with this new version.
+Thank you very much to everyone for your crash reports, they were really helpful (and yes, we read all of them!)
+New features will come soon in the pre-release channel, stay tuned!
+
+### Fixes
+
+- New delayed thread and message flow in threads. Symbol creation (ARCH and ARCH-EVAL steps) are now always created on the fly, while validation of files are delayed to inactivity period. It results in more accurate and always in-sync results to requests.
+
 ## [1.0.2] - 2025/10/03 - Hotfixes and github actions
 
 ### Packaging
