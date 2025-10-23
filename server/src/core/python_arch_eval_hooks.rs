@@ -743,8 +743,7 @@ impl PythonArchEvalHooks {
                 let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
                 let env_file = env_files.last().unwrap();
                 if !Rc::ptr_eq(env_file, &scope) {
-                    let mut f = scope.borrow_mut();
-                    f.add_model_dependencies(model);
+                    scope.borrow_mut().add_model_dependencies(model);
                 }
             }
             let model = model.clone();
