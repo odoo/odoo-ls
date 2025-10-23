@@ -1,15 +1,15 @@
-use lsp_types::notification::{Notification, PublishDiagnostics};
 use ropey::Rope;
 use ruff_python_ast::{ModModule, PySourceType, Stmt};
 use ruff_python_parser::{Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use lsp_types::notification::{Notification, PublishDiagnostics};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{collections::HashMap, fs};
 use crate::core::config::{DiagnosticFilter, DiagnosticFilterPathType};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
@@ -23,6 +23,13 @@ use crate::constants::*;
 use ruff_text_size::{Ranged, TextRange};
 
 use super::odoo::SyncOdoo;
+
+// Global static for legacy UNC path detection
+pub static LEGACY_UNC_PATHS: OnceLock<AtomicBool> = OnceLock::new();
+
+pub fn legacy_unc_paths() -> &'static AtomicBool {
+    LEGACY_UNC_PATHS.get_or_init(|| AtomicBool::new(false))
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum NoqaInfo {
@@ -617,25 +624,34 @@ impl FileMgr {
             slash = "/";
         }
         // If the path starts with \\\\, we want to remove it and also set slash to empty string
-        // Such that we have file://wsl.localhost for example
+        // Such that we have file://wsl.localhost/<path> for example
         // For normal paths we do want file:///C:/...
-        let replaced = if s.starts_with("\\\\") {
+        // For some editors like PyCharm they use the legacy windows UNC urls so we have file:////wsl.localhost/<path>
+        let (replaced, unc) = if s.starts_with("\\\\") {
             slash = "";
-            s.replacen("\\\\", "", 1)
+            (s.replacen("\\\\", "", 1), true)
         } else {
-            s.clone()
+            (s.clone(), false)
         };
-        let pre_uri = match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
-            Ok(pre_uri) => pre_uri,
+        // Use legacy UNC flag to determine if we need four slashes
+        let mut pre_uri = match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
+            Ok(pre_uri) => pre_uri.to_string(),
             Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
         };
-        match lsp_types::Uri::from_str(pre_uri.as_str()) {
+        if unc && legacy_unc_paths().load(Ordering::Relaxed){
+            pre_uri = pre_uri.replace("file://", "file:////");
+        }
+        match lsp_types::Uri::from_str(&pre_uri) {
             Ok(url) => url,
             Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
         }
     }
 
     pub fn uri2pathname(s: &str) -> String {
+        // Detect legacy UNC path (file:////)
+        if s.starts_with("file:////") {
+            legacy_unc_paths().store(true, Ordering::Relaxed);
+        }
         let str_repr = s.replace("file:////", "file://");
         if let Ok(url) = url::Url::parse(&str_repr) {
             if let Ok(url) = url.to_file_path() {

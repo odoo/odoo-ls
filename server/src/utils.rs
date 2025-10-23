@@ -1,8 +1,10 @@
-use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
+use crate::core::file_mgr::legacy_unc_paths;
 use path_slash::{PathBufExt, PathExt};
 use regex::Regex;
 use ruff_text_size::TextSize;
 use std::process::Command;
+use std::sync::atomic::Ordering;
+use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 
 use crate::{constants::Tree, oyarn};
 
@@ -135,13 +137,16 @@ pub trait ToFilePath {
 }
 
 impl ToFilePath for lsp_types::Uri {
-
     fn to_file_path(&self) -> Result<PathBuf, ()> {
-        let str_repr = self.as_str().replace("file:////", "file://");
+        let s = self.as_str();
+        // Detect legacy UNC path (file:////)
+        if s.starts_with("file:////") {
+            legacy_unc_paths().store(true, Ordering::Relaxed);
+        }
+        let str_repr = s.replace("file:////", "file://");
         let url = url::Url::from_str(&str_repr).map_err(|_| ())?;
         url.to_file_path()
     }
-
 }
 
 pub trait PathSanitizer {
