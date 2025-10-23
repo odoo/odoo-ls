@@ -169,7 +169,7 @@ pub enum DelayedProcessingMessage {
     EXIT, //exit the thread
 }
 
-pub fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>) {
+fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>) {
     let message = "Too many requests, possible change of branch, restarting Odoo LS";
     info!(message);
     {
@@ -181,8 +181,22 @@ pub fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<
             noqas_stack: vec![],
             current_noqa: NoqaInfo::None,
         };
-        // Drain channel before resetting
         session.send_notification("$Odoo/restartNeeded", ());
+    }
+}
+
+fn notify_git_lock(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>, status: &str) {
+    {
+        let session = SessionInfo{
+            sender: sender_session.clone(),
+            receiver: receiver_session.clone(),
+            sync_odoo: &mut sync_odoo.lock().unwrap(),
+            delayed_process_sender: Some(delayed_process_sender.clone()),
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
+        };
+        error!("Git index lock detected, notifying client: {}", status);
+        session.send_notification("$Odoo/loadingStatusUpdate", status);
     }
 }
 
@@ -199,10 +213,19 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
         // Check if immediate reaction is needed, else add the message to the list
         match msg {
             Ok(DelayedProcessingMessage::RESTART) => {
-                if let Some(main_entry_path) = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned() {
+                let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned(); //avoid keeping lock
+                if let Some(main_entry_path) = main_entry_path {
                     let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
+                    let mut notified = false;
                     while index_lock_path.exists(){
+                        if !notified {
+                            notify_git_lock(&sync_odoo, &sender_session, &receiver_session, &delayed_process_sender, "git_locked");
+                            notified = true;
+                        }
                         std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                    if notified {
+                        notify_git_lock(&sync_odoo, &sender_session, &receiver_session, &delayed_process_sender, "stop");
                     }
                 }
                 if !waiting_restart {

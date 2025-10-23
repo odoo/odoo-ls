@@ -15,8 +15,10 @@ use std::ffi::OsStr;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use lsp_server::ResponseError;
+use lsp_types::notification::{Notification, Progress};
+use lsp_types::request::WorkDoneProgressCreate;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use serde_json::Value;
@@ -73,6 +75,7 @@ pub struct SyncOdoo {
     pub main_entry_tree: Vec<OYarn>,
     pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
+    pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<OYarn, Weak<RefCell<Symbol>>>,
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
@@ -110,6 +113,7 @@ impl SyncOdoo {
             has_odoo_main_entry: false,
             has_valid_python: false,
             main_entry_tree: vec![],
+            progress_token: 0,
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
             stubs_dirs: SyncOdoo::default_stubs(),
             stdlib_dir: SyncOdoo::default_stdlib(),
@@ -601,6 +605,22 @@ impl SyncOdoo {
         session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade().is_some());
     }
 
+    fn start_reporting(session: &mut SessionInfo) {
+        session.sync_odoo.progress_token += 1;
+        let _ = session.send_request::<WorkDoneProgressCreateParams, ()>(WorkDoneProgressCreate::METHOD, WorkDoneProgressCreateParams {
+            token: ProgressToken::Number(session.sync_odoo.progress_token)
+        });
+        session.send_notification(Progress::METHOD, ProgressParams {
+            token: ProgressToken::Number(session.sync_odoo.progress_token),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(WorkDoneProgressBegin {
+                title: "Odoo: Indexing".to_string(),
+                cancellable: Some(false),
+                message: None,
+                percentage: None,
+            }))
+        });
+    }
+
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
@@ -611,10 +631,30 @@ impl SyncOdoo {
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
+
+        //workdone progress
+        let mut last_update_status = Instant::now() - Duration::from_secs(10);
+        let mut is_reporting_progress = false;
+        if !session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty() {
+            is_reporting_progress = true;
+            SyncOdoo::start_reporting(session);
+        }
         trace!("Starting rebuild: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
             if DEBUG_THREADS {
                 trace!("remains: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
+            }
+            let queue_size = session.sync_odoo.rebuild_arch.len() * 3 + session.sync_odoo.rebuild_arch_eval.len() * 2 + session.sync_odoo.rebuild_validation.len();
+            if is_reporting_progress && (Instant::now() - last_update_status) > Duration::from_millis(200) {
+                last_update_status = Instant::now();
+                session.send_notification(Progress::METHOD, ProgressParams {
+                    token: ProgressToken::Number(session.sync_odoo.progress_token),
+                    value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(WorkDoneProgressReport {
+                        cancellable: Some(false),
+                        message: Some(format!("{} items remaining", queue_size)),
+                        percentage: None,
+                    }))
+                });
             }
             if session.sync_odoo.terminate_rebuild.load(Ordering::SeqCst){
                 info!("Terminating rebuilds due to server shutdown");
@@ -662,6 +702,14 @@ impl SyncOdoo {
                     if no_validation {
                         session.request_delayed_rebuild();
                         session.sync_odoo.add_to_validations(sym_rc.clone());
+                        if is_reporting_progress {
+                            session.send_notification(Progress::METHOD, ProgressParams {
+                                token: ProgressToken::Number(session.sync_odoo.progress_token),
+                                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                                    message: None,
+                                }))
+                            });
+                        }
                         return true;
                     }
                 }
@@ -686,6 +734,14 @@ impl SyncOdoo {
         }
         session.sync_odoo.import_cache = None;
         session.sync_odoo.watched_file_updates = 0;
+        if is_reporting_progress {
+            session.send_notification(Progress::METHOD, ProgressParams {
+                token: ProgressToken::Number(session.sync_odoo.progress_token),
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                    message: None,
+                }))
+            });
+        }
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
     }
