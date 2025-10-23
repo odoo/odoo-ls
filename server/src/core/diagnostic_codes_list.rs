@@ -202,6 +202,10 @@ OLS04010, DiagnosticSetting::Error, "Module {0} depends on {1} which is not foun
 */
 OLS04011, DiagnosticSetting::Error, "Do not use dict unpacking to build your manifest",
 /**
+* Module dependency cycle: make sure nested dependencies are correct
+*/
+OLS04012, DiagnosticSetting::Error, "Module dependency: module {0} depends on current module",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",

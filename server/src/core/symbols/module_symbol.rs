@@ -139,7 +139,7 @@ impl ModuleSymbol {
     }
 
     pub fn load_module_info(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) {
-        let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(&mut (*symbol).borrow_mut(), session, odoo_addons);
+        let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(symbol.clone(), session, odoo_addons);
         diagnostics.extend(ModuleSymbol::check_data(&symbol, session));
         if !symbol.borrow().as_module_package().loaded {
             diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
@@ -288,15 +288,17 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol: &mut Symbol, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
-        symbol.as_module_package_mut().all_depends.clear();
-        let all_depends = symbol.as_module_package().depends.iter().map(|(depend, _)| depend.clone()).collect::<Vec<_>>();
-        symbol.as_module_package_mut().all_depends.extend(all_depends);
+    fn _load_depends(symbol_rc: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
+        symbol_rc.borrow_mut().as_module_package_mut().all_depends.clear();
+        let all_depends = symbol_rc.borrow_mut().as_module_package().depends.iter().map(|(depend, _)| depend.clone()).collect::<Vec<_>>();
+        symbol_rc.borrow_mut().as_module_package_mut().all_depends.extend(all_depends);
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<OYarn> = vec![];
-        for (depend, range) in symbol.as_module_package().depends.clone().iter() {
+        let dependencies = symbol_rc.borrow().as_module_package().depends.clone();
+        for (depend, range) in dependencies.iter() {
             //TODO: raise an error on dependency cycle
             if !session.sync_odoo.modules.contains_key(depend) {
+                let mut symbol = symbol_rc.borrow_mut();
                 let module = find_module(session, odoo_addons.clone(), depend);
                 if module.is_none() {
                     symbol.get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
@@ -317,9 +319,18 @@ impl ModuleSymbol {
             } else {
                 let module = session.sync_odoo.modules.get(depend).unwrap().upgrade().unwrap();
                 SyncOdoo::build_now(session, &module, BuildSteps::ARCH);
+                let name = symbol_rc.borrow().name().clone();
+                if module.borrow().as_module_package().all_depends.contains(&name){
+                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04012, &[depend]) {
+                        diagnostics.push(Diagnostic {
+                            range: FileMgr::textRange_to_temporary_Range(range),
+                            ..diagnostic_base.clone()
+                        });
+                    }
+                }
                 let mut module = (*module).borrow_mut();
-                symbol.as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
-                symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
+                symbol_rc.borrow_mut().as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
+                symbol_rc.borrow_mut().add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
             }
         }
         (diagnostics, loaded)
