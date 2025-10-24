@@ -181,9 +181,10 @@ impl DefinitionFeature {
                         SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
                         _ => path.clone()
                     };
-                    let range = match symbol.borrow().typ() {
-                        SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                        _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range()),
+                    let range = if symbol.borrow().has_range() {
+                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range())
+                    } else {
+                        Range::default()
                     };
                     links.push(LocationLink{
                         origin_selection_range: None,
@@ -223,9 +224,10 @@ impl DefinitionFeature {
                                     SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
                                     _ => path.clone()
                                 };
-                                let range = match s.borrow().typ() {
-                                    SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                    _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range()),
+                                let range = if s.borrow().has_range() {
+                                    session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range())
+                                } else {
+                                    Range::default()
                                 };
                                 let link_range = if link_range.is_some() {
                                     Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
