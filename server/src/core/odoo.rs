@@ -174,11 +174,11 @@ impl SyncOdoo {
         } else {
             result.push(env::current_dir().unwrap().join("typeshed").join("stubs").sanitize());
         }
-        let next_to_exe = env::current_exe().unwrap().parent().unwrap().join("typeshed").join("additional_stubs");
+        let next_to_exe = env::current_exe().unwrap().parent().unwrap().join("additional_stubs");
         if next_to_exe.exists() {
             result.push(next_to_exe.sanitize());
         } else {
-            result.push(env::current_dir().unwrap().join("typeshed").join("additional_stubs").sanitize());
+            result.push(env::current_dir().unwrap().join("additional_stubs").sanitize());
         }
         result
     }
