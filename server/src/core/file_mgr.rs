@@ -143,7 +143,7 @@ impl FileInfo {
                     self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from(content.as_str()));
                 },
                 Err(e) => {
-                    session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", uri, e));
+                    error!("Failed to read file {}, with error {}", uri, e);
                     return false;
                 },
             };
@@ -483,11 +483,11 @@ impl FileMgr {
                     end: FileInfo::offset_to_position_with_rope(&rope, range.end().to_usize())
                 };
             },
-            Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))
+            Err(_) => error!("Failed to read file {}", path)
         };
         Range::default()
     }
-    
+
 
     pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &std::ops::Range<usize>) -> Range {
         let file = self.files.get(path);
@@ -506,7 +506,7 @@ impl FileMgr {
                     end: FileInfo::offset_to_position_with_rope(&rope, range.end)
                 };
             },
-            Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))
+            Err(_) => error!("Failed to read file {}", path)
         };
         Range::default()
     }
