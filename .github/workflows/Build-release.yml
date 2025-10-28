@@ -183,6 +183,15 @@ jobs:
             esac
           done
 
+      - name: Download typeshed repository
+        run: |
+          git clone --depth=1 https://github.com/python/typeshed typeshed
+
+      - name: Zip typeshed
+        run: |
+          cd typeshed
+          zip -r ../typeshed.zip .
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -194,6 +203,7 @@ jobs:
             ./artifacts/*.zip
             ./artifacts/*.tar.gz
             ./artifacts/config_schema/config_schema.json
+            ./typeshed.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
