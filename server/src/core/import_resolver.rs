@@ -60,16 +60,16 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbo
  */
 pub fn manual_import(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt:Option<String>, name: &str, asname: Option<String>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     let name_aliases = vec![Alias {
-        name: Identifier { id: Name::new(name), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() },
+        name: Identifier { id: Name::new(name), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() },
         asname: match asname {
-            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() }),
+            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() }),
             None => None,
         },
         range: TextRange::new(TextSize::new(0), TextSize::new(0)),
-        node_index: AtomicNodeIndex::dummy()
+        node_index: AtomicNodeIndex::default()
     }];
     let from_stmt = match from_stmt {
-        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() }),
+        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() }),
         None => None,
     };
     resolve_import_stmt(session, source_file_symbol, from_stmt.as_ref(), &name_aliases, level, diagnostics)

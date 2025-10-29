@@ -74,7 +74,7 @@ impl FunctionSymbol {
             is_static: false,
             is_property: false,
             diagnostics: HashMap::new(),
-            node_index: AtomicNodeIndex::dummy(),
+            node_index: AtomicNodeIndex::default(),
             doc_string: None,
             evaluations: vec![],
             arch_status: BuildStatus::PENDING,

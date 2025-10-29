@@ -107,7 +107,7 @@ impl PythonArchBuilder {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
-                if ast_index.as_u32() != u32::MAX {
+                if ast_index.as_u32().is_some() {
                     let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
@@ -650,7 +650,7 @@ impl PythonArchBuilder {
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
 
-        sym_bw.node_index_mut().set(func_def.node_index.load().as_u32());
+        sym_bw.node_index_mut().set(func_def.node_index.load());
 
         let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
