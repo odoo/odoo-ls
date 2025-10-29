@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
 use itertools::Itertools;
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
-use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
+use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSlice, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::constants::{BuildStatus, BuildSteps, OYarn, SymType};
+use crate::constants::{OYarn, SymType};
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
@@ -406,7 +406,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Name(expr_name) => complete_name_expression(session, file, expr_name, offset, is_param, expected_type),
         Expr::List(expr_list) => complete_list(session, file, expr_list, offset, is_param, expected_type),
         Expr::Tuple(expr_tuple) => complete_tuple(session, file, expr_tuple, offset, is_param, expected_type),
-        Expr::Slice(_) => None,
+        Expr::Slice(expr_slice) => complete_slice(session, file, expr_slice, offset, is_param, expected_type),
         Expr::IpyEscapeCommand(_) => None,
     }
 }
@@ -945,6 +945,19 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
     None
 }
 
+fn complete_slice(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_slice: &ExprSlice, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    // And incomplete subscript is always a slice, so self.env["ffff is a slice with ffff as lower
+    if expr_slice.lower.is_some() && offset > expr_slice.lower.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.lower.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_slice.lower.as_ref().unwrap(), session, file, offset, is_param, expected_type);
+    }
+    if expr_slice.upper.is_some() && offset > expr_slice.upper.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.upper.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_slice.upper.as_ref().unwrap(), session, file, offset, is_param, &vec![]);
+    }
+    if expr_slice.step.is_some() && offset > expr_slice.step.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.step.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_slice.step.as_ref().unwrap(), session, file, offset, is_param, &vec![]);
+    }
+    None
+}
 /* *********************************************************************
 **************************** Common utils ******************************
 ********************************************************************** */
