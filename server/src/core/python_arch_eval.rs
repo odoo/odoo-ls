@@ -87,20 +87,22 @@ impl PythonArchEval {
             file_info_rc.borrow_mut().prepare_ast(session);
         }
         let file_info = (*file_info_rc).borrow();
-        if file_info.file_info_ast.borrow().indexed_module.is_some() {
+        let file_info_ast = file_info.file_info_ast.clone();
+        drop(file_info);
+        if file_info_ast.borrow().indexed_module.is_some() {
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = symbol.borrow().get_noqas();
-            let file_info_ast  = file_info.file_info_ast.borrow();
+            let file_info_ast_bw  = file_info_ast.borrow();
             let (ast, maybe_func_stmt) = match self.file_mode {
                 true => {
-                    if file_info_ast.text_hash != symbol.borrow().get_processed_text_hash(){
+                    if file_info_ast_bw.text_hash != symbol.borrow().get_processed_text_hash(){
                         symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                         return;
                     }
-                    (file_info_ast.get_stmts().unwrap(), None)
+                    (file_info_ast_bw.get_stmts().unwrap(), None)
                 },
                 false => {
-                    let func_stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
+                    let func_stmt = file_info_ast_bw.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
                     match func_stmt {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                             (&func_stmt.body, Some(func_stmt))
@@ -120,7 +122,6 @@ impl PythonArchEval {
             }
             session.current_noqa = old_noqa;
         }
-        drop(file_info);
         if self.file_mode {
             file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
             PythonArchEvalHooks::on_file_eval(session, &self.entry_point, symbol.clone());
