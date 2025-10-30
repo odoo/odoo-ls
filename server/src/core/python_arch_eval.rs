@@ -857,8 +857,19 @@ impl PythonArchEval {
         self.visit_sub_stmts(session, &try_stmt.finalbody);
         for handler in try_stmt.handlers.iter() {
             handler.as_except_handler().map(|h| {
+                //Prevent import error in catch clause of ImportError too
+                let mut added_safe_import = false;
+                if let Some(type_) = &h.type_ {
+                    if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
+                        added_safe_import = true;
+                        self.safe_import.push(true);
+                    }
+                }
                 h.type_.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
-                self.visit_sub_stmts(session, &h.body)
+                self.visit_sub_stmts(session, &h.body);
+                if added_safe_import {
+                    self.safe_import.pop();
+                }
             });
         }
     }
