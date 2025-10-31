@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.4] - 2025/10/31 - Fix Borrow error
+
+### Zed
+
+- Fix the update script to use ".tar.gz" compression instead of ".zip" on linux and darwin computers.
+
+### Fixes
+
+- crash fix: Borrow error on some "on-the-fly" builds.
+- Fix the rust version used to compile the server to 1.91 and put this requirement in cargo.toml
+
 ## [1.0.3] - 2025/10/26 - Fix out-of-sync issues
 
 We rewrote the thread pool of OdooLS to get rid most of the last known crashes, as they are nearly all linked to out-of-sync issues and the way the thread pool was greedily delaying important tasks.
