@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::constants::SymType;
-use crate::core::evaluation::{Evaluation, EvaluationValue};
+use crate::core::evaluation::{Evaluation, EvaluationValue, ExprOrIdent};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_odoo_builder::MAGIC_FIELDS;
@@ -13,7 +13,7 @@ use crate::core::symbols::symbol::Symbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
 use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
-use crate::oyarn;
+use crate::{S, oyarn};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 
@@ -149,6 +149,49 @@ impl DefinitionFeature {
         compute_symbols.len() > 0
     }
 
+    pub fn add_display_name_compute_methods(session: &mut SessionInfo, links: &mut Vec<LocationLink>, expr: &ExprOrIdent, file_symbol: &Rc<RefCell<Symbol>>, offset: usize) {
+        // now we want `_compute_display_name` definition(s)
+        // we need the symbol of the model/ then we run get member symbol
+        // to do that, we need the expr, match it to attribute, get the value, get its evals
+        // with those evals, we run get_member_symbol on `_compute_display_name`
+        let crate::core::evaluation::ExprOrIdent::Expr(Expr::Attribute(attr_expr)) = expr else {
+            return;
+        };
+        let (analyse_ast_result, _range) = AstUtils::get_symbols(session, file_symbol, offset as u32, &crate::core::evaluation::ExprOrIdent::Expr(&attr_expr.value));
+        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| Symbol::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None)).collect::<Vec<_>>();
+        let maybe_module = file_symbol.borrow().find_module();
+        let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
+            let Some(symbol) = eval_ptr.upgrade_weak() else {
+                return  vec![];
+            };
+            symbol.borrow().get_member_symbol(session, &S!("_compute_display_name"), maybe_module.clone(), false, false, true, false).0
+        }).collect::<Vec<_>>();
+        for symbol in symbols {
+            if let Some(file) = symbol.borrow().get_file() {
+                for path in file.upgrade().unwrap().borrow().paths().iter() {
+                    let full_path = match file.upgrade().unwrap().borrow().typ() {
+                        SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
+                        _ => path.clone()
+                    };
+                    let range = if symbol.borrow().has_range() {
+                        if symbol.borrow().range().contains(TextSize::new(offset as u32)) {
+                            continue; //skip if we are already on the definition
+                        }
+                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range())
+                    } else {
+                        Range::default()
+                    };
+                    links.push(LocationLink{
+                        origin_selection_range: None,
+                        target_uri: FileMgr::pathname2uri(&full_path),
+                        target_selection_range: range,
+                        target_range: range,
+                    });
+                }
+            }
+        }
+    }
+
     pub fn get_location(session: &mut SessionInfo,
         file_symbol: &Rc<RefCell<Symbol>>,
         file_info: &Rc<RefCell<FileInfo>>,
@@ -156,13 +199,20 @@ impl DefinitionFeature {
         character: u32
     ) -> Option<GotoDefinitionResponse> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, _range, call_expr) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
+        let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
+        let file_info_ast_ref = file_info_ast_clone.borrow();
+        let (expr, call_expr) = AstUtils::get_expr(&file_info_ast_ref, offset as u32);
+        let Some(expr) = expr else  {
+            return None;
+        };
+        let (analyse_ast_result, _range) = AstUtils::get_symbols(session, file_symbol, offset as u32, &expr);
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }
         let mut links = vec![];
         let mut evaluations = analyse_ast_result.evaluations.clone();
         // Filter out magic fields
+        let mut dislay_name_found = false;
         evaluations.retain(|eval| {
             // Filter out, variables, whose parents are a class, whose name is one of the magic fields, and have the same range as their parent
             let eval_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
@@ -170,12 +220,20 @@ impl DefinitionFeature {
             if !MAGIC_FIELDS.contains(&eval_sym.borrow().name().as_str()) || eval_sym.borrow().typ() != SymType::VARIABLE || !eval_sym.borrow().is_field(session) {
                 return true;
             }
+            if eval_sym.borrow().name() == "display_name" {
+                dislay_name_found = true;
+            }
             let Some(parent_sym) = eval_sym.borrow().parent().and_then(|parent| parent.upgrade()) else { return true; };
             if parent_sym.borrow().typ() != SymType::CLASS {
                 return true;
             }
             eval_sym.borrow().range() != parent_sym.borrow().range()
         });
+        if dislay_name_found {
+            DefinitionFeature::add_display_name_compute_methods(session, &mut links, &expr, file_symbol, offset);
+        }
+        drop(expr);
+        drop(file_info_ast_ref);
         let mut index = 0;
         while index < evaluations.len() {
             let eval = evaluations[index].clone();

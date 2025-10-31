@@ -5,7 +5,7 @@ use crate::constants::{BuildStatus, BuildSteps, SymType};
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
-use crate::core::file_mgr::FileInfo;
+use crate::core::file_mgr::{FileInfo, FileInfoAst};
 use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
@@ -17,21 +17,22 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprCall>) {
-        let mut expr: Option<ExprOrIdent> = None;
+    pub fn get_expr<'a>(file_info_ast: &'a FileInfoAst, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+        let mut expr: Option<ExprOrIdent<'a>> = None;
         let mut call_expr: Option<ExprCall> = None;
-        let file_info_ast = file_info.borrow().file_info_ast.clone();
-        let file_info_ast = file_info_ast.borrow();
         for stmt in file_info_ast.get_stmts().unwrap().iter() {
             (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
             }
         }
-        let Some(expr) = expr else {
+        if expr.is_none() {
             warn!("expr not found");
-            return (AnalyzeAstResult::default(), None, None);
-        };
+        }
+        (expr, call_expr)
+    }
+
+    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: u32, expr: &ExprOrIdent) -> (AnalyzeAstResult, Option<TextRange>) {
         let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
         AstUtils::build_scope(session, &parent_symbol);
         let from_module;
@@ -45,7 +46,7 @@ impl AstUtils {
             (S!("range"), ContextValue::RANGE(expr.range()))
         ]));
         let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context,false, &mut vec![]);
-        (analyse_ast_result, Some(expr.range()), call_expr)
+        (analyse_ast_result, Some(expr.range()))
 
     }
 

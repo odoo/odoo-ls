@@ -16,11 +16,19 @@ impl HoverFeature {
 
     pub fn hover_python(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
         let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, range, call_expr) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
+        let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
+        let file_info_ast_ref = file_info_ast_clone.borrow();
+        let (expr, call_expr) = AstUtils::get_expr(&file_info_ast_ref, offset as u32);
+        let Some(expr) = expr else  {
+            return None;
+        };
+        let (analyse_ast_result, range) = AstUtils::get_symbols(session, file_symbol, offset as u32, &expr);
         let evals = analyse_ast_result.evaluations;
         if evals.is_empty() {
             return None;
         };
+        drop(expr);
+        drop(file_info_ast_ref);
         let range = Some(file_info.borrow().text_range_to_range(&range.unwrap()));
         Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
