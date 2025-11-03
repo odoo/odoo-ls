@@ -391,9 +391,11 @@ impl FileInfo {
 
     pub fn offset_to_position_with_rope(rope: &Rope, offset: usize) -> Position {
         let char = rope.try_byte_to_char(offset).expect("unable to get char from bytes");
+        let char_utf16_cu = rope.char_to_utf16_cu(char);
         let line = rope.try_char_to_line(char).ok().expect("unable to get line from char");
         let first_char_of_line = rope.try_line_to_char(line).expect("unable to get char from line");
-        let column = char - first_char_of_line;
+        let first_char_of_line_utf16_cu = rope.char_to_utf16_cu(first_char_of_line);
+        let column = char_utf16_cu - first_char_of_line_utf16_cu;
         Position::new(line as u32, column as u32)
     }
 
@@ -417,7 +419,8 @@ impl FileInfo {
 
     pub fn position_to_offset_with_rope(rope: &Rope, line: u32, char: u32) -> usize {
         let line_char = rope.try_line_to_char(line as usize).expect("unable to get char from line");
-        rope.try_char_to_byte(line_char + char as usize).expect("unable to get byte from char")
+        let line_utf16_cu = rope.char_to_utf16_cu(line_char);
+        rope.try_char_to_utf16_cu(line_utf16_cu + char as usize).expect("unable to get byte from char")
     }
 
     pub fn position_to_offset(&self, line: u32, char: u32) -> usize {
@@ -429,12 +432,19 @@ impl FileInfo {
             self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from_str(&change.text));
             return;
         }
-        let start_idx = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_line_to_char(change.range.unwrap().start.line as usize).expect("Unable to get char position of line");
-        let start_idx = start_idx + change.range.unwrap().start.character as usize;
-        let end_idx = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_line_to_char(change.range.unwrap().end.line as usize).expect("Unable to get char position of line");
-        let end_idx = end_idx + change.range.unwrap().end.character as usize;
-        self.file_info_ast.borrow_mut().text_rope.as_mut().unwrap().remove(start_idx .. end_idx);
-        self.file_info_ast.borrow_mut().text_rope.as_mut().unwrap().insert(start_idx, &change.text);
+        let mut rope_ref = self.file_info_ast.borrow_mut();
+        let rope = rope_ref.text_rope.as_ref().unwrap();
+        let range = change.range.as_ref().unwrap();
+        let line_start_idx = rope.try_line_to_char(range.start.line as usize).expect("Unable to get char position of line");
+        let line_start_utf16_cu = rope.char_to_utf16_cu(line_start_idx);
+        let start_idx = line_start_utf16_cu + range.start.character as usize;
+        let start_idx = rope.utf16_cu_to_char(start_idx);
+        let end_idx = rope.try_line_to_char(range.end.line as usize).expect("Unable to get char position of line");
+        let end_idx = rope.char_to_utf16_cu(end_idx);
+        let end_idx = end_idx + range.end.character as usize;
+        let end_idx = rope.utf16_cu_to_char(end_idx);
+        rope_ref.text_rope.as_mut().unwrap().remove(start_idx .. end_idx);
+        rope_ref.text_rope.as_mut().unwrap().insert(start_idx, &change.text);
     }
 }
 
@@ -636,4 +646,3 @@ impl FileMgr {
         S!(s)
     }
 }
-
