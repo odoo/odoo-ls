@@ -11,6 +11,7 @@ use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use tracing::warn;
+use weak_table::traits::WeakElement;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
@@ -586,6 +587,25 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         func: |_odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_validation_env_ref(symbol.clone());
     }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")])),
+                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")]))],
+                        if_exist_only: true,
+                        func: |_odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        let Some(fields_class_sym) = symbol.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|s| s.upgrade()) else {
+            return;
+        };
+        symbol.borrow_mut().set_evaluations(vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(
+                Rc::downgrade(&fields_class_sym),
+                Some(true),
+                HashMap::new(),
+                Some(PythonArchEvalHooks::eval_init)
+            ),
+            value: None,
+            range: None,
+        }]);
+    }},
 ]});
 
 
@@ -997,7 +1017,7 @@ impl PythonArchEvalHooks {
             context.get(&S!("range")).unwrap().as_text_range().start().to_u32(),
             false
         );
-        let mut context = HashMap::new();
+        let mut result_context = HashMap::new();
 
         let mut contexts_to_add = HashMap::new();
         if relational {
@@ -1026,28 +1046,32 @@ impl PythonArchEvalHooks {
         for (arg_name, (field_name_expr, arg_range, bool_or_str)) in contexts_to_add {
             match bool_or_str {
                 "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0 {
-                    context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
-                    context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
+                    result_context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
+                    result_context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
                 },
                 "bool" => {
                     let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
                     if let Some(boolean) = maybe_boolean {
-                        context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                        result_context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
                     }
                     if arg_name == "default" {
-                        context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
+                        result_context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
                     }
                 },
                 _ => {}
             }
         }
 
-        context.extend([
+        result_context.extend([
             (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
         ]);
+        let weak_eval = match context.get(&S!("constructing_class")) {
+            Some(ContextValue::SYMBOL(weak)) if !weak.is_expired() => weak.clone(),
+            _ => evaluation_sym.get_weak().weak.clone(),
+        };
         return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
-            weak: evaluation_sym.get_weak().weak.clone(),
-            context,
+            weak: weak_eval,
+            context: result_context,
             instance: Some(true),
             is_super: false
         }));

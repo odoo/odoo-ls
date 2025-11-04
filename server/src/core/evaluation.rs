@@ -897,14 +897,27 @@ impl Evaluation {
                                 let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module.clone(), true, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(init) = init.0.first() {
+                                    let init_sym_file = init.borrow().get_file().as_ref().unwrap().upgrade().unwrap().clone();
+                                    if init.borrow().evaluations().is_some()
+                                    && init.borrow().evaluations().unwrap().len() == 0
+                                    && !init_sym_file.borrow().is_external()
+                                    && init_sym_file.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+                                    && init.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
+                                    && init.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
+                                    && init.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
+                                        let mut v = PythonValidator::new(init.borrow().get_entry().unwrap(), init.clone());
+                                        v.validate(session);
+                                    }
                                     if let Some(init_eval) = init.borrow().evaluations() {
                                         //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                         if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
+                                            context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(Rc::downgrade(&base_sym)));
                                             context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
                                             found_hook = true;
                                             let init_result = init_eval[0].symbol.get_symbol_as_weak(session, context, &mut diagnostics, Some(parent.borrow().get_file().unwrap().upgrade().unwrap().clone()));
                                             context.as_mut().unwrap().remove(&S!("parameters"));
+                                            context.as_mut().unwrap().remove(&S!("constructing_class"));
                                             evals.push(Evaluation{
                                                 symbol: EvaluationSymbol {
                                                     sym: EvaluationSymbolPtr::WEAK(init_result),

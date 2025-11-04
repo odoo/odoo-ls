@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
@@ -154,22 +154,25 @@ impl PythonValidator {
                 let file_info = file_info_rc.borrow();
                 if file_info.file_info_ast.borrow().indexed_module.is_some() {
                     let file_info_ast = file_info.file_info_ast.borrow();
-                    let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
-                    let body = match stmt {
-                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
-                            &s.body
-                        },
-                        _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
-                    };
-                    let old_noqa = session.current_noqa.clone();
-                    session.current_noqa = self.sym_stack[0].borrow().get_noqas();
-                    self.validate_body(session, body);
-                    session.current_noqa = old_noqa;
-                    match stmt {
-                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
-                            self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
-                        },
-                        _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                    let func_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                    if func_index != NodeIndex::NONE {
+                        let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(func_index);
+                        let body = match stmt {
+                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
+                                &s.body
+                            },
+                            _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                        };
+                        let old_noqa = session.current_noqa.clone();
+                        session.current_noqa = self.sym_stack[0].borrow().get_noqas();
+                        self.validate_body(session, body);
+                        session.current_noqa = old_noqa;
+                        match stmt {
+                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
+                                self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
+                            },
+                            _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                        }
                     }
                 } else {
                     warn!("no ast found on file info");

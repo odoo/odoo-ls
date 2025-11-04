@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::{u32, vec};
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, ExprNamed, FStringPart, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -102,18 +102,23 @@ impl PythonArchEval {
                     (file_info_ast_bw.get_stmts().unwrap(), None)
                 },
                 false => {
-                    let func_stmt = file_info_ast_bw.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
-                    match func_stmt {
-                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
-                            (&func_stmt.body, Some(func_stmt))
-                        },
-                        _ => panic!("Expected function definition")
+                    let fun_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                    if fun_index == NodeIndex::NONE{ // uninitialized node index
+                        // Function has no body or is dynamically created from a hook
+                        (&vec![], None) // essentially skip evaluation
+                    } else {
+                        let func_stmt = file_info_ast_bw.indexed_module.as_ref().unwrap().get_by_index(fun_index);
+                        match func_stmt {
+                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
+                                (&func_stmt.body, Some(func_stmt))
+                            },
+                            _ => panic!("Expected function definition")
+                        }
                     }
                 }
             };
             self.visit_sub_stmts(session, &ast);
-            if !self.file_mode {
-                let func_stmt = maybe_func_stmt.unwrap();
+            if !self.file_mode && let Some(func_stmt) = maybe_func_stmt {
                 self.diagnostics.extend(
                     PythonArchEvalHooks::handle_func_decorators(session, func_stmt, self.sym_stack[0].clone(), self.file.clone(), self.current_step)
                 );
@@ -557,7 +562,9 @@ impl PythonArchEval {
                     };
                     let model_classes = model.borrow().all_symbols(session, parent_class.find_module(), false);
                     let fn_name = self.sym_stack[0].borrow().name().clone();
-                    let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)| sym.borrow().as_class_sym()._model.as_ref().unwrap().computes.get(&fn_name).cloned()).flatten().collect();
+                    let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)|
+                        sym.borrow().as_class_sym()._model.as_ref().unwrap().computes.get(&fn_name).cloned()
+                    ).flatten().collect();
                     if allowed_fields.is_empty() {
                         continue;
                     }
@@ -655,33 +662,33 @@ impl PythonArchEval {
                 continue;
             }
             let symbol = &ref_sym[0].upgrade_weak();
-            if let Some(symbol) = symbol {
-                if symbol.borrow().typ() != SymType::COMPILED {
-                    if symbol.borrow().typ() != SymType::CLASS {
-                        if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
-                                self.diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
-                            }
-                        }
-                    } else {
-                        //Even if this is a valid class, we have to be sure that its own bases should have been loaded already
-                        let sym_file = symbol.borrow().get_file().clone();
-                        if let Some(file) =  sym_file {
-                            if let Some(file) = file.upgrade() {
-                                if file.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
-                                    SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
-                                }
-                                if !Rc::ptr_eq(&self.file, &file) {
-                                    self.file.borrow_mut().add_dependency(&mut file.borrow_mut(), self.current_step, BuildSteps::ARCH_EVAL);
-                                }
-                            }
-                        }
-                        loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
+            let Some(symbol) = symbol else {
+                continue;
+            };
+            if symbol.borrow().typ() == SymType::COMPILED {
+                continue; //Compiled classes do not have their bases loaded
+            }
+            if symbol.borrow().typ() != SymType::CLASS {
+                if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
+                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
+                        self.diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
+                            ..diagnostic
+                        });
                     }
                 }
+            } else {
+                //Even if this is a valid class, we have to be sure that its own bases should have been loaded already
+                let sym_file = symbol.borrow().get_file().clone();
+                if let Some(file) =  sym_file.and_then(|fw| fw.upgrade()) {
+                    if file.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                        SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
+                    }
+                    if !Rc::ptr_eq(&self.file, &file) {
+                        self.file.borrow_mut().add_dependency(&mut file.borrow_mut(), self.current_step, BuildSteps::ARCH_EVAL);
+                    }
+                }
+                loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
             }
         }
     }
