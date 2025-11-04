@@ -21,7 +21,8 @@ use super::odoo::SyncOdoo;
 use super::symbols::symbol::Symbol;
 
 pub struct ImportResult {
-    pub name: OYarn,
+    pub name: OYarn, //the last imported element
+    pub var_name: OYarn, // the effective symbol name (asname, or first part in a import A.B.C)
     pub found: bool,
     pub symbol: Rc<RefCell<Symbol>>,
     pub file_tree: Vec<OYarn>, //contains only the first part of a Tree
@@ -108,7 +109,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     let mut result = vec![];
     for alias in name_aliases {
         result.push(ImportResult{
-            name: OYarn::from(alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
+            name: OYarn::from(alias.name.as_ref().to_string()),
+            var_name: OYarn::from(alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
             found: false,
             symbol: fallback_sym.as_ref().unwrap().clone(),
             file_tree: file_tree.clone(),
@@ -163,8 +165,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             // In all "from X import A" case, it simply means search for A
             // But in "import A.B.C", it means search for A only, and import B.C
             // If user typed import A.B.C as D, we will search for A.B.C to link it to symbol D,
-            result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
-            result[name_index as usize].found = true;
+            result[name_index as usize].var_name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
+            //result[name_index as usize].found = true; //even if found at this stage, we want to check everything anyway for diagnostics. But if found, we'll keep this symbol as imported
             result[name_index as usize].symbol = next_symbol.as_ref().unwrap().clone();
         }
         if !name_middle_part.is_empty() {
@@ -197,15 +199,19 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
                 //TODO what if multiple values?
                 let ns = next_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
                 last_symbol = ns;
-                if alias.asname.is_some() && last_symbol.is_none() {
-                    result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+                if last_symbol.is_none() {
+                    if alias.asname.is_some() {
+                        result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+                    }
                     continue;
                 }
             }
             // we found it ! store the result if not already done
-            if alias.asname.is_some() && result[name_index as usize].found == false {
+            if result[name_index as usize].found == false {
                 result[name_index as usize].found = true;
-                result[name_index as usize].symbol = last_symbol.as_ref().unwrap().clone();
+                if alias.asname.is_some() {
+                    result[name_index as usize].symbol = last_symbol.as_ref().unwrap().clone();
+                }
             }
         } else {
             //everything is ok, let's store the result if not already done

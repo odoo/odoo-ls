@@ -90,10 +90,10 @@ impl AstUtils {
                     if alias.range().contains(TextSize::new(offset)) {
                         let mut is_last = false;
                         let (to_analyze, range) = if alias.name.range().contains(TextSize::new(offset)) {
-                            let next_dot_offset = alias.name.id.as_str()[offset as usize - alias.range().start().to_usize()..].find(".");
+                            let next_dot_offset = alias.name.id.as_str()[offset as usize - alias.name.range().start().to_usize()..].find(".");
                             if let Some(next_dot_offset) = next_dot_offset {
                                 let end = offset as usize + next_dot_offset;
-                                let text = &alias.name.id.as_str()[..end - alias.range().start().to_usize()];
+                                let text = &alias.name.id.as_str()[..end - alias.name.range().start().to_usize()];
                                 let start_range = text.rfind(".").map(|p| p+1).unwrap_or(0) + alias.name.range().start().to_usize();
                                 (text, TextRange::new(TextSize::new(start_range as u32), TextSize::new(end as u32)))
                             } else {

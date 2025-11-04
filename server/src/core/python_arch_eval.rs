@@ -392,7 +392,7 @@ impl PythonArchEval {
             &mut Some(&mut self.diagnostics));
 
         for _import_result in import_results.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&_import_result.name, &_import_result.range);
+            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&_import_result.var_name, &_import_result.range);
             let Some(variable) = variable.clone() else {
                 continue;
             };
