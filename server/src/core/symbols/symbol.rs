@@ -1288,7 +1288,11 @@ impl Symbol {
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
-        let name: String = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
+        let name: String = if path.is_dir() {
+            path.components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+        } else {
+            path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+        };
         let path_str = path.sanitize();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
             return Some(parent.borrow_mut().add_new_file(session, &name, &path_str));
