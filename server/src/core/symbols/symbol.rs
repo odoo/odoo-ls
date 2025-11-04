@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::vec;
-use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticTag, Position, Range, SymbolKind};
 
 use crate::core::symbols::function_symbol::FunctionSymbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -2360,7 +2360,12 @@ impl Symbol {
                 for symbol in root.module_symbols.values().cloned() {
                     iter.push(symbol.clone());
                 }
-            }
+            },
+            Symbol::DiskDir(d) => {
+                for symbol in d.module_symbols.values().cloned() {
+                    iter.push(symbol.clone());
+                }
+            },
             _ => {}
         }
         iter.into_iter()
@@ -3054,6 +3059,19 @@ impl Symbol {
             }
         }
         return -1;
+    }
+
+    pub fn get_lsp_symbol_kind(&self) -> SymbolKind {
+        match self.typ() {
+            SymType::CLASS => SymbolKind::CLASS,
+            SymType::FUNCTION => SymbolKind::FUNCTION,
+            SymType::VARIABLE => SymbolKind::VARIABLE,
+            SymType::FILE | SymType::CSV_FILE | SymType::XML_FILE => SymbolKind::FILE,
+            SymType::PACKAGE(_) => SymbolKind::PACKAGE,
+            SymType::NAMESPACE => SymbolKind::NAMESPACE,
+            SymType::DISK_DIR | SymType::COMPILED => SymbolKind::FILE,
+            SymType::ROOT => SymbolKind::NAMESPACE
+        }
     }
 
     /*fn _debug_print_graph_node(&self, acc: &mut String, level: u32) {

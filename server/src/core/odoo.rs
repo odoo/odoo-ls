@@ -5,6 +5,7 @@ use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::features::references::ReferenceFeature;
+use crate::features::workspace_symbols::WorkspaceSymbolFeature;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
@@ -14,9 +15,9 @@ use std::cell::RefCell;
 use std::ffi::OsStr;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use lsp_server::ResponseError;
+use lsp_server::{RequestId, ResponseError};
 use lsp_types::notification::{Notification, Progress};
 use lsp_types::request::WorkDoneProgressCreate;
 use lsp_types::*;
@@ -81,6 +82,8 @@ pub struct SyncOdoo {
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
+    pub current_request_id: Option<RequestId>,
+    pub running_request_ids: Arc<Mutex<Vec<RequestId>>>, //Arc to Server mutex for cancellation support
     pub watched_file_updates: u32,
     rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
@@ -121,6 +124,8 @@ impl SyncOdoo {
             models: HashMap::new(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
+            current_request_id: None,
+            running_request_ids: Arc::new(Mutex::new(vec![])),
             watched_file_updates: 0,
             rebuild_arch: PtrWeakHashSet::new(),
             rebuild_arch_eval: PtrWeakHashSet::new(),
@@ -894,6 +899,13 @@ impl SyncOdoo {
         }
         if step == BuildSteps::VALIDATION {
             return self.rebuild_validation.contains(symbol);
+        }
+        false
+    }
+
+    pub fn is_request_cancelled(&self) -> bool {
+        if let Some(request_id) = self.current_request_id.as_ref() {
+            return !self.running_request_ids.lock().unwrap().contains(request_id);
         }
         false
     }
@@ -1685,6 +1697,21 @@ impl Odoo {
         }
         Ok(None)
     }
+
+    pub fn handle_workspace_symbols(session: &mut SessionInfo<'_>, params: WorkspaceSymbolParams) -> Result<Option<WorkspaceSymbolResponse>, ResponseError> {
+        session.log_message(MessageType::INFO, format!("Workspace Symbol requested with query {}",
+            params.query,
+        ));
+        WorkspaceSymbolFeature::get_workspace_symbols(session, params.query)
+    }
+
+    pub fn handle_workspace_symbols_resolve(session: &mut SessionInfo<'_>, symbol: WorkspaceSymbol) -> Result<WorkspaceSymbol, ResponseError> {
+        session.log_message(MessageType::INFO, format!("Workspace Symbol Resolve for symbol {}",
+            symbol.name,
+        ));
+        WorkspaceSymbolFeature::resolve_workspace_symbol(session, &symbol)
+    }
+
     /// Checks if the given path is a configuration file under one of the workspace folders.
     fn is_config_workspace_file(session: &mut SessionInfo, path: &PathBuf) -> bool {
         for (_, ws_dir) in session.sync_odoo.get_file_mgr().borrow().get_workspace_folders().iter() {

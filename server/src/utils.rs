@@ -342,6 +342,25 @@ pub fn is_python_path(path: &String) -> bool {
     }
 }
 
+pub fn string_fuzzy_contains(string: &str, pattern: &str) -> bool {
+    let mut pattern_char_iter = pattern.chars();
+    let mut pattern_char = match pattern_char_iter.next() {
+        Some(c) => c.to_ascii_lowercase(),
+        None => return true,
+    };
+    for char in string.chars() {
+        if char.to_ascii_lowercase() == pattern_char {
+            pattern_char = match pattern_char_iter.next() {
+                Some(c) => c.to_ascii_lowercase(),
+                None => {
+                    return true;
+                }
+            };
+        }
+    }
+    false
+}
+
 #[macro_export]
 macro_rules! warn_or_panic {
     ($($arg:tt)*) => {

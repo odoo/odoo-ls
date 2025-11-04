@@ -404,8 +404,20 @@ impl FileInfo {
         Position::new(line as u32, column as u32)
     }
 
+    pub fn try_offset_to_position_with_rope(rope: &Rope, offset: usize) -> Option<Position> {
+        let char = rope.try_byte_to_char(offset).ok()?;
+        let line = rope.try_char_to_line(char).ok()?;
+        let first_char_of_line = rope.try_line_to_char(line).ok()?;
+        let column = char - first_char_of_line;
+        Some(Position::new(line as u32, column as u32))
+    }
+
     pub fn offset_to_position(&self, offset: usize) -> Position {
         FileInfo::offset_to_position_with_rope(self.file_info_ast.borrow().text_rope.as_ref().expect("no rope provided"), offset)
+    }
+
+    pub fn try_offset_to_position(&self, offset: usize) -> Option<Position> {
+        FileInfo::try_offset_to_position_with_rope(self.file_info_ast.borrow().text_rope.as_ref()?, offset)
     }
 
     pub fn text_range_to_range(&self, range: &TextRange) -> Range {
@@ -415,11 +427,25 @@ impl FileInfo {
         }
     }
 
+    pub fn try_text_range_to_range(&self, range: &TextRange) -> Option<Range> {
+        Some(Range {
+            start: self.try_offset_to_position(range.start().to_usize())?,
+            end: self.try_offset_to_position(range.end().to_usize())?
+        })
+    }
+
     pub fn std_range_to_range(&self, range: &std::ops::Range<usize>) -> Range {
         Range {
             start: self.offset_to_position(range.start),
             end: self.offset_to_position(range.end)
         }
+    }
+
+    pub fn try_std_range_to_range(&self, range: &std::ops::Range<usize>) -> Option<Range> {
+        Some(Range {
+            start: self.try_offset_to_position(range.start)?,
+            end: self.try_offset_to_position(range.end)?
+        })
     }
 
     pub fn position_to_offset_with_rope(rope: &Rope, line: u32, char: u32) -> usize {
