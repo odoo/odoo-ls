@@ -19,26 +19,29 @@ pub struct AstUtils {}
 
 impl AstUtils {
 
-    pub fn get_expr<'a>(file_info_ast: &'a FileInfoAst, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+
+    pub fn get_symbols<'a>(session: &mut SessionInfo, file_info_ast: &'a FileInfoAst, file_symbol: &Rc<RefCell<Symbol>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
         let mut expr: Option<ExprOrIdent<'a>> = None;
         let mut call_expr: Option<ExprCall> = None;
         for stmt in file_info_ast.get_stmts().unwrap().iter() {
             //we have to handle imports differently as symbols are not visible in file.
-            if let Some(test_import) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
-                return test_import;
+            if let Some((result, range)) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
+                return (result, range, None, None);
             }
             (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
             }
         }
-        if expr.is_none() {
+        let Some(expr) = expr else {
             warn!("expr not found");
-        }
-        (expr, call_expr)
+            return (AnalyzeAstResult::default(), None, None, None);
+        };
+        let (result, range) = Self::get_symbol_from_expr(session, file_symbol, &expr, offset);
+        (result, range, Some(expr), call_expr)
     }
 
-    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: u32, expr: &ExprOrIdent) -> (AnalyzeAstResult, Option<TextRange>) {
+    pub fn get_symbol_from_expr<'a>(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, expr: &ExprOrIdent<'a>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
         let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
         AstUtils::build_scope(session, &parent_symbol);
         let from_module;
@@ -53,7 +56,6 @@ impl AstUtils {
         ]));
         let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context,false, &mut vec![]);
         (analyse_ast_result, Some(expr.range()))
-
     }
 
     pub fn flatten_expr(expr: &Expr) -> String {
@@ -82,9 +84,9 @@ impl AstUtils {
         }
     }
 
-    fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>, Option<ExprCall>)> {
+    fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>)> {
         match stmt {
-            //for all imports, the idea will be to check if we are on the last name of the import (then it has benn imported already and we can fallback on it),
+            //for all imports, the idea will be to check if we are on the last name of the import (then it has been imported already and we can fallback on it),
             //or then take the full tree to the offset symbol and resolve_import on it as it was in a 'from' clause.
             Stmt::Import(stmt) => {
                 for alias in stmt.names.iter() {
@@ -116,7 +118,7 @@ impl AstUtils {
                                     evaluations: vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), None)],
                                     diagnostics: vec![],
                                 };
-                                return Some((result, Some(range), None));
+                                return Some((result, Some(range)));
                             }
                         } else {
                             let res = resolve_import_stmt(session, file_symbol, None, &[
@@ -134,7 +136,7 @@ impl AstUtils {
                                     ).collect(),
                                     diagnostics: vec![],
                                 };
-                                return Some((result, Some(range), None));
+                                return Some((result, Some(range)));
                             }
                         }
                         return None;
@@ -165,7 +167,7 @@ impl AstUtils {
                             evaluations: vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), None)],
                             diagnostics: vec![],
                         };
-                        return Some((result, Some(range), None));
+                        return Some((result, Some(range)));
                     }
                 }
             },

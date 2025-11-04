@@ -157,7 +157,7 @@ impl DefinitionFeature {
         let crate::core::evaluation::ExprOrIdent::Expr(Expr::Attribute(attr_expr)) = expr else {
             return;
         };
-        let (analyse_ast_result, _range) = AstUtils::get_symbols(session, file_symbol, offset as u32, &crate::core::evaluation::ExprOrIdent::Expr(&attr_expr.value));
+        let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &crate::core::evaluation::ExprOrIdent::Expr(&attr_expr.value), offset as u32);
         let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| Symbol::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None)).collect::<Vec<_>>();
         let maybe_module = file_symbol.borrow().find_module();
         let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
@@ -201,14 +201,13 @@ impl DefinitionFeature {
         let offset = file_info.borrow().position_to_offset(line, character);
         let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
-        let (expr, call_expr) = AstUtils::get_expr(&file_info_ast_ref, offset as u32);
-        let Some(expr) = expr else  {
-            return None;
-        };
-        let (analyse_ast_result, _range) = AstUtils::get_symbols(session, file_symbol, offset as u32, &expr);
+        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }
+        let Some(expr) = expr else  {
+            return None; // Unreachable anyway
+        };
         let mut links = vec![];
         let mut evaluations = analyse_ast_result.evaluations.clone();
         // Filter out magic fields
