@@ -111,7 +111,7 @@ impl AstUtils {
                         };
                         if !is_last {
                             //we import as a from_stmt, to refuse import of variables, as the import stmt is not complete
-                            let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() };
+                            let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() };
                             let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
                             if let Some(symbol) = from_symbol {
                                 let result = AnalyzeAstResult {
@@ -123,10 +123,10 @@ impl AstUtils {
                         } else {
                             let res = resolve_import_stmt(session, file_symbol, None, &[
                                 Alias { //create a dummy alias with a asname to force full import
-                                    name: Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() },
-                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range().clone(), node_index: AtomicNodeIndex::dummy() }),
+                                    name: Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() },
+                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range().clone(), node_index: AtomicNodeIndex::default() }),
                                     range: alias.range(),
-                                    node_index: AtomicNodeIndex::dummy()
+                                    node_index: AtomicNodeIndex::default()
                                 }], 0, &mut None);
                             let res = res.into_iter().filter(|s| s.found).collect::<Vec<_>>();
                             if !res.is_empty() {
@@ -160,7 +160,7 @@ impl AstUtils {
                     } else {
                         return None;
                     };
-                    let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::dummy() };
+                    let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() };
                     let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
                     if let Some(symbol) = from_symbol {
                         let result = AnalyzeAstResult {
