@@ -271,6 +271,11 @@ impl DefinitionFeature {
                 index += 1;
                 continue;
             }
+            if matches!(eval.value, Some(EvaluationValue::CONSTANT(_))) {
+                // Skip go to definition on literals
+                index += 1;
+                continue;
+            }
             let Some(symbol) = eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade() else {
                 index += 1;
                 continue;

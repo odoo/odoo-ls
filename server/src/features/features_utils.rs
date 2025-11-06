@@ -373,10 +373,10 @@ impl FeaturesUtils {
         for (index, eval) in evals.iter().enumerate() {
             //search for a constant evaluation like a model name or domain field
             if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(expr))) = eval.value.as_ref() {
-                let mut block = S!("");
                 let str = expr.value.to_string();
                 if let Some(SymType::PACKAGE(PackageType::MODULE)) = file_symbol.as_ref().map(|fs| fs.borrow().typ())
                 && file_path.map_or(false, |fp| fp.ends_with("__manifest__.py")) {
+                    let mut block = S!("");
                     // If we are in manifest, we check if the string is a module and list the underlying module dependencies
                     if let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", str)).and_then(|m| m.upgrade()) {
                         block += format!("Module: {}", module.borrow().name()).as_str();
@@ -437,6 +437,7 @@ impl FeaturesUtils {
                 }
                 if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
                     let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
+                    let mut block = S!("");
                     for main_class_rc in main_classes.iter() {
                         let main_class = main_class_rc.borrow();
                         if let Some(main_class_module) = main_class.find_module() {
@@ -470,9 +471,9 @@ impl FeaturesUtils {
                                 }).collect::<String>();
                         }
                     }
+                    blocks.push(block);
+                    continue;
                 }
-                blocks.push(block);
-                continue;
             }
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let Some(symbol) = eval_symbol.upgrade_weak() else {
