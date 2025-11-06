@@ -6,13 +6,13 @@ use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluatio
 use crate::core::odoo::SyncOdoo;
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
 use crate::core::symbols::symbol::Symbol;
-use crate::core::file_mgr::{FileInfo, FileInfoAst};
+use crate::core::file_mgr::FileInfoAst;
 use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::name::Name;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
 use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
-use ruff_text_size::{Ranged, TextRange, TextSize, TextSlice};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::warn;
 
 pub struct AstUtils {}

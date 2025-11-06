@@ -1,4 +1,4 @@
-use std::{io::Error, panic, sync::{self, Arc, Mutex, atomic::AtomicBool}, thread::JoinHandle};
+use std::{io::Error, panic, sync::{Arc, Mutex, atomic::AtomicBool}, thread::JoinHandle};
 
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};

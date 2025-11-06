@@ -1120,7 +1120,7 @@ impl Symbol {
         }
     }
 
-    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> {
+    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<'_, OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> {
         match self {
             Symbol::File(f) => {
                 f.symbols.iter()

@@ -1,10 +1,8 @@
 use glob::glob;
-use itertools::Itertools;
-use lsp_types::{CompletionItemKind, Diagnostic, DiagnosticTag, Position, Range};
+use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::name::Name;
-use serde::Serialize;
 use tracing::error;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -541,7 +539,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     result
 }
 
-fn valid_names_for_a_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, start_filter: &OYarn, only_on_disk: bool) -> HashMap<OYarn, SymType> {
+fn valid_names_for_a_symbol(_session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, start_filter: &OYarn, only_on_disk: bool) -> HashMap<OYarn, SymType> {
     let mut res = HashMap::new();
     match symbol.borrow().typ() {
         SymType::FILE => {
