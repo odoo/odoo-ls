@@ -114,10 +114,13 @@ impl WorkspaceSymbolFeature {
             })
         } else {
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path);
+            let Some(range) = range else {
+                return;
+            };
             if let Some(file_info) = file_info {
                 lsp_types::OneOf::Left(Location::new(
                     FileMgr::pathname2uri(path),
-                    file_info.borrow().text_range_to_range(symbol.range())
+                    file_info.borrow().text_range_to_range(range)
                 ))
             } else {
                 return;
