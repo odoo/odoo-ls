@@ -232,9 +232,6 @@ impl DefinitionFeature {
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }
-        let Some(expr) = expr else  {
-            return None; // Unreachable anyway
-        };
         let mut links = vec![];
         let mut evaluations = analyse_ast_result.evaluations.clone();
         // Filter out magic fields
@@ -255,10 +252,9 @@ impl DefinitionFeature {
             }
             eval_sym.borrow().range() != parent_sym.borrow().range()
         });
-        if dislay_name_found {
+        if let Some(expr) = expr && dislay_name_found {
             DefinitionFeature::add_display_name_compute_methods(session, &mut links, &expr, file_symbol, offset);
         }
-        drop(expr);
         drop(file_info_ast_ref);
         let mut index = 0;
         while index < evaluations.len() {
@@ -276,6 +272,16 @@ impl DefinitionFeature {
                 continue;
             };
             if let Some(file) = symbol.borrow().get_file() {
+                //For import variable, we should take the next evaluation if we are at the same location than the offset, as the get_symbol will return the current import variable (special case as the definition is from outside the file)
+                if symbol.borrow().typ() == SymType::VARIABLE && symbol.borrow().as_variable().is_import_variable && Rc::ptr_eq(&file.upgrade().unwrap(), file_symbol) && symbol.borrow().has_range() && symbol.borrow().range().contains(TextSize::new(offset as u32)) {
+                    evaluations.remove(index);
+                    let symbol = symbol.borrow();
+                    let sym_eval = symbol.evaluations();
+                    if let Some(sym_eval) = sym_eval {
+                        evaluations = [evaluations.clone(), sym_eval.clone()].concat();
+                    }
+                    continue;
+                }
                 for path in file.upgrade().unwrap().borrow().paths().iter() {
                     let full_path = match file.upgrade().unwrap().borrow().typ() {
                         SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
