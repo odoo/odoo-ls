@@ -4,7 +4,10 @@ use std::{env, fs};
 use std::path::PathBuf;
 
 
-use lsp_types::TextDocumentContentChangeEvent;
+use lsp_server::Message;
+use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent};
+use lsp_types::notification::{Notification, PublishDiagnostics};
+use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::utils::get_python_command;
 use odoo_ls_server::{core::{config::{ConfigEntry, DiagMissingImportsMode}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
 
@@ -77,4 +80,23 @@ pub fn prepare_custom_entry_point<'a>(odoo: &'a mut SyncOdoo, path: &str) -> Ses
     EntryPointMgr::create_new_custom_entry_for_path(&mut session, &ep_path, &ep_path);
     SyncOdoo::process_rebuilds(&mut session, false);
     session
+}
+
+pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Diagnostic> {
+    let mut res = vec![];
+    while let Some(msg) = session._consume_message() {
+        match msg {
+            Message::Notification(n) => {
+                if n.method == PublishDiagnostics::METHOD {
+                    let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
+                    let params_path = FileMgr::uri2pathname(params.uri.as_str());
+                    if params_path == path {
+                        res.extend(params.diagnostics);
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+    return res;
 }
