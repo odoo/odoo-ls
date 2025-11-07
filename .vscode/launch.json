@@ -29,6 +29,46 @@
             "console": "externalTerminal"
         },
         {
+            "name": "Launch Server (gdb)",
+            "type": "cppdbg",
+            "request": "launch",
+            "preLaunchTask": "cargo build",
+            "program": "${workspaceFolder}/server/target/debug/odoo_ls_server",
+            "args": ["--use-tcp"],
+            "cwd": "${workspaceFolder}/server",
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "rust-gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+            ]
+        },
+        {
+            "name": "Debug Test (gdb)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/server/target/debug/deps/test_setup-22eac7e5dc85cac2",
+            "args": [],
+            "cwd": "${workspaceFolder}/server",
+            "environment": [
+                { "name": "COMMUNITY_PATH", "value": "/path/to/odoo" }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "rust-gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "Launch Server (cppvsdbg)",
             "type": "cppvsdbg",
             "request": "launch",
