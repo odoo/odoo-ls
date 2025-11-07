@@ -138,6 +138,20 @@ impl <'a> SessionInfo<'a> {
             current_noqa: NoqaInfo::None,
         }
     }
+
+    /**
+     * Should only be used for tests, when sender is connected to the receiver, to verify messages that has been sent.
+     */
+    pub fn _consume_message(&self) -> Option<Message> {
+        match self.receiver.try_recv() {
+            Ok(msg) => Some(msg),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => {
+                error!("Session channel disconnected");
+                None
+            }
+        }
+    }
 }
 
 fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseError>) -> (Option<Value>, Option<ResponseError>) {
