@@ -917,7 +917,7 @@ impl SyncOdoo {
         self.file_mgr.clone()
     }
 
-    pub fn _unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Vec<Rc<RefCell<Symbol>>> {
         let mut parents = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
@@ -960,27 +960,6 @@ impl SyncOdoo {
         parents
     }
 
-    pub fn get_symbol_of_untitled_file(session: &mut SessionInfo, path: &String) -> Option<Rc<RefCell<Symbol>>> {
-        let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
-        for entry in ep_mgr.borrow().untitled_entry_points.iter() {
-            if entry.borrow().path == *path {
-                let name = PathBuf::from(&path).with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-                let Some(file) = entry.borrow().root.borrow().as_root().module_symbols.get(&Sy!(name)).cloned() else {
-                    continue;
-                };
-                return Some(file);
-            }
-        }
-        None
-    }
-
-    pub fn unload_untitled_file(session: &mut SessionInfo, path: &String) {
-        let Some(file) = SyncOdoo::get_symbol_of_untitled_file(session, path) else {
-            return;
-        };
-        Symbol::unload(session, file);
-    }
-
     /*
      * Give the symbol that is linked to the given path. As we consider that the file is opened, we do not search in entries that
      * could have it in dependencies but are not the main entry. If not found, create a new entry (is useful if the entry was dropped before
@@ -988,7 +967,8 @@ impl SyncOdoo {
      */
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
-        for entry in session.sync_odoo.entry_point_mgr.borrow().iter_main() {
+        let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
+        for entry in ep_mgr.borrow().iter_main() {
             let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade() {
@@ -1007,7 +987,7 @@ impl SyncOdoo {
         }
         //Not found? Then return if it is matching a non-public entry strictly matching the file
         let mut found_an_entry = false; //there to ensure that a wrongly built entry would create infinite loop
-        for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
+        for entry in ep_mgr.borrow().custom_entry_points.iter() {
             let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade() {
@@ -1023,6 +1003,15 @@ impl SyncOdoo {
                     continue;
                 }
                 return Some(path_symbol[0].clone());
+            }
+        }
+        for entry in ep_mgr.borrow().untitled_entry_points.iter() {
+            if entry.borrow().path == path.sanitize() {
+                let name = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
+                let Some(file) = entry.borrow().root.borrow().as_root().module_symbols.get(&Sy!(name)).cloned() else {
+                    continue;
+                };
+                return Some(file);
             }
         }
         if !found_an_entry {
@@ -1327,56 +1316,41 @@ impl Odoo {
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
-        match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+        let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document_position_params.text_document.uri.to_string();
                 if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
                     return Ok(None);
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
-                    Ok(path) => {
-                        let path = path.sanitize();
-                        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
-                            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                            if let Some(file_info) = file_info {
-                                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
-                                    file_info.borrow_mut().prepare_ast(session);
-                                }
-                                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-                                match ast_type {
-                                    AstType::Python => {
-                                        if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
-                                            return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                                        }
-                                    },
-                                    AstType::Xml => {
-                                        return Ok(HoverFeature::hover_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                                    },
-                                    AstType::Csv => {
-                                        return Ok(HoverFeature::hover_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                                    },
-                                }
-                            }
-                        }
-                    },
-                    Err(_) => {
-                        return Ok(None);
-                    }
+                    Ok(path) => path.sanitize(),
+                    Err(_) => return Ok(None),
                 }
-                return Ok(None);
             },
-            Some(schema) if schema == "untitled" => {
-                let path = params.text_document_position_params.text_document.uri.to_string();
-                if let Some(file_symbol) = SyncOdoo::get_symbol_of_untitled_file(session, &path) {
-                    let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                    if let Some(file_info) = file_info {
-                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
+            Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
+            _ => return Ok(None),
+        };
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                match ast_type {
+                    AstType::Python => {
+                        if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
                             return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                         }
-                    }
+                    },
+                    AstType::Xml => {
+                        return Ok(HoverFeature::hover_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
+                    AstType::Csv => {
+                        return Ok(HoverFeature::hover_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
                 }
-            },
-            _ => {}
+            }
         }
         Ok(None)
     }
@@ -1389,56 +1363,41 @@ impl Odoo {
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
-        match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+        let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document_position_params.text_document.uri.to_string();
                 if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
                     return Ok(None);
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
-                    Ok(path) => {
-                        let path = path.sanitize();
-                        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
-                            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
-                            if let Some(file_info) = file_info {
-                                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
-                                    file_info.borrow_mut().prepare_ast(session);
-                                }
-                                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-                                match ast_type {
-                                    AstType::Python => {
-                                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
-                                            return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                                        }
-                                    },
-                                    AstType::Xml => {
-                                        return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                                    },
-                                    AstType::Csv => {
-                                        return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                                    },
-                                }
-                            }
-                        }
-                    },
-                    Err(_) => {
-                        return Ok(None);
-                    }
+                    Ok(path) => path.sanitize(),
+                    Err(_) => return Ok(None),
                 }
-                return Ok(None);
             },
-            Some(schema) if schema == "untitled" => {
-                let path = params.text_document_position_params.text_document.uri.to_string();
-                if let Some(file_symbol) = SyncOdoo::get_symbol_of_untitled_file(session, &path) {
-                    let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                    if let Some(file_info) = file_info {
+            Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
+            _ => return Ok(None),
+        };
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                match ast_type {
+                    AstType::Python => {
                         if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
                             return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                         }
-                    }
+                    },
+                    AstType::Xml => {
+                        return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
+                    AstType::Csv => {
+                        return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
                 }
-            },
-            _ => {}
+            }
         }
         Ok(None)
     }
@@ -1489,45 +1448,31 @@ impl Odoo {
             params.text_document_position.position.line,
             params.text_document_position.position.character
             ));
-        match params.text_document_position.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+        let (schema, path) = match params.text_document_position.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document_position.text_document.uri.to_string();
                 if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
                     return Ok(None);
                 }
                 match params.text_document_position.text_document.uri.to_file_path(){
-                    Ok(path) => {
-                        let path = path.sanitize();
-                        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
-                            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                            if let Some(file_info) = file_info {
-                                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
-                                    file_info.borrow_mut().prepare_ast(session);
-                                }
-                                if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
-                                    return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
-                                }
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        return Ok(None);
-                    }
-                }
-                return Ok(None);
-            },
-            Some(schema) if schema == "untitled" => {
-                let path = params.text_document_position.text_document.uri.to_string();
-                if let Some(file_symbol) = SyncOdoo::get_symbol_of_untitled_file(session, &path) {
-                    let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                    if let Some(file_info) = file_info {
-                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
-                            return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
-                        }
-                    }
+                    Ok(path) => (schema, path.sanitize()),
+                    Err(_) => return Ok(None),
                 }
             },
-            _ => {}
+            Some(schema) if schema == "untitled" => (schema, params.text_document_position.text_document.uri.to_string()),
+            _ => return Ok(None)
+        };
+        let path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &path_buf) {
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
+                    return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                }
+            }
         }
         Ok(None)
     }
@@ -1589,9 +1534,10 @@ impl Odoo {
                 continue; //config file update, handled by the config file handler
             }
             session.log_message(MessageType::INFO, format!("File update: {}", path.sanitize()));
-            let (valid, updated) = Odoo::update_file_cache(session, path.clone(), None, -100);
+            let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            let (valid, updated) = Odoo::update_file_cache(session, &path.sanitize(), file_extension, None, -100);
             if valid && updated {
-                Odoo::update_file_index(session, path, false, true);
+                Odoo::update_file_index(session, path.clone(), file_extension, false, true);
             }
         }
     }
@@ -1603,13 +1549,16 @@ impl Odoo {
             Some(schema) if schema == "file" => {
                 match params.text_document.uri.to_file_path(){
                     Ok(path) => {
-                        session.log_message(MessageType::INFO, format!("File opened: {}", path.sanitize()));
-                        let (valid, updated) = Odoo::update_file_cache(session, path.clone(), Some(&vec![TextDocumentContentChangeEvent{
+                        let sanitized_path = path.sanitize();
+                        session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
+                        let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                        let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&vec![TextDocumentContentChangeEvent{
                             range: None,
                             range_length: None,
-                                text: params.text_document.text}]), params.text_document.version);
+                            text: params.text_document.text
+                        }]), params.text_document.version);
                         if valid {
-                            session.sync_odoo.opened_files.push(path.sanitize());
+                            session.sync_odoo.opened_files.push(sanitized_path.clone());
                             if session.sync_odoo.state_init == InitState::NOT_READY {
                                 return
                             }
@@ -1624,15 +1573,15 @@ impl Odoo {
                                 for custom_entry in ep_mgr.borrow().custom_entry_points.iter() {
                                     if custom_entry.borrow().path == tree_path.sanitize() {
                                         if updated{
-                                            Odoo::update_file_index(session, path, true, false);
+                                            Odoo::update_file_index(session, path.clone(), file_extension, true, false);
                                         }
                                         return;
                                     }
                                 }
-                                EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize(), &path.sanitize());
+                                EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize(), &sanitized_path);
                                 SyncOdoo::process_rebuilds(session, false);
                             } else if updated {
-                                Odoo::update_file_index(session, path, true, false);
+                                Odoo::update_file_index(session, path.clone(), file_extension, true, false);
                             }
                         }
                     },
@@ -1647,19 +1596,18 @@ impl Odoo {
                     return; // We only handle python temporary files
                 }
                 let path = params.text_document.uri.to_string(); // In VSCode it is Untitled-N
-                let (valid, updated) = Odoo::update_untitled_file_cache(session, &path, &vec![TextDocumentContentChangeEvent{
+                let (valid, updated) = Odoo::update_file_cache(session, &path, "py", Some(&vec![TextDocumentContentChangeEvent{
                     range: None,
                     range_length: None,
                     text: params.text_document.text
-                }], params.text_document.version);
+                }]), params.text_document.version);
                 if valid {
                     session.sync_odoo.opened_files.push(path.clone());
                     if session.sync_odoo.state_init == InitState::NOT_READY {
                         return
                     }
                     if updated {
-                        SyncOdoo::unload_untitled_file(session, &path);
-                        SyncOdoo::process_rebuilds(session, false);
+                        SyncOdoo::unload_path(session, &PathBuf::from(&path), false);
                     }
                 }
                 EntryPointMgr::create_new_untitled_entry_for_path(session, &path);
@@ -1675,35 +1623,17 @@ impl Odoo {
     }
 
     pub fn handle_did_close(session: &mut SessionInfo, params: DidCloseTextDocumentParams) {
-        match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+        let path = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 match params.text_document.uri.to_file_path().map(|path_buf| path_buf.sanitize()){
-                    Ok(path) => {
-                        session.log_message(MessageType::INFO, format!("File closed: {path}"));
-                        session.sync_odoo.opened_files.retain(|x| x != &path);
-                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
-                        if let Some(file_info) = file_info {
-                            file_info.borrow_mut().opened = false;
-                        }
-                        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
-                    },
+                    Ok(path) => path,
                     Err(_) => {
                         warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
                         return;
                     }
                 }
             },
-            Some(schema) if schema == "untitled" => {
-                let path = params.text_document.uri.to_string();
-                session.log_message(MessageType::INFO, format!("Untitled file closed: {}", path));
-                session.sync_odoo.opened_files.retain(|x| x != &path);
-                let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
-                if let Some(file_info) = file_info {
-                    file_info.borrow_mut().opened = false;
-                }
-                session.sync_odoo.entry_point_mgr.borrow_mut().remove_untitled_entries_with_path(&path);
-                return;
-            },
+            Some(schema) if schema == "untitled" =>params.text_document.uri.to_string(),
             Some(scheme) => {
                 warn!("Unsupported URI scheme: {}", scheme);
                 return;
@@ -1712,7 +1642,15 @@ impl Odoo {
                 warn!("No URI scheme found");
                 return;
             }
+        };
+        session.log_message(MessageType::INFO, format!("File closed: {path}"));
+        session.sync_odoo.opened_files.retain(|x| x != &path);
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        if let Some(file_info) = file_info {
+            file_info.borrow_mut().opened = false;
+            file_info.borrow_mut().version = None;
         }
+        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
     }
 
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &String) {
@@ -1772,7 +1710,7 @@ impl Odoo {
             session.log_message(MessageType::INFO, format!("Renaming {} to {}", old_path, new_path));
             //1 - delete old uri
             session.sync_odoo.opened_files.retain(|x| x != &old_path.clone());
-            let _ = SyncOdoo::_unload_path(session, &PathBuf::from(&old_path), false);
+            let _ = SyncOdoo::unload_path(session, &PathBuf::from(&old_path), false);
             FileMgr::delete_path(session, &old_path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&old_path);
             SyncOdoo::process_rebuilds(session, false);
@@ -1826,7 +1764,7 @@ impl Odoo {
             let path = FileMgr::uri2pathname(&f.uri);
             session.log_message(MessageType::INFO, format!("Deleting {}", path));
             //1 - delete old uri
-            let _ = SyncOdoo::_unload_path(session, &PathBuf::from(&path), false);
+            let _ = SyncOdoo::unload_path(session, &PathBuf::from(&path), false);
             FileMgr::delete_path(session, &path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
         }
@@ -1834,34 +1772,17 @@ impl Odoo {
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
-        match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+        let (scheme, path) = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 match params.text_document.uri.to_file_path(){
-                    Ok(path) => {
-                        session.log_message(MessageType::INFO, format!("File changed: {}", path.sanitize()));
-                        let version = params.text_document.version;
-                        let (valid, updated) = Odoo::update_file_cache(session, path.clone(), Some(&params.content_changes), version);
-                        if valid && updated {
-                            if session.sync_odoo.state_init == InitState::NOT_READY {
-                                return
-                            }
-                            Odoo::update_file_index(session, path, false, false);
-                        }
-                    },
+                    Ok(path) => (schema, path.sanitize()),
                     Err(_) => {
                         warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
                         return;
                     }
                 }
             },
-            Some(schema) if schema == "untitled" => {
-                let path = params.text_document.uri.to_string();
-                let (valid, updated) = Odoo::update_untitled_file_cache(session, &path, &params.content_changes, params.text_document.version);
-                if valid && updated {
-                    SyncOdoo::unload_untitled_file(session, &path);
-                    SyncOdoo::process_rebuilds(session, false);
-                }
-            },
+            Some(scheme) if scheme == "untitled" => (scheme, params.text_document.uri.to_string()),
             Some(scheme) => {
                 warn!("Unsupported URI scheme: {}", scheme);
                 return;
@@ -1870,6 +1791,17 @@ impl Odoo {
                 warn!("No URI scheme found");
                 return;
             },
+        };
+        let path_buf = PathBuf::from(&path);
+        session.log_message(MessageType::INFO, format!("File changed: {}", path));
+        let file_extension = match scheme.as_str() {
+            "file" => path_buf.extension().clone().and_then(|s| s.to_str()).unwrap_or(""),
+            "untitled" => "py",
+            _ => return,
+        };
+        let (valid, updated) = Odoo::update_file_cache(session, &path, file_extension, Some(&params.content_changes), params.text_document.version);
+        if session.sync_odoo.state_init != InitState::NOT_READY && valid && updated {
+            Odoo::update_file_index(session, path_buf.clone(), file_extension, false, false);
         }
     }
 
@@ -1886,25 +1818,18 @@ impl Odoo {
 
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
-    fn update_file_cache(session: &mut SessionInfo, path: PathBuf, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> (bool, bool) {
-        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
-            session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path.to_str().unwrap(), version));
-            let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), content, Some(version), false);
+    fn update_file_cache(session: &mut SessionInfo, path: &String, extension: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: i32) -> (bool, bool) {
+        if ["py", "xml", "csv"].contains(&extension) || Odoo::is_config_workspace_file(session, &PathBuf::from(path)){
+            session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path, version));
+            let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
             return (!file_info.borrow().opened || version >= 0, file_updated);
         }
         (false, false)
     }
 
-    fn update_untitled_file_cache(session: &mut SessionInfo, path: &String, content: &Vec<TextDocumentContentChangeEvent>, version: i32) -> (bool, bool) {
-        session.log_message(MessageType::INFO, format!("Untitled File Change Event: {}, version {}", path, version));
-        let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, Some(content), Some(version), false);
-        file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
-        (true, file_updated)
-    }
-
-    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, _is_open: bool, force_delay: bool) {
-        if matches!(path.extension().and_then(OsStr::to_str), Some(ext) if ["py", "xml", "csv"].contains(&ext)) || Odoo::is_config_workspace_file(session, &path){
+    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, extension: &str, _is_open: bool, force_delay: bool) {
+        if ["py", "xml", "csv"].contains(&extension) || Odoo::is_config_workspace_file(session, &path){
             SessionInfo::request_update_file_index(session, &path, force_delay);
         }
     }
@@ -1913,38 +1838,21 @@ impl Odoo {
         session.log_message(MessageType::INFO, format!("Document symbol requested for {}",
             params.text_document.uri.as_str(),
         ));
-        match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+        let (schema, path) = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document.uri.to_string();
                 if !uri.ends_with(".py") && !uri.ends_with(".pyi") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
                     return Ok(None);
                 }
                 match params.text_document.uri.to_file_path(){
-                    Ok(path) => {
-                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path.sanitize());
-                        if let Some(file_info) = file_info {
-                            if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
-                                file_info.borrow_mut().prepare_ast(session);
-                            }
-                            return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
-                        }
-                    },
+                    Ok(path) => (schema, path.sanitize()),
                     Err(_) => {
                         warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
                         return Ok(None);
                     }
                 }
             },
-            Some(schema) if schema == "untitled" => {
-                let path = params.text_document.uri.to_string();
-                let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
-                if let Some(file_info) = file_info {
-                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
-                        file_info.borrow_mut().prepare_ast(session);
-                    }
-                    return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
-                }
-            },
+            Some(schema) if schema == "untitled" => (schema, params.text_document.uri.to_string()),
             Some(scheme) => {
                 warn!("Unsupported URI scheme: {}", scheme);
                 return Ok(None);
@@ -1953,6 +1861,13 @@ impl Odoo {
                 warn!("No URI scheme found");
                 return Ok(None);
             }
+        };
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        if let Some(file_info) = file_info {
+            if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                file_info.borrow_mut().prepare_ast(session);
+            }
+            return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
         }
         Ok(None)
     }

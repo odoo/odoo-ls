@@ -258,10 +258,10 @@ impl EntryPointMgr {
     }
 
     pub fn iter_all_but_main(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>> {
-        self.builtins_entry_points.iter().chain(
-        self.public_entry_points.iter()).chain(
-        self.custom_entry_points.iter()
-        )
+        self.builtins_entry_points.iter()
+        .chain(self.public_entry_points.iter())
+        .chain(self.custom_entry_points.iter())
+        .chain(self.untitled_entry_points.iter())
     }
 
     pub fn reset_entry_points(&mut self, with_custom_entries: bool) {
@@ -276,16 +276,9 @@ impl EntryPointMgr {
 
     pub fn remove_entries_with_path(&mut self, path: &String) {
         for entry in self.iter_all() {
-            if PathBuf::from(entry.borrow().path.clone()).starts_with(path) { //delete any entrypoint that would be in a subdirectory too
-                entry.borrow_mut().to_delete = true;
-            }
-        }
-        self.clean_entries();
-    }
-
-    pub fn remove_untitled_entries_with_path(&mut self, path: &String) {
-        for entry in self.untitled_entry_points.iter() {
-            if &entry.borrow().path.clone() == path {
+            if (entry.borrow().typ == EntryPointType::UNTITLED && entry.borrow().path == *path)
+            || (entry.borrow().typ != EntryPointType::UNTITLED
+            && PathBuf::from(entry.borrow().path.clone()).starts_with(path)){  //delete any entrypoint that would be in a subdirectory too
                 entry.borrow_mut().to_delete = true;
             }
         }
@@ -407,7 +400,7 @@ impl EntryPoint {
 
     pub fn is_valid_for(&self, path: &PathBuf) -> bool {
         if self.typ == EntryPointType::UNTITLED {
-            return false;
+            return self.path == path.sanitize();
         }
         path.starts_with(&self.path)
     }

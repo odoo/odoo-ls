@@ -104,7 +104,7 @@ impl <'a> SessionInfo<'a> {
             let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::RESTART);
             return;
         }
-        let _ = SyncOdoo::_unload_path(session, &path, false);
+        let _ = SyncOdoo::unload_path(session, &path, false);
         Odoo::search_symbols_to_rebuild(session, &path.sanitize());
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
             if session.sync_odoo.get_rebuild_queue_size() < 10 {

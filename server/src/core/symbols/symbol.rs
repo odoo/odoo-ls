@@ -4,7 +4,7 @@ use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::file_mgr::NoqaInfo;
+use crate::core::file_mgr::{FileMgr, NoqaInfo};
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
@@ -1296,7 +1296,7 @@ impl Symbol {
             path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string()
         };
         let path_str = path.sanitize();
-        if path_str.ends_with(".py") || path_str.ends_with(".pyi") {
+        if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(parent.borrow_mut().add_new_file(session, &name, &path_str));
         }
         if parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
