@@ -182,6 +182,7 @@ fn test_sections() {
     assert_get_int_eval_values("j", HashSet::from([37, 27]));
     // Try statement sections
     assert_get_int_eval_values("k", HashSet::from([2, 3]));
+    assert_get_int_eval_values("l", HashSet::from([30, 40]));
     assert_get_int_eval_values("m", HashSet::from([80]));
     assert_get_int_eval_values("o", HashSet::from([120]));
     assert_get_int_eval_values("p", HashSet::from([20, 30, 40]));
