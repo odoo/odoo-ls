@@ -4,10 +4,9 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
-use crate::utils::{PathSanitizer, compare_semver};
+use crate::utils::compare_semver;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
@@ -576,12 +575,12 @@ impl FeaturesUtils {
             let from_modules = info_pieces.iter().filter_map(|info| info.from_module.clone().map(|module_rc| module_rc.borrow().name().clone())).unique().collect::<Vec<_>>();
             // BLOCK 1: (type) **name** -> inferred_type
             block += FeaturesUtils::build_block_1(session, id.type_, &id.name, sym_type_tag, &inferred_types).as_str();
-            // BLOCK 2: useful links
-            block += inferred_types.iter().map(|typ| FeaturesUtils::get_useful_link(session, &typ.eval_ptr)).collect::<String>().as_str();
-            // BLOCK 3: documentation
+            // BLOCK 2: documentation
             if let Some(documentation_block) = FeaturesUtils::get_documentation_block(session, &from_modules, &inferred_types){
                 block = block + "  \n***  \n" + &documentation_block;
             }
+            // BLOCK 3: useful links or directory paths
+            block += inferred_types.iter().map(|typ| FeaturesUtils::get_location_info(session, &typ.eval_ptr)).collect::<String>().as_str();
             blocks.push(block);
         }
         blocks.iter().join("  \n***  \n")
@@ -743,24 +742,41 @@ impl FeaturesUtils {
 
     }
 
-    /// Finds and returns useful links for an evaluation
-    fn get_useful_link(_session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
+    /// Finds and returns useful links or directory locations for an evaluation
+    fn get_location_info(_session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
         // Possibly add more links in the future
         let Some(typ) = typ.upgrade_weak() else {
             return S!("")
         };
-        let paths = &typ.borrow().paths();
-        if paths.len() == 1 { //we won't put a link to a namespace
-            let type_ref = typ.borrow();
-            let base_path = match type_ref.typ() {
-                SymType::PACKAGE(_) => PathBuf::from(paths.first().unwrap().clone()).join(format!("__init__.py{}", type_ref.as_package().i_ext())).sanitize(),
-                _ => paths.first().unwrap().clone()
-            };
-            let path = FileMgr::pathname2uri(&base_path);
-            let range = if type_ref.is_file_content() { type_ref.range().start().to_u32() } else { 0 };
-            format!("  \n***  \nSee also: [{}]({}#{}){}", type_ref.name().as_str(), path.as_str(), range, "  \n")
-        } else {
-            S!("")
+        let symbol = &*typ.borrow();
+        let lb = FeaturesUtils::get_line_break(_session);
+        match symbol {
+            Symbol::Namespace(ns) => {
+                // List namespace directories
+                let paths = ns.paths();
+                let name = &ns.name;
+                match paths.len() {
+                    0 => S!(""),
+                    1 => format!("  \n***  \n`{name}` namespace directory: `{}`{lb}", paths[0]),
+                    _ => {
+                        let path_list = paths.iter().map(|p| format!("- `{p}`")).join(lb);
+                        format!("  \n***  \n`{name}` namespace directories:{lb}{path_list}{lb}")
+                    }
+                }
+            }
+            Symbol::Package(_)
+            | Symbol::File(_)
+            | Symbol::XmlFileSymbol(_)
+            | Symbol::CsvFileSymbol(_) => {
+                // Get useful link
+                let uri = FileMgr::pathname2uri(&symbol.get_symbol_first_path());
+                let range = if symbol.is_file_content() { symbol.range().start().to_u32() } else { 0 };
+                format!( "  \n***  \nSee also: [{}]({}#{}){lb}", symbol.name(), uri.as_str(), range)
+            }
+            Symbol::Compiled(c) => {
+                format!("  \n***  \n`{}` is a binary at `{}`{lb}", c.name, c.path)
+            }
+            _ => S!(""),
         }
     }
 
