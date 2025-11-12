@@ -4,8 +4,6 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
-use ruff_text_size::{TextRange, TextSize};
-use tracing::error;
 use std::env;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -187,6 +185,70 @@ fn test_hover_inverse_name_o2m(){
         "Hover on inverse o2m field should show correct type info"
     );
 
+}
+
+#[test]
+fn test_hover_on_namespace_and_module() {
+    // Setup server and session with test addons
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
+    // Ensure the test file exists
+    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    // Get file symbol and file info
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&test_file)
+    ) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test hover on namespace: "odoo.addons" in line 2: from odoo.addons.module_1.constants import ...
+    // Position: line 1 (0-indexed), character at "addons" (~10-16)
+    let hover_namespace = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 1, 12).unwrap_or_default();
+
+    // Should show namespace symbol type
+    assert!(
+        hover_namespace.contains("(namespace)"),
+        "Hover on namespace should show '(namespace)' type. Got: {}", hover_namespace
+    );
+
+    // Should show "addons" as the name
+    assert!(
+        hover_namespace.contains("addons"),
+        "Hover on namespace should show namespace name. Got: {}", hover_namespace
+    );
+
+    // Should list directories instead of "See also" link
+    assert!(
+        hover_namespace.contains("directories:"),
+        "Hover on namespace should list directories. Got: {}", hover_namespace
+    );
+
+    // Should NOT contain "See also:" link
+    assert!(
+        !hover_namespace.contains("See also:"),
+        "Hover on namespace should NOT show 'See also' link. Got: {}", hover_namespace
+    );
+
+    // Test hover on Odoo module: "module_1" in line 2: from odoo.addons.module_1.constants import ...
+    // Position: line 1 (0-indexed), character at "module_1" (~17-24)
+    let hover_module = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 1, 20).unwrap_or_default();
+
+    // Should show package type, module name and "Module" inferred type
+    assert!(
+        hover_module.contains("(package) module_1: Module"),
+        "Hover on Odoo module should show package type, module_1 as name and 'Module' inferred type. Got: {}", hover_module
+    );
+
+    // Module should show "See also" link
+    assert!(
+        hover_module.contains("See also:"),
+        "Hover on Odoo module should show 'See also' link. Got: {}", hover_module
+    );
 }
 
 #[test]
