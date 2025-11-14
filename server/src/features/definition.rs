@@ -225,7 +225,7 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character);
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
         let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
@@ -316,8 +316,8 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character);
-        let data = file_info.borrow().file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
+        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();

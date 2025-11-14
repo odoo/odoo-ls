@@ -20,8 +20,8 @@ impl DocumentSymbolFeature {
                 DocumentSymbolFeature::visit_stmt(session, stmt, &mut results, file_info);
             }
         } else if file_info_bw.uri.ends_with(".xml") {
-            let data = file_info_ast.text_rope.as_ref().unwrap().to_string();
-            let document = roxmltree::Document::parse(&data);
+            let data = file_info_ast.text_document.as_ref().unwrap().contents();
+            let document = roxmltree::Document::parse(data);
             if let Ok(document) = document {
                 DocumentSymbolFeature::visit_xml_document(session, document, &mut results, file_info);
             }
@@ -71,8 +71,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&arg.range),
-                selection_range: file_info.borrow().text_range_to_range(&arg.range),
+                range: file_info.borrow().text_range_to_range(&arg.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(&arg.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -86,8 +86,8 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(&stmt_function_def.range),
-            selection_range: file_info.borrow().text_range_to_range(&stmt_function_def.range),
+            range: file_info.borrow().text_range_to_range(&stmt_function_def.range(), session.sync_odoo.encoding),
+            selection_range: file_info.borrow().text_range_to_range(&stmt_function_def.range(), session.sync_odoo.encoding),
             children: Some(children_symbols)
         });
     }
@@ -107,8 +107,8 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(&stmt_class_def.range),
-            selection_range: file_info.borrow().text_range_to_range(&stmt_class_def.range),
+            range: file_info.borrow().text_range_to_range(&stmt_class_def.range(), session.sync_odoo.encoding),
+            selection_range: file_info.borrow().text_range_to_range(&stmt_class_def.range(), session.sync_odoo.encoding),
             children: Some(children_symbols)
         });
     }
@@ -128,7 +128,7 @@ impl DocumentSymbolFeature {
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
-    fn build_assign_results(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, assigns: Vec<Assign>) {
+    fn build_assign_results(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, assigns: Vec<Assign>) {
         for assign in assigns.iter() {
             match assign.target {
                 AssignTargetType::Name(ref target_name) => {
@@ -139,8 +139,8 @@ impl DocumentSymbolFeature {
                         tags: None,
                         #[allow(deprecated)]
                         deprecated: None,
-                        range: file_info.borrow().text_range_to_range(&target_name.range),
-                        selection_range: file_info.borrow().text_range_to_range(&target_name.range),
+                        range: file_info.borrow().text_range_to_range(&target_name.range, session.sync_odoo.encoding),
+                        selection_range: file_info.borrow().text_range_to_range(&target_name.range, session.sync_odoo.encoding),
                         children: None,
                     });
                 },
@@ -151,7 +151,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_type_alias(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_type_alias: &StmtTypeAlias) {
+    fn visit_type_alias(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_type_alias: &StmtTypeAlias) {
         let name = match *stmt_type_alias.name {
             Expr::Name(ref name) => name.clone(),
             _ => {return;}
@@ -163,8 +163,8 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(&stmt_type_alias.range),
-            selection_range: file_info.borrow().text_range_to_range(&stmt_type_alias.range),
+            range: file_info.borrow().text_range_to_range(&stmt_type_alias.range(), session.sync_odoo.encoding),
+            selection_range: file_info.borrow().text_range_to_range(&stmt_type_alias.range(), session.sync_odoo.encoding),
             children: None
         });
     }
@@ -219,8 +219,8 @@ impl DocumentSymbolFeature {
                     tags: None,
                     #[allow(deprecated)]
                     deprecated: None,
-                    range: file_info.borrow().text_range_to_range(&var.range()),
-                    selection_range: file_info.borrow().text_range_to_range(&var.range()),
+                    range: file_info.borrow().text_range_to_range(&var.range(), session.sync_odoo.encoding),
+                    selection_range: file_info.borrow().text_range_to_range(&var.range(), session.sync_odoo.encoding),
                     children: None
                 });
             }
@@ -253,8 +253,8 @@ impl DocumentSymbolFeature {
                         tags: None,
                         #[allow(deprecated)]
                         deprecated: None,
-                        range: file_info.borrow().text_range_to_range(&name.range()),
-                        selection_range: file_info.borrow().text_range_to_range(&name.range()),
+                        range: file_info.borrow().text_range_to_range(&name.range(), session.sync_odoo.encoding),
+                        selection_range: file_info.borrow().text_range_to_range(&name.range(), session.sync_odoo.encoding),
                         children: None
                     });
                 }
@@ -271,7 +271,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_import(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import: &StmtImport) {
+    fn visit_import(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import: &StmtImport) {
         for name in stmt_import.names.iter() {
             results.push(DocumentSymbol{
                 name: name.name.to_string(),
@@ -280,14 +280,14 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range),
-                selection_range: file_info.borrow().text_range_to_range(&name.range),
+                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
     }
 
-    fn visit_import_from(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import_from: &StmtImportFrom) {
+    fn visit_import_from(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import_from: &StmtImportFrom) {
         for name in stmt_import_from.names.iter() {
             results.push(DocumentSymbol{
                 name: name.name.to_string(),
@@ -296,14 +296,14 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range),
-                selection_range: file_info.borrow().text_range_to_range(&name.range),
+                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
     }
 
-    fn visit_global(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_global: &StmtGlobal) {
+    fn visit_global(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_global: &StmtGlobal) {
         for name in stmt_global.names.iter() {
             results.push(DocumentSymbol{
                 name: name.id.to_string(),
@@ -312,14 +312,14 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range),
-                selection_range: file_info.borrow().text_range_to_range(&name.range),
+                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
     }
 
-    fn visit_nonlocal(_session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_nonlocal: &StmtNonlocal) {
+    fn visit_nonlocal(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_nonlocal: &StmtNonlocal) {
         for name in stmt_nonlocal.names.iter() {
             results.push(DocumentSymbol{
                 name: name.id.to_string(),
@@ -328,8 +328,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range),
-                selection_range: file_info.borrow().text_range_to_range(&name.range),
+                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -347,8 +347,8 @@ impl DocumentSymbolFeature {
             }
         }
         let range = Range {
-            start: file_info.borrow().offset_to_position(document.root_element().range().start),
-            end: file_info.borrow().offset_to_position(document.root_element().range().end),
+            start: file_info.borrow().offset_to_position(document.root_element().range().start as u32, session.sync_odoo.encoding),
+            end: file_info.borrow().offset_to_position(document.root_element().range().end as u32, session.sync_odoo.encoding),
         };
         results.push(DocumentSymbol {
             name: document.root_element().tag_name().name().to_string(),
@@ -365,8 +365,8 @@ impl DocumentSymbolFeature {
 
     fn visit_xml_node(session: &mut SessionInfo, node: &roxmltree::Node, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>) {
         let range = Range {
-            start: file_info.borrow().offset_to_position(node.range().start),
-            end: file_info.borrow().offset_to_position(node.range().end),
+            start: file_info.borrow().offset_to_position(node.range().start as u32, session.sync_odoo.encoding),
+            end: file_info.borrow().offset_to_position(node.range().end as u32, session.sync_odoo.encoding),
         };
         let mut children = vec![];
         for child in node.children() {

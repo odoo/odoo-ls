@@ -17,8 +17,8 @@ impl ReferenceFeature {
     }
 
     pub fn get_references_xml(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
-        let offset = file_info.borrow().position_to_offset(line, character);
-        let data = file_info.borrow().file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
+        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();

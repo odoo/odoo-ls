@@ -120,7 +120,7 @@ impl WorkspaceSymbolFeature {
             if let Some(file_info) = file_info {
                 lsp_types::OneOf::Left(Location::new(
                     FileMgr::pathname2uri(path),
-                    file_info.borrow().text_range_to_range(range)
+                    file_info.borrow().text_range_to_range(range, session.sync_odoo.encoding)
                 ))
             } else {
                 return;
@@ -160,7 +160,9 @@ impl WorkspaceSymbolFeature {
                         if arr.len() == 2 {
                             let start_u32 = arr[0].as_u64().unwrap() as u32;
                             let end_u32 = arr[1].as_u64().unwrap() as u32;
-                            let range = file_info.borrow().try_text_range_to_range(&TextRange::new(TextSize::new(start_u32), TextSize::new(end_u32)));
+                            let range = file_info.borrow().try_text_range_to_range(
+                                &TextRange::new(TextSize::new(start_u32), TextSize::new(end_u32)),
+                                session.sync_odoo.encoding);
                             if let Some(range) = range {
                                 resolved_symbol.location = lsp_types::OneOf::Left(Location::new(
                                     location.uri.clone(),

@@ -198,7 +198,7 @@ impl PythonValidator {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
                             manifest_file.file_info_ast.borrow_mut().indexed_module = None;
-                            manifest_file.file_info_ast.borrow_mut().text_rope = None;
+                            manifest_file.file_info_ast.borrow_mut().text_document = None;
                             manifest_file.file_info_ast.borrow_mut().text_hash = 0;
                         }
                     }
@@ -207,7 +207,7 @@ impl PythonValidator {
                     if ! file.borrow().opened {
                         let f = file.borrow();
                         f.file_info_ast.borrow_mut().indexed_module = None;
-                        f.file_info_ast.borrow_mut().text_rope = None;
+                        f.file_info_ast.borrow_mut().text_document = None;
                         f.file_info_ast.borrow_mut().text_hash = 0;
                     }
                 }

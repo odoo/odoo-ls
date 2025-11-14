@@ -408,12 +408,12 @@ impl ModuleSymbol {
             if file_name.ends_with(".xml") {
                 let xml_sym = symbol.borrow_mut().add_new_xml_file(session, &file_name, &path.sanitize());
                 symbol.borrow_mut().add_dependency(&mut xml_sym.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
-                if file_info.file_info_ast.borrow().text_rope.as_ref().is_none() {
+                if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
                     //TODO do we want to add a diagnostic here?
                     continue;
                 }
                 //That's a little bit crappy, but the SYNTAX step of XML files are done here, as lifetime of roXMLTree are not flexible enough to be separated from the Arch building
-                let data = file_info.file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+                let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                 let document = roxmltree::Document::parse(&data);
                 if let Ok(document) = document {
                     file_info.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
@@ -430,11 +430,11 @@ impl ModuleSymbol {
             } else if file_name.ends_with(".csv") {
                 let csv_sym = symbol.borrow_mut().add_new_csv_file(session, &file_name, &path.sanitize());
                 symbol.borrow_mut().add_dependency(&mut csv_sym.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
-                if file_info.file_info_ast.borrow().text_rope.as_ref().is_none() {
+                if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
                     //TODO do we want to add a diagnostic here?
                     continue;
                 }
-                let data = file_info.file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+                let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                 let mut csv_builder = CsvArchBuilder::new();
                 csv_builder.load_csv(session, csv_sym, &data);
             } else {

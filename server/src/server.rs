@@ -3,6 +3,7 @@ use std::{io::Error, panic, sync::{Arc, Mutex, atomic::AtomicBool}, thread::Join
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
 use lsp_types::{CancelParams, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions, notification::{Cancel, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+use ruff_source_file::PositionEncoding;
 use serde_json::json;
 #[cfg(target_os = "linux")]
 use nix;
@@ -228,6 +229,13 @@ impl Server {
                         ..WorkspaceFileOperationsServerCapabilities::default()
                     })
                 }),
+                position_encoding: Some(
+                    match self.sync_odoo.lock().unwrap().encoding {
+                        PositionEncoding::Utf8 => lsp_types::PositionEncodingKind::UTF8,
+                        PositionEncoding::Utf16 => lsp_types::PositionEncodingKind::UTF16,
+                        PositionEncoding::Utf32 => lsp_types::PositionEncodingKind::UTF32,
+                    }
+                ),
                 ..ServerCapabilities::default()
             }
         };

@@ -49,7 +49,7 @@ impl CompletionFeature {
         line: u32,
         character: u32
     ) -> Option<CompletionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character);
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
         let ast = file_info_ast.get_stmts().unwrap();

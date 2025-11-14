@@ -1,8 +1,8 @@
-use ropey::Rope;
 use ruff_python_ast::{ModModule, PySourceType, Stmt};
 use ruff_python_parser::{Parsed, Token, TokenKind};
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
 use lsp_types::notification::{Notification, PublishDiagnostics};
+use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -13,6 +13,7 @@ use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{collections::HashMap, fs};
 use crate::core::config::{DiagnosticFilter, DiagnosticFilterPathType};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
+use crate::core::text_document::TextDocument;
 use crate::features::node_index_ast::IndexedModule;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
@@ -61,12 +62,12 @@ pub enum AstType {
     Csv
 }
 
-/* Structure that hold ast and rope for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
+/* Structure that hold ast and text_document for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
  */
 #[derive(Debug)]
 pub struct FileInfoAst {
     pub text_hash: u64,
-    pub text_rope: Option<ropey::Rope>,
+    pub text_document: Option<TextDocument>,
     pub indexed_module: Option<Arc<IndexedModule>>,
     pub ast_type: AstType,
 }
@@ -101,7 +102,7 @@ impl FileInfo {
             need_push: false,
             file_info_ast: Rc::new(RefCell::new(FileInfoAst {
                 text_hash: 0,
-                text_rope: None,
+                text_document: None,
                 indexed_module: None,
                 ast_type: AstType::Python,
             })),
@@ -141,13 +142,18 @@ impl FileInfo {
         }
         self.diagnostics.clear();
         if let Some(content) = content {
-            for change in content.iter() {
-                self.apply_change(change);
+            // If we are in did open, we create a new text_document
+            // I.E. we have one content change event with no range
+            // See [`Odoo:handle_did_open`]
+            if content.len() == 1 && content[0].range.is_none() {
+                self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content[0].text.clone(), self.version.expect("Expected version on file did Open")));
+            } else {
+                self.file_info_ast.borrow_mut().text_document.as_mut().unwrap().apply_changes(content.clone(), version.unwrap(), session.sync_odoo.encoding);
             }
         } else {
             match fs::read_to_string(uri) {
                 Ok(content) => {
-                    self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from(content.as_str()));
+                    self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
                 },
                 Err(e) => {
                     session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", uri, e));
@@ -156,7 +162,7 @@ impl FileInfo {
             };
         }
         let mut hasher = DefaultHasher::new();
-        self.file_info_ast.borrow_mut().text_rope.clone().unwrap().hash(&mut hasher);
+        self.file_info_ast.borrow_mut().text_document.clone().unwrap().hash(&mut hasher);
         let old_hash = self.file_info_ast.borrow().text_hash;
         self.file_info_ast.borrow_mut().text_hash = hasher.finish();
         if old_hash == self.file_info_ast.borrow().text_hash {
@@ -178,8 +184,7 @@ impl FileInfo {
         let mut diagnostics = vec![];
         let fia_rc = self.file_info_ast.clone();
         let fia = fia_rc.borrow_mut();
-        let content = &fia.text_rope.as_ref().unwrap().slice(..);
-        let source = content.to_string(); //cast to string to get a version with all changes
+        let source = S!(fia.text_document.as_ref().unwrap().contents());
         drop(fia);
         let mut python_source_type = PySourceType::Python;
         if self.uri.ends_with(".pyi") {
@@ -191,7 +196,7 @@ impl FileInfo {
         if in_workspace {
             self.noqas_blocs.clear();
             self.noqas_lines.clear();
-            self.extract_tokens(&parsed_module, &source);
+            self.extract_tokens(&parsed_module, &source, session.sync_odoo.encoding);
         }
         self.valid = true;
         for error in parsed_module.errors().iter() {
@@ -213,10 +218,10 @@ impl FileInfo {
 
     /* if ast has been set to none to lower memory usage, try to reload it */
     pub fn prepare_ast(&mut self, session: &mut SessionInfo) {
-        if self.file_info_ast.borrow_mut().text_rope.is_none() { //can already be set in xml files
+        if self.file_info_ast.borrow_mut().text_document.is_none() { //can already be set in xml files
             match fs::read_to_string(&self.uri) {
                 Ok(content) => {
-                    self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from(content.as_str()));
+                    self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
                 },
                 Err(_) => {
                     return;
@@ -224,12 +229,12 @@ impl FileInfo {
             };
         }
         let mut hasher = DefaultHasher::new();
-        self.file_info_ast.borrow().text_rope.clone().unwrap().hash(&mut hasher);
+        self.file_info_ast.borrow().text_document.clone().unwrap().hash(&mut hasher);
         self.file_info_ast.borrow_mut().text_hash = hasher.finish();
         self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
     }
 
-    pub fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String) {
+    fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String, encoding: PositionEncoding) {
         let mut is_first_expr: bool = true;
         let mut noqa_to_add = None;
         let mut previous_token: Option<&Token> = None;
@@ -252,17 +257,18 @@ impl FileInfo {
                             } else {
                                 noqa_to_add = Some(NoqaInfo::All);
                             }
-                            let char = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_byte_to_char(token.start().to_usize()).expect("unable to get char from bytes");
-                            let line = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_char_to_line(char).ok().expect("unable to get line from char");
+                            let file_info_ast_ref = self.file_info_ast.borrow();
+                            let text_doc = file_info_ast_ref.text_document.as_ref().unwrap();
+                            let source_location = text_doc.index().source_location(token.start(), text_doc.contents(), encoding);
                             if let Some(previous_token) = previous_token {
-                                let previous_token_char = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_byte_to_char(previous_token.start().to_usize()).expect("unable to get char from bytes");
-                                let previous_token_line = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_char_to_line(previous_token_char).ok().expect("unable to get line from char");
-                                if previous_token_line == line {
-                                    self.noqas_lines.insert(line as u32, noqa_to_add.unwrap());
+                                let prev_location = file_info_ast_ref.text_document.as_ref().unwrap().index().source_location(previous_token.start(), file_info_ast_ref.text_document.as_ref().unwrap().contents(), encoding);
+                                if prev_location.line == source_location.line {
+                                    self.noqas_lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
                                     noqa_to_add = None;
                                     continue;
                                 }
                             }
+                            drop(file_info_ast_ref);
                             if is_first_expr {
                                 self.add_noqa_bloc(0, noqa_to_add.unwrap());
                                 noqa_to_add = None;
@@ -305,9 +311,9 @@ impl FileInfo {
         }
     }
 
-    fn update_range(&self, mut diagnostic: Diagnostic) -> Diagnostic {
-        diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line as usize);
-        diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line as usize);
+    fn update_range(&self, mut diagnostic: Diagnostic, encoding: PositionEncoding) -> Diagnostic {
+        diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line, encoding);
+        diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line, encoding);
         diagnostic
     }
     pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
@@ -329,7 +335,7 @@ impl FileInfo {
 
             'diagnostics: for d in self.diagnostics.values().flatten() {
                 //check noqa lines
-                let updated = self.update_range(d.clone());
+                let updated = self.update_range(d.clone(), session.sync_odoo.encoding);
                 let updated_line = updated.range.start.line;
                 if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
                     match noqa_line {
@@ -396,78 +402,60 @@ impl FileInfo {
         }
     }
 
-    pub fn offset_to_position_with_rope(rope: &Rope, offset: usize) -> Position {
-        let char = rope.try_byte_to_char(offset).expect("unable to get char from bytes");
-        let line = rope.try_char_to_line(char).ok().expect("unable to get line from char");
-        let first_char_of_line = rope.try_line_to_char(line).expect("unable to get char from line");
-        let column = char - first_char_of_line;
-        Position::new(line as u32, column as u32)
+    fn offset_to_position_with_text_document(text_document: &TextDocument, offset: u32, encoding: PositionEncoding) -> Position {
+        let location = text_document.index().source_location(offset.into(), text_document.contents(), encoding);
+        let line = u32::try_from(location.line.to_zero_indexed()).expect("row usize fits in u32");
+        let character = u32::try_from(location.character_offset.to_zero_indexed())
+            .expect("character usize fits in u32");
+        Position::new(line, character)
     }
 
-    pub fn try_offset_to_position_with_rope(rope: &Rope, offset: usize) -> Option<Position> {
-        let char = rope.try_byte_to_char(offset).ok()?;
-        let line = rope.try_char_to_line(char).ok()?;
-        let first_char_of_line = rope.try_line_to_char(line).ok()?;
-        let column = char - first_char_of_line;
-        Some(Position::new(line as u32, column as u32))
+    fn try_offset_to_position_with_text_document(text_document: &TextDocument, offset: u32, encoding: PositionEncoding) -> Option<Position> {
+        let location = text_document.index().source_location(offset.into(), text_document.contents(), encoding);
+        let line = u32::try_from(location.line.to_zero_indexed()).ok()?;
+        let character = u32::try_from(location.character_offset.to_zero_indexed()).ok()?;
+        Some(Position::new(line, character))
     }
 
-    pub fn offset_to_position(&self, offset: usize) -> Position {
-        FileInfo::offset_to_position_with_rope(self.file_info_ast.borrow().text_rope.as_ref().expect("no rope provided"), offset)
+    pub fn offset_to_position(&self, offset: u32, encoding: PositionEncoding) -> Position {
+        FileInfo::offset_to_position_with_text_document(self.file_info_ast.borrow().text_document.as_ref().expect("no text_document provided"), offset, encoding)
     }
 
-    pub fn try_offset_to_position(&self, offset: usize) -> Option<Position> {
-        FileInfo::try_offset_to_position_with_rope(self.file_info_ast.borrow().text_rope.as_ref()?, offset)
+    fn try_offset_to_position(&self, offset: u32, encoding: PositionEncoding) -> Option<Position> {
+        FileInfo::try_offset_to_position_with_text_document(self.file_info_ast.borrow().text_document.as_ref()?, offset, encoding)
     }
 
-    pub fn text_range_to_range(&self, range: &TextRange) -> Range {
+    pub fn text_range_to_range(&self, range: &TextRange, encoding: PositionEncoding) -> Range {
         Range {
-            start: self.offset_to_position(range.start().to_usize()),
-            end: self.offset_to_position(range.end().to_usize())
+            start: self.offset_to_position(range.start().to_usize() as u32, encoding),
+            end: self.offset_to_position(range.end().to_usize() as u32, encoding)
         }
     }
 
-    pub fn try_text_range_to_range(&self, range: &TextRange) -> Option<Range> {
+    pub fn try_text_range_to_range(&self, range: &TextRange, encoding: PositionEncoding) -> Option<Range> {
         Some(Range {
-            start: self.try_offset_to_position(range.start().to_usize())?,
-            end: self.try_offset_to_position(range.end().to_usize())?
+            start: self.try_offset_to_position(range.start().to_usize() as u32, encoding)?,
+            end: self.try_offset_to_position(range.end().to_usize() as u32, encoding)?
         })
     }
 
-    pub fn std_range_to_range(&self, range: &std::ops::Range<usize>) -> Range {
+    pub fn std_range_to_range(&self, range: &std::ops::Range<usize>, encoding: PositionEncoding) -> Range {
         Range {
-            start: self.offset_to_position(range.start),
-            end: self.offset_to_position(range.end)
+            start: self.offset_to_position(range.start as u32, encoding),
+            end: self.offset_to_position(range.end as u32, encoding)
         }
     }
 
-    pub fn try_std_range_to_range(&self, range: &std::ops::Range<usize>) -> Option<Range> {
-        Some(Range {
-            start: self.try_offset_to_position(range.start)?,
-            end: self.try_offset_to_position(range.end)?
-        })
+    fn position_to_offset_with_text_document(text_document: &TextDocument, line: u32, char: u32, encoding: PositionEncoding) -> usize {
+        let position = SourceLocation {
+            line: OneIndexed::from_zero_indexed(line as usize),
+            character_offset: OneIndexed::from_zero_indexed(char as usize),
+        };
+        text_document.index().offset(position, text_document.contents(), encoding).into()
     }
 
-    pub fn position_to_offset_with_rope(rope: &Rope, line: u32, char: u32) -> usize {
-        let line_char = rope.try_line_to_char(line as usize).expect("unable to get char from line");
-        rope.try_char_to_byte(line_char + char as usize).expect("unable to get byte from char")
-    }
-
-    pub fn position_to_offset(&self, line: u32, char: u32) -> usize {
-        FileInfo::position_to_offset_with_rope(self.file_info_ast.borrow().text_rope.as_ref().expect("no rope provided"), line, char)
-    }
-
-    fn apply_change(&mut self, change: &TextDocumentContentChangeEvent) {
-        if change.range.is_none() {
-            self.file_info_ast.borrow_mut().text_rope = Some(ropey::Rope::from_str(&change.text));
-            return;
-        }
-        let start_idx = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_line_to_char(change.range.unwrap().start.line as usize).expect("Unable to get char position of line");
-        let start_idx = start_idx + change.range.unwrap().start.character as usize;
-        let end_idx = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_line_to_char(change.range.unwrap().end.line as usize).expect("Unable to get char position of line");
-        let end_idx = end_idx + change.range.unwrap().end.character as usize;
-        self.file_info_ast.borrow_mut().text_rope.as_mut().unwrap().remove(start_idx .. end_idx);
-        self.file_info_ast.borrow_mut().text_rope.as_mut().unwrap().insert(start_idx, &change.text);
+    pub fn position_to_offset(&self, line: u32, char: u32, encoding: PositionEncoding) -> usize {
+        FileInfo::position_to_offset_with_text_document(self.file_info_ast.borrow().text_document.as_ref().expect("no text_document provided"), line, char, encoding)
     }
 }
 
@@ -502,18 +490,18 @@ impl FileMgr {
     pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
         let file = self.files.get(path);
         if let Some(file) = file {
-            if file.borrow().file_info_ast.borrow().text_rope.is_none() {
+            if file.borrow().file_info_ast.borrow().text_document.is_none() {
                 file.borrow_mut().prepare_ast(session);
             }
-            return file.borrow().text_range_to_range(range);
+            return file.borrow().text_range_to_range(range, session.sync_odoo.encoding);
         }
-        //file not in cache, let's load rope on the fly
+        //file not in cache, let's load text_document on the fly
         match fs::read_to_string(path) {
             Ok(content) => {
-                let rope = ropey::Rope::from(content.as_str());
+                let text_document = TextDocument::new(content, -1);
                 return Range {
-                    start: FileInfo::offset_to_position_with_rope(&rope, range.start().to_usize()),
-                    end: FileInfo::offset_to_position_with_rope(&rope, range.end().to_usize())
+                    start: FileInfo::offset_to_position_with_text_document(&text_document, range.start().into(), session.sync_odoo.encoding),
+                    end: FileInfo::offset_to_position_with_text_document(&text_document, range.end().into(), session.sync_odoo.encoding)
                 };
             },
             Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))
@@ -525,18 +513,18 @@ impl FileMgr {
     pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &std::ops::Range<usize>) -> Range {
         let file = self.files.get(path);
         if let Some(file) = file {
-            if file.borrow().file_info_ast.borrow().text_rope.is_none() {
+            if file.borrow().file_info_ast.borrow().text_document.is_none() {
                 file.borrow_mut().prepare_ast(session);
             }
-            return file.borrow().std_range_to_range(range);
+            return file.borrow().std_range_to_range(range, session.sync_odoo.encoding);
         }
-        //file not in cache, let's load rope on the fly
+        //file not in cache, let's load text_document on the fly
         match fs::read_to_string(path) {
             Ok(content) => {
-                let rope = ropey::Rope::from(content.as_str());
+                let text_document = TextDocument::new(content, -1);
                 return Range {
-                    start: FileInfo::offset_to_position_with_rope(&rope, range.start),
-                    end: FileInfo::offset_to_position_with_rope(&rope, range.end)
+                    start: FileInfo::offset_to_position_with_text_document(&text_document, range.start as u32, session.sync_odoo.encoding),
+                    end: FileInfo::offset_to_position_with_text_document(&text_document, range.end as u32, session.sync_odoo.encoding)
                 };
             },
             Err(_) => session.log_message(MessageType::ERROR, format!("Failed to read file {}", path))

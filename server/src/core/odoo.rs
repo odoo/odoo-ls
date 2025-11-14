@@ -22,6 +22,7 @@ use lsp_types::notification::{Notification, Progress};
 use lsp_types::request::WorkDoneProgressCreate;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
+use ruff_source_file::PositionEncoding;
 use serde_json::Value;
 use tracing::{error, warn, info, trace};
 
@@ -94,6 +95,7 @@ pub struct SyncOdoo {
     pub need_rebuild: bool, //if true, the next process_rebuilds will drop everything and rebuild everything
     pub import_cache: Option<ImportCache>,
     pub capabilities: lsp_types::ClientCapabilities,
+    pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
 }
 
@@ -136,6 +138,7 @@ impl SyncOdoo {
             need_rebuild: false,
             import_cache: None,
             capabilities: lsp_types::ClientCapabilities::default(),
+            encoding: PositionEncoding::Utf16,
             opened_files: vec![],
         };
         sync_odoo
@@ -1067,6 +1070,35 @@ impl SyncOdoo {
     pub fn load_capabilities(&mut self, capabilities: &lsp_types::ClientCapabilities) {
         info!("Client capabilities: {:?}", capabilities);
         self.capabilities = capabilities.clone();
+        self.calculate_encoding();
+    }
+
+    fn calculate_encoding(&mut self) {
+        let maybe_client_encoding = self.capabilities
+        .general
+        .as_ref()
+        .and_then(|general_capabilities| general_capabilities.position_encodings.as_ref())
+        .and_then(|encodings| {
+            encodings
+                .iter()
+                .filter_map(|encoding| {
+                    if encoding == &PositionEncodingKind::UTF8 {
+                        Some((2, PositionEncoding::Utf8))
+                    } else if encoding == &PositionEncodingKind::UTF16 {
+                        Some((0, PositionEncoding::Utf16))
+                    } else if encoding == &PositionEncodingKind::UTF32 {
+                        Some((1, PositionEncoding::Utf32))
+                    } else {
+                        None
+                    }
+                })
+                .max_by_key(|(ord, _)| *ord) // this selects the highest priority position encoding
+                // Order is UTF8 > UTF32 > UTF16
+                // Because Ruff prefers UTF8, UTF32 has constant size, and UTF16 is the default and is mandatory
+        });
+        if let Some((_, encoding)) = maybe_client_encoding {
+            self.encoding = encoding;
+        }
     }
 
     /**
