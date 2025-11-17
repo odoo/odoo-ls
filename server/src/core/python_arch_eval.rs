@@ -635,9 +635,12 @@ impl PythonArchEval {
             let eval_base = eval_base.0;
             if eval_base.len() == 0 {
                 //TODO build tree for not_found_path
-                //let file = self.sym_stack[0].clone();
-                //let mut file = file.borrow_mut();
-                //self.create_diagnostic_base_not_found(session, &mut file, , &base.range());
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01001, &[&AstUtils::flatten_expr(base)]) {
+                    self.diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
+                        ..diagnostic
+                    });
+                }
                 continue;
             }
             if eval_base.len() > 1 {
