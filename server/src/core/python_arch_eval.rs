@@ -769,7 +769,7 @@ impl PythonArchEval {
                         self.diagnostics.extend(diags);
                     }
                 }
-            } else if !function_sym.borrow_mut().as_func_mut().is_static{
+            } else if !function_sym.borrow_mut().as_func_mut().is_static && !function_sym.borrow().as_func().is_class_method {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
                     self.diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
