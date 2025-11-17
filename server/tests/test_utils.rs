@@ -60,3 +60,7 @@ pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>
     }).into_iter().flatten().collect::<Vec<_>>();
     locations
 }
+
+pub fn diag_on_line(diagnostics: &Vec<lsp_types::Diagnostic>, line: u32) -> Vec<&lsp_types::Diagnostic> {
+    diagnostics.iter().filter(|d| d.range.start.line <= line && d.range.end.line >= line).collect()
+}

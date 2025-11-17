@@ -87,4 +87,8 @@ impl VariableSymbol {
         vec![]
     }
 
+    pub fn is_value(&self) -> bool {
+        return !self.evaluations.iter().any(|x| x.value.is_none());
+    }
+
 }
