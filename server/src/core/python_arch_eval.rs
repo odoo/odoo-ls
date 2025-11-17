@@ -654,7 +654,7 @@ impl PythonArchEval {
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
+            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, true, None);
             if ref_sym.len() > 1 {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
@@ -672,7 +672,7 @@ impl PythonArchEval {
                 continue; //Compiled classes do not have their bases loaded
             }
             if symbol.borrow().typ() != SymType::CLASS {
-                if symbol.borrow().typ() != SymType::VARIABLE { //we followed_ref already, so if it's still a variable, it means we can't evaluate it. Skip diagnostic
+                if symbol.borrow().typ() != SymType::VARIABLE || symbol.borrow().as_variable().is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
                     if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
                         self.diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
