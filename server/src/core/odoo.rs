@@ -95,6 +95,8 @@ pub struct SyncOdoo {
     pub import_cache: Option<ImportCache>,
     pub capabilities: lsp_types::ClientCapabilities,
     pub opened_files: Vec<String>,
+
+    pub test_mode: bool,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -137,6 +139,8 @@ impl SyncOdoo {
             import_cache: None,
             capabilities: lsp_types::ClientCapabilities::default(),
             opened_files: vec![],
+
+            test_mode: false,
         };
         sync_odoo
     }

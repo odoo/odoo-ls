@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use lsp_server::Message;
 use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent};
 use lsp_types::notification::{Notification, PublishDiagnostics};
+use odoo_ls_server::S;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::utils::get_python_command;
 use odoo_ls_server::{core::{config::{ConfigEntry, DiagMissingImportsMode}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
@@ -58,6 +59,7 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
 
     let (s, r) = crossbeam_channel::unbounded();
     let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
+    session.sync_odoo.test_mode = true;
     SyncOdoo::init(&mut session, config);
 
     server
@@ -76,8 +78,8 @@ pub fn prepare_custom_entry_point<'a>(odoo: &'a mut SyncOdoo, path: &str) -> Ses
         range: None,
         range_length: None,
             text: text}]);
-    let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(&mut session, path, content.as_ref(), Some(1), false);
     EntryPointMgr::create_new_custom_entry_for_path(&mut session, &ep_path, &ep_path);
+    let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(&mut session, path, content.as_ref(), Some(1), false);
     SyncOdoo::process_rebuilds(&mut session, false);
     session
 }
@@ -99,4 +101,12 @@ pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Di
         }
     }
     return res;
+}
+
+pub fn get_diagnostics_test_comments(session: &mut SessionInfo, path: &str) -> Vec<(u32, Vec<String>)> {
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_mgr = file_mgr.borrow();
+    let file_info = file_mgr.get_file_info(&S!(path)).expect("File info not found");
+    let file_info = file_info.borrow();
+    file_info.diag_test_comments.clone()
 }

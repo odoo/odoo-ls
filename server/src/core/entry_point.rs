@@ -237,6 +237,13 @@ impl EntryPointMgr {
         )
     }
 
+    pub fn iter_all_but_public(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>> {
+        self.main_entry_point.iter().chain(
+        self.addons_entry_points.iter()).chain(
+        self.custom_entry_points.iter()
+        )
+    }
+
     pub fn reset_entry_points(&mut self, with_custom_entries: bool) {
         self.builtins_entry_points.clear();
         self.public_entry_points.clear();
