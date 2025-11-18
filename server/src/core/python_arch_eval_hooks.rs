@@ -1247,15 +1247,12 @@ impl PythonArchEvalHooks {
         let module_rc_bw = module_rc.borrow();
         let Some(_symbol) = module_rc_bw.as_module_package().xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
-                /*diagnostics.push(Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30329"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    S!("Unknown XML ID"),
-                    None,
-                    None
-                ));*/ //removed, because there is too many valid place where we can't evaluate it correctly (see stock tests)
+                /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
+                    diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                        ..diagnostic
+                    });
+                }*/ //removed, because there is too many valid place where we can't evaluate it correctly (see stock tests)
             }
             return None;
         };
