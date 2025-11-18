@@ -14,7 +14,8 @@ mod setup;
 #[test]
 fn test_no_main_entry() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let odoo = setup::setup::setup_server(false);
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let _ = setup::setup::create_init_session(&mut odoo, config);
     assert!(!odoo.has_main_entry);
     assert!(!odoo.has_odoo_main_entry);
     assert!(odoo.entry_point_mgr.borrow().main_entry_point.is_none());
@@ -23,18 +24,20 @@ fn test_no_main_entry() {
 
 #[test]
 fn test_custom_entry_point() {
-    let mut odoo = setup::setup::setup_server(false);
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py");
-    let session = setup::setup::prepare_custom_entry_point(&mut odoo, path.sanitize().as_str());
+    setup::setup::prepare_custom_entry_point(&mut session, path.sanitize().as_str());
     assert!(odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
 }
 
 
 #[test]
 fn test_assigns() {
-    let mut odoo = setup::setup::setup_server(false);
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py").sanitize();
-    let session = setup::setup::prepare_custom_entry_point(&mut odoo, path.as_str());
+    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
     let a = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("a")]), u32::MAX);
     assert!(a.len() == 1);
@@ -145,9 +148,10 @@ fn test_assigns() {
 
 #[test]
 fn test_sections() {
-    let mut odoo = setup::setup::setup_server(false);
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/sections.py").sanitize();
-    let session = setup::setup::prepare_custom_entry_point(&mut odoo, path.as_str());
+    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
 
     let assert_get_int_eval_values = |var_name: &str, values: HashSet<i32>|{

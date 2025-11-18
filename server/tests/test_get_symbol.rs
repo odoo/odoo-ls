@@ -13,12 +13,12 @@ mod test_utils;
 #[test]
 fn test_hover_on_model_field_and_method() {
     // Setup server and session with test addons
-    let mut odoo = setup::setup::setup_server(true);
+    let (mut odoo, config) = setup::setup::setup_server(true);
     let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
     assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = setup::setup::create_session(&mut odoo);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and country class names
     let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.full_version.as_str());
@@ -157,7 +157,7 @@ fn test_definition() {
     let odoo_path = PathBuf::from(odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
-    let mut odoo = setup::setup::setup_server(true);
+    let (mut odoo, config) = setup::setup::setup_server(true);
     let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module1_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let module2_test_file = test_addons_path.join("module_2").join("models").join("base_test_models.py").sanitize();
@@ -165,7 +165,7 @@ fn test_definition() {
     // Ensure the test file exists
     assert!(PathBuf::from(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
     assert!(PathBuf::from(&module2_test_file).exists(), "Test file does not exist: {}", module1_test_file);
-    let mut session = setup::setup::create_session(&mut odoo);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and Country class names
     let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.full_version.as_str());

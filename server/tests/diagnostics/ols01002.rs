@@ -7,9 +7,10 @@ use crate::{setup::setup::*, test_utils::diag_on_line};
 
 #[test]
 fn test_ols01002() {
-    let mut odoo = setup_server(false);
+    let (mut odoo, config) = setup_server(false);
+    let mut session = create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/diagnostics/ols01002.py").sanitize();
-    let mut session = prepare_custom_entry_point(&mut odoo, &path);
+    prepare_custom_entry_point(&mut session, &path);
     let diagnostics = get_diagnostics_for_path(&mut session, &path);
     let diagnostics = diag_on_line(&diagnostics, 2);
     assert_eq!(diagnostics.len(), 1);

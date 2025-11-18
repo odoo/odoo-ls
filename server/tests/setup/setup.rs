@@ -16,7 +16,7 @@ use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::rolling::RollingFileAppender;
 use tracing_subscriber::{fmt, layer::SubscriberExt, FmtSubscriber};
 
-pub fn setup_server(with_odoo: bool) -> SyncOdoo {
+pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
 
     let file_appender = RollingFileAppender::builder()
         .max_log_files(20) // only the most recent 5 log files will be kept
@@ -56,32 +56,27 @@ pub fn setup_server(with_odoo: bool) -> SyncOdoo {
     };
     config.python_path = python_cmd;
     config.diag_missing_imports = DiagMissingImportsMode::All;
+    (server, config)
+}
 
+pub fn create_init_session<'a>(odoo: &'a mut SyncOdoo, config: ConfigEntry) -> SessionInfo<'a> {
     let (s, r) = crossbeam_channel::unbounded();
-    let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
+    let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), odoo);
     session.sync_odoo.test_mode = true;
     SyncOdoo::init(&mut session, config);
-
-    server
+    session
 }
 
-pub fn create_session(odoo: &mut SyncOdoo) -> SessionInfo {
-    let (s, r) = crossbeam_channel::unbounded();
-    SessionInfo::new_from_custom_channel(s.clone(), r.clone(), odoo)
-}
-
-pub fn prepare_custom_entry_point<'a>(odoo: &'a mut SyncOdoo, path: &str) -> SessionInfo<'a>{
-    let mut session = create_session(odoo);
+pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
     let ep_path = PathBuf::from(path).sanitize();
     let text = fs::read_to_string(path).expect("unable to read provided path");
     let content = Some(vec![TextDocumentContentChangeEvent{
         range: None,
         range_length: None,
             text: text}]);
-    EntryPointMgr::create_new_custom_entry_for_path(&mut session, &ep_path, &ep_path);
-    let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(&mut session, path, content.as_ref(), Some(1), false);
-    SyncOdoo::process_rebuilds(&mut session, false);
-    session
+    EntryPointMgr::create_new_custom_entry_for_path(session, &ep_path, &ep_path);
+    let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content.as_ref(), Some(1), false);
+    SyncOdoo::process_rebuilds(session, false);
 }
 
 pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Diagnostic> {

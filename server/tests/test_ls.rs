@@ -14,7 +14,8 @@ mod setup;
 #[test]
 fn test_structure() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let odoo = setup::setup::setup_server(true);
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let _ = setup::setup::create_init_session(&mut odoo, config);
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = PathBuf::from(odoo_path).sanitize();
