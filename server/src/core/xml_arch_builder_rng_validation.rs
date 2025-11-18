@@ -88,11 +88,10 @@ impl XmlArchBuilder {
                 "name" | "active" => {},
                 "action" => {
                     if (has_parent || is_submenu) && node.has_children() {
-                        let other_than_text = node.children().any(|c| !c.is_text() && !c.is_comment());
-                        if other_than_text {
+                        for sub_menu in node.children().filter(|c| c.is_element() && c.tag_name().name() == "menuitem") {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05009, &[]) {
                                 diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    range: Range { start: Position::new(sub_menu.range().start as u32, 0), end: Position::new(sub_menu.range().end as u32, 0) },
                                     ..diagnostic.clone()
                                 });
                             }
