@@ -125,8 +125,13 @@ pub fn verify_diagnostics_against_doc(
     for line in diags.keys() {
         assert!(
             expected_lines.contains(line),
-            "Unexpected diagnostics on line {}",
-            line + 1
+            "Unexpected diagnostics on line {}: {}",
+            line + 1,
+            diags.get(line).unwrap().iter().map(|d| match &d.code {
+                Some(NumberOrString::String(c)) => c.clone(),
+                Some(NumberOrString::Number(n)) => n.to_string(),
+                None => "None".to_string(),
+            }).collect::<Vec<String>>().join(", ")
         );
     }
 }
