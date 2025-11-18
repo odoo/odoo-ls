@@ -33,6 +33,7 @@ impl EntryPointMgr {
     /// Returns the file symbol for the untitled entry.
     pub fn add_entry_to_untitled(session: &mut SessionInfo, path: String) -> Rc<RefCell<Symbol>> {
         // For untitled files, we use a minimal tree: just the name as a single OYarn
+        info!("Adding new untitled entry point: {}", path);
         let tree = vec![OYarn::from(path.clone())];
         let entry = EntryPoint::new(
             path.clone(),
