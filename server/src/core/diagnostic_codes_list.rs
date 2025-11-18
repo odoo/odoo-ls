@@ -230,6 +230,10 @@ OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tes
 */
 OLS03302, DiagnosticSetting::Warning, "The active key is deprecated",
 /**
+* Parsing error in XML file
+*/
+OLS05000, DiagnosticSetting::Error, "Unable to parse XML file: {0}",
+/**
 * The XML ID you referenced has not been found in any XML in this module or its dependencies
 */
 OLS05001, DiagnosticSetting::Error, "Unknown XML ID",
@@ -258,7 +262,7 @@ OLS05006, DiagnosticSetting::Error, "menuitem node must contains an id attribute
 OLS05007, DiagnosticSetting::Error, "Invalid attribute {0} in menuitem node",
 /**
 */
-OLS05008, DiagnosticSetting::Error, "Sequence attribute must be a string representing a number",
+OLS05008, DiagnosticSetting::Error, "Sequence attribute must be a string representing an integer",
 /**
 */
 OLS05009, DiagnosticSetting::Error, "SubmenuItem is not allowed when action and parent attributes are defined on a menuitem",
