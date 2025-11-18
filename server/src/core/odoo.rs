@@ -97,6 +97,8 @@ pub struct SyncOdoo {
     pub capabilities: lsp_types::ClientCapabilities,
     pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
+
+    pub test_mode: bool,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -140,6 +142,8 @@ impl SyncOdoo {
             capabilities: lsp_types::ClientCapabilities::default(),
             encoding: PositionEncoding::Utf16,
             opened_files: vec![],
+
+            test_mode: false,
         };
         sync_odoo
     }

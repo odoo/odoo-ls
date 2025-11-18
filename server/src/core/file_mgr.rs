@@ -90,6 +90,8 @@ pub struct FileInfo {
     pub noqas_blocs: HashMap<u32, NoqaInfo>,
     noqas_lines: HashMap<u32, NoqaInfo>,
     diagnostic_filters: Vec<DiagnosticFilter>,
+
+    pub diag_test_comments: Vec<(u32, Vec<String>)>, //for tests: line and list of codes
 }
 
 impl FileInfo {
@@ -110,9 +112,10 @@ impl FileInfo {
             noqas_blocs: HashMap::new(),
             noqas_lines: HashMap::new(),
             diagnostic_filters: Vec::new(),
+            diag_test_comments: vec![],
         }
     }
-    pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, in_workspace: bool, force: bool, is_untitled: bool) -> bool {
+    pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, is_external: bool, force: bool, is_untitled: bool) -> bool {
         // update the file info with the given information.
         // path: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -171,11 +174,11 @@ impl FileInfo {
         if old_hash == self.file_info_ast.borrow().text_hash {
             return false;
         }
-        self._build_ast(session, in_workspace);
+        self._build_ast(session, is_external);
         true
     }
 
-    pub fn _build_ast(&mut self, session: &mut SessionInfo, in_workspace: bool) {
+    pub fn _build_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
         if self.uri.ends_with(".xml") {
             self.file_info_ast.borrow_mut().ast_type = AstType::Xml;
             return;
@@ -196,10 +199,10 @@ impl FileInfo {
             python_source_type = PySourceType::Ipynb;
         }
         let parsed_module = ruff_python_parser::parse_unchecked_source(source.as_str(), python_source_type);
-        if in_workspace {
+        if !is_external {
             self.noqas_blocs.clear();
             self.noqas_lines.clear();
-            self.extract_tokens(&parsed_module, &source, session.sync_odoo.encoding);
+            self.extract_tokens(&parsed_module, &source, session.sync_odoo.encoding, session.sync_odoo.test_mode);
         }
         self.valid = true;
         for error in parsed_module.errors().iter() {
@@ -237,7 +240,7 @@ impl FileInfo {
         self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
     }
 
-    fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String, encoding: PositionEncoding) {
+    fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String, encoding: PositionEncoding, parse_test_comments: bool) {
         let mut is_first_expr: bool = true;
         let mut noqa_to_add = None;
         let mut previous_token: Option<&Token> = None;
@@ -276,6 +279,14 @@ impl FileInfo {
                                 self.add_noqa_bloc(0, noqa_to_add.unwrap());
                                 noqa_to_add = None;
                             }
+                        }
+                    }
+                    if parse_test_comments {
+                        if text.starts_with("#OLS") || text.starts_with("# OLS") {
+                            let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
+                            let char = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_byte_to_char(token.start().to_usize()).expect("unable to get char from bytes");
+                            let line = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_char_to_line(char).ok().expect("unable to get line from char");
+                            self.diag_test_comments.push((line as u32, codes));
                         }
                     }
                 },
@@ -582,7 +593,10 @@ impl FileMgr {
         let mut updated: bool = false;
         if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened || force {
             let mut file_info_mut = (*return_info).borrow_mut();
-            updated = file_info_mut.update(session, uri, content, version, self.is_in_workspace(uri), force, is_untitled);
+            let ep_mgr = session.sync_odoo.entry_point_mgr.borrow();
+            let is_part_of_ep = ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(&entry.borrow().path));
+            drop(ep_mgr);
+            updated = file_info_mut.update(session, uri, content, version, !is_part_of_ep, force, is_untitled);
             drop(file_info_mut);
         }
         (updated, return_info)
