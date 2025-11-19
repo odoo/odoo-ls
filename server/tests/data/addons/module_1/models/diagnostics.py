@@ -10,6 +10,8 @@ class ModelWithDiagnostics(models.Model):
     test_models = fields.One2many("pygls.tests.base_test_model", "diagnostics_id")
     date = fields.Date()
 
+    to_compute = fields.Integer(compute="_compute_field")
+
     def a_method(self):
         self.env["module_2.empty_model"] # OLS03001
         self.env["non.existent.model"] # OLS03002
@@ -65,4 +67,9 @@ class ModelWithDiagnostics(models.Model):
         self.search([("date.millisecond_number", "=", 0)]) # OLS03012
 
         self.search([("int_field.wrong_attr", "=", 0)]) # OLS03013
-        self.search([("test_models.wrong_attr", "=", 0)]) # TODO, no diagnostic for that right now
+        self.search([("test_models.wrong_attr", "=", 0)]) # OLS03011
+
+    @api.depends("int_field")
+    @api.depends("wrong_field") # OLS03014
+    def _compute_field(self):
+        pass
