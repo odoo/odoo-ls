@@ -1331,6 +1331,7 @@ impl Evaluation {
         //validate pos args first
         let mut arg_index = 0;
         let mut number_pos_arg = 0;
+        let mut kword_only_args = Vec::new();
         let mut vararg_index = i32::MAX;
         let mut kwarg_index = i32::MAX;
         for (index, arg) in function.args.iter().enumerate() {
@@ -1342,6 +1343,9 @@ impl Evaluation {
                 }
                 ArgumentType::VARARG => {
                     vararg_index = index as i32;
+                },
+                ArgumentType::KWORD_ONLY => {
+                    kword_only_args.push(arg);
                 },
                 ArgumentType::KWARG => {
                     kwarg_index = index as i32;
@@ -1408,6 +1412,8 @@ impl Evaluation {
                         diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone(), from_module.clone()));
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
+                        } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
+                            kword_only_args.retain(|x| !Weak::ptr_eq(&x.symbol, &func_arg.symbol));
                         }
                         found_one = true;
                         break;
@@ -1434,6 +1440,20 @@ impl Evaluation {
                 });
             }
             return diagnostics;
+        }
+        let mut kword_only_arg_missing = vec![]; // missing kword_only args without default value
+        for kword_only_arg in kword_only_args.iter() {
+            if kword_only_arg.default_value.is_none() {
+                kword_only_arg_missing.push(kword_only_arg.symbol.upgrade().unwrap().borrow().name().clone());
+            }
+        }
+        if !kword_only_arg_missing.is_empty() {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")]) {
+                diagnostics.push(Diagnostic {
+                    range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
+                    ..diagnostic
+                });
+            }
         }
         diagnostics
     }

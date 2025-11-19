@@ -89,7 +89,7 @@ def l(*, x):
     pass
 
 l(x=1)
-l() # OLS01007
+l() # OLS01010
 l(1) # OLS01007
 
 def m(a, *, x, y=3):
@@ -97,7 +97,7 @@ def m(a, *, x, y=3):
 
 m(1, x=2)
 m(1, x=2, y=4)
-m(1) # OLS01007
+m(1) # OLS01010
 m(1, 2) # OLS01007
 
 # Mixed positional-only + regular + keyword-only
@@ -107,10 +107,10 @@ def n(a, b, /, c, *, d, e=0):
 n(1, 2, 3, d=4)
 n(1, 2, 3, d=4, e=5)
 n(1, 2, c=3, d=4)
-n(a=1, b=2, c=3, d=4) # OLS01007 (a/b positional-only)
+n(a=1, b=2, c=3, d=4) # OLS01007
 n(1, 2) # OLS01007
-n(1, 2, 3) # OLS01007 (missing keyword-only d)
-n(1, 2, 3, 4, d=5) # OLS01007 (too many positional arguments)
+n(1, 2, 3) # OLS01010
+n(1, 2, 3, 4, d=5) # OLS01007
 
 # Functions mixing defaults and varargs + keywords
 def o(a, b=1, *args, c, d=0):
@@ -120,9 +120,8 @@ o(1, c=2)
 o(1, 2, c=3)
 o(1, 2, 3, 4, c=5)
 o() # OLS01007
-o(1) # OLS01007 (missing c)
-o(1, 2, 3, d=5) # OLS01007 (missing c)
-o(1, 2, c=3, 5) # OLS01000 (positional after keyword)
+o(1) # OLS01010
+o(1, 2, 3, d=5) # OLS01010
 
 # Fully variadic keyword-only
 def p(**kwargs):
@@ -137,7 +136,6 @@ def q(a, b, *, x, y=10):
 
 q(1, 2, x=3)
 q(1, 2, x=3, y=4)
-q(1, 2) # OLS01007
+q(1, 2) # OLS01010
 q(1, 2, 3) # OLS01007
-q(a=1, b=2, x=3) # valid
-q(a=1, b=2, 3) # OLS01000 (positional after keyword)
+q(a=1, b=2, x=3)

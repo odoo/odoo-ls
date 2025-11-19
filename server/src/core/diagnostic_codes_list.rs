@@ -55,6 +55,10 @@ OLS01008, DiagnosticSetting::Error, "{0} got an unexpected keyword argument '{1}
  */
 OLS01009, DiagnosticSetting::Warning, "Arguments are not valid for all function or method definitions",
 /**
+ * Arguments are not valid for all function or method definitions
+ */
+OLS01010, DiagnosticSetting::Error, "Missing keyword-only argument(s): {0}",
+/**
 * Check your python environment, the effective your sys.path and your addon paths.
 */
 OLS02001, DiagnosticSetting::Warning, "{0} not found",

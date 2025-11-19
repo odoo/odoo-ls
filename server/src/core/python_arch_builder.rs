@@ -730,7 +730,7 @@ impl PythonArchBuilder {
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
-                default_value: None,
+                default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
                 arg_type: ArgumentType::KWORD_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });

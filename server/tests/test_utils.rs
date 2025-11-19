@@ -2,7 +2,7 @@ use lsp_types::{Diagnostic, NumberOrString};
 use once_cell::sync::Lazy;
 use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc};
 
-use odoo_ls_server::{core::{file_mgr::FileInfo, symbols::symbol::Symbol}, threads::SessionInfo, utils::compare_semver};
+use odoo_ls_server::{S, core::{file_mgr::FileInfo, symbols::symbol::Symbol}, threads::SessionInfo, utils::compare_semver};
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
@@ -125,8 +125,13 @@ pub fn verify_diagnostics_against_doc(
     for line in diags.keys() {
         assert!(
             expected_lines.contains(line),
-            "Unexpected diagnostics on line {}",
-            line + 1
+            "Unexpected diagnostics on line {}: {}",
+            line + 1,
+            diags.get(line).unwrap().iter().map(|d| match &d.code {
+                Some(NumberOrString::String(c)) => S!("(") + c.as_str() + ") - " + d.message.as_str(),
+                Some(NumberOrString::Number(n)) => S!("(") + n.to_string().as_str() + ") - " + d.message.as_str(),
+                None => "None".to_string(),
+            }).collect::<Vec<String>>().join(", "),
         );
     }
 }
