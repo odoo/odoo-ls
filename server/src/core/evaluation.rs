@@ -1512,7 +1512,7 @@ impl Evaluation {
 
     fn validate_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
-        if value.is_literal_expr() {
+        if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
