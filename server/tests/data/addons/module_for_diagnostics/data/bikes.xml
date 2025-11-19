@@ -1,0 +1,51 @@
+<odoo>
+<!-- Bike Wheels -->
+    <record id="bike_wheel_1" model="bike_parts.wheel">
+        <field name="name">Standard Wheel</field>
+        <field name="price">100.0</field>
+    </record>
+    <record id="bike_wheel_2" model="bike_parts.wheel">
+        <field name="name">Mountain Bike Wheel</field>
+        <field name="price">150.0</field>
+    </record>
+    <record id="bike_wheel_3" model="bike_parts.wheel">
+        <field name="name">Road Bike Wheel</field>
+        <field name="price">200.0</field>
+    </record>
+<!-- Bikes -->
+    <record id="bike_1" model="bikes.bike">
+        <field name="name">City Bike</field>
+        <field name="wheel_id" ref="bike_wheel_1"/>
+    </record>
+    <record id="bike_2" model="bikes.bike">
+        <field name="name">Mountain Bike</field>
+        <field name="wheel_id" ref="bike_wheel_2"/>
+    </record>
+    <record id="bike_3" model="bikes.bike">
+        <field name="name">Road Bike</field>
+        <field name="wheel_id" ref="WRONG_MODULE.bike_wheel_6"/> <!-- OLS05003 -->
+    </record>
+    <record id="bike_3" model="bikes.bike">
+        <field name="name">Road Bike</field>
+        <field name="wheel_id" ref="bike_wheel_DOES_NOT_EXIST"/> <!-- OLS05001 -->
+    </record>
+    <record id="actie" model="ir.actions.act_window">
+        <field name="name">Forward port batches</field>
+        <field name="res_model">bikes.bike</field>
+        <field name="context">{'active_test': False}</field>
+    </record>
+    <odoo oh="no"> <!-- OLS05004 -->
+    </odoo>
+    <invalid_tag/> <!-- OLS05005 -->
+    <menuitem/> <!-- OLS05006 missing id-->
+    <menuitem id="whoopla" invalid_attr="boom"/> <!-- OLS05007 -->
+    <menuitem id="whoopla" sequence="not an integer"/> <!-- OLS05008 -->
+    <menuitem id="whoopla_child" parent="whoopla" action="actie" web_icon="not_allowed"> <!-- OLS05010 -->
+        <menuitem id="whoopla_child^2"/> <!-- OLS05009 -->
+        <!-- / -->
+        <invalid id="whoopla_child^2"/> <!-- OLS05011 -->
+    </menuitem>
+    <menuitem id="whoopla_child" action="actie" web_icon="not_allowed">
+        <menuitem id="whoopla_child^2" parent="whoopla"/> <!-- OLS05012 -->
+    </menuitem>
+</odoo>
