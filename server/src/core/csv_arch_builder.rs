@@ -95,6 +95,7 @@ impl CsvArchBuilder {
                         start: start as usize,
                         end: end as usize,
                     }),
+                    ref_key: None,
                 }
             );
             start = end + 1;

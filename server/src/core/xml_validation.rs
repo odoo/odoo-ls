@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, XmlDataDelete, XmlDataMenuItem, OdooDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::{FileInfo, FileMgr}, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 
 
 
@@ -126,6 +126,21 @@ impl XmlValidator {
                     field_name = oyarn!("{}", translation[0]);
                     has_translation = true;
                     //TODO check that the language exists
+                }
+            }
+            // Validate field ref_key
+            if let Some((ref_key_val, ref_key_range)) = field.ref_key.as_ref(){
+                let xml_id_split: Vec<_> = ref_key_val.split('.').collect();
+                if xml_id_split.len() > 1 {
+                    let module_name = xml_id_split[0];
+                    if session.sync_odoo.modules.get(module_name).is_none() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(ref_key_range.start.try_into().unwrap(), 0), end: Position::new(ref_key_range.end.try_into().unwrap(), 0) },
+                                ..diagnostic
+                            });
+                        }
+                    }
                 }
             }
             //Check that the field belong to the model

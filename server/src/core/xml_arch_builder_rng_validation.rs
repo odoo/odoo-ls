@@ -244,7 +244,8 @@ impl XmlArchBuilder {
         }
 
         let has_type = node.attribute("type").is_some();
-        let has_ref = node.attribute("ref").is_some();
+        let ref_key = node.attribute_node("ref").map(|rk| (rk.value().to_string(), rk.range()));
+        let has_ref = ref_key.is_some();
         let has_eval = node.attribute("eval").is_some();
         let has_search = node.attribute("search").is_some();
         if [has_type, has_ref, has_eval, has_search].iter().filter(|b| **b).count() > 1 {
@@ -377,6 +378,7 @@ impl XmlArchBuilder {
             range: node.attribute_node("name").unwrap().range(),
             text: text,
             text_range: text_range,
+            ref_key,
         })
     }
 
