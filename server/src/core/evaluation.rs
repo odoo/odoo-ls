@@ -1,3 +1,5 @@
+use itertools::Itertools;
+use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Position, Range};
@@ -784,6 +786,7 @@ impl Evaluation {
 
                 let mut call_argument_diagnostics = Vec::new();
                 for base_eval_ptr in base_eval_ptrs.iter() {
+                    call_argument_diagnostics.push(Vec::new()); //one list per evaluation
                     let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                     let Some(base_sym) = base_sym_weak_eval.weak.upgrade() else {continue};
                     if base_sym.borrow().typ() == SymType::CLASS {
@@ -994,7 +997,7 @@ impl Evaluation {
                             };
                             if is_in_validation {
                                 let on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool());
-                                call_argument_diagnostics.extend(Evaluation::validate_call_arguments(session,
+                                call_argument_diagnostics.last_mut().unwrap().extend(Evaluation::validate_call_arguments(session,
                                     &base_sym.borrow().as_func(),
                                     expr,
                                     call_parent.clone(),
@@ -1458,33 +1461,52 @@ impl Evaluation {
         diagnostics
     }
 
-    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Diagnostic>, eval_count: usize) -> Vec<Diagnostic> {
+    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Vec<Diagnostic>>, eval_count: usize) -> Vec<Diagnostic> {
         let mut filtered_diagnostics = vec![];
-        let mut arg_diagnostic = diagnostics.iter().filter(|d|
-            d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
-            d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string()))
-        );
-        let arg_diagnostic_count = arg_diagnostic.clone().count();
-        if arg_diagnostic_count > 0 {
-            if arg_diagnostic_count == eval_count {
-                // if all evaluations have some argument error, we keep the first one
-                filtered_diagnostics.push(arg_diagnostic.next().unwrap().clone());
-            } else {
-                // if not all evaluations have it, it means at least one is valid.
-                // We use a different code warning
+        //iter through diagnostics and check that each evaluation has the same amount of diagnostics with code OLS01007 or OLS01008 or OLS01010
+        let all_same_issues = diagnostics.iter().fold_while(None, |acc, diags| {
+            let new_count = diags.iter().filter(|d|
+                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
+                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) ||
+                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string()))
+            ).count() as i32;
+            match acc {
+                None => Continue(Some(new_count)),
+                Some(count) => {
+                    if count == new_count {
+                        Continue(Some(count))
+                    } else {
+                        Done(Some(-1))
+                    }
+                }
+            }
+        }).into_inner();
+        match all_same_issues {
+            Some(-1) => {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01009, &[]) {
                     filtered_diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                         ..diagnostic
                     });
                 }
-            }
+            },
+            Some(_count) => {
+                filtered_diagnostics.extend(diagnostics[0].iter().filter(|d|
+                    d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
+                    d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) ||
+                    d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string()))
+                ).cloned().collect::<Vec<Diagnostic>>());
+            },
+            None => {}
         }
-        // we add the rest of the diagnostics as is
-        filtered_diagnostics.extend(diagnostics.into_iter().filter(|d| {
-            d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) &&
-            d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string()))
-        }));
+        // // we add the rest of the diagnostics as is
+        for eval_diag in diagnostics {
+            filtered_diagnostics.extend(eval_diag.into_iter().filter(|d| {
+                d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) &&
+                d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) &&
+                d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string()))
+            }));
+        }
         filtered_diagnostics
     }
 

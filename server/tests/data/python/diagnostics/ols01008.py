@@ -25,6 +25,7 @@ def d(a, *args):
 
 d(5)
 d(5, d=3) # OLS01008
+d(5, d=3, e=5) #OLS01008
 
 def e(a, **kwargs):
     pass
