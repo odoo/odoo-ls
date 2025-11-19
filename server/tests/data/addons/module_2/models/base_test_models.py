@@ -5,3 +5,6 @@ class BaseTestModel(models.Model):
 
     def _compute_something(self):
         return super()._compute_something()
+
+class TestEmptyModel(models.Model):
+    _name = "module_2.empty_model"
