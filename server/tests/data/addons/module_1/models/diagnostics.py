@@ -15,12 +15,12 @@ class ModelWithDiagnostics(models.Model):
     test_related = fields.Integer(related="test_models.test_int")
     test_related_wrong = fields.Integer(related="test_models.diagnostics_ids") #OLS03017
 
-    test_method_search = fields.Integer(search="_search_1")
-    test_method_search = fields.Integer(search="_search_2") # OLS03018
-    test_method_search = fields.Integer(compute="_compute_1")
-    test_method_search = fields.Integer(compute="_compute_2") # OLS03018
-    test_method_search = fields.Integer(inverse="_inverse_1")
-    test_method_search = fields.Integer(inverse="_inverse_2") # OLS03018
+    test_method_search_1 = fields.Integer(search="_search_1")
+    test_method_search_2 = fields.Integer(search="_search_2") # OLS03018
+    test_method_search_3 = fields.Integer(compute="_compute_1")
+    test_method_search_4 = fields.Integer(compute="_compute_2") # OLS03018
+    test_method_search_5 = fields.Integer(inverse="_inverse_1")
+    test_method_search_6 = fields.Integer(inverse="_inverse_2") # OLS03018
 
     date = fields.Date()
 
@@ -96,7 +96,8 @@ class ModelWithDiagnostics(models.Model):
         pass
 
     def _compute_1(self):
-        pass
+        self.test_method_search_3 = 5
+        self.test_method_search_4 = 10 # OLS03019
 
     def _inverse_1(self):
         pass
