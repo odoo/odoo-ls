@@ -173,6 +173,14 @@ OLS03022, DiagnosticSetting::Error, "Inverse field is not a Many2one field",
  */
 OLS03023, DiagnosticSetting::Error, "Inverse field {0} is not pointing to the current model {1}, but rather to {2}",
 /**
+* Form is no longer available on odoo.tests.common, thus it should not be imported from there.
+*/
+OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",
+/**
+* Deprecation Warning
+*/
+OLS03302, DiagnosticSetting::Warning, "The active key is deprecated",
+/**
 * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
 * Do not store any other information in it.
 */
@@ -222,14 +230,6 @@ OLS04011, DiagnosticSetting::Error, "Do not use dict unpacking to build your man
 * Module dependency cycle: make sure nested dependencies are correct
 */
 OLS04012, DiagnosticSetting::Error, "Module dependency: module {0} depends on current module",
-/**
-* Form is no longer available on odoo.tests.common, thus it should not be imported from there.
-*/
-OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",
-/**
-* Deprecation Warning
-*/
-OLS03302, DiagnosticSetting::Warning, "The active key is deprecated",
 /**
 * Parsing error in XML file
 */
