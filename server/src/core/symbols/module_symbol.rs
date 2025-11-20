@@ -242,7 +242,7 @@ impl ModuleSymbol {
                                     }
                                 } else {
                                     for data in value.as_list_expr().unwrap().elts.iter() {
-                                        if !data.is_literal_expr() {
+                                        if !data.is_string_literal_expr() {
                                             if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04008, &[]) {
                                                 res.push(Diagnostic {
                                                     range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
