@@ -71,5 +71,9 @@ class ModelWithDiagnostics(models.Model):
 
     @api.depends("int_field")
     @api.depends("wrong_field") # OLS03014
+    @api.onchange("int_field")
+    @api.onchange("wrong_field") # OLS03014
+    @api.constrains("int_field")
+    @api.constrains("wrong_field") # OLS03014
     def _compute_field(self):
         pass
