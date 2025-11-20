@@ -1235,6 +1235,14 @@ impl PythonArchEvalHooks {
         let mut xml_id_split = xml_id_str.split('.');
         let module_name = xml_id_split.next().unwrap();
         let xml_id = xml_id_split.collect::<Vec<&str>>().join(".");
+        if in_validation && xml_id.contains(".") { // invalid xml_id format, should not contain any dots, i.e. module.xml_id
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                    ..diagnostic
+                });
+            }
+        }
         let module = session.sync_odoo.modules.get(module_name).cloned();
         if module.is_none() {
             if in_validation {

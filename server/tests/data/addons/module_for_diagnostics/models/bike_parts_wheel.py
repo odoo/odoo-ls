@@ -28,3 +28,4 @@ class BikesBike(models.Model):
         self.env.ref('bike_wheel_DOES_NOT_EXIST') # OLS05002
         self.env.ref('module_for_diagnostics.bike_wheel_6') # Ok
         self.env.ref('WRONG_MODULE.bike_wheel_6') # OLS05003
+        self.env.ref('module_for_diagnostics.bike_wheel_6.too.many.dots') # OLS05051
