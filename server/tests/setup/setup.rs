@@ -1,4 +1,5 @@
 use core::str;
+use std::collections::HashMap;
 use std::{env, fs};
 
 use std::path::PathBuf;
@@ -90,6 +91,25 @@ pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Di
                     let params_path = FileMgr::uri2pathname(params.uri.as_str());
                     if params_path == path {
                         res.extend(params.diagnostics);
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+    return res;
+}
+
+pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &Vec<String>) -> HashMap<String, Vec<Diagnostic>> {
+    let mut res = HashMap::new();
+    while let Some(msg) = session._consume_message() {
+        match msg {
+            Message::Notification(n) => {
+                if n.method == PublishDiagnostics::METHOD {
+                    let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
+                    let params_path = FileMgr::uri2pathname(params.uri.as_str());
+                    if paths.contains(&params_path) {
+                        res.entry(params_path).or_insert_with(Vec::new).extend(params.diagnostics);
                     }
                 }
             },
