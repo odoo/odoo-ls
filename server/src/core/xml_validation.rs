@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::{FileInfo, FileMgr}, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::{FileInfo, FileMgr}, model::Model, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 
 
 
@@ -74,16 +74,28 @@ impl XmlValidator {
         let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
         if !model_exists {
             missing_model_dependencies.insert(xml_data_record.model.0.clone());
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&xml_data_record.model.0]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0) },
+                    ..diagnostic.clone()
+                });
+            }
+            info!("Model '{}' does not exist", xml_data_record.model.0);
+            return;
+        }
+        let Some(model) = maybe_model else {unreachable!();};
+        let has_symbols_in_deps = !model.borrow().get_main_symbols(session, Some(module.clone())).is_empty();
+        if !has_symbols_in_deps {
+            missing_model_dependencies.insert(xml_data_record.model.0.clone());
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_data_record.model.0, module.borrow().name()]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0) },
                     ..diagnostic.clone()
                 });
             }
-            info!("Model '{}' not found in module '{}'", xml_data_record.model.0, module.borrow().name());
+            info!("Model '{}' has no symbols in module '{}'", xml_data_record.model.0, module.borrow().name());
             return;
         }
-        let Some(model) = maybe_model else {unreachable!();};
         model_dependencies.push(model.clone());
         let main_symbols = model.borrow().get_main_symbols(session, Some(module.clone()));
         for main_sym in main_symbols.iter() {
@@ -131,13 +143,35 @@ impl XmlValidator {
             // Validate field ref_key
             if let Some((ref_key_val, ref_key_range)) = field.ref_key.as_ref(){
                 let xml_id_split: Vec<_> = ref_key_val.split('.').collect();
-                if xml_id_split.len() > 1 {
-                    let module_name = xml_id_split[0];
-                    if session.sync_odoo.modules.get(module_name).is_none() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
+                match xml_id_split.len() {
+                    0 => {}, // Should not happen
+                    1 => { // Local reference, check that it is not empty
+                        let ref_xml_id = xml_id_split[0];
+                        if ref_xml_id.is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(ref_key_range.start.try_into().unwrap(), 0), end: Position::new(ref_key_range.end.try_into().unwrap(), 0) },
+                                    ..diagnostic
+                                });
+                            }
+                        }
+
+                    },
+                    2 => {
+                        let module_name = xml_id_split[0];
+                        if session.sync_odoo.modules.get(module_name).is_none() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(ref_key_range.start.try_into().unwrap(), 0), end: Position::new(ref_key_range.end.try_into().unwrap(), 0) },
+                                    ..diagnostic
+                                });
+                            }
+                        }},
+                    _ => { // >= 2
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[ref_key_val]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(ref_key_range.start.try_into().unwrap(), 0), end: Position::new(ref_key_range.end.try_into().unwrap(), 0) },
-                                ..diagnostic
+                                ..diagnostic.clone()
                             });
                         }
                     }
@@ -158,12 +192,20 @@ impl XmlValidator {
                             missing_model_dependencies.insert(Sy!(field_text.clone()));
                         }
                         let mut main_sym = vec![];
+                        let from_module = self.xml_symbol.borrow().find_module();
                         if let Some(model) = model {
-                            let from_module = self.xml_symbol.borrow().find_module();
-                            main_sym = model.borrow().get_main_symbols(session, from_module);
+                            main_sym = model.borrow().get_main_symbols(session, from_module.clone());
                         }
-                        if main_sym.is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text]) {
+                        if !model_exists {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text, &xml_data_record.model.0]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
+                        }
+                        if  let Some(module) = from_module &&model_exists && main_sym.is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, module.borrow().name()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
                                     ..diagnostic.clone()

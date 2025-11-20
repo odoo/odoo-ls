@@ -332,13 +332,13 @@ OLS05025, DiagnosticSetting::Error, "Invalid attribute {0} in field node",
 */
 OLS05026, DiagnosticSetting::Error, "Fields only allow 'record' children nodes",
 /**
-* The 'search' attribute cannot be used together with 'eval' or 'type' on a <value> node.
+* The 'search' attribute cannot be used together with 'eval', 'type', `file`, or text data on a <value> node.
 */
-OLS05027, DiagnosticSetting::Error, "search attribute is not allowed when eval or type attribute is present",
+OLS05027, DiagnosticSetting::Error, "search attribute is not allowed when eval, type, file, or text content is present",
 /**
-* The 'eval' attribute cannot be used together with 'search' or 'type' on a <value> node.
+* The 'eval' attribute cannot be used together with 'search', 'type', `file`, or text data on a <value> node.
 */
-OLS05028, DiagnosticSetting::Error, "eval attribute is not allowed when search or type attribute is present",
+OLS05028, DiagnosticSetting::Error, "eval attribute is not allowed when search, type, file, or text content is present",
 /**
 * The 'type' attribute cannot be used together with 'search' or 'eval' on a <value> node.
 */
@@ -348,9 +348,9 @@ OLS05029, DiagnosticSetting::Error, "type attribute is not allowed when search o
 */
 OLS05030, DiagnosticSetting::Error, "text content is not allowed on a value that contains a file attribute",
 /**
-* The 'file' attribute is only allowed on <value> nodes with a 'type' attribute.
+* The 'file' attribute cannot be used together with 'search' or 'eval' on a <value> node.
 */
-OLS05031, DiagnosticSetting::Error, "file attribute is only allowed on value node with type attribute",
+OLS05031, DiagnosticSetting::Error, "file attribute is not allowed when search or eval attribute is present",
 /**
 * The attribute is not valid for <value> nodes.
 */
@@ -368,21 +368,21 @@ OLS05034, DiagnosticSetting::Error, "delete node cannot have both id and search 
 */
 OLS05035, DiagnosticSetting::Error, "delete node must have either id or search attribute",
 /**
-* An <act_window> node must have the specified attribute (id, name, or res_model).
+* Empty Value data, text data or file attribute has to be provided on a <value> node.
 */
-OLS05036, DiagnosticSetting::Error, "act_window node must contain a {0} attribute",
+OLS05036, DiagnosticSetting::Error, "Empty Value data, text data or file attribute has to be provided when `type` attribute is present",
 /**
-* The attribute is not valid for <act_window> nodes.
+* Empty Value data, one of text data, `file`, `eval`, or `search` has to be provided.
 */
-OLS05037, DiagnosticSetting::Error, "Invalid attribute {0} in act_window node",
+OLS05037, DiagnosticSetting::Error, "Empty Value data, one of text data, `file`, `eval`, or `search` has to be provided",
 /**
-* <act_window> nodes cannot have text content.
+* Empty Function data, either of `eval` attribute , or one or more `value`, or `function` children have to be provided.
 */
-OLS05038, DiagnosticSetting::Error, "act_window node cannot have text content",
+OLS05038, DiagnosticSetting::Error, "Empty Function data, either of `eval` attribute , or one or more `value`, or `function` children have to be provided",
 /**
-* The 'binding_type' attribute must be either 'action' or 'report'.
+* You provided an empty XML ID. Please provide a valid XML ID.
 */
-OLS05039, DiagnosticSetting::Error, "binding_type attribute must be either 'action' or 'report', found {0}",
+OLS05039, DiagnosticSetting::Error, "Empty XML ID. Please provide a valid XML ID.",
 /**
 * The 'binding_views' attribute must match the required pattern.
 */
@@ -440,11 +440,11 @@ OLS05053, DiagnosticSetting::Error, "Action with id '{0}' does not exist",
 /**
  * A menuitem is specifying a group that has not been declared before the menuitem
  */
-OLS05054, DiagnosticSetting::Error, "Group with id '{0}' does not exist",
+OLS05054, DiagnosticSetting::Error, "Group(s) with id(s) '{0}' does not exist",
 /**
- * Model not found
+ * Model not found in current module or its dependencies
  */
-OLS05055, DiagnosticSetting::Error, "Model '{0}' not found in module '{1}'",
+OLS05055, DiagnosticSetting::Error, "Model '{0}' not found in module '{1}' or its dependencies",
 /**
  * Model not found
  */

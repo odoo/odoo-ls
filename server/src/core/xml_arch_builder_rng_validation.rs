@@ -73,15 +73,16 @@ impl XmlArchBuilder {
                     }
                 },
                 "groups" => {
-                    for group in attr.value().split(",") {
-                        let group = group.trim_start_matches("-");
-                        if self.get_group_ids(session, group, &attr, diagnostics).is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05054, &[group]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                    ..diagnostic.clone()
-                                });
-                            }
+                    let missing_groups = attr.value().split(",")
+                        .filter(|group| self.get_group_ids(session, group.trim_start_matches("-"), &attr, diagnostics).is_empty())
+                        .collect::<Vec<&str>>()
+                        .join(",");
+                    if missing_groups.len() > 0 {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05054, &[&missing_groups]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
                         }
                     }
                 },
@@ -177,6 +178,7 @@ impl XmlArchBuilder {
         true
     }
 
+    /// Load a <record> node, returning true if node is a record node
     fn load_record(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "record" { return false; }
         let mut found_model = false;
@@ -206,7 +208,7 @@ impl XmlArchBuilder {
                     ..diagnostic.clone()
                 });
             }
-            return false;
+            return true;
         }
         let mut data = OdooDataRecord {
             file_symbol: Rc::downgrade(&self.xml_symbol),
@@ -218,7 +220,8 @@ impl XmlArchBuilder {
         for child in node.children().filter(|n| n.is_element()) {
             if let Some(field) = self.load_field(session, &child, diagnostics) {
                 data.fields.push(field);
-            } else {
+            } else if child.tag_name().name() != "field" {
+                // Diagnostic only for non-field tags, not for invalid ones
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05015, &[child.tag_name().name()]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
@@ -234,14 +237,15 @@ impl XmlArchBuilder {
 
     fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<OdooDataField> {
         if node.tag_name().name() != "field" { return None; }
-        if node.attribute("name").is_none() {
+        let Some(node_name_node) = node.attribute_node("name") else {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
+            return None;
+        };
 
         let has_type = node.attribute("type").is_some();
         let ref_key = node.attribute_node("ref").map(|rk| (rk.value().to_string(), rk.range()));
@@ -258,6 +262,7 @@ impl XmlArchBuilder {
             return None;
         }
         let mut is_xml_or_html = false;
+        let mut iterable_child_node = false;
         if let Some(field_type) = node.attribute("type") {
             match field_type {
                 "int" => {
@@ -283,6 +288,7 @@ impl XmlArchBuilder {
                     }
                 }
                 "list" | "tuple" => {
+                    iterable_child_node = true;
                     for child in node.children() {
                         if !self.load_value(session, &child, diagnostics) {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05020, &[child.tag_name().name()]) {
@@ -356,7 +362,7 @@ impl XmlArchBuilder {
             }
         }
         for child in node.children() {
-            if !self.load_record(session, &child, diagnostics) && !child.is_text() && !child.is_comment() && !is_xml_or_html {
+            if !self.load_record(session, &child, diagnostics) && !child.is_text() && !child.is_comment() && !is_xml_or_html && !iterable_child_node{
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05026, &[]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
@@ -374,8 +380,8 @@ impl XmlArchBuilder {
             }
         }
         Some(OdooDataField {
-            name: oyarn!("{}", node.attribute("name").unwrap()),
-            range: node.attribute_node("name").unwrap().range(),
+            name: oyarn!("{}", node_name_node.value()),
+            range: node_name_node.range(),
             text: text,
             text_range: text_range,
             ref_key,
@@ -386,13 +392,13 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "value" { return false; }
         let mut has_search = false;
         let mut has_eval = false;
-        let has_type = node.has_attribute("type");
+        let mut has_type_or_file_or_text =  node.text().is_some();
         for attr in node.attributes() {
             match attr.name() {
                 "name" | "model" | "use" => {},
                 "search" => {
                     has_search = true;
-                    if has_eval || has_type {
+                    if has_eval || has_type_or_file_or_text {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05027, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -403,7 +409,7 @@ impl XmlArchBuilder {
                 },
                 "eval" => {
                     has_eval = true;
-                    if has_search || has_type {
+                    if has_search || has_type_or_file_or_text {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05028, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -413,16 +419,18 @@ impl XmlArchBuilder {
                     }
                 },
                 "type" => {
+                    has_type_or_file_or_text = true;
                     if has_search || has_eval {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05029, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
+                            continue;
                         }
                     }
-                    if node.has_attribute("file") && node.text().is_some() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05030, &[]) {
+                    if !node.has_attribute("file") && !node.text().is_some() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05036, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
@@ -431,7 +439,17 @@ impl XmlArchBuilder {
                     }
                 },
                 "file" => {
-                    if !has_type {
+                    has_type_or_file_or_text = true;
+                    if node.text().is_some() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05030, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                            continue;
+                        }
+                    }
+                    if has_search || has_eval {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05031, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -448,6 +466,14 @@ impl XmlArchBuilder {
                         });
                     }
                 }
+            }
+        }
+        if !has_search && !has_eval && !has_type_or_file_or_text {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05037, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
             }
         }
         true
@@ -475,6 +501,7 @@ impl XmlArchBuilder {
                     ..diagnostic.clone()
                 });
             }
+            return true;
         }
         let found_id = node.attribute("id").map(|s| s.to_string());
         let has_search = node.attribute("search").is_some();
@@ -535,8 +562,10 @@ impl XmlArchBuilder {
                 }
             }
         }
+        let mut has_value_or_function_child = false;
         for child in node.children().filter(|n| n.is_element()) {
             if self.load_value(session, &child, diagnostics) {
+                has_value_or_function_child = true;
                 if has_eval {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05045, &[]) {
                         diagnostics.push(Diagnostic {
@@ -546,6 +575,7 @@ impl XmlArchBuilder {
                     }
                 }
             } else if self.load_function(session, &child, diagnostics) {
+                has_value_or_function_child = true;
                 if has_eval {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05047, &[]) {
                         diagnostics.push(Diagnostic {
@@ -561,6 +591,14 @@ impl XmlArchBuilder {
                         ..diagnostic.clone()
                     });
                 }
+            }
+        }
+        if !has_eval && !has_value_or_function_child {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05038, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
             }
         }
         true
