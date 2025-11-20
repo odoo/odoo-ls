@@ -146,9 +146,14 @@ impl PythonArchBuilder {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
             }
         } else if self.file_mode {
-            drop(file_info);
-            let mut file_info = file_info_rc.borrow_mut();
-            file_info.publish_diagnostics(session);
+            if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+                //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+            } else {
+                drop(file_info);
+                let mut file_info = file_info_rc.borrow_mut();
+                file_info.publish_diagnostics(session);
+            }
         }
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
