@@ -160,7 +160,7 @@ OLS03019, DiagnosticSetting::Error, "Compute method not set to modify this field
  */
 OLS03020, DiagnosticSetting::Warning, "Model {0} is shadowing an existing model in dependencies",
 /**
- * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model.
+ * On a One2many field, the inverse_name should be a field on the comodel.
  */
 OLS03021, DiagnosticSetting::Error, "Inverse field {0} does not exist on comodel {1}",
 /**

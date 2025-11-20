@@ -8,12 +8,17 @@ class ModelWithDiagnostics(models.Model):
 
     int_field = fields.Integer()
     test_models = fields.One2many("pygls.tests.base_test_model", "diagnostics_id")
-    test_models_wrong_dep = fields.One2many("module_2.custom_model", "diag_id") # OLS03015
+    test_models_wrong_dep = fields.One2many("module_2.custom_model", "diag_id") # OLS03015, OLS03021
     test_models_wrong_dep_kw = fields.One2many(comodel_name="module_2.custom_model", inverse_name="diag_id") # OLS03015, OLS03021
     test_no_model = fields.Many2one("non.existent.model") # OLS03016
     test_no_model_kw = fields.Many2one(comodel_name="non.existent.model") # OLS03016
     test_related = fields.Integer(related="test_models.test_int")
-    test_related_wrong = fields.Integer(related="test_models.diagnostics_ids") #OLS03017
+    test_related_wrong = fields.Integer(related="test_models.diagnostics_id") #OLS03017
+
+    test_models = fields.One2many("pygls.tests.base_test_model", "test_int_vdsqcedfc") # OLS03021
+    test_models = fields.One2many("pygls.tests.base_test_model", "test_int") # OLS03022
+    test_models = fields.One2many("pygls.tests.base_test_model", inverse_name="test_int_vdsqcedfc") # OLS03021
+    test_models = fields.One2many("pygls.tests.base_test_model", inverse_name="test_int") # OLS03022
 
     test_method_search_1 = fields.Integer(search="_search_1")
     test_method_search_2 = fields.Integer(search="_search_2") # OLS03018
