@@ -8,12 +8,20 @@ class ModelWithDiagnostics(models.Model):
 
     int_field = fields.Integer()
     test_models = fields.One2many("pygls.tests.base_test_model", "diagnostics_id")
-    test_models_wrong_dep = fields.One2many("module_2.custom_model", "diag_id") # OLS03015, OLS03021
+    test_models_wrong_dep = fields.One2many("module_2.custom_model", "diag_id") # OLS03015
     test_models_wrong_dep_kw = fields.One2many(comodel_name="module_2.custom_model", inverse_name="diag_id") # OLS03015, OLS03021
     test_no_model = fields.Many2one("non.existent.model") # OLS03016
     test_no_model_kw = fields.Many2one(comodel_name="non.existent.model") # OLS03016
     test_related = fields.Integer(related="test_models.test_int")
     test_related_wrong = fields.Integer(related="test_models.diagnostics_ids") #OLS03017
+
+    test_method_search = fields.Integer(search="_search_1")
+    test_method_search = fields.Integer(search="_search_2") # OLS03018
+    test_method_search = fields.Integer(compute="_compute_1")
+    test_method_search = fields.Integer(compute="_compute_2") # OLS03018
+    test_method_search = fields.Integer(inverse="_inverse_1")
+    test_method_search = fields.Integer(inverse="_inverse_2") # OLS03018
+
     date = fields.Date()
 
     to_compute = fields.Integer(compute="_compute_field")
@@ -82,4 +90,13 @@ class ModelWithDiagnostics(models.Model):
     @api.constrains("int_field")
     @api.constrains("wrong_field") # OLS03014
     def _compute_field(self):
+        pass
+
+    def _search_1(self, operator, value):
+        pass
+
+    def _compute_1(self):
+        pass
+
+    def _inverse_1(self):
         pass
