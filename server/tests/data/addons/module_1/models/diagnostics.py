@@ -10,6 +10,8 @@ class ModelWithDiagnostics(models.Model):
     test_models = fields.One2many("pygls.tests.base_test_model", "diagnostics_id")
     test_models_wrong_dep = fields.One2many("module_2.custom_model", "diag_id") # OLS03015, OLS03021
     test_models_wrong_dep_kw = fields.One2many(comodel_name="module_2.custom_model", inverse_name="diag_id") # OLS03015, OLS03021
+    test_no_model = fields.Many2one("non.existent.model") # OLS03016
+    test_no_model_kw = fields.Many2one(comodel_name="non.existent.model") # OLS03016
     date = fields.Date()
 
     to_compute = fields.Integer(compute="_compute_field")
