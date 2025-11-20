@@ -1,4 +1,7 @@
 from odoo import api, fields, models, _, tools
+from odoo.tests.common import Form # OLS03301
+from odoo.tests import common
+
 class BaseTestModel(models.Model):
     _inherit = "pygls.tests.base_test_model"
     test_int = fields.Integer(compute="_compute_something")
@@ -15,3 +18,9 @@ class Module2CustomModel(models.Model):
 
 class TestEmptyModel(models.Model):
     _name = "module_2.empty_model"
+
+
+class A(common.Form): # OLS01001, OLS03301
+
+    def test(self):
+        Form = common.Form # OLS03301

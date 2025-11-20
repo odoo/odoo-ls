@@ -15,4 +15,5 @@ This is the description of the module 2
     'installable': True,
     'application': True,
     'license': 'LGPL-3',
+    'active': True, # OLS03302
 }

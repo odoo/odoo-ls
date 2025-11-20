@@ -2583,7 +2583,7 @@ impl Symbol {
     fn member_symbol_hook(&self, session: &SessionInfo, name: &String, diagnostics: &mut Vec<Diagnostic>){
         if session.sync_odoo.version_major >= 17 && name == "Form"{
             let tree = self.get_tree();
-            if tree == (vec![Sy!("odoo"), Sy!("tests"), Sy!("common")], vec!()) {
+            if tree.0.ends_with(&[Sy!("odoo"), Sy!("tests"), Sy!("common")]) && tree.1.is_empty() {
                 if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                     diagnostics.push(
                         Diagnostic {
