@@ -552,8 +552,7 @@ impl PythonValidator {
                         let symbols: Vec<_> = main_syms.iter().flat_map(|main_sym|
                             main_sym.clone().borrow().get_member_symbol(session, &inverse_name, Some(module.clone()), false, true, false, true, false).0
                         ).collect();
-                        let method_found = !symbols.is_empty();
-                        if !method_found{
+                        if symbols.is_empty() {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };

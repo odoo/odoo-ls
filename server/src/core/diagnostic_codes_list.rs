@@ -168,7 +168,8 @@ OLS03021, DiagnosticSetting::Error, "Inverse field {0} does not exist on comodel
  */
 OLS03022, DiagnosticSetting::Error, "Inverse field is not a Many2one field",
 /**
- * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model.
+ * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model
+ * -> current_model is not right
  */
 OLS03023, DiagnosticSetting::Error, "Inverse field {0} is not pointing to the current model {1}, but rather to {2}",
 /**

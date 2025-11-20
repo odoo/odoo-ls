@@ -10,6 +10,7 @@ class BaseTestModel(models.Model):
     partner_id = fields.Many2one("res.partner")
     partner_country_phone_code = fields.Integer(related="partner_id.country_id.phone_code", store=True)
     diagnostics_id = fields.Many2one("module_1.diagnostics_model")
+    same_name_id = fields.Many2one(comodel_name="module_1.same_name_model")
 
     def get_test_int(self):
         self.ensure_one()

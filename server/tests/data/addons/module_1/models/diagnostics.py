@@ -20,6 +20,9 @@ class ModelWithDiagnostics(models.Model):
     test_models = fields.One2many("pygls.tests.base_test_model", inverse_name="test_int_vdsqcedfc") # OLS03021
     test_models = fields.One2many("pygls.tests.base_test_model", inverse_name="test_int") # OLS03022
 
+    test_models = fields.One2many("pygls.tests.base_test_model", inverse_name="same_name_id") # OLS03023
+
+
     test_method_search_1 = fields.Integer(search="_search_1")
     test_method_search_2 = fields.Integer(search="_search_2") # OLS03018
     test_method_search_3 = fields.Integer(compute="_compute_1")
