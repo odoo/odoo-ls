@@ -71,7 +71,7 @@ fn test_hover_on_model_field_and_method() {
     );
 
     // Hover on the method "get_test_int"
-    let hover_method = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 12, 8).unwrap_or_default();
+    let hover_method = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 14, 8).unwrap_or_default();
     assert!(
          hover_method.contains("get_test_int"),
         "Hover on method should show method name"
@@ -83,67 +83,67 @@ fn test_hover_on_model_field_and_method() {
     );
 
     // Hover on a reference to a constant (CONSTANT_1)
-    let hover_const = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 17, 23).unwrap_or_default();
+    let hover_const = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 19, 23).unwrap_or_default();
     assert!(
         hover_const.contains("CONSTANT_1: int"),
         "Hover on constant should show constant name amd type int"
     );
 
     // Hover on onchange decorator
-    let hover_onchange = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 23, 22).unwrap_or_default();
+    let hover_onchange = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 25, 22).unwrap_or_default();
     assert!(
         hover_onchange.contains("test_int: int"),
         "Hover on field_name in onchange should show field name and field type"
     );
 
     // Hover on depends decorator, on different sections
-    let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 27, 22).unwrap_or_default();
+    let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 29, 22).unwrap_or_default();
     assert!(
         hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in depends should show field name and field type"
     );
-    let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 27, 35).unwrap_or_default();
+    let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 29, 35).unwrap_or_default();
     assert!(
         hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in depends should show field name and field type"
     );
-    let hover_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 27, 43).unwrap_or_default();
+    let hover_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 29, 43).unwrap_or_default();
     assert!(
         hover_code.contains("code: str"),
         "Hover on field_name in depends should show field name and field type"
     );
 
     //Hover on self.env with res.partner and test model name
-    let hover_partner = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 29, 24).unwrap_or_default();
+    let hover_partner = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 24).unwrap_or_default();
     assert!(
         hover_partner.contains("Partner"),
         "Hover on self.env[\"res.partner\"] should show Partner model name"
     );
-    let hover_test_class = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 30, 24).unwrap_or_default();
+    let hover_test_class = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 32, 24).unwrap_or_default();
     assert!(
         hover_test_class.contains("BaseTestModel"),
         "Hover on self.env[\"pygls.tests.base_test_model\"] should show Partner model name"
     );
 
     // Hover on domains, on different sections
-    let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 25).unwrap_or_default();
+    let hover_partner_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 33, 25).unwrap_or_default();
     assert!(
         hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in search domain should show field name and field type"
     );
-    let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 39).unwrap_or_default();
+    let hover_country_id = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 33, 39).unwrap_or_default();
     assert!(
         hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in search domain should show field name and field type"
     );
-    let hover_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 31, 48).unwrap_or_default();
+    let hover_code = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 33, 48).unwrap_or_default();
     assert!(
         hover_code.contains("code: str"),
         "Hover on field_name in search domain should show field name and field type"
     );
 
     // Hover on a variable assignment (baseInstance1)
-    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 33, 0).unwrap_or_default();
+    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 35, 0).unwrap_or_default();
     assert!(
         hover_var.contains("BaseTestModel"),
         "Hover on variable should show type info"
@@ -200,13 +200,13 @@ fn test_definition() {
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Test definition for model class BaseTestModel compute something in module_2, first on the super call
-    let compute_arg_locs = test_utils::get_definition_locs(&mut session, &m2_tf_file_symbol, &m2_tf_file_info, 6, 36);
+    let compute_arg_locs = test_utils::get_definition_locs(&mut session, &m2_tf_file_symbol, &m2_tf_file_info, 10, 36);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in module_1 file");
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, sym_compute_something[0].borrow().range()), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Then on the compute keyword argument in module_2, it should point to both methods in module_1 and module_2
-    let compute_kwarg_locs = test_utils::get_definition_locs(&mut session, &m2_tf_file_symbol, &m2_tf_file_info, 3, 50);
+    let compute_kwarg_locs = test_utils::get_definition_locs(&mut session, &m2_tf_file_symbol, &m2_tf_file_info, 6, 50);
     assert_eq!(compute_kwarg_locs.len(), 2, "Expected 2 locations for compute method '_compute_something'");
     assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module1_test_file), "Expected one location to be in module_1 file");
     assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module2_test_file), "Expected one location to be in module_2 file");
@@ -218,7 +218,7 @@ fn test_definition() {
     assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, sym_compute_something_m2[0].borrow().range()) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
 
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
-    let partner_id_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 31, 25);
+    let partner_id_locs = test_utils::get_definition_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 33, 25);
     assert_eq!(partner_id_locs.len(), 1, "Expected 1 location for partner_id");
     assert_eq!(partner_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_partner_id = m1_tf_file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("BaseTestModel"), Sy!("partner_id")]), u32::MAX);
