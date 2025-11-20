@@ -101,3 +101,11 @@ class ModelWithDiagnostics(models.Model):
 
     def _inverse_1(self):
         pass
+
+class SameNameModel(models.Model):
+    _name = "module_1.same_name_model" # OLS03020
+    _description = "Model with same name as another model"
+
+class SameNameModel2(models.Model):
+    _name = "module_1.same_name_model" # OLS03020
+    _description = "Another model with same name"
