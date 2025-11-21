@@ -45,6 +45,11 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 },
+                {
+                    "description": "Set print depth limit to prevent infinite recursion",
+                    "text": "set print max-depth 3",
+                    "ignoreFailures": false
+                },
             ]
         },
         {
@@ -65,7 +70,12 @@
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
-                }
+                },
+                {
+                    "description": "Set print depth limit to prevent infinite recursion",
+                    "text": "set print max-depth 3",
+                    "ignoreFailures": false
+                },
             ]
         },
         {
