@@ -284,9 +284,10 @@ impl FileInfo {
                     if parse_test_comments {
                         if text.starts_with("#OLS") || text.starts_with("# OLS") {
                             let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
-                            let char = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_byte_to_char(token.start().to_usize()).expect("unable to get char from bytes");
-                            let line = self.file_info_ast.borrow().text_rope.as_ref().unwrap().try_char_to_line(char).ok().expect("unable to get line from char");
-                            self.diag_test_comments.push((line as u32, codes));
+                            let file_info_ast_ref = self.file_info_ast.borrow();
+                            let text_doc = file_info_ast_ref.text_document.as_ref().unwrap();
+                            let source_location = text_doc.index().source_location(token.start(), text_doc.contents(), encoding);
+                            self.diag_test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
                         }
                     }
                 },

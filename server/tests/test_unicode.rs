@@ -1,6 +1,8 @@
 use lsp_types::{TextDocumentContentChangeEvent, Position};
 use odoo_ls_server::core::file_mgr::FileMgr;
 
+use crate::setup::setup::{create_init_session, setup_server};
+
 mod setup;
 
 #[test]
@@ -9,8 +11,8 @@ mod setup;
 /// all operations (insert, delete, insert at end) work correctly without panicking.
 fn test_unicode_file_lifecycle() {
     // Setup server and session
-    let mut odoo = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_session(&mut odoo);
+    let (mut odoo, config) = setup_server(false);
+    let mut session = create_init_session(&mut odoo, config);
     let unicode_uri = format!("{}", std::env::current_dir().unwrap().join("data").join("test_unicode.py").display());
     let initial_text =
 "def func() -> int:
