@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.1.1] - 2025/11/24 - Untitled files and Encoding
+
+### Server
+
+- Support for encoding UTF-8, UTF-16 and UTF-32.
+- Support for "untitled" files for VsCode.
+- Add tests for diagnostics
+
+### Fixs
+
+- Fix crash when a file is importing a .pyd with the same name (avoid self referencing)
+- Fix OLS01002 not emitted on valued variables
+- FIX OLS01004 that should not be emitted on `classmethod`
+- FIX OLS01007 and OLS01010 on evaluation of function calls when keyword-only arguments are used.
+- XML Syntax error is now OLS05000
+- Fix range for diagnostic OLS05009
+- Fix OLS01009 that could be emitted on valid cases.
+- Fix detection of `search` and `inverse` keyword on fields declaration
+- Fix detection of `inverse_name` on One2Many if the keyword was missing
+- Fix deprecation warning OLS03301 that was not emitted
+- Fix crash on data not being string in `__manifest__.py`
+- Fix validation of `__manifest__.py` files even if the folder does not contain any `__init__.py`
+- Functions will not expose their internal function in an autocompletion anymore
+
+
 ## [1.1.0] - 2025/11/06 - Workspace Symbols / WSL support
 
 This Beta update improves the QoL on various IDEs and brings some new features:
