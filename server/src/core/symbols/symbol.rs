@@ -2460,6 +2460,9 @@ impl Symbol {
                     }
                 }
             },
+            SymType::FUNCTION => {
+                // A function does not expose its symbols
+            },
             // if not class just add it to result
             _ => symbol.borrow().all_symbols().for_each(|s|
                 if !(only_fields && !s.borrow().is_field(session)) {append_result(s, None)}
