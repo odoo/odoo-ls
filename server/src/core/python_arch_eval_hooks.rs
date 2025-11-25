@@ -67,6 +67,58 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![(Sy!("0.0"), Sy!("15.3"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
+        // --------- request: WebRequest (before 15.3) ---------
+        let web_request_class_syms = odoo.symbol_table.get_symbol(file_symbol, &(vec![], vec![Sy!("WebRequest")]), u32::MAX);
+        let Some(&web_request_class) = web_request_class_syms.last() else {
+            return;
+        };
+        let evaluations = vec![Evaluation::eval_from_symbol(&odoo.symbol_table, web_request_class, Some(true))];
+        odoo.symbol_table.set_evaluations(symbol, evaluations);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![
+                            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")])),
+                            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("request")]))
+                        ],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
+        // --------- request: Request (15.3+) ---------
+        let request_class_syms = odoo.symbol_table.get_symbol(file_symbol, &(vec![], vec![Sy!("Request")]), u32::MAX);
+        let Some(&request_class) = request_class_syms.last() else {
+            return;
+        };
+        let evaluations = vec![Evaluation::eval_from_symbol(&odoo.symbol_table, request_class, Some(true))];
+        odoo.symbol_table.set_evaluations(symbol, evaluations);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![
+                            (Sy!("0.0"), Sy!("15.3"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("WebRequest"), Sy!("env")])),
+                            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request"), Sy!("env")])),
+                            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request"), Sy!("env")]))
+                        ],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
+        // --------- (Web)Request.env: Environment | None ---------
+        let env_file_syms = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
+        let Some(&env_file) = env_file_syms.last() else {
+            return;
+        };
+        let env_class_syms = odoo.symbol_table.get_symbol(env_file, &(vec![], vec![Sy!("Environment")]), u32::MAX);
+        let Some(&env_class) = env_class_syms.last() else {
+            return;
+        };
+        // env is a property (function) before 15.3, and an instance variable in 15.3+.
+        // In both cases the evaluation is Environment | None.
+        odoo.symbol_table.set_evaluations(symbol, vec![
+            Evaluation::eval_from_symbol(&odoo.symbol_table, env_class, Some(true)),
+            Evaluation::new_none()
+        ]);
+        odoo.symbol_table.add_dependency(file_symbol, env_file, BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
                         trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")])),
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")]))],
                         if_exist_only: true,

@@ -50,6 +50,22 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
+            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request")])),
+            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request")]))
+        ],
+        func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
+            // ----------- Request.env ------------
+            let has_env = !symbol_table.get_content_symbol(class.into(), &Sy!("env"), u32::MAX).symbols.is_empty();
+            if has_env {
+                return;
+            }
+            let range = symbol_table[class].range.clone();
+            symbol_table.add_new_variable(class, Sy!("env"), &range);
+        }
+    },
+    PythonArchClassHook {
+        odoo_entry: true,
+        trees: vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
