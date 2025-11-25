@@ -1149,7 +1149,7 @@ impl Evaluation {
                     evals.push(Evaluation::new_unbound(name));
                 }
             },
-            ExprOrIdent::Expr(Expr::Subscript(sub)) => 'subscript_block: {
+            ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent.clone(), max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 // TODO handle multiple eval_left
@@ -1161,73 +1161,68 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let bases = Symbol::follow_ref(&base, session, &mut None, false, false, None);
-                if bases.len() != 1 {
-                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
-                }
-                let base = &bases[0];
-                match base {
-                    EvaluationSymbolPtr::WEAK(base_sym_weak_eval) if base_sym_weak_eval.instance == Some(false) => {
-                        if let Some(SymType::CLASS) = base.upgrade_weak().map(|s| s.borrow().typ()) {
-                            // This is a Generic type (Field[int], or List[int]), for now we just return the main type/Class (Field/List)
-                            // TODO: handle generic types
-                            let mut new_base = base.clone();
-                            if for_annotation {
-                                new_base.as_mut_weak().instance = Some(true);
-                            }
-                            evals.push(Evaluation {
-                                symbol: EvaluationSymbol {
-                                    sym: new_base,
-                                    get_symbol_hook: None,
-                                },
-                                value: None,
-                                range: Some(sub.range())
-                            });
-                            break 'subscript_block;
-                        }
-                    }
-                    _ => {}
-                }
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
-                if let Some(value) = value.0 {
-                    if !base.is_weak() {
-                        return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                 for base in bases.iter() {
+                    match base {
+                        EvaluationSymbolPtr::WEAK(base_sym_weak_eval) if base_sym_weak_eval.instance == Some(false) => {
+                            if let Some(SymType::CLASS) = base.upgrade_weak().map(|s| s.borrow().typ()) {
+                                // This is a Generic type (Field[int], or List[int]), for now we just return the main type/Class (Field/List)
+                                // TODO: handle generic types
+                                let mut new_base = base.clone();
+                                if for_annotation {
+                                    new_base.as_mut_weak().instance = Some(true);
+                                }
+                                evals.push(Evaluation {
+                                    symbol: EvaluationSymbol {
+                                        sym: new_base,
+                                        get_symbol_hook: None,
+                                    },
+                                    value: None,
+                                    range: Some(sub.range())
+                                });
+                                continue;
+                            }
+                        }
+                        _ => {}
                     }
-                    let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
-                    let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                        SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
-                            parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                        },
-                        _ => {false}
-                    };
-                    let base = base.upgrade_weak().unwrap();
-                    let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX).symbols;
-                    if get_item.len() == 1 {
-                        let get_item = &get_item[0];
-                        let get_item = get_item.borrow();
-                        if get_item.evaluations().is_some() && get_item.evaluations().unwrap().len() == 1 {
-                            let get_item_eval = &get_item.evaluations().unwrap()[0];
-                            if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
-                                context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value));
-                                let old_range = context.as_mut().unwrap().remove(&S!("range"));
-                                context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
-                                context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
-                                let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
-                                if let Some(hook_result) = hook_result {
-                                    match hook_result {
-                                        EvaluationSymbolPtr::WEAK(ref weak) => {
-                                            if !weak.weak.is_expired() {
+                    if base.is_weak() && let Some(value) = &value.0 {
+                        let base = base.upgrade_weak().unwrap();
+                        let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX).symbols;
+                        if get_item.len() == 1 {
+                            let get_item = &get_item[0];
+                            let get_item = get_item.borrow();
+                            if get_item.evaluations().is_some() && get_item.evaluations().unwrap().len() == 1 {
+                                let get_item_eval = &get_item.evaluations().unwrap()[0];
+                                if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
+                                    let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                                    let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                                        SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                                            parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                                        },
+                                        _ => {false}
+                                    };
+                                    context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value.clone()));
+                                    let old_range = context.as_mut().unwrap().remove(&S!("range"));
+                                    context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
+                                    context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
+                                    let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
+                                    if let Some(hook_result) = hook_result {
+                                        match hook_result {
+                                            EvaluationSymbolPtr::WEAK(ref weak) => {
+                                                if !weak.weak.is_expired() {
+                                                    evals.push(Evaluation::eval_from_ptr(&hook_result));
+                                                }
+                                            },
+                                            _ => {
                                                 evals.push(Evaluation::eval_from_ptr(&hook_result));
                                             }
-                                        },
-                                        _ => {
-                                            evals.push(Evaluation::eval_from_ptr(&hook_result));
                                         }
                                     }
+                                    context.as_mut().unwrap().remove(&S!("args"));
+                                    context.as_mut().unwrap().remove(&S!("is_in_validation"));
+                                    context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
                                 }
-                                context.as_mut().unwrap().remove(&S!("args"));
-                                context.as_mut().unwrap().remove(&S!("is_in_validation"));
-                                context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
                             }
                         }
                     }

@@ -80,7 +80,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
         ],
         func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
             let range = symbol.borrow().range().clone();
-            // ----------- env.cr ------------
+            // ----------- global ------------
             symbol.borrow_mut().add_new_variable(session, Sy!("global"), &range);
         }
     },
