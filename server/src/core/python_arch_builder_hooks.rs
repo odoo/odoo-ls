@@ -38,12 +38,26 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
                 let mut range = symbol.borrow().range().clone();
                 let slots = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__slots__")]), u32::MAX);
                 if slots.len() == 1 {
-                    if slots.len() == 1 {
-                        range = slots[0].borrow().range().clone();
-                    }
+                    range = slots[0].borrow().range().clone();
                 }
                 symbol.borrow_mut().add_new_variable(session, Sy!("env"), &range);
             }
+        }
+    },
+    PythonArchClassHook {
+        odoo_entry: true,
+        trees: vec![
+            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request")])),
+            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request")]))
+        ],
+        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+            // ----------- Request.env ------------
+            let has_env = !symbol.borrow().get_content_symbol(&Sy!("env"), u32::MAX).symbols.is_empty();
+            if has_env {
+                return;
+            }
+            let range = symbol.borrow().range().clone();
+            symbol.borrow_mut().add_new_variable(session, Sy!("env"), &range);
         }
     },
     PythonArchClassHook {
