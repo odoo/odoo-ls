@@ -66,6 +66,58 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![(Sy!("0.0"), Sy!("15.3"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")]))],
+                        if_exist_only: true,
+                        func: |_odoo: &mut SessionInfo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        // --------- request: WebRequest (before 15.3) ---------
+        let web_request_class_syms = file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("WebRequest")]), u32::MAX);
+        let Some(web_request_class) = web_request_class_syms.last() else {
+            return;
+        };
+        let mut request = symbol.borrow_mut();
+        request.set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(web_request_class), Some(true))]);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![
+                            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")])),
+                            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("request")]))
+                        ],
+                        if_exist_only: true,
+                        func: |_odoo: &mut SessionInfo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        // --------- request: Request (15.3+) ---------
+        let request_class_syms = file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("Request")]), u32::MAX);
+        let Some(request_class) = request_class_syms.last() else {
+            return;
+        };
+        let mut request = symbol.borrow_mut();
+        request.set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(request_class), Some(true))]);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![
+                            (Sy!("0.0"), Sy!("15.3"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("WebRequest"), Sy!("env")])),
+                            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request"), Sy!("env")])),
+                            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request"), Sy!("env")]))
+                        ],
+                        if_exist_only: true,
+                        func: |odoo: &mut SessionInfo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
+        // --------- (Web)Request.env: Environment | None ---------
+        let env_file_syms = odoo.sync_odoo.get_symbol(odoo.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
+        let Some(env_file) = env_file_syms.last() else {
+            return;
+        };
+        let env_class_syms = env_file.borrow().get_symbol(&(vec![], vec![Sy!("Environment")]), u32::MAX);
+        let Some(env_class) = env_class_syms.last() else {
+            return;
+        };
+        // env is a property (function) before 15.3, and an instance variable in 15.3+.
+        // In both cases the evaluation is Environment | None.
+        symbol.borrow_mut().set_evaluations(vec![
+            Evaluation::eval_from_symbol(&Rc::downgrade(env_class), Some(true)),
+            Evaluation::new_none()
+        ]);
+        file_symbol.borrow_mut().add_dependency(&mut env_file.borrow_mut(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
                         trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")])),
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")]))],
                         if_exist_only: true,
