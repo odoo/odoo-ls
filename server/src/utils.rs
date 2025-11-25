@@ -158,10 +158,9 @@ pub trait PathSanitizer {
 impl PathSanitizer for PathBuf {
 
     fn sanitize(&self) -> String {
-        let mut path = self.to_slash_lossy().to_string();
-
         #[cfg(windows)]
         {
+            let mut path = self.to_slash_lossy().to_string();
             // check if path begins with //?/ if yes remove it
             // to handle extended-length path prefix
             // https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
@@ -173,9 +172,11 @@ impl PathSanitizer for PathBuf {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
                 path.replace_range(0..1, &disk_letter.to_string());
             }
+            return path;
         }
 
-        path
+        #[cfg(not(windows))]
+        return self.to_slash_lossy().to_string();
     }
 
     /// Convert the path to a tree structure.
@@ -204,10 +205,9 @@ impl PathSanitizer for PathBuf {
 impl PathSanitizer for Path {
 
     fn sanitize(&self) -> String {
-        let mut path = self.to_slash_lossy().to_string();
-
         #[cfg(windows)]
         {
+            let mut path = self.to_slash_lossy().to_string();
             if path.starts_with("\\\\?\\") {
                 path = path[4..].to_string();
             }
@@ -216,9 +216,11 @@ impl PathSanitizer for Path {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
                 path.replace_range(0..1, &disk_letter.to_string());
             }
+            return path;
         }
 
-        path
+        #[cfg(not(windows))]
+        return self.to_slash_lossy().to_string();
     }
 
     fn to_tree(&self) -> Tree {

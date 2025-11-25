@@ -198,7 +198,19 @@ pub type Context = HashMap<String, ContextValue>;
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-type GetSymbolHook = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>;
+type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>;
+
+#[derive(Debug, Clone)]
+pub struct GetSymbolHook {
+    pub callable: GetSymbolHookCallable,
+    pub name: String
+}
+
+impl PartialEq for GetSymbolHook {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
 
 
 #[derive(Debug, Clone)]
@@ -1194,7 +1206,7 @@ impl Evaluation {
                             let get_item = get_item.borrow();
                             if get_item.evaluations().is_some() && get_item.evaluations().unwrap().len() == 1 {
                                 let get_item_eval = &get_item.evaluations().unwrap()[0];
-                                if let Some(hook) = get_item_eval.symbol.get_symbol_hook {
+                                if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
                                     let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
                                     let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
                                         SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
@@ -1206,7 +1218,7 @@ impl Evaluation {
                                     let old_range = context.as_mut().unwrap().remove(&S!("range"));
                                     context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
                                     context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
-                                    let hook_result = hook(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
+                                    let hook_result = (hook.callable)(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
                                     if let Some(hook_result) = hook_result {
                                         match hook_result {
                                             EvaluationSymbolPtr::WEAK(ref weak) => {
@@ -1347,8 +1359,7 @@ impl Evaluation {
                 },
                 ArgumentType::KWARG => {
                     kwarg_index = index as i32;
-                },
-                _ => {}
+                }
             }
         }
         if !function.is_static {
@@ -1456,7 +1467,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Vec<Diagnostic>>, eval_count: usize) -> Vec<Diagnostic> {
+    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Vec<Diagnostic>>, _eval_count: usize) -> Vec<Diagnostic> {
         let mut filtered_diagnostics = vec![];
         //iter through diagnostics and check that each evaluation has the same amount of diagnostics with code OLS01007 or OLS01008 or OLS01010
         let all_same_issues = diagnostics.iter().fold_while(None, |acc, diags| {
@@ -1789,8 +1800,8 @@ impl EvaluationSymbol {
     /* Execute Hook, then return the effective EvaluationSymbolPtr */
     pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolPtr {
         let mut custom_eval = None;
-        if let Some(hook) = self.get_symbol_hook {
-            custom_eval = hook(session, self, context, diagnostics, file_symbol);
+        if let Some(hook) = self.get_symbol_hook.as_ref() {
+            custom_eval = (hook.callable)(session, self, context, diagnostics, file_symbol);
         }
         custom_eval.as_ref().unwrap_or(&self.sym).clone()
     }

@@ -851,10 +851,8 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
                         if get_item.borrow().evaluations().as_ref().unwrap().len() == 1 {
                             let get_item_bw = get_item.borrow();
                             let get_item_eval = get_item_bw.evaluations().as_ref().unwrap().first().unwrap();
-                            if let EvaluationSymbolPtr::WEAK(w) = get_item_eval.symbol.get_symbol_ptr() {
-                                if matches!(w.context.get(&S!("hook_name")), Some(hook_name) if hook_name.as_string() == "eval_env_get_item") {
-                                    return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
-                                }
+                            if get_item_eval.symbol.get_symbol_hook.as_ref().map(|hook| &hook.name == "eval_env_get_item").unwrap_or_default(){
+                                return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
                             }
                         }
                     }

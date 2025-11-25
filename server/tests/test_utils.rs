@@ -77,11 +77,6 @@ pub fn verify_diagnostics_against_doc(
     let mut diags: HashMap<u32, Vec<&Diagnostic>> = HashMap::new();
     for diag in &diagnostics {
         let line = diag.range.start.line;
-        let code_str = match &diag.code {
-            Some(NumberOrString::String(c)) => c.clone(),
-            Some(NumberOrString::Number(n)) => n.to_string(),
-            None => continue,
-        };
         diags.entry(line).or_default().push(diag);
     }
 
