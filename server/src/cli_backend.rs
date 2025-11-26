@@ -53,7 +53,7 @@ impl CliBackend {
         }
 
         let mut config = ConfigEntry::new();
-        config.addons_paths = addons_paths.into_iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).collect();
+        config.addons_paths = addons_paths.into_iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).filter(|x| !x.is_empty()).collect();
         config.odoo_path = Some(fs::canonicalize(community_path.unwrap_or(S!(""))).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize());
         config.diag_missing_imports = DiagMissingImportsMode::All;
         config.no_typeshed_stubs = self.cli.no_typeshed_stubs;
