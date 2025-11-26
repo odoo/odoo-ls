@@ -173,6 +173,10 @@ OLS03022, DiagnosticSetting::Error, "Inverse field is not a Many2one field",
  */
 OLS03023, DiagnosticSetting::Error, "Inverse field {0} is not pointing to the current model {1}, but rather to {2}",
 /**
+ * Models declared in a function are not supported by OdooLS. This info is indicating that no features will be enabled for this model.
+ */
+OLS03024, DiagnosticSetting::Info, "Models declared in a function are not supported by OdooLS. OdooLS will use it as a normal class for the rest of the function only",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",

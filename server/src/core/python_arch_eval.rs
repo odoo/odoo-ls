@@ -711,8 +711,17 @@ impl PythonArchEval {
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
         if !self.sym_stack[0].borrow().is_external() && self.sym_stack[0].borrow().get_entry().is_some_and(|e| e.borrow().typ == EntryPointType::MAIN) {
-            let odoo_builder_diags = PythonOdooBuilder::new(class_sym_rc).load(session);
-            self.diagnostics.extend(odoo_builder_diags);
+            if class_sym_rc.borrow().get_in_parents(&vec![SymType::FUNCTION], true).is_some() {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03024, &[]) {
+                    self.diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&class_stmt.name.range),
+                        ..diagnostic
+                    });
+                }
+            } else {
+                let odoo_builder_diags = PythonOdooBuilder::new(class_sym_rc).load(session);
+                self.diagnostics.extend(odoo_builder_diags);
+            }
         }
         session.current_noqa = old_noqa;
     }
