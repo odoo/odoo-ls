@@ -125,7 +125,7 @@ pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "un
 "cgi", "cgitb", "chunk", "crypt", "imghdr", "imp", "mailcap", "msilib", "nis", "nntplib", "optparse", "ossaudiodev",
 "pipes", "smtpd", "sndhdr", "spwd", "sunau", "telnetlib", "uu", "xdrlib", "struct", "codecs"];
 
-pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/Configuration-files";
+pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/3.-Configuration-files";
 
 use std::sync::LazyLock;
 
