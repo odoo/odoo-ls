@@ -989,7 +989,6 @@ impl PythonArchEval {
         diagnostics: &mut Vec<Diagnostic>,
     ) {
         if let Some(returns_ann) = func_stmt.returns.as_ref() {
-            let file_sym = func_sym.borrow().get_file().and_then(|file_weak| file_weak.upgrade());
             let mut deps = vec![vec![], vec![]];
             let (mut evaluations, diags) = Evaluation::eval_from_ast(
                 session,
@@ -999,6 +998,22 @@ impl PythonArchEval {
                 true,
                 &mut deps,
             );
+            // Check for type annotation `typing.Self`, if so, return a `self` evaluation
+            // And give it priority over other evaluations
+            if evaluations.iter().any(|evaluation|
+                Symbol::follow_ref(
+                    &evaluation.symbol.get_symbol(session, &mut None, diagnostics, None),
+                    session,
+                    &mut None,
+                    false,
+                    false,
+                    Some((vec![Sy!("typing")], vec![Sy!("Self")])),
+                    None
+                ).len() > 0
+            ){
+                func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+                return;
+            }
             for eval in evaluations.iter_mut() { //as this is an evaluation, we need to set the instance to true
                 match eval.symbol.get_mut_symbol_ptr() {
                     EvaluationSymbolPtr::WEAK(sym_weak) => {
@@ -1007,23 +1022,10 @@ impl PythonArchEval {
                     _ => {}
                 }
             }
-            if file_sym.is_some() {
-                Symbol::insert_dependencies(&file_sym.as_ref().unwrap(), &mut deps, BuildSteps::ARCH_EVAL);
+            if let Some(file_sym) = func_sym.borrow().get_file().and_then(|file_weak| file_weak.upgrade()).as_ref() {
+                Symbol::insert_dependencies(file_sym, &mut deps, BuildSteps::ARCH_EVAL);
             }
             diagnostics.extend(diags);
-            // Check for type annotation `typing.Self`, if so, return a `self` evaluation
-            let final_evaluations = evaluations.into_iter().map(|eval|{
-                let sym_ptrs = Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, diagnostics, None), session, &mut None, false, false, None, None);
-                for sym_ptr in sym_ptrs.iter(){
-                    let EvaluationSymbolPtr::WEAK(sym_weak) = sym_ptr else {continue};
-                    let Some(sym_rc) = sym_weak.weak.upgrade() else {continue};
-                    if sym_rc.borrow().match_tree_from_any_entry(session, &(vec![Sy!("typing")], vec![Sy!("Self")])){
-                        return Evaluation::new_self();
-                    }
-                }
-                eval
-            }).collect::<Vec<_>>();
-            func_sym.borrow_mut().set_evaluations(final_evaluations);
         }
     }
 
