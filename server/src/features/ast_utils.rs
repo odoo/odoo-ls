@@ -113,9 +113,9 @@ impl AstUtils {
                             //we import as a from_stmt, to refuse import of variables, as the import stmt is not complete
                             let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() };
                             let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
-                            if let Some(symbol) = from_symbol {
+                            if let Some(symbols) = from_symbol {
                                 let result = AnalyzeAstResult {
-                                    evaluations: vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), None)],
+                                    evaluations: symbols.iter().map(|symbol| Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None)).collect(),
                                     diagnostics: vec![],
                                 };
                                 return Some((result, Some(range)));
@@ -131,8 +131,8 @@ impl AstUtils {
                             let res = res.into_iter().filter(|s| s.found).collect::<Vec<_>>();
                             if !res.is_empty() {
                                 let result = AnalyzeAstResult {
-                                    evaluations: res.iter().map(
-                                        |s| Evaluation::eval_from_symbol(&Rc::downgrade(&s.symbol), None)
+                                    evaluations: res.iter().flat_map(
+                                        |s| s.symbols.iter().map(|symbol| Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None))
                                     ).collect(),
                                     diagnostics: vec![],
                                 };
@@ -162,9 +162,9 @@ impl AstUtils {
                     };
                     let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() };
                     let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
-                    if let Some(symbol) = from_symbol {
+                    if let Some(symbols) = from_symbol {
                         let result = AnalyzeAstResult {
-                            evaluations: vec![Evaluation::eval_from_symbol(&Rc::downgrade(&symbol), None)],
+                            evaluations: symbols.iter().map(|symbol| Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None)).collect(),
                             diagnostics: vec![],
                         };
                         return Some((result, Some(range)));

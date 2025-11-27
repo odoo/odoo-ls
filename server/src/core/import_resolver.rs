@@ -22,21 +22,27 @@ pub struct ImportResult {
     pub name: OYarn, //the last imported element
     pub var_name: OYarn, // the effective symbol name (asname, or first part in a import A.B.C)
     pub found: bool,
-    pub symbol: Rc<RefCell<Symbol>>,
+    pub symbols: Vec<Rc<RefCell<Symbol>>>,
     pub file_tree: Vec<OYarn>, //contains only the first part of a Tree
     pub range: TextRange,
 }
 
-//class used to cache import results in a build execution to speed up subsequent imports. 
+//class used to cache import results in a build execution to speed up subsequent imports.
 //It means of course than a modification during the build will not be taken into account, but it should be ok because reloaded after the build
 #[derive(Debug)]
 pub struct ImportCache {
-    pub modules: HashMap<OYarn, Option<Rc<RefCell<Symbol>>>>,
-    pub main_modules: HashMap<OYarn, Option<Rc<RefCell<Symbol>>>>,
+    pub modules: HashMap<OYarn, Option<Vec<Rc<RefCell<Symbol>>>>>,
+    pub main_modules: HashMap<OYarn, Option<Vec<Rc<RefCell<Symbol>>>>>,
 }
 
-fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbol>>>, session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
-    if session.sync_odoo.version_major >= 17 && alias.name.as_str() == "Form" && (*(from_symbol.as_ref().unwrap())).borrow().get_main_entry_tree(session).0 == vec!["odoo", "tests", "common"]{
+fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<Rc<RefCell<Symbol>>>>, session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
+    if !(session.sync_odoo.version_major >= 17 && alias.name.as_str() == "Form"){
+        return None;
+    }
+    for from_symbol in from_symbols.iter().flatten() {
+        if from_symbol.borrow().get_main_entry_tree(session).0 != vec!["odoo", "tests", "common"] {
+            continue;
+        }
         let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);
         if let Some(diagnostic) = diagnostics.as_mut() {
             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03301, &[]) {
@@ -47,10 +53,9 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbol: &Option<Rc<RefCell<Symbo
                 });
             }
         }
-        results.pop()
-    } else {
-        None
+        return results.pop()
     }
+    None
 }
 
 /**
@@ -73,11 +78,14 @@ pub fn manual_import(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<
     resolve_import_stmt(session, source_file_symbol, from_stmt.as_ref(), &name_aliases, level, diagnostics)
 }
 
-pub fn resolve_from_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: u32) -> (Option<Rc<RefCell<Symbol>>>, Option<Rc<RefCell<Symbol>>>, Vec<OYarn>) {
+/// Resolve the base symbol from a from statement and level
+pub fn resolve_from_stmt(
+    session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<&Identifier>, level: u32
+) -> (Option<Vec<Rc<RefCell<Symbol>>>>, Option<Vec<Rc<RefCell<Symbol>>>>, Vec<OYarn>) {
     let source_root = source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap();
     let entry = source_root.borrow().get_entry().unwrap();
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
-    let file_tree = _resolve_packages(
+    let file_tree = resolve_packages(
         &_source_file_symbol_lock,
         level,
         from_stmt);
@@ -85,17 +93,17 @@ pub fn resolve_from_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<RefC
     let source_path = source_file_symbol.borrow().paths()[0].clone();
     let mut start_symbol = None;
     if level != 0 {
-        //if level is 0, resolve_packages already built a full tree, so we can start from root
-        start_symbol = Some(source_root.clone());
+        //if level is *not* 0 (relative import), resolve_packages already built a full tree, so we can start from root
+        start_symbol = Some(vec![source_root.clone()]);
     }
-    let (from_symbol, fallback_sym) = _get_or_create_symbol(session,
+    let (from_symbol, fallback_sym) = get_or_create_symbol(session,
         &entry,
         source_path.as_str(),
         start_symbol,
         &file_tree,
         None,
         level);
-    let fallback_sym = Some(fallback_sym.unwrap_or(source_root.clone()));
+    let fallback_sym = Some(fallback_sym.unwrap_or(vec![source_root.clone()]));
     (from_symbol, fallback_sym, file_tree)
 }
 
@@ -103,19 +111,19 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     //A: search base of different imports
     let source_root = source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap();
     let entry = source_root.borrow().get_entry().unwrap();
-    let (from_symbol, fallback_sym, file_tree) = resolve_from_stmt(session, source_file_symbol, from_stmt, level);
+    let (from_symbols, fallback_syms, file_tree) = resolve_from_stmt(session, source_file_symbol, from_stmt, level);
     let mut result = vec![];
     for alias in name_aliases {
         result.push(ImportResult{
             name: OYarn::from(alias.name.as_ref().to_string()),
             var_name: OYarn::from(alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
             found: false,
-            symbol: fallback_sym.as_ref().unwrap().clone(),
+            symbols: fallback_syms.as_ref().unwrap().clone(),
             file_tree: file_tree.clone(),
             range: alias.range.clone()
         })
     }
-    if from_symbol.is_none() && from_stmt.is_some() {
+    if from_symbols.is_none() && from_stmt.is_some() {
         return result;
     }
 
@@ -123,13 +131,13 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     for alias in name_aliases.iter() {
         let name = oyarn!("{}", alias.name);
         name_index += 1;
-        if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbol, session, source_file_symbol, from_stmt, level,  diagnostics){
+        if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbols.clone(), session, source_file_symbol, from_stmt, level,  diagnostics){
             result[name_index as usize] = hook_result;
             continue;
         }
         if name == "*" {
             result[name_index as usize].found = true;
-            result[name_index as usize].symbol = from_symbol.as_ref().unwrap().clone();
+            result[name_index as usize].symbols = from_symbols.as_ref().unwrap().clone();
             continue;
         }
         let name_split: Vec<OYarn> = name.split(".").map(|s| oyarn!("{}", s)).collect();
@@ -141,21 +149,21 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         };
         let source_path = source_file_symbol.borrow().paths()[0].clone();
         let name_last_name: Vec<OYarn> = vec![name_split.last().unwrap().clone()];
-        let (mut next_symbol, mut fallback_sym) = _get_or_create_symbol(
+        let (mut next_symbol, mut fallback_sym) = get_or_create_symbol(
             session,
             &entry,
             source_path.as_str(),
-            from_symbol.clone(),
+            from_symbols.clone(),
             &name_first_part,
             None,
         0);
-        if next_symbol.is_none() && name_split.len() == 1 && from_symbol.is_some() {
+        if next_symbol.is_none() && name_split.len() == 1 && from_symbols.is_some() {
             //check the last name is not a symbol in the file
-            let name_symbol_vec = from_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_first_part), u32::MAX);
-            next_symbol = name_symbol_vec.last().cloned();
+            let name_symbol_vec = from_symbols.as_ref().unwrap().iter().flat_map(|s| s.borrow().get_symbol(&(vec![], name_first_part.clone()), u32::MAX)).collect::<Vec<_>>();
+            next_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
         }
         if next_symbol.is_none() {
-            result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+            result[name_index as usize].symbols = fallback_sym.as_ref().unwrap_or(&vec![source_root.clone()]).clone();
             continue;
         }
         if alias.asname.is_none() {
@@ -165,10 +173,10 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             // If user typed import A.B.C as D, we will search for A.B.C to link it to symbol D,
             result[name_index as usize].var_name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
             //result[name_index as usize].found = true; //even if found at this stage, we want to check everything anyway for diagnostics. But if found, we'll keep this symbol as imported
-            result[name_index as usize].symbol = next_symbol.as_ref().unwrap().clone();
+            result[name_index as usize].symbols = next_symbol.as_ref().unwrap().clone();
         }
         if !name_middle_part.is_empty() {
-            (next_symbol, fallback_sym) = _get_or_create_symbol(
+            (next_symbol, fallback_sym) = get_or_create_symbol(
                 session,
                 &entry,
                 "",
@@ -179,13 +187,13 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
         }
         if next_symbol.is_none() {
             if alias.asname.is_some() {
-                result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+                result[name_index as usize].symbols = fallback_sym.as_ref().unwrap_or(&vec![source_root.clone()]).clone();
             }
             continue;
         }
         if name_split.len() > 1 {
             // now we can search for the last symbol, or create it if it doesn't exist
-            let (mut last_symbol, fallback_sym) = _get_or_create_symbol(
+            let (mut last_symbol, fallback_sym) = get_or_create_symbol(
                 session,
                 &entry,
                 "",
@@ -195,11 +203,11 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             0);
             if last_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
                 //TODO what if multiple values?
-                let ns = next_symbol.as_ref().unwrap().borrow().get_symbol(&(vec![], name_last_name), u32::MAX).get(0).cloned();
-                last_symbol = ns;
+                let name_symbol_vec = next_symbol.as_ref().unwrap().iter().flat_map(|s| s.borrow().get_symbol(&(vec![], name_last_name.clone()), u32::MAX)).collect::<Vec<_>>();
+                last_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
                 if last_symbol.is_none() {
                     if alias.asname.is_some() {
-                        result[name_index as usize].symbol = fallback_sym.as_ref().unwrap_or(&source_root).clone();
+                        result[name_index as usize].symbols = fallback_sym.as_ref().unwrap_or(&vec![source_root.clone()]).clone();
                     }
                     continue;
                 }
@@ -208,14 +216,14 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             if result[name_index as usize].found == false {
                 result[name_index as usize].found = true;
                 if alias.asname.is_some() {
-                    result[name_index as usize].symbol = last_symbol.as_ref().unwrap().clone();
+                    result[name_index as usize].symbols = last_symbol.as_ref().unwrap().clone();
                 }
             }
         } else {
             //everything is ok, let's store the result if not already done
             result[name_index as usize].name = name.split(".").map(|s| oyarn!("{}", s)).next().unwrap();
             result[name_index as usize].found = true;
-            result[name_index as usize].symbol = next_symbol.as_ref().unwrap().clone();
+            result[name_index as usize].symbols = next_symbol.as_ref().unwrap().clone();
         }
     }
 
@@ -239,7 +247,7 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
     None
 }
 
-fn _resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifier>) -> Vec<OYarn> {
+fn resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifier>) -> Vec<OYarn> {
     let mut first_part_tree: Vec<OYarn> = vec![];
     if level > 0 {
         let mut lvl = level;
@@ -273,30 +281,40 @@ fn _resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifi
     first_part_tree
 }
 
-fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Rc<RefCell<Symbol>>>, names: &Vec<OYarn>, asname: Option<String>, level: u32) -> (Option<Rc<RefCell<Symbol>>>, Option<Rc<RefCell<Symbol>>>) {
-    let mut sym: Option<Rc<RefCell<Symbol>>> = symbol.clone();
-    let mut last_symbol = symbol.clone();
+fn get_or_create_symbol(
+    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<Rc<RefCell<Symbol>>>>, names: &Vec<OYarn>, asname: Option<String>, level: u32
+) -> (Option<Vec<Rc<RefCell<Symbol>>>>, Option<Vec<Rc<RefCell<Symbol>>>>) {
+    let mut syms = symbol.clone();
+    let mut last_symbols = symbol.clone();
     for branch in names.iter() {
         if branch.is_empty() {
             continue;
         }
-        match sym {
-            Some(ref s) => {
-                let mut next_symbol = s.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
-                if next_symbol.is_empty() && matches!(s.borrow().typ(), SymType::ROOT | SymType::NAMESPACE | SymType::PACKAGE(_) | SymType::COMPILED | SymType::DISK_DIR) {
-                    next_symbol = match _resolve_new_symbol(session, s.clone(), &branch, asname.clone()) {
-                        Ok(v) => vec![v],
-                        Err(_) => vec![]
+        if matches!(&syms, Some(s) if s.len() == 0) {
+            syms = None;
+        }
+        match syms {
+            Some(ref symbols) => {
+                let mut next_symbol = vec![];
+                for s in symbols.iter() {
+                    let mut current_batch_symbol = s.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
+                    if current_batch_symbol.is_empty() && matches!(s.borrow().typ(), SymType::ROOT | SymType::NAMESPACE | SymType::PACKAGE(_) | SymType::COMPILED | SymType::DISK_DIR) {
+                        current_batch_symbol = match resolve_new_symbol(session, s.clone(), &branch, asname.clone()) {
+                            Ok(v) => vec![v],
+                            Err(_) => vec![]
+                        }
                     }
+                    next_symbol.extend(current_batch_symbol.clone());
                 }
                 if next_symbol.is_empty() {
-                    sym = None;
+                    syms = None;
                     break;
                 }
-                sym = Some(next_symbol[0].clone());
-                last_symbol = Some(next_symbol[0].clone());
+                syms = Some(next_symbol.clone());
+                last_symbols = Some(next_symbol.clone());
             },
             None => {
+                // Can we have sym None and level != 0 ? maybe on get_all_valid_names? tbc
                 if level == 0 {
                     if let Some(ref cache) = session.sync_odoo.import_cache {
                         let cache_module = if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
@@ -306,13 +324,13 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                         };
                         if let Some(symbol) = cache_module {
                             if let Some(symbol) = symbol {
-                                sym = Some(symbol.clone());
-                                last_symbol = Some(symbol.clone());
+                                syms = Some(symbol.clone());
+                                last_symbols = Some(symbol.clone());
                                 continue;
-                            } else{
+                            } else {
                                 //we know we won't find it
-                                sym = None;
-                                last_symbol = None;
+                                syms = None;
+                                last_symbols = None;
                                 break;
                             }
                         }
@@ -327,30 +345,30 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                     if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(&from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol();
                         if let Some(entry_point) = entry_point {
-                            let mut next_symbol = entry_point.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
-                            if next_symbol.is_empty() && matches!(entry_point.borrow().typ(), SymType::ROOT | SymType::NAMESPACE | SymType::PACKAGE(_) | SymType::COMPILED | SymType::DISK_DIR) {
-                                next_symbol = match _resolve_new_symbol(session, entry_point.clone(), &branch, asname.clone()) {
+                            let mut next_symbols = entry_point.borrow().get_symbol(&(vec![branch.clone()], vec![]), u32::MAX);
+                            if next_symbols.is_empty() && matches!(entry_point.borrow().typ(), SymType::ROOT | SymType::NAMESPACE | SymType::PACKAGE(_) | SymType::COMPILED | SymType::DISK_DIR) {
+                                next_symbols = match resolve_new_symbol(session, entry_point.clone(), &branch, asname.clone()) {
                                     Ok(v) => vec![v],
                                     Err(_) => vec![]
                                 }
                             }
-                            if next_symbol.is_empty() {
+                            if next_symbols.is_empty() {
                                 continue;
                             }
                             if level == 0 {
                                 if entry.borrow().is_public() {
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                                        cache.modules.insert(branch.clone(), Some(next_symbol[0].clone()));
+                                        cache.modules.insert(branch.clone(), Some(next_symbols.clone()));
                                     }
                                 } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON) {
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                                        cache.main_modules.insert(branch.clone(), Some(next_symbol[0].clone()));
+                                        cache.main_modules.insert(branch.clone(), Some(next_symbols.clone()));
                                     }
                                 }
                             }
                             found = true;
-                            sym = Some(next_symbol[0].clone());
-                            last_symbol = Some(next_symbol[0].clone());
+                            syms = Some(next_symbols.clone());
+                            last_symbols = Some(next_symbols.clone());
                             break;
                         }
                     }
@@ -365,18 +383,20 @@ fn _get_or_create_symbol(session: &mut SessionInfo, for_entry: &Rc<RefCell<Entry
                             }
                         }
                     }
-                    sym = None;
-                    last_symbol = None;
+                    syms = None;
+                    last_symbols = None;
                     break;
                 }
             }
         }
     }
-    return (sym, last_symbol)
+    return (syms, last_symbols)
 }
 
-fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, name: &OYarn, asname: Option<String>) -> Result<Rc<RefCell<Symbol>>, String> {
-    if name == "" {
+/// Resolve a new symbol from disk, creating it if found, or just creating a COMPILED symbol if a parent is COMPILED
+/// parent : parent symbol where to search, either ROOT, NAMESPACE, PACKAGE, COMPILED or DISK_DIR
+fn resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, imported_name: &OYarn, asname: Option<String>) -> Result<Rc<RefCell<Symbol>>, String> {
+    if imported_name == "" {
         return Err("Empty name".to_string());
     }
     if DEBUG_BORROW_GUARDS {
@@ -385,17 +405,19 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
     }
     let sym_name: String = match asname {
         Some(asname_inner) => asname_inner.clone(),
-        None => name.to_string()
+        None => imported_name.to_string()
     };
+    // COMPILED: we can only create a COMPILED symbol
     if (*parent).borrow().typ() == SymType::COMPILED {
         return Ok((*parent).borrow_mut().add_new_compiled(session, &sym_name, &S!("")));
     }
+    // ROOT, NAMESPACE, PACKAGE or DISK_DIR: we can search on disk
     let paths = (*parent).borrow().paths().clone();
     for path in paths.iter() {
-        let mut full_path = Path::new(path.as_str()).join(name.to_string());
+        let mut full_path = Path::new(path.as_str()).join(imported_name.to_string());
         for stub in session.sync_odoo.stubs_dirs.iter() {
             if path.as_str().to_string() == *stub {
-                full_path = full_path.join(name.to_string());
+                full_path = full_path.join(imported_name.to_string());
             }
         }
         if is_dir_cs(full_path.sanitize()) && (is_file_cs(full_path.join("__init__").with_extension("py").sanitize()) ||
@@ -456,7 +478,7 @@ fn _resolve_new_symbol(session: &mut SessionInfo, parent: Rc<RefCell<Symbol>>, n
 
 /*
 Used for autocompletion. Given a base_name, return all valid names that can be used to complete it.
-is_from indicates if the import is the X in "from X import Y". Else it is Y from "import Y" or "from X import Y"
+is_from indicates if the completion item is the X in "from X import Y". Else it is Y from "import Y" or "from X import Y"
 */
 pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<RefCell<Symbol>>, from_stmt: Option<String>, import: String, level: u32, is_from: bool) -> HashMap<OYarn, SymType> {
     let (identifier_from, to_complete) = match from_stmt {
@@ -503,7 +525,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     }
     if is_from {
         if let Some(fs) = from_symbol {
-            symbols_to_browse.push(fs);
+            symbols_to_browse.extend(fs);
         }
         for symbol_to_browse in symbols_to_browse.iter() {
             let valid_names = valid_names_for_a_symbol(session, symbol_to_browse, &oyarn!("{}", to_complete), true);
@@ -514,15 +536,15 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
 
     let import_parts = import.split(".").collect::<Vec<&str>>();
     if import_parts.len() > 1 {
-        let (next_symbol, _fallback_sym) = _get_or_create_symbol(
-                session,
-                &entry,
-                source_path.as_str(),
-                from_symbol.clone(),
-                &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect(),
-                 None,
-                level,
-            );
+        let (next_symbol, _fallback_sym) = get_or_create_symbol(
+            session,
+            &entry,
+            source_path.as_str(),
+            from_symbol.clone(),
+            &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect(),
+            None,
+            level,
+        );
         if next_symbol.is_none() {
             return result;
         }
@@ -530,7 +552,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     }
     if let Some(fs) = from_symbol {
         symbols_to_browse.clear();
-        symbols_to_browse.push(fs);
+        symbols_to_browse.extend(fs);
     }
     for symbol_to_browse in symbols_to_browse.iter() {
         let valid_names = valid_names_for_a_symbol(session, symbol_to_browse, &oyarn!("{}", to_complete), false);
