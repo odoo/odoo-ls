@@ -546,7 +546,9 @@ fn complete_decorator_call(
     let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
-        followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+        followed_evals.extend(
+            Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None)
+        );
     }
     for decorator_eval in followed_evals{
         let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
@@ -821,7 +823,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
             //TODO shouldn't we set and clean context here?
             let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval.is_expired_if_weak() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None);
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, None);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
                     add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str(), &None)
@@ -842,7 +844,7 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.is_expired_if_weak() {
-            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
+            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
@@ -1104,7 +1106,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
             Rc::downgrade(symbol),
             None,
             false,
-        )), session, &mut None, false, false, None)
+        )), session, &mut None, false, false, None, None)
     ).collect::<Vec<_>>();
     let type_details = typ.iter().map(|eval|
         FeaturesUtils::get_inferred_types(session, eval, &mut Some(context_of_symbol.clone()), &symbols[0].borrow().typ())

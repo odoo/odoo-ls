@@ -406,7 +406,7 @@ impl PythonValidator {
             };
             for eval in evals.iter() {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
+                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
                 for eval_weak in eval_weaks.iter() {
                     let Some(symbol) = eval_weak.upgrade_weak() else {continue};
                     if !symbol.borrow().is_field_class(session){
@@ -445,7 +445,7 @@ impl PythonValidator {
                                     Rc::downgrade(&sym),
                                     None,
                                     false,
-                                )), session, &mut None, true, true, None);
+                                )), session, &mut None, true, true, None, None);
                                 related_eval_weaks.iter().any(|related_eval_weak|{
                                     let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
                                         return false
@@ -586,6 +586,7 @@ impl PythonValidator {
                                         &mut None,
                                         true,
                                         false,
+                                        None,
                                         None,
                                     );
                                     comodel_eval_weaks.extend(followed);

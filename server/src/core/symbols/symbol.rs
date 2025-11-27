@@ -21,7 +21,7 @@ use weak_table::PtrWeakHashSet;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use std::vec;
+use std::{u32, vec};
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range, SymbolKind};
 
 use crate::core::symbols::function_symbol::FunctionSymbol;
@@ -2196,12 +2196,22 @@ impl Symbol {
     /*
     Follow evaluation of current symbol until type, value or end of the chain, depending or the parameters.
     If a symbol in the chain is a descriptor, return the __get__ return evaluation.
+    If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
      */
-    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, max_scope: Option<Rc<RefCell<Symbol>>>) -> Vec<EvaluationSymbolPtr> {
+    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<Tree>, max_scope: Option<Rc<RefCell<Symbol>>>) -> Vec<EvaluationSymbolPtr> {
+        let default_result = match filter_on_tree.as_ref() {
+            Some(_) => vec![],
+            None => vec![evaluation.clone()],
+        };
+        let stop_on_tree_syms = filter_on_tree.map(|tree| session.sync_odoo.get_symbol("", &tree, u32::MAX));
+        if matches!(stop_on_tree_syms.as_ref(), Some(syms) if syms.is_empty()) {
+            // can't find the tree symbol, stop here
+            return default_result;
+        }
         match evaluation {
             EvaluationSymbolPtr::WEAK(w) => {
                 let Some(symbol) = w.weak.upgrade() else {
-                    return vec![evaluation.clone()];
+                    return default_result;
                 };
                 if stop_on_value {
                     if let Some(evals) = symbol.borrow().evaluations() {
@@ -2215,7 +2225,7 @@ impl Symbol {
                 //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
                 let mut results = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);
                 if results.is_empty() {
-                    return vec![evaluation.clone()];
+                    return default_result;
                 }
                 if w.instance.is_some_and(|v| v) {
                     //if the previous evaluation was set to True, we want to keep it
@@ -2262,6 +2272,11 @@ impl Symbol {
                                         if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
                                             continue;
                                         }
+                                        if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
+                                            if stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc)) {
+                                                continue;
+                                            }
+                                        }
                                     }
                                     if sym_rc.borrow().as_variable().evaluations.is_empty() && sym_rc.borrow().name() != "__all__" && can_eval_external {
                                         //no evaluation? let's check that the file has been evaluated
@@ -2306,6 +2321,20 @@ impl Symbol {
                         },
                         _ => {}
                     }
+                }
+                if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
+                    results.retain(|r| {
+                        match r {
+                            EvaluationSymbolPtr::WEAK(weak) => {
+                                if let Some(sym_rc) = weak.weak.upgrade() {
+                                    stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc))
+                                } else {
+                                    false
+                                }
+                            },
+                            _ => false
+                        }
+                    });
                 }
                 Vec::from(results) // :'( a whole copy?
             },
@@ -2606,7 +2635,7 @@ impl Symbol {
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
                                 if symbol.borrow().is_field_class(session){
@@ -2629,7 +2658,7 @@ impl Symbol {
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
                                 if symbol.borrow().typ() == SymType::FUNCTION {
@@ -2742,7 +2771,7 @@ impl Symbol {
                 if let Some(evals) = self.evaluations().as_ref() {
                     for eval in evals.iter() {
                         let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
+                        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
                         for eval_weak in eval_weaks.iter() {
                             if let Some(symbol) = eval_weak.upgrade_weak() {
                                 if symbol.borrow().is_specific_field_class(session, field_names){

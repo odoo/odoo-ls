@@ -67,7 +67,7 @@ impl VariableSymbol {
                 context = Some(HashMap::new());
                 context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.clone()));
             }
-            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None);
+            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak() {
                     if ["Many2one", "One2many", "Many2many"].contains(&symbol.borrow().name().as_str()) {

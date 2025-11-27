@@ -184,7 +184,7 @@ impl PythonArchBuilder {
                     if let Some(all) = import_symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
                         let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                             Rc::downgrade(&all), None, false
-                        )), session, &mut None, false, true, None);
+                        )), session, &mut None, false, true, None, None);
                         if let Some(all_value_first) = all_value.get(0) {
                             if !all_value_first.is_expired_if_weak() {
                                 let all_upgraded = all_value_first.upgrade_weak();

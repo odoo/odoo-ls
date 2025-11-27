@@ -185,7 +185,7 @@ impl DefinitionFeature {
             return;
         };
         let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &crate::core::evaluation::ExprOrIdent::Expr(&attr_expr.value), offset as u32);
-        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| Symbol::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None)).collect::<Vec<_>>();
+        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| Symbol::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None, None)).collect::<Vec<_>>();
         let maybe_module = file_symbol.borrow().find_module();
         let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
             let Some(symbol) = eval_ptr.upgrade_weak() else {

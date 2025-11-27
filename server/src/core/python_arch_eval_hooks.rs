@@ -718,7 +718,7 @@ impl PythonArchEvalHooks {
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
             for eval in dec_evals {
-                followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+                followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
             }
             for decorator_eval in followed_evals {
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {

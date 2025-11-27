@@ -362,7 +362,7 @@ impl PythonArchEval {
         let sym_ref_cl = sym_ref.clone();
         let syms_followed = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
             Rc::downgrade(&sym_ref_cl), None, false
-        )), session, &mut None, false, false, None);
+        )), session, &mut None, false, false, None, None);
         for sym in syms_followed.iter() {
             let sym = sym.upgrade_weak();
             if let Some(sym) = sym {
@@ -658,7 +658,7 @@ impl PythonArchEval {
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, true, None);
+            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
             if ref_sym.len() > 1 {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
@@ -830,7 +830,7 @@ impl PythonArchEval {
             let eval = &eval_iter_node[0];
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             if !eval_symbol.is_expired_if_weak() {
-                let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
+                let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
                 if symbol_eval.len() == 1 && symbol_eval[0].upgrade_weak().is_some() {
                     let symbol_type_rc = symbol_eval[0].upgrade_weak().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
@@ -1013,7 +1013,7 @@ impl PythonArchEval {
             diagnostics.extend(diags);
             // Check for type annotation `typing.Self`, if so, return a `self` evaluation
             let final_evaluations = evaluations.into_iter().map(|eval|{
-                let sym_ptrs = Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, diagnostics, None), session, &mut None, false, false, None);
+                let sym_ptrs = Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, diagnostics, None), session, &mut None, false, false, None, None);
                 for sym_ptr in sym_ptrs.iter(){
                     let EvaluationSymbolPtr::WEAK(sym_weak) = sym_ptr else {continue};
                     let Some(sym_rc) = sym_weak.weak.upgrade() else {continue};

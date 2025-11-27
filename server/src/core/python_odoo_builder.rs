@@ -452,7 +452,7 @@ impl PythonOdooBuilder {
             };
             for eval in evals.iter() {
                 let eval_sym_ptr = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None);
+                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, None);
                 for eval_ptr in eval_ptrs.iter() {
                     let eval_weak = match &eval_ptr {
                         EvaluationSymbolPtr::WEAK(w) => w,
