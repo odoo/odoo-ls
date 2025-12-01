@@ -2812,7 +2812,7 @@ impl Symbol {
     ) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut visited_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
-        let mut extend_result = |syms: Vec<Rc<RefCell<Symbol>>>| {
+        let mut extend_result = |syms: Vec<Rc<RefCell<Symbol>>>, result: &mut Vec<Rc<RefCell<Symbol>>>, visited_symbols: &mut PtrWeakHashSet<Weak<RefCell<Symbol>>>| {
             syms.iter().for_each(|sym|{
                 if !visited_symbols.contains(sym){
                     visited_symbols.insert(sym.clone());
@@ -2826,7 +2826,7 @@ impl Symbol {
         if let Some(mod_sym) = mod_sym {
             if !only_fields {
                 if all {
-                    extend_result(vec![mod_sym]);
+                    extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
                 } else {
                     return (vec![mod_sym], diagnostics);
                 }
@@ -2842,7 +2842,7 @@ impl Symbol {
             }
             if !content_syms.is_empty() {
                 if all {
-                    extend_result(content_syms);
+                    extend_result(content_syms, &mut result, &mut visited_symbols);
                 } else {
                     return (content_syms, diagnostics);
                 }
@@ -2865,7 +2865,7 @@ impl Symbol {
                         let (attributs, att_diagnostic) = model_symbol.borrow()._get_member_symbol_helper(session, name, None, true, only_fields, only_methods, all, false, visited_classes);
                         diagnostics.extend(att_diagnostic);
                         if all {
-                            extend_result(attributs);
+                            extend_result(attributs, &mut result, &mut visited_symbols);
                         } else {
                             if !attributs.is_empty() {
                                 return (attributs, diagnostics);
@@ -2883,7 +2883,7 @@ impl Symbol {
                             let (attributs, att_diagnostic) = model_symbol.borrow()._get_member_symbol_helper(session, name, None, true, true, only_methods, all, false, visited_classes);
                             diagnostics.extend(att_diagnostic);
                             if all {
-                                extend_result(attributs);
+                                extend_result(attributs, &mut result, &mut visited_symbols);
                             } else {
                                 if !attributs.is_empty() {
                                     return (attributs, diagnostics);
@@ -2894,7 +2894,7 @@ impl Symbol {
                 }
             }
         }
-        if self.typ() == SymType::CLASS {
+        if self.typ() == SymType::CLASS && result.is_empty() { // if we already have something, do not go up in bases
             for base in self.as_class_sym().bases.iter() {
                 let base = match base.upgrade(){
                     Some(b) => b,
@@ -2908,7 +2908,7 @@ impl Symbol {
                     diagnostics.extend(s_diagnostic);
                 if !s.is_empty() {
                     if all {
-                        extend_result(s);
+                        extend_result(s, &mut result, &mut visited_symbols);
                     } else {
                         return (s, diagnostics);
                     }
