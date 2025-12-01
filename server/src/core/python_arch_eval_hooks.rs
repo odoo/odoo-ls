@@ -754,9 +754,9 @@ impl PythonArchEvalHooks {
         let Some(ContextValue::STRING(s)) = context.get(&S!("args")) else {
             return res
         };
-        let maybe_model = session.sync_odoo.models.get(&oyarn!("{}", s));
+        let maybe_model = session.sync_odoo.models.get(&oyarn!("{}", s)).cloned();
         let has_class_in_parents = scope.as_ref().map(|scope| scope.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some()).unwrap_or(false);
-        if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
+        if maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
             let Some(model) = maybe_model else {unreachable!()};
             let module = context.get(&S!("module"));
             let from_module = if let Some(ContextValue::MODULE(m)) = module {
@@ -764,13 +764,21 @@ impl PythonArchEvalHooks {
             } else {
                 None
             };
-            if let Some(scope) = scope
+            if let Some(scope_file) = scope
                 .and_then(|s| s.borrow().get_file())
                 .and_then(|w| w.upgrade()) {
-                let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
-                let env_file = env_files.last().unwrap();
-                if !Rc::ptr_eq(env_file, &scope) {
-                    scope.borrow_mut().add_model_dependencies(model);
+                //exclude orm files
+                if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") < Ordering::Equal {
+                    let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
+                    let env_file = env_files.last().unwrap();
+                    if !Rc::ptr_eq(env_file, &scope_file) {
+                        scope_file.borrow_mut().add_model_dependencies(&model);
+                    }
+                } else {
+                    let tree = scope_file.borrow().get_main_entry_tree(session);
+                    if !tree.0.starts_with(&[Sy!("odoo"), Sy!("orm")]) {
+                        scope_file.borrow_mut().add_model_dependencies(&model);
+                    }
                 }
             }
             let model = model.clone();
