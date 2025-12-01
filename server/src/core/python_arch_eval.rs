@@ -833,8 +833,11 @@ impl PythonArchEval {
                     if symbol_type.typ() == SymType::CLASS {
                         let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false, false);
                         if iter.len() == 1 {
-                            SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH_EVAL);
-                            SyncOdoo::build_now(session, &iter[0], BuildSteps::VALIDATION);
+                            if !iter[0].borrow().is_external() { //we can't rebuild functions of external files
+                                SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH);
+                                SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH_EVAL);
+                                SyncOdoo::build_now(session, &iter[0], BuildSteps::VALIDATION);
+                            }
                             if iter[0].borrow().evaluations().is_some() && iter[0].borrow().evaluations().unwrap().len() == 1 {
                                 let iter = iter[0].borrow();
                                 let eval_iter = &iter.evaluations().unwrap()[0];
