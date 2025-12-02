@@ -6,13 +6,13 @@ use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::features::references::ReferenceFeature;
 use crate::features::workspace_symbols::WorkspaceSymbolFeature;
+use crate::fifo_ptr_weak_hash_set::FifoPtrWeakHashSet;
 use crate::threads::SessionInfo;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::ffi::OsStr;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -27,7 +27,6 @@ use serde_json::Value;
 use tracing::{error, warn, info, trace};
 
 use std::collections::HashSet;
-use weak_table::PtrWeakHashSet;
 use std::process::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -86,9 +85,9 @@ pub struct SyncOdoo {
     pub current_request_id: Option<RequestId>,
     pub running_request_ids: Arc<Mutex<Vec<RequestId>>>, //Arc to Server mutex for cancellation support
     pub watched_file_updates: u32,
-    rebuild_arch: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    rebuild_arch_eval: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    rebuild_validation: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    rebuild_arch: FifoPtrWeakHashSet<RefCell<Symbol>>,
+    rebuild_arch_eval: FifoPtrWeakHashSet<RefCell<Symbol>>,
+    rebuild_validation: FifoPtrWeakHashSet<RefCell<Symbol>>,
     pub state_init: InitState,
     pub must_reload_paths: Vec<(Weak<RefCell<Symbol>>, String)>,
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
@@ -131,9 +130,9 @@ impl SyncOdoo {
             current_request_id: None,
             running_request_ids: Arc::new(Mutex::new(vec![])),
             watched_file_updates: 0,
-            rebuild_arch: PtrWeakHashSet::new(),
-            rebuild_arch_eval: PtrWeakHashSet::new(),
-            rebuild_validation: PtrWeakHashSet::new(),
+            rebuild_arch: FifoPtrWeakHashSet::new(),
+            rebuild_arch_eval: FifoPtrWeakHashSet::new(),
+            rebuild_validation: FifoPtrWeakHashSet::new(),
             state_init: InitState::NOT_READY,
             must_reload_paths: vec![],
             load_odoo_addons: true,
@@ -161,9 +160,9 @@ impl SyncOdoo {
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::new();
         session.sync_odoo.models = HashMap::new();
-        session.sync_odoo.rebuild_arch = PtrWeakHashSet::new();
-        session.sync_odoo.rebuild_arch_eval = PtrWeakHashSet::new();
-        session.sync_odoo.rebuild_validation = PtrWeakHashSet::new();
+        session.sync_odoo.rebuild_arch = FifoPtrWeakHashSet::new();
+        session.sync_odoo.rebuild_arch_eval = FifoPtrWeakHashSet::new();
+        session.sync_odoo.rebuild_validation = FifoPtrWeakHashSet::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
@@ -537,7 +536,7 @@ impl SyncOdoo {
             let mut selected_sym: Option<Rc<RefCell<Symbol>>> = None;
             let mut selected_count: u32 = 999999999;
             let mut current_count: u32;
-            for sym in set {
+            for sym in set.iter() {
                 current_count = 0;
                 let file = sym.borrow().get_file().unwrap().upgrade().unwrap();
                 let file = file.borrow();
