@@ -2208,140 +2208,133 @@ impl Symbol {
             // can't find the tree symbol, stop here
             return default_result;
         }
-        match evaluation {
-            EvaluationSymbolPtr::WEAK(w) => {
-                let Some(symbol) = w.weak.upgrade() else {
-                    return default_result;
-                };
-                if stop_on_value {
-                    if let Some(evals) = symbol.borrow().evaluations() {
-                        for eval in evals.iter() {
-                            if eval.value.is_some() {
-                                return vec![evaluation.clone()];
-                            }
-                        }
+        let EvaluationSymbolPtr::WEAK(w) = evaluation else {
+            // Non-weak evaluations are final
+            return default_result
+        };
+        let Some(symbol) = w.weak.upgrade() else {
+            return default_result;
+        };
+        if stop_on_value {
+            if let Some(evals) = symbol.borrow().evaluations() {
+                for eval in evals.iter() {
+                    if eval.value.is_some() {
+                        return default_result;
                     }
                 }
-                //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-                let mut results = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);
-                if results.is_empty() {
-                    return default_result;
-                }
-                if w.instance.is_some_and(|v| v) {
-                    //if the previous evaluation was set to True, we want to keep it
-                    results = results.into_iter().map(|mut r| {
-                        if let EvaluationSymbolPtr::WEAK(ref mut weak) = r {
-                            weak.instance = Some(true);
-                        }
-                        r
-                    }).collect();
-                }
-                let mut acc: PtrWeakHashSet<Weak<RefCell<Symbol>>>  = PtrWeakHashSet::new();
-                let can_eval_external = !symbol.borrow().is_external();
-                let mut index = 0;
-                while index < results.len() {
-                    let next_ref = &results[index];
-                    index += 1;
-                    match next_ref {
-                        EvaluationSymbolPtr::WEAK(next_ref_weak) => {
-                            let sym = next_ref_weak.weak.upgrade();
-                            let next_ref_weak_instance = next_ref_weak.instance.clone();
-                            if sym.is_none() {
-                                index += 1;
-                                continue;
-                            }
-                            let sym_rc = sym.unwrap();
-                            if acc.contains(&sym_rc) {
-                                index -= 1;
-                                results.remove(index);
-                                continue;
-                            }
-                            acc.insert(sym_rc.clone());
-                            let sym_type = sym_rc.borrow().typ();
-                            match sym_type {
-                                SymType::VARIABLE => {
-                                    {
-                                        let sym = sym_rc.borrow();
-                                        let var = sym.as_variable();
-                                        if stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable {
-                                            continue;
-                                        }
-                                        if stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some() {
-                                            continue;
-                                        }
-                                        if max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true) {
-                                            continue;
-                                        }
-                                        if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
-                                            if stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc)) {
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    if sym_rc.borrow().as_variable().evaluations.is_empty() && sym_rc.borrow().name() != "__all__" && can_eval_external {
-                                        //no evaluation? let's check that the file has been evaluated
-                                        let file_symbol = sym_rc.borrow().get_file();
-                                        if let Some(file_symbol) = file_symbol {
-                                            if let Some(file) = file_symbol.upgrade() {
-                                                SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
-                                            }
-                                        }
-                                    }
-                                    let mut next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
-                                    if !next_sym_refs.is_empty() {
-                                        results.pop_front();
-                                        index -= 1;
-                                        // /!\ we want to keep instance = True if previous evaluation was set to True!
-                                        if next_ref_weak_instance.is_some_and(|v| v) {
-                                            next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
-                                                if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
-                                                    weak.instance = Some(true);
-                                                }
-                                                next_results
-                                            }).collect();
-                                        }
-                                        for next_results in next_sym_refs {
-                                            results.push_back(next_results);
-                                        }
-                                    }
-                                },
-                                SymType::CLASS => {
-                                    //On class, follow descriptor declarations
-                                    let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
-                                    if !next_sym_refs.is_empty() {
-                                        results.pop_front();
-                                        index -= 1;
-                                        for next_results in next_sym_refs {
-                                            results.push_back(next_results);
-                                        }
-                                    }
-                                },
-                                _ => {}
-                            }
-                        },
-                        _ => {}
-                    }
-                }
-                if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
-                    results.retain(|r| {
-                        match r {
-                            EvaluationSymbolPtr::WEAK(weak) => {
-                                if let Some(sym_rc) = weak.weak.upgrade() {
-                                    stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc))
-                                } else {
-                                    false
-                                }
-                            },
-                            _ => false
-                        }
-                    });
-                }
-                Vec::from(results) // :'( a whole copy?
-            },
-            _ => {
-                return vec![evaluation.clone()];
             }
         }
+        //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
+        let mut work_queue = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);
+        if work_queue.is_empty() {
+            return default_result;
+        }
+        if w.instance.is_some_and(|v| v) {
+            //if the previous evaluation was set to True, we want to keep it
+            work_queue = work_queue.into_iter().map(|mut r| {
+                if let EvaluationSymbolPtr::WEAK(ref mut weak) = r {
+                    weak.instance = Some(true);
+                }
+                r
+            }).collect();
+        }
+        let mut results = Vec::new();
+        let mut visited: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+        let can_eval_external = !symbol.borrow().is_external();
+        while let Some(current_eval) = work_queue.pop_front() {
+            let EvaluationSymbolPtr::WEAK(next_ref_weak) = &current_eval else  {
+                // Non-weak references are final
+                results.push(current_eval);
+                continue;
+            };
+            let Some(sym_rc) = next_ref_weak.weak.upgrade() else {
+                // Discard evaluation to expired reference
+                continue;
+            };
+            // Avoid cycles
+            if visited.contains(&sym_rc) {
+                continue;
+            }
+            visited.insert(sym_rc.clone());
+            let next_ref_weak_instance = next_ref_weak.instance.clone();
+            let sym_type = sym_rc.borrow().typ();
+            match sym_type {
+                SymType::VARIABLE => {
+                    {
+                        let sym = sym_rc.borrow();
+                        let var = sym.as_variable();
+                        if (stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable) ||
+                            (stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some()) ||
+                            (max_scope.is_some() && !sym.has_rc_in_parents(max_scope.as_ref().unwrap().clone(), true)) {
+                            // current evaluation is final
+                            results.push(current_eval);
+                            continue;
+                        }
+                        if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
+                            if stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc)) {
+                                results.push(current_eval);
+                                continue;
+                            }
+                        }
+                    }
+                    if sym_rc.borrow().as_variable().evaluations.is_empty() && sym_rc.borrow().name() != "__all__" && can_eval_external {
+                        //no evaluation? let's check that the file has been evaluated
+                        let file_symbol = sym_rc.borrow().get_file();
+                        if let Some(file_symbol) = file_symbol {
+                            if let Some(file) = file_symbol.upgrade() {
+                                SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
+                            }
+                        }
+                    }
+                    let mut next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
+                    if next_sym_refs.is_empty() {
+                        // keep current evaluation
+                        results.push(current_eval);
+                        continue;
+                    }
+                    // /!\ we want to keep instance = True if previous evaluation was set to True!
+                    if next_ref_weak_instance.is_some_and(|v| v) {
+                        next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
+                            if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
+                                weak.instance = Some(true);
+                            }
+                            next_results
+                        }).collect();
+                    }
+                    // enqueue evaluations to follow, replacing current evaluation
+                    work_queue.extend(next_sym_refs);
+                },
+                SymType::CLASS => {
+                    //On class, follow descriptor declarations
+                    let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
+                    if next_sym_refs.is_empty() {
+                        // keep current evaluation
+                        results.push(current_eval);
+                    } else {
+                        // enqueue evaluations to follow, replacing current evaluation
+                        work_queue.extend(next_sym_refs);
+                    }
+                },
+                _ => {
+                    results.push(current_eval);
+                }
+            }
+        }
+        if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
+            results.retain(|r| {
+                match r {
+                    EvaluationSymbolPtr::WEAK(weak) => {
+                        if let Some(sym_rc) = weak.weak.upgrade() {
+                            stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc))
+                        } else {
+                            false
+                        }
+                    },
+                    _ => false
+                }
+            });
+        }
+        results
     }
 
     pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> + use<> {
