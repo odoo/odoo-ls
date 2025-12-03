@@ -57,7 +57,7 @@ impl CliBackend {
         config.odoo_path = Some(fs::canonicalize(community_path.unwrap_or(S!(""))).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize());
         config.diag_missing_imports = DiagMissingImportsMode::All;
         config.no_typeshed_stubs = self.cli.no_typeshed_stubs;
-        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]).into_iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).collect();
+        config.additional_stubs = self.cli.stubs.clone().unwrap_or(vec![]).into_iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).filter(|x| !x.is_empty()).collect();
         config.stdlib = self.cli.stdlib.clone().map(|p| fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(S!(""))).sanitize()).unwrap_or(S!(""));
         config.python_path = self.cli.python.clone().unwrap_or(get_python_command().unwrap_or(S!("")));
         SyncOdoo::init(&mut session, config);
