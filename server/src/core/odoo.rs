@@ -223,60 +223,61 @@ impl SyncOdoo {
             };
             info!("stub {:?} - {}", stub, found)
         }
-        {
+        'python_check: {
             EntryPointMgr::add_entry_to_builtins(session, session.sync_odoo.stdlib_dir.clone());
             for stub_dir in session.sync_odoo.stubs_dirs.clone().iter() {
                 EntryPointMgr::add_entry_to_public(session, stub_dir.clone());
             }
-            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output();
-            if let Err(_output) = &output {
-                error!("Wrong python command: {}", session.sync_odoo.config.python_path.clone());
-                session.send_notification("$Odoo/invalid_python_path", ());
-                session.send_notification("$Odoo/loadingStatusUpdate", "stop");
-                return;
-            }
-            let output = output.unwrap();
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                session.log_message(MessageType::INFO, format!("Detected sys.path: {}", stdout));
-                let paths: Vec<String> = serde_json::from_str(&stdout).expect("Unable to get paths with json of sys.path output");
-                for path in paths.iter() {
-                    let path = path.replace("\\\\", "\\");
-                    let pathbuf = PathBuf::from(path);
-                    if pathbuf.is_dir() {
-                        let final_path = pathbuf.sanitize();
-                        session.log_message(MessageType::INFO, format!("Adding sys.path: {}", final_path));
-                        EntryPointMgr::add_entry_to_public(session, final_path.clone());
+            match Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output() {
+                Err(err) => {
+                    warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path.clone(), err);
+                    session.send_notification("$Odoo/invalid_python_path", ());
+                    break 'python_check;
+                },
+                Ok(output) => {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        session.log_message(MessageType::INFO, format!("Detected sys.path: {}", stdout));
+                        let paths: Vec<String> = serde_json::from_str(&stdout).expect("Unable to get paths with json of sys.path output");
+                        for path in paths.iter() {
+                            let path = path.replace("\\\\", "\\");
+                            let pathbuf = PathBuf::from(path);
+                            if pathbuf.is_dir() {
+                                let final_path = pathbuf.sanitize();
+                                session.log_message(MessageType::INFO, format!("Adding sys.path: {}", final_path));
+                                EntryPointMgr::add_entry_to_public(session, final_path.clone());
+                            }
+                        }
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        warn!("Error reading sys.path: {}", stderr);
                     }
                 }
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                error!("{}", stderr);
             }
-            let output = Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.version_info))"]).output();
-            if let Err(_output) = &output {
-                error!("Wrong python command: {}", session.sync_odoo.config.python_path.clone());
-                session.send_notification("$Odoo/invalid_python_path", ());
-                session.send_notification("$Odoo/loadingStatusUpdate", "stop");
-                return;
-            }
-            session.sync_odoo.has_valid_python = true;
-            let output = output.unwrap();
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                session.log_message(MessageType::INFO, format!("Detected sys.version_info: {}", stdout));
-                let version_infos: Value = serde_json::from_str(&stdout).expect("Unable to get python version info with json of sys.version_info output");
-                session.sync_odoo.python_version = version_infos.as_array()
-                    .expect("Expected JSON array")
-                    .iter()
-                    .filter_map(|v| v.as_u64())
-                    .map(|v| v as u32)
-                    .take(3)
-                    .collect();
-                info!("Detected python version: {}.{}.{}", session.sync_odoo.python_version[0], session.sync_odoo.python_version[1], session.sync_odoo.python_version[2]);
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                error!("{}", stderr);
+            match Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.version_info))"]).output() {
+                Err(err) => {
+                    warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path.clone(), err);
+                    session.send_notification("$Odoo/invalid_python_path", ());
+                },
+                Ok(output) => {
+                    session.sync_odoo.has_valid_python = true;
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        session.log_message(MessageType::INFO, format!("Detected sys.version_info: {}", stdout));
+                        let version_infos: Value = serde_json::from_str(&stdout).expect("Unable to get python version info with json of sys.version_info output");
+                        session.sync_odoo.python_version = version_infos.as_array()
+                            .expect("Expected JSON array")
+                            .iter()
+                            .filter_map(|v| v.as_u64())
+                            .map(|v| v as u32)
+                            .take(3)
+                            .collect();
+                        info!("Detected python version: {}.{}.{}", session.sync_odoo.python_version[0], session.sync_odoo.python_version[1], session.sync_odoo.python_version[2]);
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        warn!("Error reading sys.version_info: {}", stderr);
+                    }
+                }
             }
         }
         if SyncOdoo::load_builtins(session) {
