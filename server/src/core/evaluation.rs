@@ -1198,43 +1198,68 @@ impl Evaluation {
                         }
                         _ => {}
                     }
-                    if base.is_weak() && let Some(value) = &value.0 {
-                        let base = base.upgrade_weak().unwrap();
-                        let get_item = base.borrow().get_content_symbol("__getitem__", u32::MAX).symbols;
-                        if get_item.len() == 1 {
-                            let get_item = &get_item[0];
-                            let get_item = get_item.borrow();
-                            if get_item.evaluations().is_some() && get_item.evaluations().unwrap().len() == 1 {
-                                let get_item_eval = &get_item.evaluations().unwrap()[0];
-                                if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
-                                    let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
-                                    let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
-                                        SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
-                                            parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                                        },
-                                        _ => {false}
-                                    };
+                    if !base.is_weak() {
+                        continue;
+                    }
+                    let base = base.upgrade_weak().unwrap();
+                    let get_item_symbols = base.borrow().get_member_symbol(
+                        session,
+                        &S!("__getitem__"),
+                        parent.borrow().find_module(),
+                        false,
+                        false,
+                        true,
+                        true,
+                        false,
+                    ).0;
+                    for get_item in get_item_symbols.iter() {
+                        let get_item = get_item.borrow();
+                        let Some(evaluations) = get_item.evaluations() else {
+                            continue;
+                        };
+                        for get_item_eval in evaluations {
+                            if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
+                                let parent_file_or_func = parent.clone().borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                                let is_in_validation = match parent_file_or_func.borrow().typ().clone() {
+                                    SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                                        parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                                    },
+                                    _ => {false}
+                                };
+                                if let Some(value) = &value.0 {
                                     context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value.clone()));
-                                    let old_range = context.as_mut().unwrap().remove(&S!("range"));
-                                    context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
-                                    context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
-                                    let hook_result = (hook.callable)(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
-                                    if let Some(hook_result) = hook_result {
-                                        match hook_result {
-                                            EvaluationSymbolPtr::WEAK(ref weak) => {
-                                                if !weak.weak.is_expired() {
-                                                    evals.push(Evaluation::eval_from_ptr(&hook_result));
-                                                }
-                                            },
-                                            _ => {
+                                }
+                                let old_range = context.as_mut().unwrap().remove(&S!("range"));
+                                context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
+                                context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
+                                let hook_result = (hook.callable)(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent.clone()));
+                                if let Some(hook_result) = hook_result {
+                                    match hook_result {
+                                        EvaluationSymbolPtr::WEAK(ref weak) => {
+                                            if !weak.weak.is_expired() {
                                                 evals.push(Evaluation::eval_from_ptr(&hook_result));
                                             }
+                                        },
+                                        _ => {
+                                            evals.push(Evaluation::eval_from_ptr(&hook_result));
                                         }
                                     }
-                                    context.as_mut().unwrap().remove(&S!("args"));
-                                    context.as_mut().unwrap().remove(&S!("is_in_validation"));
-                                    context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
                                 }
+                                context.as_mut().unwrap().remove(&S!("args"));
+                                context.as_mut().unwrap().remove(&S!("is_in_validation"));
+                                context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
+                            }
+                            if let EvaluationSymbolPtr::SELF = get_item_eval.symbol.get_symbol_ptr(){
+                                // Evaluate to the base itself
+                                // For example for models, since you get the same type of recordset when subscripted
+                                evals.push(Evaluation{
+                                    symbol: EvaluationSymbol {
+                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Rc::downgrade(&base), context: HashMap::new(), instance: Some(true), is_super: false}),
+                                        get_symbol_hook: None,
+                                    },
+                                    value: None,
+                                    range: Some(sub.range())
+                                });
                             }
                         }
                     }

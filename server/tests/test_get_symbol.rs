@@ -6,6 +6,7 @@ use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
 use std::env;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 mod setup;
 mod test_utils;
@@ -143,7 +144,7 @@ fn test_hover_on_model_field_and_method() {
     );
 
     // Hover on a variable assignment (baseInstance1)
-    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 39, 0).unwrap_or_default();
+    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 41, 0).unwrap_or_default();
     assert!(
         hover_var.contains("BaseTestModel"),
         "Hover on variable should show type info"
@@ -151,7 +152,7 @@ fn test_hover_on_model_field_and_method() {
 
     // Hover on a method returning a variable that is assigned to a relational field
     // To check that the descriptor is correctly resolved
-    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 35, 10).unwrap_or_default();
+    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 36, 10).unwrap_or_default();
     assert!(
         hover_var.contains("ResPartner"),
         "Hover on variable should show type info"
@@ -252,4 +253,28 @@ fn test_definition() {
     assert_eq!(phone_code_locs[0].target_uri.to_file_path().unwrap().sanitize(), phone_code_file);
     // check that one of the phone_code_locs is the same as the phone_code field
     assert!(phone_code_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, phone_code_field_sym.borrow().range())), "Expected phone_code to be at the same location as the field");
+}
+#[test]
+fn test_model_subscription() {
+    // Setup: Get the symbol for BaseTestModel and verify its existence
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&test_file)
+    ) else {
+        panic!("Failed to get file symbol");
+    };
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let base_test_model_sym = file_symbol.borrow().get_symbol(&(vec![], vec![Sy!("BaseTestModel")]), u32::MAX);
+    assert_eq!(base_test_model_sym.len(), 1, "Expected 1 symbol for BaseTestModel");
+    let resolved_syms = test_utils::get_resolved_symbols_at_position(&mut session, &file_symbol, &file_info, 34, 10);
+    assert!(
+        resolved_syms.iter().any(|sym| Rc::ptr_eq(sym, &base_test_model_sym[0])),
+        "Resolving a subscript of a model should include the model symbol itself.
+        Expected to find BaseTestModel symbol among resolved symbols of `partner = self.search([], limit=2)[-1:]`"
+    )
 }
