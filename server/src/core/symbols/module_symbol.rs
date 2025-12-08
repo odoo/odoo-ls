@@ -353,7 +353,7 @@ impl ModuleSymbol {
                         ..diagnostic.clone()
                     });
                 }
-            } else if path.extension().map_or(true, |ext| !["xml", "csv"].contains(&ext.to_str().unwrap_or(""))) {
+            } else if path.extension().map_or(true, |ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path.sanitize()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
@@ -437,7 +437,7 @@ impl ModuleSymbol {
                 let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                 let mut csv_builder = CsvArchBuilder::new();
                 csv_builder.load_csv(session, csv_sym, &data);
-            } else {
+            } else if !file_name.ends_with(".sql") { // Do nothing for sql files for now, but also no error log
                 error!("Unsupported data file type: {}", file_name);
             }
         }

@@ -428,7 +428,7 @@ OLS05048, DiagnosticSetting::Error, "Invalid child node {0} in function node",
 OLS05049, DiagnosticSetting::Error, "Data file {0} not found in the module",
 /**
 */
-OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML or CSV file",
+OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML, CSV, or SQL file",
 /**
 * An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
 */
