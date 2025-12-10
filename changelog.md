@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.2] - 2025/12/10 - CachedModel fixes
+
+### Server
+
+- Various fixes
+- Fix and support for CachedModel introduced in 19.1
+- Use a deterministic job queue to avoid random errors caused by different order of symbols
+    - For that we replace the current HashSet with a FIFO one, so symbols are processed in the queue order
+
+### Fixes
+
+- Fix wiki link for configuration on welcome page
+- Avoid having empty paths for addons or additional stubs in cli mode
+- Avoid adding model dependencies in orm files to avoid rebuilding base files
+- Avoid loading Models defined inside functions, e.g. tests.
+- Avoid attempting to rebuild `__iter__` on external files, as their file infos are deleted
+- Fix fetching symbols in inheritance tree by early stopping when one is found
+
+
 ## [1.1.1] - 2025/11/24 - Untitled files and Encoding
 
 ### Server
