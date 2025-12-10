@@ -1633,7 +1633,7 @@ impl Evaluation {
                                 false,
                                 true,
                                 false,
-                                false,
+                                true,
                                 false);
                             if symbols.is_empty() {
                                 if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[&name, &object.borrow().name()]) {
