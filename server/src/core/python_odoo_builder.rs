@@ -398,27 +398,22 @@ impl PythonOdooBuilder {
         let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
         let model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &model_tree, u32::MAX);
         let transient_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &transient_tree, u32::MAX);
-        if base_model_syms.is_empty() || model_syms.is_empty() || transient_syms.is_empty() {
-            //one of them is not already loaded, but that's not really an issue, as now odoo step has been merged
-            //with arch eval step, some files will be odooed before loading the orm fully. In this case we should
-            //ignore this error. Moreover if a base is set on the class, it means that the base has been loaded, so
-            //it is NOT a model.
-            // session.send_notification(ShowMessage::METHOD, ShowMessageParams{
-            //     typ: MessageType::ERROR,
-            //     message: "Odoo base models are not found. OdooLS will be unable to generate valid diagnostics".to_string()
-            // });
+        if base_model_syms.is_empty() {
+            // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;
         }
-        if Rc::ptr_eq(symbol, &base_model_syms[0]) ||
-            Rc::ptr_eq(symbol, &model_syms[0]) ||
-            Rc::ptr_eq(symbol, &transient_syms[0])
+        // Check if the symbol is exactly BaseModel, Model or TransientModel
+        // BaseModel, Model, or TransientModel are abstract base classes, we don't want to mark them as models
+        if Rc::ptr_eq(symbol, &base_model_syms[0])
+        || model_syms.first().is_some_and(|s| Rc::ptr_eq(symbol, s))
+        || transient_syms.first().is_some_and(|s| Rc::ptr_eq(symbol, s))
         {
             return false;
         }
         if compare_semver(session.sync_odoo.full_version.as_str(), "19.1") >= Ordering::Equal{
             let cached_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models_cached")], vec![Sy!("CachedModel")]);
-            let cached_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &cached_model_tree, u32::MAX);
-            if cached_model.is_empty() || Rc::ptr_eq(symbol, &cached_model[0]){
+            let cached_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &cached_model_tree, u32::MAX);
+            if cached_model_syms.first().is_some_and(|s| Rc::ptr_eq(symbol, s)){
                 return false;
             }
 
@@ -427,6 +422,7 @@ impl PythonOdooBuilder {
             return false;
         }
         sym.as_class_sym_mut()._model = Some(ModelData::new());
+        // Check if we have a _register = False
         let register = sym.get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
         if let Some(register) = register.last() {
             let loc_register = register.borrow();
