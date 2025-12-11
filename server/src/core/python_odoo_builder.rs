@@ -426,20 +426,19 @@ impl PythonOdooBuilder {
         let register = sym.get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
         if let Some(register) = register.last() {
             let loc_register = register.borrow();
-            let register_evals = &loc_register.evaluations().unwrap();
-            if register_evals.len() == 1 { //we don't handle multiple values
-                let eval = &register_evals[0];
-                let value = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-                if value.is_some() {
-                    let value = value.unwrap();
-                    if let EvaluationValue::CONSTANT(Expr::BooleanLiteral(b)) = value {
-                        if !b.value {
-                            return false;
-                        }
+            let register_evals = loc_register.evaluations().unwrap();
+            // Read all boolean values, ignore non-boolean-value evaluations, as they can be dynamic or type annotations
+            let register_evals_values: Vec<_> = register_evals.iter().filter_map(
+                |eval|
+                    match eval.follow_ref_and_get_value(session, &mut None, diagnostics)? {
+                        EvaluationValue::CONSTANT(Expr::BooleanLiteral(b)) => Some(b.value),
+                        _ => None,
                     }
-                }
+            ).collect();
+            // If we have exactly *one* False value evaluation, we consider _register = False, thus it is an abstract model
+            if register_evals_values == &[false] {
+                return false;
             }
-            return true;
         }
         true
     }
