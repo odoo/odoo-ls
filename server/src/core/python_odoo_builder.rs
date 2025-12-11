@@ -44,9 +44,10 @@ impl PythonOdooBuilder {
         if sym.borrow().typ() != SymType::CLASS {
             return diagnostics;
         }
-        if !self.test_symbol_is_model(session, &mut diagnostics) {
+        if !self.is_symbol_model(session, &mut diagnostics) {
             return diagnostics;
         }
+        self.symbol.borrow_mut().as_class_sym_mut()._model = Some(ModelData::new());
         self._load_class_inherit(session, &mut diagnostics);
         self._load_class_name(session, &mut diagnostics);
         if sym.borrow().as_class_sym()._model.is_none() {
@@ -352,78 +353,26 @@ impl PythonOdooBuilder {
     }
 
     /* true if the symbol inherits from BaseModel, Model, TransientModel, or CachedModel. symbol must be the data of rc_symbol and must be a Class */
-    fn test_symbol_is_model(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
+    fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
         let symbol = &self.symbol.clone();
-        let odoo_symbol_tree = symbol.borrow().get_main_entry_tree(session);
-        let mut sym = symbol.borrow_mut();
-        if [&[Sy!("BaseModel")], &[Sy!("Model")], &[Sy!("TransientModel")]].iter().any(|x| x == &odoo_symbol_tree.1.as_slice()) &&
-            // [BaseModel|Model|TransientModel]
-            (( // < 18.1, and we are on odoo.models.
-                compare_semver(session.sync_odoo.full_version.as_str(), "18.1") == Ordering::Less
-                && odoo_symbol_tree.0 == &["odoo", "models"]
-            ) || ( // >= 18.1, and we are on odoo.orm.models.
-                compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal
-                && odoo_symbol_tree.0 == &["odoo", "orm", "models"]
-            ))
-            // >= 18.3, and we are on odoo.orm.models_transient.TransientModel
-            || (
-                compare_semver(session.sync_odoo.full_version.as_str(), "18.3") >= Ordering::Equal
-                && odoo_symbol_tree.1 == &["TransientModel"]
-                && odoo_symbol_tree.0 == &["odoo", "orm", "models_transient"]
-            )
-            // we are on odoo.orm.models_cached.CachedModel
-            || (
-                compare_semver(session.sync_odoo.full_version.as_str(), "19.1") >= Ordering::Equal
-                && odoo_symbol_tree.1 == &["CachedModel"]
-                && odoo_symbol_tree.0 == &["odoo", "orm", "models_cached"]
-            )
-        {
-            //we don't want to compare these classes with themselves, so we exit early
+        if symbol.borrow().as_class_sym().bases.is_empty() {
             return false;
         }
-        if sym.as_class_sym().bases.is_empty() {
-            return false;
-        }
-        let mut base_model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]);
-        let mut model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]);
-        let mut transient_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]);
-        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
-            base_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]);
-            model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("Model")]);
-            transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("TransientModel")]);
-        }
-        if compare_semver(session.sync_odoo.full_version.as_str(), "18.3") >= Ordering::Equal {
-            transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models_transient")], vec![Sy!("TransientModel")]);
-        }
+        let base_model_tree = if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
+            (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")])
+        } else {
+            (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])
+        };
         let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
-        let model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &model_tree, u32::MAX);
-        let transient_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &transient_tree, u32::MAX);
         if base_model_syms.is_empty() {
             // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;
         }
-        // Check if the symbol is exactly BaseModel, Model or TransientModel
-        // BaseModel, Model, or TransientModel are abstract base classes, we don't want to mark them as models
-        if Rc::ptr_eq(symbol, &base_model_syms[0])
-        || model_syms.first().is_some_and(|s| Rc::ptr_eq(symbol, s))
-        || transient_syms.first().is_some_and(|s| Rc::ptr_eq(symbol, s))
-        {
+        if !symbol.borrow().as_class_sym().inherits(&base_model_syms[0], &mut None) {
             return false;
         }
-        if compare_semver(session.sync_odoo.full_version.as_str(), "19.1") >= Ordering::Equal{
-            let cached_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models_cached")], vec![Sy!("CachedModel")]);
-            let cached_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &cached_model_tree, u32::MAX);
-            if cached_model_syms.first().is_some_and(|s| Rc::ptr_eq(symbol, s)){
-                return false;
-            }
-
-        }
-        if !sym.as_class_sym().inherits(&base_model_syms[0], &mut None) {
-            return false;
-        }
-        sym.as_class_sym_mut()._model = Some(ModelData::new());
         // Check if we have a _register = False
-        let register = sym.get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
+        let register = symbol.borrow().get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
         if let Some(register) = register.last() {
             let loc_register = register.borrow();
             let register_evals = loc_register.evaluations().unwrap();
