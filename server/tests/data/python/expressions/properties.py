@@ -18,3 +18,9 @@ if True:
 c                   # c: (str | int | TestClass)
 d = c               # d: (str | int | TestClass)
 
+the_answer = a.answer  # the_answer: int
+the_answer2 = d.answer # the_answer2: int
+
+ambiguous_answer = a.ambiguous_answer  # ambiguous_answer: (int | str)
+ambiguous_answer2 = d.ambiguous_answer # ambiguous_answer2: (int | str)
+

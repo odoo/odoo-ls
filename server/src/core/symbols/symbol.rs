@@ -2166,24 +2166,23 @@ impl Symbol {
                 }
             }
         }
-        if let Symbol::Variable(v) = symbol {
-            for eval in v.evaluations.iter() {
+
+        let sym_type = symbol.typ();
+        if sym_type == SymType::VARIABLE || (sym_type == SymType::FUNCTION && symbol.as_func().is_property) {
+            for eval in symbol.evaluations().unwrap_or(&vec![]) {
                 let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
                 let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
-                match sym {
-                    EvaluationSymbolPtr::WEAK(ref mut w) => {
-                        if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
-                            if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
-                                w.context.insert(S!("base_attr"), base_attr.clone());
-                            }
+                if let EvaluationSymbolPtr::WEAK(ref mut w) = sym {
+                    if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+                        if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                            w.context.insert(S!("base_attr"), base_attr.clone());
                         }
-                        if let Some(base_attr) = symbol_context.get(&S!("is_attr_of_instance")) {
-                            if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
-                                w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
-                            }
+                    }
+                    if let Some(base_attr) = symbol_context.get(&S!("is_attr_of_instance")) {
+                        if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                            w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
                         }
-                    },
-                    _ => {}
+                    }
                 }
                 if !sym.is_expired_if_weak() {
                     res.push_back(sym);
@@ -2299,7 +2298,28 @@ impl Symbol {
                         work_queue.extend(next_sym_refs);
                     }
                 },
+                SymType::FUNCTION => {
+                    let is_property = sym_rc.borrow().as_func().is_property;
+                    if !is_property {
+                        // Functions are final unless they are properties
+                        results.push(current_eval);
+                        continue;
+                    }
+                    let next_sym_refs = Symbol::next_refs(session, sym_rc.clone(), context, &next_ref_weak.context, stop_on_type, &mut vec![]);
+                    if next_sym_refs.is_empty() {
+                        // keep current evaluation
+                        results.push(current_eval);
+                    } else {
+                        // enqueue evaluations to follow, replacing current evaluation
+                        work_queue.extend(next_sym_refs);
+                    }
+                    // TODO: this arm can be easily merged with the one for SymType::CLASS, but
+                    // - do we need to propagate instance = True here too (like we do for variables, but not class...)?
+                    // - do we need to build_now for functions like we do for variables? In case yes, BuildSteps::ARCH_EVAL or VALIDATION?
+                    // - stop_on_type, stop_on_value and max_scope apply also for this case?
+                }
                 _ => {
+                    // Other symbol types are final
                     results.push(current_eval);
                 }
             }

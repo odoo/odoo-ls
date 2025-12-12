@@ -12,6 +12,7 @@ use std::rc::Rc;
 
 #[test]
 fn test_follow_ref() {
+    // setup
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir()
@@ -25,13 +26,15 @@ fn test_follow_ref() {
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&path))
         .expect("Failed to get file symbol");
 
-    test_variable_type_resolution(session, file_info, file_symbol);
+    // actual tests
+    test_variable_type_resolution(&mut session, &file_info, &file_symbol);
+    test_property_type_resolution(&mut session, &file_info, &file_symbol);
 }
 
 fn test_variable_type_resolution(
-    mut session: SessionInfo<'_>,
-    file_info: Rc<RefCell<FileInfo>>,
-    file_symbol: Rc<RefCell<Symbol>>,
+    session: &mut SessionInfo<'_>,
+    file_info: &Rc<RefCell<FileInfo>>,
+    file_symbol: &Rc<RefCell<Symbol>>,
 ) {
     for (var, (line, character), expected_type) in vec![
         ("a", (9, 0), "TestClass"),
@@ -44,10 +47,31 @@ fn test_variable_type_resolution(
         ("d", (18, 0), "(str | int | TestClass)"),
     ] {
         let hover =
-            test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, line, character)
+            test_utils::get_hover_markdown(session, file_symbol, file_info, line, character)
                 .expect(&format!("Should get hover text for {}", var));
         assert!(
             hover.contains(format!("{var}: {expected_type}").as_str()),
             "Hover over '{}' should show type '{}'. Got: {}", var, expected_type, hover);
     }
 }
+
+fn test_property_type_resolution(
+    session: &mut SessionInfo<'_>,
+    file_info: &Rc<RefCell<FileInfo>>,
+    file_symbol: &Rc<RefCell<Symbol>>,
+) {
+    for (var, (line, character), expected_type) in vec![
+        ("the_answer", (20, 0), "int"),
+        ("the_answer2", (21, 0), "int"),
+        ("ambiguous_answer", (23, 0), "(int | str)"),
+        ("ambiguous_answer2", (24, 0), "(int | str)"),
+    ] {
+        let hover =
+            test_utils::get_hover_markdown(session, file_symbol, file_info, line, character)
+                .expect(&format!("Should get hover text for {}", var));
+        assert!(
+            hover.contains(format!("{var}: {expected_type}").as_str()),
+            "Hover over '{}' should show type '{}'. Got: {}", var, expected_type, hover);
+    }
+}
+
