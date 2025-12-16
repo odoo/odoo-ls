@@ -355,7 +355,8 @@ impl PythonOdooBuilder {
     /* true if the symbol inherits from BaseModel, Model, TransientModel, or CachedModel. symbol must be the data of rc_symbol and must be a Class */
     fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
         let symbol = &self.symbol.clone();
-        if symbol.borrow().as_class_sym().bases.is_empty() {
+        if symbol.borrow().as_class_sym().bases.is_empty() || symbol.borrow().find_module().is_none(){
+            // We only consider symbols that has inheritance base or defined in modules as models
             return false;
         }
         let base_model_tree = if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
