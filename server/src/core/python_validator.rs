@@ -563,7 +563,7 @@ impl PythonValidator {
                                 });
                             }
                         }
-                        if symbols.iter().any(|sym| !sym.borrow().is_specific_field(session, &["Many2one"])) {
+                        if symbols.iter().any(|sym| !sym.borrow().is_specific_field(session, &["Many2one", "Many2oneReference"])) {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };

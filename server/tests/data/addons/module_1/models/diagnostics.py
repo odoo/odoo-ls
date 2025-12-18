@@ -117,3 +117,11 @@ class SameNameModel(models.Model):
 class SameNameModel2(models.Model):
     _name = "module_1.same_name_model" # OLS03020
     _description = "Another model with same name"
+    attachment_ids = fields.One2many('module_1.m2o_reference_model', 'res_id', string='Attachments')
+
+class ModelWithM2OReference(models.Model):
+    _name = "module_1.m2o_reference_model"
+    _description = "Model to test Many2oneReference field"
+
+    model = fields.Char('Related Document Model')
+    res_id = fields.Many2oneReference('Related Document ID', model_field='model')

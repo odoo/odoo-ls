@@ -164,9 +164,9 @@ OLS03020, DiagnosticSetting::Warning, "Model {0} is shadowing an existing model 
  */
 OLS03021, DiagnosticSetting::Error, "Inverse field {0} does not exist on comodel {1}",
 /**
- * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model.
+ * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one or a Many2oneReference to the current model.
  */
-OLS03022, DiagnosticSetting::Error, "Inverse field is not a Many2one field",
+OLS03022, DiagnosticSetting::Error, "Inverse field is neither a Many2one nor a Many2oneReference field",
 /**
  * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model
  * -> current_model is not right
