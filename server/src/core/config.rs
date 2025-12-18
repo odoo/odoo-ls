@@ -15,6 +15,8 @@ use tracing::error;
 
 use crate::constants::{CONFIG_WIKI_URL};
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
+use crate::core::file_mgr::FileMgr;
+use crate::threads::SessionInfo;
 use crate::utils::{fill_validate_path, get_python_command, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
 
@@ -518,12 +520,16 @@ fn parse_manifest_version(contents: String) -> Option<String> {
     None
 }
 
-fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: Option<&String>) -> Sourced<String> {
+fn process_version(
+    var: Sourced<String>,
+    unique_ws_folders: &HashMap<String, String>,
+    current_ws: Option<&(String, String)>
+) -> Sourced<String> {
     let Some(config_path) = var.sources.iter().next().map(PathBuf::from) else {
         unreachable!("Expected at least one source for sourced_path: {:?}", var);
     };
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    match fill_validate_path(ws_folders, workspace_name, var.value(), |p| PathBuf::from(p).exists(), HashMap::new(), &config_dir) {
+    match fill_validate_path(unique_ws_folders, current_ws, var.value(), |p| PathBuf::from(p).exists(), HashMap::new(), &config_dir) {
         Ok(filled_path) => {
             let var_pb = PathBuf::from(&filled_path);
             if var_pb.is_file() {
@@ -770,7 +776,13 @@ pub fn default_profile_name() -> String {
     "default".to_string()
 }
 
-fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, predicate: &F, var_map: HashMap<String, String>) -> Result<Sourced<String>, String>
+fn fill_or_canonicalize<F>(
+    sourced_path: &Sourced<String>,
+    unique_ws_folders: &HashMap<String, String>,
+    current_ws: Option<&(String, String)>,
+    predicate: &F,
+    var_map: HashMap<String, String>
+) -> Result<Sourced<String>, String>
 where
 F: Fn(&String) -> bool,
 {
@@ -779,7 +791,7 @@ F: Fn(&String) -> bool,
     };
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     if has_template(&sourced_path.value) {
-        return fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate, var_map, &config_dir)
+        return fill_validate_path(unique_ws_folders, current_ws, &sourced_path.value, predicate, var_map, &config_dir)
         .and_then(|p| std::fs::canonicalize(PathBuf::from(p)).map_err(|e| e.to_string()))
         .map(|p| p.sanitize())
         .map(|path| Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default()});
@@ -797,10 +809,12 @@ F: Fn(&String) -> bool,
     Ok(Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default() })
 }
 
+/// Process patterns and canonicalize paths in the configuration entry
+/// unique_ws_folders: mapping of **unique** workspace folder names to their paths
 fn process_paths(
     entry: &mut ConfigEntryRaw,
-    ws_folders: &HashMap<String, String>,
-    workspace_name: Option<&String>,
+    unique_ws_folders: &HashMap<String, String>,
+    current_ws: Option<&(String, String)>,
 ){
     let mut var_map: HashMap<String, String> = HashMap::new();
     if let Some(v) = entry.version.clone() {
@@ -810,7 +824,7 @@ fn process_paths(
         var_map.insert(S!("base"), b.value().clone());
     }
     entry.odoo_path =  entry.odoo_path.as_ref()
-        .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone())
+        .and_then(|p| fill_or_canonicalize(p, unique_ws_folders, current_ws, &is_odoo_path, var_map.clone())
             .map_err(|err| error!("Failed to process odoo path for variable {:?}: {}", p, err))
             .ok()
         );
@@ -822,13 +836,13 @@ fn process_paths(
     });
     entry.addons_paths = entry.addons_paths.as_ref().map(|paths|
         paths.iter().filter_map(|sourced| {
-            fill_or_canonicalize(sourced, ws_folders, workspace_name, &is_addon_path, var_map.clone())
+            fill_or_canonicalize(sourced, unique_ws_folders, current_ws, &is_addon_path, var_map.clone())
             .map_err(|err| error!("Failed to process addons path for variable {:?}: {}", sourced, err))
             .ok()
         }).collect()
     );
     if infer {
-        if let Some((name, workspace_path)) = workspace_name.and_then(|name| ws_folders.get(name).map(|p| (name, p))) {
+        if let Some((name, workspace_path)) = current_ws {
             let workspace_path = PathBuf::from(workspace_path).sanitize();
             if is_addon_path(&workspace_path) {
                 let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()};
@@ -844,7 +858,7 @@ fn process_paths(
             if is_python_path(&p.value) {
                 Some(p.clone())
             } else {
-                fill_or_canonicalize(p, ws_folders, workspace_name, &is_python_path, var_map.clone())
+                fill_or_canonicalize(p, unique_ws_folders, current_ws, &is_python_path, var_map.clone())
                 .map_err(|err| error!("Failed to fill or canonicalize python path for variable {:?}: {}", p, err))
                 .ok()
             }
@@ -868,7 +882,7 @@ fn process_paths(
         let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
         filter.value.paths = filter.value.paths.iter().filter_map(|pattern| {
             let pattern_string = pattern.to_string();
-            let processed_pattern = fill_validate_path(ws_folders, workspace_name, &pattern_string, &|_: &String| true, var_map.clone(), &config_dir)
+            let processed_pattern = fill_validate_path(unique_ws_folders, current_ws, &pattern_string, &|_: &String| true, var_map.clone(), &config_dir)
                 .and_then(|p| Pattern::new(&p)
                 .map_err(|e| e.to_string()));
             match processed_pattern {
@@ -966,7 +980,10 @@ fn merge_sourced_diagnostic_setting_map(
 }
 
 
-fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRaw {
+fn apply_merge(
+    child: &ConfigEntryRaw,
+    parent: &ConfigEntryRaw,
+) -> ConfigEntryRaw {
     let odoo_path = child.odoo_path.clone().or(parent.odoo_path.clone());
     let python_path = child.python_path.clone().or(parent.python_path.clone());
     // Simple combination of paths, sources will be merged after paths are processed
@@ -1027,7 +1044,9 @@ fn apply_merge(child: &ConfigEntryRaw, parent: &ConfigEntryRaw) -> ConfigEntryRa
     }
 }
 
-fn apply_extends(config: &mut HashMap<String, ConfigEntryRaw>) -> Result<(), String> {
+fn apply_extends(
+    config: &mut HashMap<String, ConfigEntryRaw>
+) -> Result<(), String> {
 /*
     each profile has a parent, Option<String>
     each profile can have multiple children, Vec<String>
@@ -1117,24 +1136,27 @@ fn merge_configs(
     merged
 }
 
-fn load_config_from_file(path: String, ws_folders: &HashMap<String, String>,) -> Result<HashMap<String, ConfigEntryRaw>, String> {
+fn load_config_from_file(
+    session: &mut SessionInfo,
+    path: String,
+) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     let path = PathBuf::from(path);
     if !path.exists() || !path.is_file() {
         return Err(S!(format!("Config file not found: {}", path.display())));
     }
     process_config(
         read_config_from_file(path)?,
-        ws_folders,
+        &session.sync_odoo.get_file_mgr().borrow().get_unique_workspace_folders(),
         None,
     )
 }
 
 fn load_config_from_workspace(
-    ws_folders: &HashMap<String, String>,
-    workspace_name: &String,
-    workspace_path: &String,
+    unique_ws_folders: &HashMap<String, String>,
+    current_ws: &(String, String),
 ) -> Result<HashMap<String, ConfigEntryRaw>, String> {
-    let mut current_dir = PathBuf::from(workspace_path);
+    let ws_path_pb = PathBuf::from(&current_ws.1);
+    let mut current_dir = ws_path_pb.clone();
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
     merged_config.insert("default".to_string(), ConfigEntryRaw::new());
@@ -1171,7 +1193,6 @@ fn load_config_from_workspace(
                     Err(e) => return Err(S!(format!("Failed to canonicalize base path: {} ({})", base_prefix_pb.display(), e))),
                 };
                 let base_prefix_pb = PathBuf::from(abs_base.sanitize());
-                let ws_path_pb: PathBuf = PathBuf::from(workspace_path);
                 let base_prefix_components: Vec<_> = base_prefix_pb.components().collect();
                 let ws_path_components: Vec<_> = ws_path_pb.components().collect();
                 if ws_path_components.len() > base_prefix_components.len()
@@ -1203,8 +1224,8 @@ fn load_config_from_workspace(
             };
             let Ok(parent_dir) = fill_or_canonicalize(
                 &{Sourced { value: parent_dir.sanitize(), sources: version_var.sources.clone(), ..Default::default() }},
-                ws_folders,
-                Some(workspace_name),
+                unique_ws_folders,
+                Some(current_ws),
                 &|p| PathBuf::from(p).is_dir(),
                 HashMap::new(),
             ) else {
@@ -1231,15 +1252,15 @@ fn load_config_from_workspace(
     for new_entry in new_configs {
         merged_config.insert(new_entry.name.clone(), new_entry);
     }
-    let merged_config = process_config(merged_config, ws_folders, Some(workspace_name))?;
+    let merged_config = process_config(merged_config, unique_ws_folders, Some(current_ws))?;
 
     Ok(merged_config)
 }
 
 fn process_config(
     mut config_map: HashMap<String, ConfigEntryRaw>,
-    ws_folders: &HashMap<String, String>,
-    workspace_name: Option<&String>,
+    unique_ws_folders: &HashMap<String, String>,
+    current_ws: Option<&(String, String)>,
 ) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     apply_extends(&mut config_map)?;
     // Process vars
@@ -1247,13 +1268,13 @@ fn process_config(
         .for_each(|entry| {
             // apply process_var to all vars
             if entry.abstract_ { return; }
-            entry.version = entry.version.clone().map(|v| process_version(v, ws_folders, workspace_name));
+            entry.version = entry.version.clone().map(|v| process_version(v, unique_ws_folders, current_ws));
         });
     // Process paths in the merged config
     config_map.values_mut()
         .for_each(|entry| {
             if entry.abstract_ { return; }
-            process_paths(entry, ws_folders, workspace_name);
+            process_paths(entry, unique_ws_folders, current_ws);
         });
     // Merge sourced paths
     config_map.values_mut()
@@ -1267,8 +1288,8 @@ fn process_config(
 }
 
 fn merge_all_workspaces(
+    unique_ws_folders: &HashMap<String, String>,
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
-    ws_folders: &HashMap<String, String>
 ) -> Result<(ConfigNew, ConfigFile), String> {
     let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
 
@@ -1357,7 +1378,7 @@ fn merge_all_workspaces(
     // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
     for (_, entry) in merged_raw_config.iter_mut() {
         if entry.odoo_path.is_none() {
-            for (name, path) in ws_folders.iter() {
+            for (name, path) in unique_ws_folders.iter() {
                 if is_odoo_path(path) {
                     if entry.odoo_path.is_some() {
                         return Err(
@@ -1402,22 +1423,24 @@ fn merge_all_workspaces(
     Ok((final_config, config_file))
 }
 
-pub fn get_configuration(ws_folders: &HashMap<String, String>, cli_config_file: &Option<String>)  -> Result<(ConfigNew, ConfigFile), String> {
+pub fn get_configuration(session: &mut SessionInfo)  -> Result<(ConfigNew, ConfigFile), String> {
     let mut ws_confs: Vec<HashMap<String, ConfigEntryRaw>> = Vec::new();
 
-    if let Some(path) = cli_config_file {
-        let config_from_file = load_config_from_file(path.clone(), ws_folders)?;
+    if let Some(path) = session.sync_odoo.config_path.as_ref() {
+        let config_from_file = load_config_from_file(session, path.clone())?;
         ws_confs.push(config_from_file);
     }
 
+    let ws_folders = session.sync_odoo.get_file_mgr().borrow().get_processed_workspace_folders();
+    let unique_ws_folders = &session.sync_odoo.get_file_mgr().borrow().get_unique_workspace_folders();
     let ws_confs_result: Result<Vec<_>, _> = ws_folders
         .iter()
-        .map(|ws_f| load_config_from_workspace(ws_folders, ws_f.0, ws_f.1))
+        .map(|ws_f| load_config_from_workspace(unique_ws_folders, ws_f))
         .collect();
 
     ws_confs.extend(ws_confs_result?);
 
-    merge_all_workspaces(ws_confs, ws_folders)
+    merge_all_workspaces(unique_ws_folders, ws_confs)
 }
 
 /// Check if the old and new configuration entries are different enough to require a restart.
