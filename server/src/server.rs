@@ -9,7 +9,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S, crash_buffer};
+use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::odoo::SyncOdoo, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S, crash_buffer};
 
 
 /**
@@ -135,15 +135,13 @@ impl Server {
             let file_mgr = sync_odoo.get_file_mgr();
             let mut file_mgr = file_mgr.borrow_mut();
             for added in workspace_folders.iter() {
-                let path = FileMgr::uri2pathname(added.uri.as_str());
-                file_mgr.add_workspace_folder(added.name.clone(), path);
+                file_mgr.add_workspace_folder(added.name.clone(), added.uri.clone());
             }
         } else if let Some( root_uri) = initialize_params.root_uri.as_ref() { //keep for backward compatibility
             let sync_odoo = self.sync_odoo.lock().unwrap();
             let file_mgr = sync_odoo.get_file_mgr();
             let mut file_mgr = file_mgr.borrow_mut();
-            let path = FileMgr::uri2pathname(root_uri.as_str());
-            file_mgr.add_workspace_folder(S!("_root"), path);
+            file_mgr.add_workspace_folder(S!("_root"), root_uri.clone());
         }
         let initialize_data = InitializeResult {
             server_info: Some(ServerInfo {

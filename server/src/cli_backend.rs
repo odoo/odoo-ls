@@ -1,6 +1,6 @@
 use lsp_server::Message;
 use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
-use lsp_types::{LogMessageParams, PublishDiagnosticsParams};
+use lsp_types::{LogMessageParams, PublishDiagnosticsParams, Uri};
 use tracing::{error, info};
 
 use crate::core::config::ConfigEntry;
@@ -10,6 +10,7 @@ use crate::args::Cli;
 use std::io::Write;
 use std::path::PathBuf;
 use std::fs::{self, File};
+use std::str::FromStr;
 use serde_json::json;
 use crate::core::{config::{DiagMissingImportsMode}, odoo::SyncOdoo};
 use crate::S;
@@ -43,13 +44,17 @@ impl CliBackend {
 
         for (id, tracked_folder) in workspace_folders.into_iter().enumerate() {
             let tf = fs::canonicalize(tracked_folder.clone());
-            if let Ok(tf) = tf {
-                let tf = tf.sanitize();
-                session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(format!("{}", id), tf);
-            } else {
-                error!("Unable to resolve tracked folder: {}", tracked_folder);
-            }
-
+            let uri = match tf
+                .map(|p| p.sanitize())
+                .and_then(|tf| Uri::from_str(&tf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))
+            {
+                Ok(uri) => uri,
+                Err(e) => {
+                    error!("Unable to resolve tracked folder: {}, error: {}", tracked_folder, e);
+                    continue;
+                }
+            };
+            session.sync_odoo.get_file_mgr().borrow_mut().add_workspace_folder(format!("{}", id), uri);
         }
 
         let mut config = ConfigEntry::new();

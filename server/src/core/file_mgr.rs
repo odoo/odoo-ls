@@ -1,6 +1,6 @@
 use ruff_python_ast::{ModModule, PySourceType, Stmt};
 use ruff_python_parser::{Parsed, Token, TokenKind};
-use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent};
+use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
 use tracing::{error, warn};
@@ -478,8 +478,7 @@ impl FileInfo {
 pub struct FileMgr {
     pub files: HashMap<String, Rc<RefCell<FileInfo>>>,
     untitled_files: HashMap<String, Rc<RefCell<FileInfo>>>, // key: untitled URI or unique name
-    workspace_folders: HashMap<String, String>,
-    has_repeated_workspace_folders: bool,
+    workspace_folders: HashSet<(String, Uri)>,
 }
 
 impl FileMgr {
@@ -488,8 +487,7 @@ impl FileMgr {
         Self {
             files: HashMap::new(),
             untitled_files: HashMap::new(),
-            workspace_folders: HashMap::new(),
-            has_repeated_workspace_folders: false,
+            workspace_folders: HashSet::new(),
         }
     }
 
@@ -656,34 +654,47 @@ impl FileMgr {
         session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
     }
 
-    pub fn add_workspace_folder(&mut self, name: String, path: String) {
-        if self.workspace_folders.contains_key(&name) {
-            warn!("Workspace folder with name {} already exists", name);
-            self.has_repeated_workspace_folders = true;
-        }
-        let sanitized = PathBuf::from(path).sanitize();
-        self.workspace_folders.insert(name, sanitized);
+    /// Add workspace folder by name and uri
+    /// Same format as received from the client
+    pub fn add_workspace_folder(&mut self, name: String, uri: Uri) {
+        self.workspace_folders.insert((name, uri));
     }
 
-    pub fn remove_workspace_folder(&mut self, name: String) {
-        self.workspace_folders.remove(&name);
+    /// Remove workspace folder by name and uri
+    /// Same format as received from the client
+    pub fn remove_workspace_folder(&mut self, name: String, uri: Uri) {
+        self.workspace_folders.remove(&(name, uri));
     }
 
-    pub fn has_repeated_workspace_folders(&self) -> bool {
-        self.has_repeated_workspace_folders
-    }
-
-    pub fn get_workspace_folders(&self) -> &HashMap<String, String> {
+    pub fn get_workspace_folders(&self) -> &HashSet<(String, Uri)> {
         &self.workspace_folders
     }
 
-    pub fn is_in_workspace(&self, path: &str) -> bool {
-        for p in self.workspace_folders.values() {
-            if path.starts_with(p) {
-                return true;
+    /// Get workspace folders with sanitized path strings instead of URIs
+    pub fn get_processed_workspace_folders(&self) -> HashSet<(String, String)> {
+        self.workspace_folders.iter().map(|(name, uri)| {
+            (name.clone(), FileMgr::uri2pathname(uri.as_str()))
+        }).collect()
+    }
+
+    /// Get a map of workspace folder name to sanitized path string
+    /// of only unique workspace names, repeated names are skipped
+    pub fn get_unique_workspace_folders(&self) -> HashMap<String, String> {
+        let mut visited_names= HashSet::new();
+        let mut unique_folders = HashMap::new();
+        for (name, uri) in self.workspace_folders.iter() {
+            if visited_names.insert(name.clone()) {
+                unique_folders.insert(name.clone(), FileMgr::uri2pathname(uri.as_str()));
+            } else {
+                unique_folders.remove(name);
+                warn!("Workspace folder name '{}' is not unique, skipping it for unique workspace folder retrieval", name);
             }
         }
-        false
+        unique_folders
+    }
+
+    pub fn is_in_workspace(&self, path: &str) -> bool {
+        self.workspace_folders.iter().any(|(_, uri)| path.starts_with(&FileMgr::uri2pathname(uri.as_str())))
     }
 
     pub fn pathname2uri(s: &String) -> lsp_types::Uri {
