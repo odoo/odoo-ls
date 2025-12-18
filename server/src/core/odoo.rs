@@ -1300,11 +1300,7 @@ impl Odoo {
     pub fn init(session: &mut SessionInfo) {
         let start = std::time::Instant::now();
         session.log_message(MessageType::LOG, String::from("Building new Odoo knowledge database"));
-        if session.sync_odoo.get_file_mgr().borrow().has_repeated_workspace_folders() {
-            session.show_message(MessageType::ERROR, String::from("There are repeated workspace folders names, which is not supported by OdooLS. Please remove the repeated folders and restart the server."));
-            return;
-        }
-        let config = get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders(), &session.sync_odoo.config_path);
+        let config = get_configuration(session);
         if let Ok((_, config_file)) = &config {
             session.sync_odoo.config_file = Some(config_file.clone());
             Odoo::send_all_configurations(session);
@@ -1613,10 +1609,10 @@ impl Odoo {
         let file_mgr = session.sync_odoo.get_file_mgr();
         let mut file_mgr = file_mgr.borrow_mut();
         for added in params.event.added {
-            file_mgr.add_workspace_folder(added.name.clone(),added.uri.to_string());
+            file_mgr.add_workspace_folder(added.name.clone(), added.uri);
         }
         for removed in params.event.removed {
-            file_mgr.remove_workspace_folder(removed.uri.to_string());
+            file_mgr.remove_workspace_folder(removed.name.clone(), removed.uri);
         }
     }
 
@@ -2029,12 +2025,12 @@ impl Odoo {
 
     /// Checks if the given path is a configuration file under one of the workspace folders.
     fn is_config_workspace_file(session: &mut SessionInfo, path: &PathBuf) -> bool {
-        for (_, ws_dir) in session.sync_odoo.get_file_mgr().borrow().get_workspace_folders().iter() {
-            if path.starts_with(ws_dir) && path.ends_with("odools.toml") {
-                return true;
-            }
-        }
-        false
+        session.sync_odoo
+        .get_file_mgr()
+        .borrow()
+        .get_processed_workspace_folders()
+        .iter()
+        .any(|(_, ws_dir)| path.starts_with(ws_dir) && path.ends_with("odools.toml"))
     }
 
     /// Checks if the given path is a configuration file and handles the update accordingly.
@@ -2042,7 +2038,7 @@ impl Odoo {
     fn check_handle_config_file_update(session: &mut SessionInfo, path: &PathBuf) -> bool {
         // Check if the change is affecting a config file
         if Odoo::is_config_workspace_file(session, path) {
-            let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders(), &session.sync_odoo.config_path)
+            let config_result =  config::get_configuration(session)
                 .and_then(|(cfg_map, cfg_file)| {
                     let config_name = session.sync_odoo.selected_config_profile.clone().unwrap_or(default_profile_name());
                     cfg_map.get(&config_name)
