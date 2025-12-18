@@ -161,6 +161,33 @@ fn test_hover_on_model_field_and_method() {
 }
 
 #[test]
+fn test_hover_inverse_name_o2m(){
+    // Setup server and session with test addons
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("diagnostics.py").sanitize();
+    // Ensure the test file exists
+    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    // Get file symbol and file info
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    // Use get_file_info().symbol instead of get_file_symbol
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&test_file)
+    ) else {
+        panic!("Failed to get file symbol");
+    };
+    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 9, 73).unwrap_or_default();
+    assert!(
+        hover_var.contains("(variable) diagnostics_id: ModelWithDiagnostics"),
+        "Hover on inverse o2m field should show correct type info"
+    );
+
+}
+
+#[test]
 fn test_definition() {
     // Setup server and session with test addons
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();

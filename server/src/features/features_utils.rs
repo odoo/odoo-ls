@@ -4,7 +4,7 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
-use crate::utils::{compare_semver, PathSanitizer};
+use crate::utils::{MaxTextSize, PathSanitizer, compare_semver};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -102,7 +102,7 @@ impl FeaturesUtils {
         from_module: Option<Rc<RefCell<Symbol>>>,
         field_value: &String,
         call_expr: &ExprCall,
-    ) -> Vec<Rc<RefCell<Symbol>>>{
+    ) -> Vec<Rc<RefCell<Symbol>>> {
         let model_name = if let Some(Expr::StringLiteral(expr)) = call_expr.arguments.args.first() {
             expr.value.to_string()
         } else {
@@ -226,6 +226,7 @@ impl FeaturesUtils {
         offset: usize,
         field_range: TextRange,
         arg_index: usize,
+        arg_expr: &Expr,
     ) -> Vec<(Rc<RefCell<Symbol>>, TextRange)> {
         let mut arg_symbols: Vec<(Rc<RefCell<Symbol>>, TextRange)> = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
@@ -250,39 +251,76 @@ impl FeaturesUtils {
             let Some(callable_sym) = callable.weak.upgrade() else {
                 continue;
             };
-            if callable_sym.borrow().typ() != SymType::FUNCTION {
+            if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.borrow().typ()) {
                 continue;
             }
-            let func = callable_sym.borrow();
+            if callable_sym.borrow().typ() == SymType::FUNCTION && callable_sym.borrow().as_func().is_property {
+                continue;
+            }
+             if callable_sym.borrow().typ() == SymType::FUNCTION {
+                let func = callable_sym.borrow();
 
-            // Check if we are in api.onchange/constrains/depends
-            let func_sym_tree = func.get_tree();
-            // TODO: account for change in tree after 18.1 odoo.orm.decorators
-            let version_comparison = compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0");
-            if (version_comparison < Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
-                (version_comparison >= Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])){
-                if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
-                    arg_symbols.extend(
-                        FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
-                        .into_iter().map(|symbol| (symbol, field_range.clone()))
-                    );
-                    continue;
-                } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
-                    arg_symbols.extend(
-                        FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
-                    );
-                    continue;
+                // Check if we are in api.onchange/constrains/depends
+                let func_sym_tree = func.get_tree();
+                // TODO: account for change in tree after 18.1 odoo.orm.decorators
+                let version_comparison = compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0");
+                if (version_comparison < Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
+                    (version_comparison >= Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
+                    if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
+                        arg_symbols.extend(
+                            FeaturesUtils::find_simple_decorator_field_symbol(session, scope.clone(), from_module.clone(), field_name)
+                            .into_iter().map(|symbol| (symbol, field_range.clone()))
+                        );
+                        continue;
+                    } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
+                        arg_symbols.extend(
+                            FeaturesUtils::find_nested_fields_in_class(session, scope.clone(), from_module.clone(), &field_range, field_name, &offset)
+                        );
+                        continue;
+                    }
                 }
             }
+            // if class get __init__ method, we need to get the argument from there
+            let func_rc = if callable_sym.borrow().typ() == SymType::CLASS {
+                let class_sym = callable_sym.borrow();
+                if let Some(init_method) = class_sym.get_member_symbol(session, &S!("__init__"), from_module.clone(), false, false, false, false, false).0.first().cloned() {
+                    init_method
+                } else {
+                    continue;
+                }
+            } else {
+                callable_sym.clone()
+            };
+            let func = func_rc.borrow();
+
+            let is_on_instance = if callable_sym.borrow().typ() == SymType::CLASS {
+                // skip self on __init__
+                Some(true)
+            } else {
+                callable.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool())
+            };
 
             let func_arg = func.as_func().get_indexed_arg_in_call(
                 call_expr,
                 arg_index as u32,
-                callable.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool()));
+                is_on_instance);
             let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade()) else {
                 continue
             };
 
+
+            if func_arg_sym.borrow().name() == "inverse_name"
+                && callable_sym.borrow().typ() == SymType::CLASS
+                && callable_sym.borrow().is_specific_field_class(session, &["One2many"]) {
+                let Some(value) = Evaluation::expr_to_str(session, arg_expr, scope.clone(), &call_expr.range().end(), false, &mut vec![]).0 else {
+                    continue;
+                };
+                arg_symbols.extend(
+                    FeaturesUtils::find_inverse_name_field_symbol(session, from_module.clone(), &value, call_expr)
+                    .into_iter().map(|res| (res, arg_expr.range()))
+                );
+                continue;
+            }
             for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
                 if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN){
                     arg_symbols.extend(
@@ -352,10 +390,10 @@ impl FeaturesUtils {
         offset: usize,
         field_range: TextRange,
     ) -> Vec<(Rc<RefCell<Symbol>>, TextRange)>{
-        if let Some((arg_index, _)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
+        if let Some((arg_index, arg_expr)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
             offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
         ){
-            FeaturesUtils::find_positional_argument_symbols(session, scope, from_module, field_name, call_expr, offset, field_range, arg_index)
+            FeaturesUtils::find_positional_argument_symbols(session, scope, from_module, field_name, call_expr, offset, field_range, arg_index, arg_expr)
         } else if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
             offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
         ){
