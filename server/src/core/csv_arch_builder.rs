@@ -5,7 +5,7 @@ use lsp_types::Diagnostic;
 use weak_table::PtrWeakHashSet;
 use tracing::{error};
 
-use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::xml_data::{OdooData, OdooDataField, OdooDataRecord}, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo};
+use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{data_hooks, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo};
 
 use super::{symbols::{symbol::Symbol}};
 
@@ -59,6 +59,7 @@ impl CsvArchBuilder {
                                         }
                                     }
                                     csv_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(PtrWeakHashSet::new()).insert(csv_symbol.clone());
+                                    data_hooks::on_record_creation(session, &csv_symbol, &record);
                                     csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
                                 }
                             }
