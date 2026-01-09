@@ -525,4 +525,8 @@ OLS05066, DiagnosticSetting::Error, "Bundle node in asset cannot be empty",
 * Path node in asset cannot be empty.
 */
 OLS05067, DiagnosticSetting::Error, "Path node in asset cannot be empty",
+/**
+ * Unknown language code
+ */
+OLS05068, DiagnosticSetting::Warning, "Unknown language code: '{0}'",
 }
