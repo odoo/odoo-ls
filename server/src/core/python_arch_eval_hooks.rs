@@ -512,8 +512,9 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-        let mut search: std::cell::RefMut<Symbol> = symbol.borrow_mut();
-        let func = search.as_func_mut();
+        symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+        let search = symbol.borrow();
+        let func = search.as_func();
         if func.args.len() > 1 {
             if let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade() {
                 if arg_symbol.borrow().name().eq(&Sy!("domain")) {
