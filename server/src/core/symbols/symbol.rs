@@ -3,6 +3,7 @@ use ruff_text_size::{TextSize, TextRange};
 use tracing::{info, trace};
 use weak_table::traits::WeakElement;
 
+use crate::core::data_hooks;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::file_mgr::{FileMgr, NoqaInfo};
 use crate::core::python_validator::PythonValidator;
@@ -1811,6 +1812,9 @@ impl Symbol {
             drop(parent_bw);
             if matches!(&ref_to_unload.borrow().typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
                 Symbol::invalidate(session, ref_to_unload.clone(), &BuildSteps::ARCH);
+            }
+            if matches!(&ref_to_unload.borrow().typ(), SymType::XML_FILE | SymType::CSV_FILE) {
+                data_hooks::on_file_unload(session, &ref_to_unload);
             }
             //check if we should not reimport automatically
             match ref_to_unload.borrow().typ() {

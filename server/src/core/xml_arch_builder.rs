@@ -5,7 +5,7 @@ use roxmltree::{Attribute, Node};
 use tracing::warn;
 use weak_table::PtrWeakHashSet;
 
-use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
+use crate::core::{data_hooks, diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, xml_data::OdooData}, threads::SessionInfo, Sy};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
@@ -81,6 +81,9 @@ impl XmlArchBuilder {
             }
             xml_data.set_file_symbol(&self.xml_symbol);
             xml_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id.clone())).or_insert(PtrWeakHashSet::new()).insert(self.xml_symbol.clone());
+            if let OdooData::RECORD(ref record) = xml_data {
+                data_hooks::on_record_creation(session, &self.xml_symbol, record);
+            }
             self.xml_symbol.borrow_mut().as_xml_file_sym_mut().xml_ids.entry(Sy!(id.clone())).or_insert(vec![]).push(xml_data);
         }
     }

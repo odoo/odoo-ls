@@ -457,4 +457,8 @@ OLS05056, DiagnosticSetting::Error, "Model '{0}' not found",
  * Field not found in model
  */
 OLS05057, DiagnosticSetting::Error, "Field '{0}' not found in model '{1}'",
+/**
+ * Unknown language code
+ */
+OLS05058, DiagnosticSetting::Warning, "Unknown language code: '{0}'",
 }

@@ -16,6 +16,7 @@ use crate::features::hover::HoverFeature;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -51,7 +52,6 @@ use crate::S;
 static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap()
 });
-
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
@@ -99,6 +99,8 @@ pub struct SyncOdoo {
     pub capabilities: lsp_types::ClientCapabilities,
     pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
+    languages_by_source: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashSet<String>>,
+    language_dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
 
     pub test_mode: bool,
 }
@@ -145,6 +147,8 @@ impl SyncOdoo {
             capabilities: lsp_types::ClientCapabilities::default(),
             encoding: PositionEncoding::Utf16,
             opened_files: vec![],
+            languages_by_source: PtrWeakKeyHashMap::new(),
+            language_dependents: PtrWeakHashSet::new(),
 
             test_mode: false,
         };
@@ -171,6 +175,8 @@ impl SyncOdoo {
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
         session.sync_odoo.watched_file_updates = 0;
+        session.sync_odoo.languages_by_source = PtrWeakKeyHashMap::new();
+        session.sync_odoo.language_dependents = PtrWeakHashSet::new();
         //drop all entries, except entries of opened files
         session.sync_odoo.entry_point_mgr.borrow_mut().reset_entry_points(false);
         SyncOdoo::init(session, config);
@@ -1198,6 +1204,49 @@ impl SyncOdoo {
         module.as_module_package().get_xml_id(&oyarn!("{}", id_split.last().unwrap()))
     }
 
+    /// Add a language code from a source of res_lang records.
+    pub fn add_language(&mut self, lang_code: &str, source_file: &Rc<RefCell<Symbol>>) {
+        let languages = self
+            .languages_by_source
+            .entry(source_file.clone())
+            .or_insert_with(HashSet::new);
+        languages.insert(lang_code.to_string());
+        // Also add base language (e.g., "fr" from "fr_BE")
+        if let Some((base_lang, _)) = lang_code.split_once('_') {
+            languages.insert(base_lang.to_string());
+        }
+        self.revalidate_language_dependents();
+    }
+
+    /// Remove a source of res_lang records from the language registry.
+    pub fn remove_language_source(&mut self, source_file: &Rc<RefCell<Symbol>>) {
+        if self.languages_by_source.remove(source_file).is_some() {
+            self.revalidate_language_dependents();
+        }
+    }
+
+    /// Check if a language code exists and register the dependent symbol.
+    pub fn check_language_and_track(&mut self, lang: &str, dependent: &Rc<RefCell<Symbol>>) -> bool {
+        self.language_dependents.insert(dependent.clone());
+        self.languages_by_source.values().any(|langs| langs.contains(lang))
+    }
+
+    /// For testing purposes only. Use `check_language_and_track` for actual
+    /// language checks.
+    pub fn _get_languages(&self) -> HashSet<String> {
+        self.languages_by_source
+            .values()
+            .flat_map(|langs| langs.iter().cloned())
+            .collect()
+    }
+
+    /// Schedule revalidation for all language-dependent symbols.
+    fn revalidate_language_dependents(&mut self) {
+        let to_revalidate: Vec<_> = self.language_dependents.drain().collect();
+        for sym in to_revalidate {
+            self.add_to_validations(sym);
+        }
+    }
 }
 
 #[derive(Debug)]
