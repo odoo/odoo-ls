@@ -3,7 +3,7 @@ use ruff_text_size::{TextRange, TextSize};
 use slotmap::SlotMap;
 use tracing::info;
 
-use crate::{constants::{BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType}, core::symbols::{ class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, root_symbol::RootSymbol, symbol_keys::{ClassKey, CompiledKey, ContainsKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SymbolKey, VariableKey, XmlFileKey}, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol }, oyarn, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType}, core::{data_hooks, symbols::{ class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, root_symbol::RootSymbol, symbol_keys::{ClassKey, CompiledKey, ContainsKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SymbolKey, VariableKey, XmlFileKey}, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol }}, oyarn, threads::SessionInfo, utils::PathSanitizer};
 
 use std::ops::{Index, IndexMut};
 
@@ -413,6 +413,9 @@ impl SymbolTable {
             st!().remove_symbol(ref_to_unload);
             if matches!(ref_to_unload, SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::XmlFile(_) | SymbolKey::CsvFile(_)) {
                 Self::invalidate(session, ref_to_unload, &BuildSteps::ARCH);
+            }
+            if matches!(ref_to_unload.typ(), SymType::XML_FILE | SymType::CSV_FILE) {
+                data_hooks::on_file_unload(session, ref_to_unload);
             }
             //check if we should not reimport automatically
             match ref_to_unload {

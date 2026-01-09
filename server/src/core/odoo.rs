@@ -19,6 +19,7 @@ use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 // use crate::features::definition::DefinitionFeature;
 // use crate::features::hover::HoverFeature;
 use crate::threads::SessionInfo;
+use crate::weak_collections::{WeakMap, WeakSet};
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc};
@@ -56,7 +57,6 @@ use crate::S;
 static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap()
 });
-
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
@@ -145,6 +145,8 @@ pub struct SyncOdoo {
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
 
+    languages_by_source: WeakMap<SymbolKey, HashSet<String>>,
+    language_dependents: WeakSet<SymbolKey>,
 
     pub test_mode: bool,
 }
@@ -195,6 +197,9 @@ impl SyncOdoo {
             evaluation_search: None,
             evaluation_locations: vec![],
             typeshed_weak_cache: TypeshedWeakReferences::new(),
+            languages_by_source: WeakMap::new(),
+            language_dependents: WeakSet::new(),
+
             test_mode: false,
         };
         sync_odoo
@@ -220,6 +225,8 @@ impl SyncOdoo {
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
         session.sync_odoo.watched_file_updates = 0;
+        session.sync_odoo.languages_by_source = WeakMap::new();
+        session.sync_odoo.language_dependents = WeakSet::new();
         //drop all entries, except entries of opened files
         session.sync_odoo.entry_point_mgr.borrow_mut().reset_entry_points(false);
         session.sync_odoo.symbol_table = SymbolTable::new();
@@ -1423,6 +1430,49 @@ impl SyncOdoo {
         self.typeshed_weak_cache.object
     }
 
+    /// Add a language code from a source of res_lang records.
+    pub fn add_language(&mut self, lang_code: &str, source_file: SymbolKey) {
+        let languages = self
+            .languages_by_source
+            .entry(source_file)
+            .or_default();
+        languages.insert(lang_code.to_string());
+        // Also add base language (e.g., "fr" from "fr_BE")
+        if let Some((base_lang, _)) = lang_code.split_once('_') {
+            languages.insert(base_lang.to_string());
+        }
+        self.revalidate_language_dependents();
+    }
+
+    /// Remove a source of res_lang records from the language registry.
+    pub fn remove_language_source(&mut self, source_file: SymbolKey) {
+        if self.languages_by_source.remove(&source_file).is_some() {
+            self.revalidate_language_dependents();
+        }
+    }
+
+    /// Check if a language code exists and register the dependent symbol.
+    pub fn check_language_and_track(&mut self, lang: &str, dependent: SymbolKey) -> bool {
+        self.language_dependents.insert(dependent);
+        self.languages_by_source.iter_valid_values(|&k| self.symbol_table.contains_key(k)).any(|langs| langs.contains(lang))
+    }
+
+    /// For testing purposes only. Use `check_language_and_track` for actual
+    /// language checks.
+    pub fn _get_languages(&mut self) -> HashSet<String> {
+        self.languages_by_source
+            .iter_valid_values(|&k| self.symbol_table.contains_key(k))
+            .flat_map(|langs| langs.iter().cloned())
+            .collect()
+    }
+
+    /// Schedule revalidation for all language-dependent symbols.
+    fn revalidate_language_dependents(&mut self) {
+        let to_revalidate = self.language_dependents.drain_valid(|&k| self.symbol_table.contains_key(k));
+        for sym in to_revalidate {
+            self.add_to_validations(sym);
+        }
+    }
 }
 
 #[derive(Debug)]

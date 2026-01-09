@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, hash::Hash};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, hash::Hash, vec::IntoIter};
 
 #[derive(Debug, Clone)]
 pub struct WeakSet<K: Eq + Hash + Copy> {
@@ -32,7 +32,7 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
         self.set.get_mut().retain(|k| is_valid(k));
     }
 
-    pub fn iter_valid(&self, is_valid: impl Fn(&K) -> bool) -> std::vec::IntoIter<K> {
+    pub fn iter_valid(&self, is_valid: impl Fn(&K) -> bool) -> IntoIter<K> {
         let mut set = self.set.borrow_mut();
         set.retain(|k| is_valid(k));
         let snapshot: Vec<_> = set.iter().copied().collect();
@@ -41,6 +41,13 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
 
     pub fn retain(&mut self, f: impl Fn(&K) -> bool) {
         self.set.get_mut().retain(|k| f(k));
+    }
+
+    pub fn drain_valid(&mut self, is_valid: impl Fn(&K) -> bool) -> Vec<K> {
+        let set = self.set.get_mut();
+        let valid: Vec<K> = set.iter().copied().filter(|k| is_valid(k)).collect();
+        set.clear();
+        valid
     }
 }
 
@@ -65,8 +72,11 @@ impl<K: Eq + Hash + Copy, V> WeakMap<K, V> {
         self.map.remove(key)
     }
 
-    pub fn values_valid(&mut self, is_valid: impl Fn(&K) -> bool) -> Vec<&V> {
-        self.map.retain(|k, _| is_valid(k));
-        self.map.values().collect()
+    // @arena todo: take &impl ContainsKey instead of function
+    /// iterate over values of valid keys
+    pub fn iter_valid_values(&mut self, is_valid_key: impl Fn(&K) -> bool) -> IntoIter<&V> {
+        self.map.retain(|k, _| is_valid_key(k));
+        let snapshot: Vec<_> = self.map.values().collect();
+        snapshot.into_iter()
     }
 }

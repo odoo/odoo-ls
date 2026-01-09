@@ -4,7 +4,7 @@ use csv::StringRecord;
 use lsp_types::Diagnostic;
 use tracing::{error};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}},features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo, weak_collections::WeakSet, Sy};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{data_hooks, symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}},features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo, weak_collections::WeakSet, Sy};
 
 
 pub struct CsvArchBuilder {
@@ -58,6 +58,7 @@ impl CsvArchBuilder {
                             }
                         }
                         st!()[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(WeakSet::new).insert(csv_symbol.into());
+                        data_hooks::on_record_creation(session, csv_symbol.into(), &record);
                         st!()[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
                     },
                     Err(err) => {

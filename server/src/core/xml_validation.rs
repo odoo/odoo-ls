@@ -150,11 +150,21 @@ impl XmlValidator {
             let mut field_name = Sy!(field.name.clone());
             let mut has_translation = false;
             if compare_semver(&session.sync_odoo.full_version, "18.2.0") >= Ordering::Equal {
-                let translation = field.name.split("@").collect::<Vec<&str>>();
-                if translation.len() > 1 {
-                    field_name = oyarn!("{}", translation[0]);
+                // Check for translation
+                // obs: some language codes contain "@", e.g. "sr@latin", so we only split once
+                if let Some((fname, lang_code)) = field.name.split_once("@") {
+                    field_name = oyarn!("{}", fname);
                     has_translation = true;
-                    //TODO check that the language exists
+
+                    // Validate language code
+                    if !session.sync_odoo.check_language_and_track(lang_code, self.xml_symbol.into()) {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05068, &[lang_code]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(field.range.start.try_into().unwrap(), 0), end: Position::new(field.range.end.try_into().unwrap(), 0) },
+                                ..diagnostic
+                            });
+                        }
+                    }
                 }
             }
             // Validate field ref_key
