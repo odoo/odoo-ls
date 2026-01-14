@@ -67,6 +67,7 @@ pub struct SyncOdoo {
     pub full_version: String,
     pub python_version: Vec<u32>,
     pub config: ConfigEntry,
+    pub selected_config_profile: Option<String>,
     pub config_file: Option<ConfigFile>,
     pub config_path: Option<String>,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
@@ -112,6 +113,7 @@ impl SyncOdoo {
             full_version: "0.0.0".to_string(),
             python_version: vec![0, 0, 0],
             config: ConfigEntry::new(),
+            selected_config_profile: None,
             config_file: None,
             config_path: None,
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
@@ -1168,7 +1170,10 @@ impl Odoo {
             items: vec![configuration_item],
         };
         let config = match session.send_request::<ConfigurationParams, Vec<serde_json::Value>>(WorkspaceConfiguration::METHOD, config_params) {
-            Ok(config) => config.unwrap(),
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                return Err(S!("Read empty config from client response, please try again"));
+            }
             Err(_) => {
                 return Err(S!("Unable to get configuration from client, client not available"));
             }
@@ -1235,6 +1240,7 @@ impl Odoo {
             Some(c) if c == "" => default_profile_name(),
             Some(config) => config,
         };
+        session.sync_odoo.selected_config_profile = Some(selected_config.clone());
         if selected_config == "Disabled" {
             info!("OdooLS is disabled. Exiting...");
             return;
@@ -1906,7 +1912,7 @@ impl Odoo {
         if Odoo::is_config_workspace_file(session, path) {
             let config_result =  config::get_configuration(session.sync_odoo.get_file_mgr().borrow().get_workspace_folders(), &session.sync_odoo.config_path)
                 .and_then(|(cfg_map, cfg_file)| {
-                    let config_name = Odoo::read_selected_configuration(session)?.unwrap_or(default_profile_name());
+                    let config_name = session.sync_odoo.selected_config_profile.clone().unwrap_or(default_profile_name());
                     cfg_map.get(&config_name)
                         .cloned()
                         .ok_or_else(|| format!("Unable to find selected configuration \"{config_name}\""))
