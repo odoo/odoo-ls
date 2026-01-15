@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 
 
 
@@ -187,57 +187,65 @@ impl XmlValidator {
                     }
                 }
             }
-            //Check that the field belong to the model
-            if all_fields.contains_key(&field_name) {
-                // mandatory_fields.retain(|f| f != &field_name.to_string());
-                //Check specific attributes
-                let (Some(field_text), Some(field_text_range)) = (field.text.as_ref(), field.text_range.as_ref()) else {
-                    continue;
-                };
-                match (xml_data_record.model.0.as_str(), field_name.as_str()) {
-                    ("ir.ui.view", "model") | ("ir.actions.act_window", "res_model") => {
-                        let model = session.sync_odoo.models.get(&Sy!(field_text.clone())).cloned();
-                        let model_exists = model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
-                        if !model_exists {
-                            missing_model_dependencies.insert(Sy!(field_text.clone()));
-                        }
-                        let mut main_sym = vec![];
-                        let from_module = self.xml_symbol.borrow().find_module();
-                        if let Some(model) = model {
-                            main_sym = model.borrow().get_main_symbols(session, from_module.clone());
-                        }
-                        if !model_exists {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text, &xml_data_record.model.0]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
-                                    ..diagnostic.clone()
-                                });
-                            }
-                        }
-                        if  let Some(module) = from_module &&model_exists && main_sym.is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, module.borrow().name()]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
-                                    ..diagnostic.clone()
-                                });
-                            }
-                        }
-                    },
-                    _ => {}
-                }
-                //TODO check type
-            } else {
-                if has_translation {
-                    continue;
-                }
+            //Check that the field belongs to the model
+            let Some(field_syms) = all_fields.get(&field_name) else {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[&field.name, &xml_data_record.model.0]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(field.range.start.try_into().unwrap(), 0), end: Position::new(field.range.end.try_into().unwrap(), 0) },
                         ..diagnostic.clone()
                     });
                 }
+                continue;
+            };
+            // Check that field is translatable
+            if has_translation && !Self::is_field_translatable(session, field_syms) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05059, &[&field_name, &xml_data_record.model.0]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(field.range.start.try_into().unwrap(), 0), end: Position::new(field.range.end.try_into().unwrap(), 0) },
+                        ..diagnostic
+                    });
+                }
             }
+
+            // mandatory_fields.retain(|f| f != &field_name.to_string());
+            //Check specific attributes
+            let (Some(field_text), Some(field_text_range)) = (field.text.as_ref(), field.text_range.as_ref()) else {
+                continue;
+            };
+            match (xml_data_record.model.0.as_str(), field_name.as_str()) {
+                ("ir.ui.view", "model") | ("ir.actions.act_window", "res_model") => {
+                    let model = session.sync_odoo.models.get(&Sy!(field_text.clone())).cloned();
+                    let model_exists = model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
+                    if !model_exists {
+                        missing_model_dependencies.insert(Sy!(field_text.clone()));
+                    }
+                    let mut main_sym = vec![];
+                    let from_module = self.xml_symbol.borrow().find_module();
+                    if let Some(model) = model {
+                        main_sym = model.borrow().get_main_symbols(session, from_module.clone());
+                    }
+                    if !model_exists {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text, &xml_data_record.model.0]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
+                    }
+                    if  let Some(module) = from_module &&model_exists && main_sym.is_empty() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, module.borrow().name()]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
+                    }
+                },
+                _ => {}
+            }
+            //TODO check type
         }
+    }
         //Diagnostic if some mandatory fields are not detected
         // if !mandatory_fields.is_empty() {
         // We have to check  that remaining fields are not declared in an inherited record or is automatically field (delegate=True)
@@ -251,7 +259,6 @@ impl XmlValidator {
         //         None
         //     ));
         // }
-    }
 
     fn validate_menu_item(&self, _session: &mut SessionInfo, _module: &Rc<RefCell<Symbol>>, _xml_data_menu_item: &XmlDataMenuItem, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<Rc<RefCell<Symbol>>>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
 
@@ -263,5 +270,58 @@ impl XmlValidator {
 
     fn validate_delete(&self, _session: &mut SessionInfo, _module: &Rc<RefCell<Symbol>>, _xml_data_delete: &XmlDataDelete, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<Rc<RefCell<Symbol>>>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
 
+    }
+
+    /// Get the effective value of a field attribute considering the inheritance chain.
+    ///
+    /// Iterates through field symbols from most-derived to base class, returning the first
+    /// explicitly defined value for the given attribute. 
+    /// 
+    /// Switching field types in the inheritance chain clears attributes, so if
+    /// a parent field has a different type than the most-derived field, the
+    /// search stops and None is returned.
+    /// 
+    /// Assumes field_syms is in MRO
+    /// 
+    /// Not suitable for "selection" attribute as it can be cumulative, should
+    /// be handled separately if needed.
+fn get_effective_field_attribute(
+        session: &mut SessionInfo,
+        field_syms: &[Rc<RefCell<Symbol>>],
+        attribute: &str
+    ) -> Option<ContextValue> {
+        let most_derived = field_syms.first()?;
+        // field_type: Char, Text, ...
+        let (field_type, context) = most_derived.borrow().get_field_info(session)?;
+        if let Some(value) = context.get(attribute) {
+            return Some(value.clone());
+        }
+        for parent in field_syms.iter().skip(1) {
+            let (parent_field_type, context) = parent.borrow().get_field_info(session)?;
+            // e.g. Text x Char (switching field types clear the attributes)
+            // obs: the correct test to do is python's instanceof
+            if parent_field_type != field_type {
+                return None;
+            }
+            if let Some(value) = context.get(attribute) {
+                return Some(value.clone());
+            }
+        }
+        None
+    }
+
+    fn is_field_translatable(session: &mut SessionInfo, field_syms: &[(Rc<RefCell<Symbol>>, Option<OYarn>)]) -> bool {
+        let Some((first_field, _)) = field_syms.first() else {
+            return false;
+        };
+        // Only Char, Text, and Html fields support translation
+        if !first_field.borrow().is_specific_field(session, &["Char", "Text", "Html"]) {
+            return false;
+        }
+        let field_symbols: Vec<_> = field_syms.iter().map(|(fs, _)|fs).cloned().collect();
+        matches!(
+            Self::get_effective_field_attribute(session, &field_symbols, "translate"),
+            Some(ContextValue::BOOLEAN(true))
+        )
     }
 }

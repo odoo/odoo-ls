@@ -461,4 +461,8 @@ OLS05057, DiagnosticSetting::Error, "Field '{0}' not found in model '{1}'",
  * Unknown language code
  */
 OLS05058, DiagnosticSetting::Warning, "Unknown language code: '{0}'",
+/**
+ * Field is not translatable
+ */
+OLS05059, DiagnosticSetting::Warning, "Field '{0}' in model '{1}' is not translatable",
 }
