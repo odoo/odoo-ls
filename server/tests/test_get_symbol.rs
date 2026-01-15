@@ -254,6 +254,7 @@ fn test_definition() {
     // check that one of the phone_code_locs is the same as the phone_code field
     assert!(phone_code_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, phone_code_field_sym.borrow().range())), "Expected phone_code to be at the same location as the field");
 }
+
 #[test]
 fn test_model_subscription() {
     // Setup: Get the symbol for BaseTestModel and verify its existence
@@ -277,4 +278,55 @@ fn test_model_subscription() {
         "Resolving a subscript of a model should include the model symbol itself.
         Expected to find BaseTestModel symbol among resolved symbols of `partner = self.search([], limit=2)[-1:]`"
     )
+}
+
+#[test]
+fn test_references() {
+    // setup
+    let mut odoo = setup::setup::setup_server(true);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let module1_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
+
+    // test file exists
+    assert!(PathBuf::from(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
+    let mut session = setup::setup::create_session(&mut odoo);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let m1_tf_file_info = file_mgr.borrow().get_file_info(&module1_test_file).unwrap();
+    let Some(m1_tf_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&module1_test_file)
+    ) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test references for BaseTestModel class
+    // BaseTestModel is referenced at:
+    // - Line 34 (0-indexed: 33): BaseOtherName = BaseTestModel
+    // - Line 35 (0-indexed: 34): baseInstance1 = BaseTestModel()
+    // - Line 37 (0-indexed: 36): ref_funcBase1 = BaseTestModel.get_test_int
+    let base_test_model_refs = test_utils::get_reference_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 33, 17);
+    assert!(base_test_model_refs.len() >= 3, "Expected at least 3 references for BaseTestModel, got {}", base_test_model_refs.len());
+
+    // all refs should be in the same file
+    for loc in &base_test_model_refs {
+        assert_eq!(loc.uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected all references to be in the same file");
+    }
+
+    // Test references for 'var' variable in for_func method
+    // var is defined on line 21 (0-indexed: 20) and used on line 22 (0-indexed: 21)
+    let var_refs = test_utils::get_reference_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 21, 18);
+    assert!(var_refs.len() >= 1, "Expected at least 1 reference for 'var', got {}", var_refs.len());
+
+    // Test references for CONSTANT_1
+    // CONSTANT_1 is imported on line 2 (0-indexed: 1) and used on line 18 (0-indexed: 17)
+    // "        return CONSTANT_1" - CONSTANT_1 starts at character 15
+    let constant_refs = test_utils::get_reference_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 17, 15);
+    assert!(constant_refs.len() >= 1, "Expected at least 1 reference for CONSTANT_1, got {}", constant_refs.len());
+
+    // Test references for 'self' parameter
+    // self is used multiple times within methods
+    let self_refs = test_utils::get_reference_locs(&mut session, &m1_tf_file_symbol, &m1_tf_file_info, 13, 8);
+    // self should have multiple references within the get_test_int method (lines 14, 15)
+    assert!(self_refs.len() >= 2, "Expected at least 2 references for 'self' in get_test_int method, got {}", self_refs.len());
 }
