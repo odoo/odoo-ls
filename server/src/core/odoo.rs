@@ -2114,7 +2114,7 @@ impl Odoo {
     fn check_handle_config_file_update(session: &mut SessionInfo, path: &PathBuf) -> bool {
         // Check if the change is affecting a config file
         if Odoo::is_config_workspace_file(session, path) {
-            let config_result =  config::get_configuration(session)
+            let config_result = config::get_configuration(session)
                 .and_then(|(cfg_map, cfg_file)| {
                     let config_name = session.sync_odoo.selected_config_profile.clone().unwrap_or(default_profile_name());
                     cfg_map.get(&config_name)

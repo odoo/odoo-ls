@@ -22,9 +22,16 @@ pub struct SessionInfo<'a> {
 }
 
 impl <'a> SessionInfo<'a> {
-    /// Get a mutable reference to the symbol table
-    pub fn st(&mut self) -> &mut SymbolTable {
-        &mut self.sync_odoo.symbol_table
+    pub fn new(sync_odoo: &'a mut SyncOdoo) -> Self {
+        let (s, r) = crossbeam_channel::unbounded();
+        Self {
+            sender: s,
+            receiver: r,
+            sync_odoo,
+            delayed_process_sender: None,
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
+        }
     }
     
     pub fn log_message(&self, msg_type: MessageType, msg: String) {
@@ -156,6 +163,11 @@ impl <'a> SessionInfo<'a> {
                 None
             }
         }
+    }
+
+    /// Get a mutable reference to the symbol table
+    pub fn st(&mut self) -> &mut SymbolTable {
+        &mut self.sync_odoo.symbol_table
     }
 }
 
