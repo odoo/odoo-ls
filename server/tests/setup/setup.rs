@@ -1,12 +1,13 @@
 use core::str;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::{env, fs};
 
 use std::path::PathBuf;
 
 
 use lsp_server::Message;
-use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent};
+use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use odoo_ls_server::S;
 use odoo_ls_server::core::file_mgr::FileMgr;
@@ -51,7 +52,7 @@ pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
 
     let mut config = ConfigEntry::new();
     config.addons_paths = vec![test_addons_path.sanitize()].into_iter().collect();
-    server.get_file_mgr().borrow_mut().add_workspace_folder(S!("test_addons_path"), test_addons_path.sanitize());
+    server.get_file_mgr().borrow_mut().add_workspace_folder(S!("test_addons_path"), Uri::from_str(&test_addons_path.sanitize()).unwrap());
     config.odoo_path = community_path.map(|x| PathBuf::from(x).sanitize());
     let Some(python_cmd) = get_python_command() else {
         panic!("Python not found")

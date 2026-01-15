@@ -22,6 +22,17 @@ pub struct SessionInfo<'a> {
 }
 
 impl <'a> SessionInfo<'a> {
+    pub fn new(sync_odoo: &'a mut SyncOdoo) -> Self {
+        let (s, r) = crossbeam_channel::unbounded();
+        Self {
+            sender: s,
+            receiver: r,
+            sync_odoo,
+            delayed_process_sender: None,
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
+        }
+    }
     pub fn log_message(&self, msg_type: MessageType, msg: String) {
         self.sender.send(
             Message::Notification(lsp_server::Notification{
