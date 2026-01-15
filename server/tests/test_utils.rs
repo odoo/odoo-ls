@@ -60,3 +60,15 @@ pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>
     }).into_iter().flatten().collect::<Vec<_>>();
     locations
 }
+
+/// Helper to get reference locations at a given (line, character)
+pub fn get_reference_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>>, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::Location> {
+    let locations = odoo_ls_server::features::references::ReferenceFeature::get_references(
+        session,
+        f_sym,
+        f_info,
+        line,
+        character,
+    );
+    locations.unwrap_or_default()
+}
