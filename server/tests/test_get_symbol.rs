@@ -143,11 +143,20 @@ fn test_hover_on_model_field_and_method() {
     );
 
     // Hover on a variable assignment (baseInstance1)
-    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 35, 0).unwrap_or_default();
+    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 39, 0).unwrap_or_default();
     assert!(
         hover_var.contains("BaseTestModel"),
         "Hover on variable should show type info"
     );
+
+    // Hover on a method returning a variable that is assigned to a relational field
+    // To check that the descriptor is correctly resolved
+    let hover_var = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 35, 10).unwrap_or_default();
+    assert!(
+        hover_var.contains("ResPartner"),
+        "Hover on variable should show type info"
+    );
+
 }
 
 #[test]

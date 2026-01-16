@@ -33,6 +33,10 @@ class BaseTestModel(models.Model):
         self.env["pygls.tests.base_test_model"]
         self.search([("partner_id.country_id.code", ">", 0)])
 
+    def _get_partner_id(self):
+        partner = self.partner_id
+        return partner
+
 BaseOtherName = BaseTestModel
 baseInstance1 = BaseTestModel()
 baseInstance2 = BaseOtherName()

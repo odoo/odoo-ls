@@ -611,7 +611,7 @@ impl FeaturesUtils {
                                 Some(func_eval) => {
                                     let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
                                         let eval_symbol = eval.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None);
-                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, None);
+                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, false, false, None, None);
                                         weak_eval_symbols.iter().map(|weak_eval_symbol| match weak_eval_symbol.upgrade_weak(){
                                             //if fct is a variable, it means that evaluation is None.
                                             Some(s_type) if s_type.borrow().typ() != SymType::VARIABLE => s_type.borrow().name().to_string(),
