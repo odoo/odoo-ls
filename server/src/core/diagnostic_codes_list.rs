@@ -138,9 +138,9 @@ OLS03014, DiagnosticSetting::Error, "Field does not exist on model or not in dep
 */
 OLS03015, DiagnosticSetting::Error, "Field comodel_name's value is not in dependencies",
 /**
-* In relational fields, comodel_name's value is does not exist in current configuration
+* In relational fields, comodel_name's value does not exist in current configuration
 */
-OLS03016, DiagnosticSetting::Error, "Field comodel_name's values is does not exist",
+OLS03016, DiagnosticSetting::Error, "Field comodel_name's values does not exist",
 /**
 * Type of references field in related keyword argument does not match the current field
 */
@@ -208,7 +208,7 @@ OLS04005, DiagnosticSetting::Error, "The depends key should be a list of strings
 /**
 * A module cannot have its own name as a dependency in its manifest
 */
-OLS04006, DiagnosticSetting::Error, "A module cannot depends on itself",
+OLS04006, DiagnosticSetting::Error, "A module cannot depend on itself",
 /**
 * "data" value in module manifest should be a list
 */
@@ -430,11 +430,11 @@ OLS05049, DiagnosticSetting::Error, "Data file {0} not found in the module",
 */
 OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML, CSV, or SQL file",
 /**
-* An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
+* An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contain more dots
 */
 OLS05051, DiagnosticSetting::Error, "Invalid XML ID '{0}'. It should not contain more than one dot.",
 /**
-* The given parent_id does not exists in the dependents modules, or is not a menuitem
+* The given parent_id does not exist in the dependents modules, or is not a menuitem
 */
 OLS05052, DiagnosticSetting::Error, "Parent menuitem with id '{0}' does not exist",
 /**
