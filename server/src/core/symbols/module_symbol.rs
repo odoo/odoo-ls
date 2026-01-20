@@ -38,7 +38,7 @@ pub struct ModuleSymbol {
     loaded: bool,
     module_name: OYarn,
     pub dir_name: OYarn,
-    depends: Vec<(OYarn, TextRange)>,
+    pub depends: Vec<(OYarn, TextRange)>,
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,

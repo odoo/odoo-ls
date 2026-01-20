@@ -1,6 +1,8 @@
+use crate::constants::OYarn;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
+use crate::core::module_load_order::sort_by_load_order;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -473,6 +475,7 @@ impl SyncOdoo {
         {
             let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
             let addons_path = addons_symbol.borrow().paths().clone();
+            let mut modules = vec![];
             for addon_path in addons_path.iter() {
                 info!("searching modules in {}", addon_path);
                 if PathBuf::from(addon_path).exists() {
@@ -481,9 +484,8 @@ impl SyncOdoo {
                         match item {
                             Ok(item) => {
                                 if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&oyarn!("{}", item.file_name().to_str().unwrap())) {
-                                    let module_symbol = Symbol::create_from_path(session, &item.path(), addons_symbol.clone(), true);
-                                    if module_symbol.is_some() {
-                                        session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
+                                    if let Some(module_symbol) = Symbol::create_from_path(session, &item.path(), addons_symbol.clone(), true) {
+                                        modules.push(module_symbol);
                                     }
                                 }
                             },
@@ -491,6 +493,10 @@ impl SyncOdoo {
                         }
                     }
                 }
+            }
+            let sorted_modules = Self::sort_modules(modules);
+            for module_symbol in sorted_modules {
+                session.sync_odoo.add_to_rebuild_arch(module_symbol);
             }
         }
         if !SyncOdoo::process_rebuilds(session, false){
@@ -503,6 +509,43 @@ impl SyncOdoo {
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
         session.sync_odoo.state_init = InitState::ODOO_READY;
     }
+
+    /// Sort modules by load order
+    fn sort_modules(modules: Vec<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
+        // Build name -> (symbol, dependencies) lookup
+        let module_info: HashMap<OYarn, (Rc<RefCell<Symbol>>, Vec<OYarn>)> = modules
+            .into_iter()
+            .map(|symbol| {
+                let (name, depends) = {
+                    let sym = symbol.borrow();
+                    let package = sym.as_module_package();
+                    let name = package.name.clone();
+                    let depends = package.depends.iter().map(|(d, _)| d.clone()).collect();
+                    (name, depends)
+                };
+                (name, (symbol, depends))
+            })
+            .collect();
+
+        // Build nodes for graph in (name, dependencies[]) format
+        let nodes: Vec<(&str, Vec<&str>)> = module_info
+            .iter()
+            .map(|(name, (_, deps))| (name.as_str(), deps.iter().map(|s| s.as_str()).collect()))
+            .chain([("base", vec![])]) // Include "base" for proper dependency resolution
+            .collect();
+
+        let sort_result = sort_by_load_order(nodes);
+        debug_assert!(sort_result.sorted.first() == Some(&"base"), "The first module after sorting should be 'base'");
+
+        sort_result.sorted
+            .iter()
+            .skip(1) // skip "base" 
+            // TODO: decide what to do with invalid modules. For now, we append them at the end.
+            .chain(sort_result.invalid.iter())
+            .map(|&name| module_info.get(name).expect("module should exist").0.clone())
+            .collect()
+    }
+
 
     //search for a symbol with a tree local to an unknown entrypoint
     pub fn get_symbol(&self, from_path: &str, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {

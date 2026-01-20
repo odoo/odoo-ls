@@ -6,6 +6,7 @@ pub mod entry_point;
 pub mod file_mgr;
 pub mod import_resolver;
 pub mod model;
+pub mod module_load_order;
 pub mod odoo;
 pub mod python_arch_builder;
 pub mod python_arch_builder_hooks;
