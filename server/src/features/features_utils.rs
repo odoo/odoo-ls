@@ -283,7 +283,7 @@ impl FeaturesUtils {
             // if class get __init__ method, we need to get the argument from there
             let func_rc = if callable_sym.borrow().typ() == SymType::CLASS {
                 let class_sym = callable_sym.borrow();
-                if let Some(init_method) = class_sym.get_member_symbol(session, &S!("__init__"), from_module.clone(), false, false, false, false, false).0.first().cloned() {
+                if let Some(init_method) = class_sym.get_member_symbol(session, &S!("__init__"), from_module.clone(), false, false, true, false, false).0.first().cloned() {
                     init_method
                 } else {
                     continue;

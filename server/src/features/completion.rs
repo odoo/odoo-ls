@@ -588,61 +588,98 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
     let scope = Symbol::get_scope_symbol(file.clone(), offset as u32, is_param);
+    let from_module = file.borrow().find_module().clone();
     AstUtils::build_scope(session, &scope);
     let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start(), false, &mut vec![]).0;
     let callable_eval_sym_ptrs = callable_evals.iter().flat_map(|callable_eval|
         Symbol::follow_ref(&callable_eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, false, false, None, None)
     ).collect::<Vec<_>>();
     if let Some((arg_index, arg)) = expr_call.arguments.args.iter().find_position(|arg|
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-    ){
-        for callable_eval in callable_evals.iter() {
-            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize())
+    {
+        for callable_eval in callable_eval_sym_ptrs.iter() {
+            let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
+                continue;
+            };
             let Some(callable_sym) = callable.weak.upgrade()  else {continue};
-            match callable_sym.borrow().typ(){
-                SymType::FUNCTION => {
-                    let func = callable_sym.borrow();
-                    let func = func.as_func();
-                    let func_arg = func.get_indexed_arg_in_call(
-                        expr_call,
-                        arg_index as u32,
-                        callable.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool()));
-                    if let Some(func_arg) = func_arg {
-                        if let Some(func_arg_sym) = func_arg.symbol.upgrade() {
-                            let mut expected_type = vec![];
-                            for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
-                                match evaluation.symbol.get_symbol_ptr() {
-                                    EvaluationSymbolPtr::WEAK(_weak) => {
-                                        //if weak, use get_symbol
-                                        let symbol=  evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-                                        if let Some(evaluation) = symbol.weak.upgrade() {
-                                            if evaluation.borrow().typ() == SymType::CLASS {
-                                                expected_type.push(ExpectedType::CLASS(evaluation.clone()));
-                                            }
-                                        }
-                                    },
-                                    EvaluationSymbolPtr::DOMAIN => {
-                                        if let Some(parent) = callable.context.get(&S!("base_attr"))
-                                            .and_then(|parent_value| parent_value.as_symbol().upgrade()) {
-                                            expected_type.push(ExpectedType::DOMAIN(parent));
-                                        }
-                                    }
-                                    _ => {}
+            if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.borrow().typ()){
+                continue;
+            }
+            // Relational fields first argument is a model name.
+            if callable_sym.borrow().typ() == SymType::CLASS
+            && arg_index == 0
+            && callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]) {
+                    return complete_expr(arg, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+            }
+            // if class get __init__ method, we need to get the argument from there
+            let func_rc = if callable_sym.borrow().typ() == SymType::CLASS {
+                let class_sym = callable_sym.borrow();
+                if let Some(init_method) = class_sym.get_member_symbol(session, &S!("__init__"), from_module.clone(), false, false, true, false, false).0.first().cloned() {
+                    init_method
+                } else {
+                    continue;
+                }
+            } else {
+                callable_sym.clone()
+            };
+            let is_on_instance = if callable_sym.borrow().typ() == SymType::CLASS {
+                Some(true)
+            } else {
+                callable.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool())
+            };
+            let func = func_rc.borrow();
+            let Some(func_arg_sym) = func.as_func().get_indexed_arg_in_call(
+                expr_call,
+                arg_index as u32,
+                is_on_instance)
+                .and_then(|func_arg| func_arg.symbol.upgrade()) else {
+                continue;
+            };
+            let mut expected_type = vec![];
+            if func_arg_sym.borrow().name() == "inverse_name"
+                && callable_sym.borrow().typ() == SymType::CLASS
+                && callable_sym.borrow().is_specific_field_class(session, &["One2many"]) {
+                let comodel_name_option = match expr_call.arguments.args.first() {
+                    Some(Expr::StringLiteral(expr)) => Some(ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))),
+                    _ => expr_call
+                        .arguments
+                        .keywords
+                        .iter()
+                        .find(|kw|
+                            kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false)
+                        )
+                        .and_then(|kw| match &kw.value {
+                            Expr::StringLiteral(expr) => Some(ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))),
+                            _ => None
+                        })
+                };
+                if let Some(comodel_name) = comodel_name_option {
+                    expected_type.push(comodel_name);
+                }
+            } else {
+                for evaluation in func_arg_sym.borrow().evaluations().unwrap().iter() {
+                    match evaluation.symbol.get_symbol_ptr() {
+                        EvaluationSymbolPtr::WEAK(_weak) => {
+                            //if weak, use get_symbol
+                            let symbol=  evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+                            if let Some(evaluation) = symbol.weak.upgrade() {
+                                if evaluation.borrow().typ() == SymType::CLASS {
+                                    expected_type.push(ExpectedType::CLASS(evaluation.clone()));
                                 }
+                            }
+                        },
+                        EvaluationSymbolPtr::DOMAIN => {
+                            if let Some(parent) = callable.context.get(&S!("base_attr"))
+                                .and_then(|parent_value| parent_value.as_symbol().upgrade()) {
+                                expected_type.push(ExpectedType::DOMAIN(parent));
                             }
                             return complete_expr(arg, session, file, offset, is_param, &expected_type);
                         }
+                        _ => {}
                     }
-                },
-                SymType::CLASS => {
-                    // check for completion of first positional argument for comodel_name
-                    if arg_index != 0 || !callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]) {
-                        break;
-                    }
-                    return complete_expr(arg, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
-                },
-                _ => {}
-            };
+                }
+            }
+            return complete_expr(arg, session, file, offset, is_param, &expected_type);
         }
         //if we didn't find anything, still try to complete
         return complete_expr(arg, session, file, offset, is_param, &vec![]);
@@ -652,8 +689,8 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
         return None;
     };
     for callable_eval_sym_ptr in callable_eval_sym_ptrs.iter() {
-        let callable = callable_eval_sym_ptr.upgrade_weak();
-        let Some(callable_sym) = callable else {return None;};
+        let callable_option = callable_eval_sym_ptr.upgrade_weak();
+        let Some(callable_sym) = callable_option else {continue};
         if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
             continue;
         }
