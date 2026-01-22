@@ -5,6 +5,7 @@ use weak_table::traits::WeakElement;
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::file_mgr::{FileMgr, NoqaInfo};
+use crate::core::python_validator::PythonValidator;
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
@@ -2132,6 +2133,17 @@ impl Symbol {
                     let get_method = attribute_type_sym.get_member_symbol(session, &S!("__get__"), None, true, false, false, true, false).0.first().cloned();
                     match get_method {
                         Some(get_method) if (base_attr.borrow().typ() == SymType::CLASS) => {
+                            let get_sym_file = get_method.borrow().get_file().as_ref().unwrap().upgrade().unwrap().clone();
+                            if get_method.borrow().evaluations().is_some()
+                            && get_method.borrow().evaluations().unwrap().len() == 0
+                            && !get_sym_file.borrow().is_external()
+                            && get_sym_file.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+                            && get_method.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
+                            && get_method.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
+                            && get_method.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
+                                let mut v = PythonValidator::new(get_method.borrow().get_entry().unwrap(), get_method.clone());
+                                v.validate(session);
+                            }
                             let get_method = get_method.borrow();
                             if get_method.evaluations().is_some() {
                                 let mut res = VecDeque::new();
