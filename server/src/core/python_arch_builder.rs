@@ -686,6 +686,11 @@ impl PythonArchBuilder {
                 }
             }
         }
+        // __init_subclass__ and __class_getitem__ are always classmethods
+        // see https://docs.python.org/3/reference/datamodel.html
+        if ["__init_subclass__", "__class_getitem__"].contains(&func_sym.name.as_str()) {
+            func_sym.is_class_method = true;
+        }
         if func_def.body[0].is_expr_stmt() {
             let expr: &ruff_python_ast::StmtExpr = func_def.body[0].as_expr_stmt().unwrap();
             if let Some(s) = expr.value.as_string_literal_expr() {
