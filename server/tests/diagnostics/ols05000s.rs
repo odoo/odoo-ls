@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use lsp_types::{DiagnosticSeverity, NumberOrString};
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::{S, utils::PathSanitizer};
 
 use crate::{setup::setup::*, test_utils::{diag_on_line, verify_diagnostics_against_doc}};
@@ -17,6 +17,20 @@ fn test_ols05000_2_3_py_file() {
     verify_diagnostics_against_doc(bikes_py_diagnostics, doc_diags); // OLS05002 & OLS05003 & OLS05051
 }
 
+fn check_xml_diagnostic(diagnostics: &Vec<Diagnostic>, ols_code: &str, line: u32, severity: DiagnosticSeverity) {
+    let line_diagnostics = diag_on_line(diagnostics, line);
+    assert_eq!(line_diagnostics.len(), 1);
+    let diag = &line_diagnostics[0];
+    assert!(diag.code.is_some());
+    let code = match &diag.code {
+        Some(NumberOrString::String(code)) => code,
+        Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {}", num),
+        None => panic!("Diagnostic code is None"),
+    };
+    assert!(code == &S!(ols_code));
+    assert!(diag.severity.is_some_and(|s| s == severity));
+}
+
 #[test]
 fn test_ols05000s_xml_file() {
     let (mut odoo, config) = setup_server(true);
@@ -25,18 +39,11 @@ fn test_ols05000s_xml_file() {
     let bikes_xml_path = test_addons_path.join("module_for_diagnostics").join("data").join("bikes.xml");
     assert!(PathBuf::from(&bikes_xml_path).exists(), "Test file does not exist: {}", bikes_xml_path.display());
     let bikes_xml_diagnostics = get_diagnostics_for_path(&mut session, &bikes_xml_path.sanitize());
-    let check_xml_diag = |ols_code: &str, line: u32|{
-        let line_diagnostics = diag_on_line(&bikes_xml_diagnostics, line);
-        assert_eq!(line_diagnostics.len(), 1);
-        let diag = &line_diagnostics[0];
-        assert!(diag.code.is_some());
-        let code = match &diag.code {
-            Some(NumberOrString::String(code)) => code,
-            Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {}", num),
-            None => panic!("Diagnostic code is None"),
-        };
-        assert!(code == &S!(ols_code));
-        assert!(diag.severity.is_some_and(|s| s == DiagnosticSeverity::ERROR));
+    let check_xml_diag = |ols_code: &str, line: u32| {
+        check_xml_diagnostic(&bikes_xml_diagnostics, ols_code, line, DiagnosticSeverity::ERROR);
+    };
+    let check_xml_warning = |ols_code: &str, line: u32| {
+        check_xml_diagnostic(&bikes_xml_diagnostics, ols_code, line, DiagnosticSeverity::WARNING);
     };
     // OLS05001 - Disabled TODO: Re-enable when OLS05001 is implemented
     check_xml_diag("OLS05003", 25);
@@ -92,6 +99,7 @@ fn test_ols05000s_xml_file() {
     check_xml_diag("OLS05057", 91);
     check_xml_diag("OLS05055", 92);
     check_xml_diag("OLS05056", 93);
+    check_xml_warning("OLS05058", 94);
 }
 
 #[test]

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="lang_test_fr" model="res.lang">
+        <field name="name">French (Test)</field>
+        <field name="code">fr_TEST</field>
+        <field name="iso_code">fr</field>
+    </record>
+    <record id="lang_test_de" model="res.lang">
+        <field name="name">German (Test)</field>
+        <field name="code">de_TEST</field>
+        <field name="iso_code">de</field>
+    </record>
+</odoo>
