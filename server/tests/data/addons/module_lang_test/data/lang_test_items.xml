@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Base record for testing translations -->
+    <record id="item_test_1" model="lang_test.item">
+        <field name="name">Test Item</field>
+    </record>
+    <!-- Translation using existing language (de_TEST) - should be valid -->
+    <record id="item_test_1_de" model="lang_test.item">
+        <field name="name@de_TEST">Test Artikel</field>
+    </record>
+    <!-- Translation using non-existing language (nl_WV) - should trigger OLS05068 -->
+    <record id="item_test_1_invalid" model="lang_test.item">
+        <field name="name@nl_WV">West Flemish Test</field>
+    </record>
+</odoo>

@@ -13,7 +13,7 @@ class BikePartsWheel(models.Model):
 class BikesBike(models.Model):
     _name = 'bikes.bike'
 
-    name = fields.Char(string='Wheel Name', required=True)
+    name = fields.Char(string='Wheel Name', required=True, translate=True)
     wheel_id = fields.Many2one('bike_parts.wheel', string='Wheel')
     bike_weight = fields.Float(string='Bike Weight (kg)', compute='_compute_bike_weight', store=True)
 
