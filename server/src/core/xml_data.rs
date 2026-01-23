@@ -7,6 +7,7 @@ pub enum OdooData {
     RECORD(OdooDataRecord),
     MENUITEM(XmlDataMenuItem),
     TEMPLATE(XmlDataTemplate),
+    ASSET(XmlDataAsset),
     DELETE(XmlDataDelete),
 }
 
@@ -43,6 +44,13 @@ pub struct XmlDataTemplate {
 }
 
 #[derive(Debug, Clone)]
+pub struct XmlDataAsset {
+    pub file_symbol: Weak<SymbolKey>,
+    pub xml_id: Option<OYarn>,
+    pub range: Range<usize>,
+}
+
+#[derive(Debug, Clone)]
 pub struct XmlDataDelete {
     pub file_symbol: Weak<SymbolKey>,
     pub xml_id: Option<OYarn>,
@@ -67,6 +75,9 @@ impl OdooData {
             OdooData::DELETE(delete) => {
                 delete.file_symbol = file_symbol;
             },
+            OdooData::ASSET(asset) => {
+                asset.file_symbol = file_symbol;
+            }
         }
     }
 
@@ -76,6 +87,7 @@ impl OdooData {
             OdooData::MENUITEM(menu_item) => menu_item.range.clone(),
             OdooData::TEMPLATE(template) => template.range.clone(),
             OdooData::DELETE(delete) => delete.range.clone(),
+            OdooData::ASSET(asset) => asset.range.clone(),
         }
     }
 
@@ -102,6 +114,9 @@ impl OdooData {
             },
             OdooData::DELETE(delete) => {
                 Some(delete.file_symbol)
+            },
+            OdooData::ASSET(asset) => {
+                Some(asset.file_symbol)
             }
         }
     }

@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol_keys::{ModuleKey, SymbolKey, XmlFileKey}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol_keys::{ModuleKey, SymbolKey, XmlFileKey}}, xml_data::{OdooData, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 use crate::core::symbols::symbol_table::SymbolTable;
 
 
@@ -70,6 +70,7 @@ impl XmlValidator {
             OdooData::MENUITEM(xml_data_menu_item) => self.validate_menu_item(session, module, xml_data_menu_item, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
             OdooData::TEMPLATE(xml_data_template) => self.validate_template(session, module, xml_data_template, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
             OdooData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
+            OdooData::ASSET(xml_data_asset) => self.validate_asset(session, module, xml_data_asset, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
         }
     }
     fn validate_record(&self, session: &mut SessionInfo, module: ModuleKey, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
@@ -259,6 +260,10 @@ impl XmlValidator {
     }
 
     fn validate_delete(&self, _session: &mut SessionInfo, _module: ModuleKey, _xml_data_delete: &XmlDataDelete, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+
+    }
+
+    fn validate_asset(&self, _session: &mut SessionInfo, _module: ModuleKey, _xml_data_asset: &XmlDataAsset, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
 
     }
 }
