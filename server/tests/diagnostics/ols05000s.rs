@@ -92,6 +92,16 @@ fn test_ols05000s_xml_file() {
     check_xml_diag("OLS05057", 91);
     check_xml_diag("OLS05055", 92);
     check_xml_diag("OLS05056", 93);
+    check_xml_diag("OLS05058", 94);
+    check_xml_diag("OLS05059", 98);
+    check_xml_diag("OLS05060", 102);
+    check_xml_diag("OLS05061", 107);
+    check_xml_diag("OLS05062", 108);
+    check_xml_diag("OLS05063", 109);
+    check_xml_diag("OLS05064", 112);
+    check_xml_diag("OLS05065", 115);
+    check_xml_diag("OLS05066", 118);
+    check_xml_diag("OLS05067", 119);
 }
 
 #[test]

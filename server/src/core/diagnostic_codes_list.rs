@@ -457,4 +457,44 @@ OLS05056, DiagnosticSetting::Error, "Model '{0}' not found",
  * Field not found in model
  */
 OLS05057, DiagnosticSetting::Error, "Field '{0}' not found in model '{1}'",
+/**
+* The attribute is not valid for <asset> nodes.
+*/
+OLS05058, DiagnosticSetting::Error, "Invalid attribute {0} in asset node",
+/**
+* A <asset> node must have an id attribute.
+*/
+OLS05059, DiagnosticSetting::Error, "asset node must contain an id attribute",
+/**
+* A <asset> node must have a name attribute.
+*/
+OLS05060, DiagnosticSetting::Error, "asset node must contain a name attribute",
+/**
+* The attribute is not valid for <bundle> nodes inside <asset>.
+*/
+OLS05061, DiagnosticSetting::Error, "Invalid attribute {0} in the bundle node under asset",
+/**
+* The attribute is not valid for <path> nodes inside <asset>.
+*/
+OLS05062, DiagnosticSetting::Error, "Invalid attribute {0} in the path node under asset",
+/**
+* Only bundle, path, or field nodes are allowed as children of <asset>.
+*/
+OLS05063, DiagnosticSetting::Error, "Invalid child node {0} in asset node. Only bundle, path, or field allowed",
+/**
+* bundle node is required inside <asset>.
+*/
+OLS05064, DiagnosticSetting::Error, "Bundle node is required inside <asset>",
+/**
+* path node is required inside <asset>.
+*/
+OLS05065, DiagnosticSetting::Error, "Path node is required inside <asset>",
+/**
+* Bundle node in asset cannot be empty.
+*/
+OLS05066, DiagnosticSetting::Error, "Bundle node in asset cannot be empty",
+/**
+* Path node in asset cannot be empty.
+*/
+OLS05067, DiagnosticSetting::Error, "Path node in asset cannot be empty",
 }

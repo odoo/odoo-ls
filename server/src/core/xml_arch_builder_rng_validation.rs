@@ -3,7 +3,7 @@ use std::rc::Rc;
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 
-use crate::{constants::OYarn, core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, xml_data::{OdooData, XmlDataDelete, OdooDataField, XmlDataMenuItem, OdooDataRecord, XmlDataTemplate}}, oyarn, threads::SessionInfo, Sy};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, xml_data::{OdooData, OdooDataField, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -36,7 +36,9 @@ impl XmlArchBuilder {
                         || self.load_template(session, &child, diagnostics)
                         || self.load_delete(session, &child, diagnostics)
                         || self.load_function(session, &child, diagnostics)
-                        || child.is_text() || child.is_comment()) {
+                        || self.load_asset(session, &child, diagnostics)
+                        || child.is_text() || child.is_comment()
+                    ) {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
                             diagnostics.push(
                                 Diagnostic {
@@ -601,6 +603,127 @@ impl XmlArchBuilder {
                 });
             }
         }
+        true
+    }
+
+    fn load_asset(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
+        if node.tag_name().name() != "asset" { return false; }
+        // Validate required attributes: id, name
+        let mut found_id = None;
+        let mut has_name = false;
+        for attr in node.attributes() {
+            match attr.name() {
+                "id" => { found_id = Some(attr.value().to_string()); },
+                "name" => { has_name = true; },
+                "active" => {},
+                _ => {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05058, &[attr.name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
+                }
+            }
+        }
+        if found_id.is_none() {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05059, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
+        }
+        else if !has_name {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05060, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
+        }
+        // Validate children: must be bundle, path, or field
+        let (mut has_bundle, mut has_path) = (false, false);
+        for child in node.children().filter(|n| n.is_element()) {
+            match child.tag_name().name() {
+                "bundle" => {
+                    has_bundle = true;
+                    for attr in child.attributes() {
+                        if attr.name() != "directive" {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05061, &[attr.name()]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
+                        }
+                    }
+                    if child.text().is_none() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05066, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
+                    }
+                },
+                "path" => {
+                    has_path = true;
+                    if child.attributes().count() > 0 {
+                        for attr in child.attributes() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05062, &[attr.name()]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                });
+                            }
+                        }
+                    }
+                    if child.text().is_none() {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05067, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
+                    }
+                },
+                "field" => {
+                    self.load_field(session, &child, diagnostics);
+                },
+                "active" => {},
+                _ => {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05063, &[child.tag_name().name()]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
+                    }
+                }
+            }
+        }
+        if !has_bundle {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05064, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
+        }
+        if !has_path {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05065, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic.clone()
+                });
+            }
+        }
+        let data = OdooData::ASSET(XmlDataAsset {
+            file_symbol: Rc::downgrade(&self.xml_symbol),
+            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
+            range: node.range().clone(),
+        });
+        self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
     }
 }

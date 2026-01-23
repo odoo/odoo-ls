@@ -92,4 +92,31 @@
     <record id="bikes.bike" model="bikes.bike"><field name="fine"/></record> <!-- OLS05057 -->
     <record id="bikes.bike" model="ir.ui.view"><field name="model">module_2.empty_model</field></record> <!-- OLS05055 -->
     <record id="bikes.bike" model="ir.ui.view"><field name="model">wrong.model</field></record> <!-- OLS05056 -->
+    <asset invalid="invalid" id="id" name="name"> <!-- OLS05058 -->
+        <bundle>data</bundle>
+        <path>ols_tests/tests/something.scss</path>
+    </asset>
+    <asset name="no_id"> <!-- OLS05059 -->
+        <bundle>data</bundle>
+        <path>ols_tests/tests/something.scss</path>
+    </asset>
+    <asset id="no_name"> <!-- OLS05060 -->
+        <bundle>data</bundle>
+        <path>ols_tests/tests/something.scss</path>
+    </asset>
+    <asset id="id" name="name" active="false">
+        <bundle invalid_tag="t" directive="directive_is_allowed">data</bundle> <!-- OLS05061 -->
+        <path invalid_tag="t">ols_tests/tests/something.scss</path> <!-- OLS05062 -->
+        <invalid /> <!-- OLS05063 -->
+    </asset>
+    <asset id="id" name="name" active="false">
+        <path>ols_tests/tests/something.scss</path> <!-- OLS05064 -->
+    </asset>
+    <asset id="id" name="name" active="false">
+        <bundle>data</bundle> <!-- OLS05065 -->
+    </asset>
+    <asset id="id" name="name" active="false">
+        <bundle></bundle> <!-- OLS05066 -->
+        <path></path> <!-- OLS05067 -->
+    </asset>
 </odoo>
