@@ -119,4 +119,5 @@
         <bundle></bundle> <!-- OLS05066 -->
         <path></path> <!-- OLS05067 -->
     </asset>
+    <record id="bike_translation_1" model="bikes.bike"><field name="name@nl_WV">Da's gin geldige taal, jonge.</field></record> <!-- West Flemish is not a valid language, unfortunately (OLS05068: unknown language code) -->
 </odoo>

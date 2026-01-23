@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- This file is used for testing new file as language source -->
+    <!-- It starts empty and languages are added dynamically during tests -->
+</odoo>
