@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::{constants::*, Sy};
+use crate::{constants::*, oyarn, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -115,6 +115,9 @@ impl PythonValidator {
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info);
+                if self.sym_stack[0].borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+                    ModuleSymbol::validate_manifest(&self.sym_stack[0], session);
+                }
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
@@ -151,22 +154,25 @@ impl PythonValidator {
                 let file_info = file_info_rc.borrow();
                 if file_info.file_info_ast.borrow().indexed_module.is_some() {
                     let file_info_ast = file_info.file_info_ast.borrow();
-                    let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(self.sym_stack[0].borrow().node_index().unwrap().load());
-                    let body = match stmt {
-                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
-                            &s.body
-                        },
-                        _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
-                    };
-                    let old_noqa = session.current_noqa.clone();
-                    session.current_noqa = self.sym_stack[0].borrow().get_noqas();
-                    self.validate_body(session, body);
-                    session.current_noqa = old_noqa;
-                    match stmt {
-                        AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
-                            self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
-                        },
-                        _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                    let func_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                    if func_index != NodeIndex::NONE {
+                        let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(func_index);
+                        let body = match stmt {
+                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
+                                &s.body
+                            },
+                            _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                        };
+                        let old_noqa = session.current_noqa.clone();
+                        session.current_noqa = self.sym_stack[0].borrow().get_noqas();
+                        self.validate_body(session, body);
+                        session.current_noqa = old_noqa;
+                        match stmt {
+                            AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
+                                self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
+                            },
+                            _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                        }
                     }
                 } else {
                     warn!("no ast found on file info");
@@ -192,7 +198,7 @@ impl PythonValidator {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
                             manifest_file.file_info_ast.borrow_mut().indexed_module = None;
-                            manifest_file.file_info_ast.borrow_mut().text_rope = None;
+                            manifest_file.file_info_ast.borrow_mut().text_document = None;
                             manifest_file.file_info_ast.borrow_mut().text_hash = 0;
                         }
                     }
@@ -201,7 +207,7 @@ impl PythonValidator {
                     if ! file.borrow().opened {
                         let f = file.borrow();
                         f.file_info_ast.borrow_mut().indexed_module = None;
-                        f.file_info_ast.borrow_mut().text_rope = None;
+                        f.file_info_ast.borrow_mut().text_document = None;
                         f.file_info_ast.borrow_mut().text_hash = 0;
                     }
                 }
@@ -400,96 +406,104 @@ impl PythonValidator {
             };
             for eval in evals.iter() {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None);
+                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
                 for eval_weak in eval_weaks.iter() {
                     let Some(symbol) = eval_weak.upgrade_weak() else {continue};
                     if !symbol.borrow().is_field_class(session){
                         continue;
                     }
-                    if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(_))).map(|ctx_val| ctx_val.as_string()) {
-                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
-                            continue;
-                        };
-                        let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
-                        if syms.is_empty(){
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03014, &[&related_field_name, &model_data.name]) {
-                                self.diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
-                                    ..diagnostic_base.clone()
-                                });
+                    'related_check: {
+                        if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(_))).map(|ctx_val| ctx_val.as_string()) {
+                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                break 'related_check;
+                            };
+                            let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
+                            if syms.is_empty(){
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03014, &[&related_field_name, &model_data.name]) {
+                                    self.diagnostics.push(Diagnostic {
+                                        range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                        ..diagnostic_base.clone()
+                                    });
+                                }
+                                break 'related_check;
                             }
-                            continue;
-                        }
-                        let Some(field_type) = symbol
-                            .borrow()
-                            .get_member_symbol(session, &S!("type"), None, false, false, false, false)
-                            .0.first()
-                            .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
-                            .and_then(|evals| evals.first().cloned())
-                            .and_then(|eval| eval.value.clone())
-                            .and_then(|value| match value {
-                                EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => Some(s.value.to_string()),
-                                _ => None,
-                            }) else {
-                            continue;
-                        };
-                        let found_same_type_match = syms.iter().any(|sym|{
-                            let related_eval_weaks = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                                Rc::downgrade(&sym),
-                                None,
-                                false,
-                            )), session, &mut None, true, true, None);
-                            related_eval_weaks.iter().any(|related_eval_weak|{
-                                let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
-                                    return false
-                                };
-                                let found = related_field_class_sym
-                                    .borrow()
-                                    .get_member_symbol(session, &S!("type"), None, false, false, false, false)
-                                    .0.first()
-                                    .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
-                                    .and_then(|evals| evals.first().cloned())
-                                    .and_then(|eval| eval.value.clone())
-                                    .map(|value| matches!(value, EvaluationValue::CONSTANT(Expr::StringLiteral(s)) if s.value.to_string() == field_type))
-                                    .unwrap_or(false);
-                                found
-                            })
-                        });
-                        if !found_same_type_match{
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03017, &[]) {
-                                self.diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
-                                    ..diagnostic_base.clone()
-                                });
-                            }
+                            let Some(field_type) = symbol
+                                .borrow()
+                                .get_member_symbol(session, &S!("type"), None, false, false, false, false, false)
+                                .0.first()
+                                .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
+                                .and_then(|evals| evals.first().cloned())
+                                .and_then(|eval| eval.value.clone())
+                                .and_then(|value| match value {
+                                    EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => Some(s.value.to_string()),
+                                    _ => None,
+                                }) else {
+                                break 'related_check;
+                            };
+                            let found_same_type_match = syms.iter().any(|sym|{
+                                let related_eval_weaks = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                                    Rc::downgrade(&sym),
+                                    None,
+                                    false,
+                                )), session, &mut None, true, true, None, None);
+                                related_eval_weaks.iter().any(|related_eval_weak|{
+                                    let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
+                                        return false
+                                    };
+                                    let found = related_field_class_sym
+                                        .borrow()
+                                        .get_member_symbol(session, &S!("type"), None, false, false, false, false, false)
+                                        .0.first()
+                                        .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
+                                        .and_then(|evals| evals.first().cloned())
+                                        .and_then(|eval| eval.value.clone())
+                                        .map(|value| matches!(value, EvaluationValue::CONSTANT(Expr::StringLiteral(s)) if s.value.to_string() == field_type))
+                                        .unwrap_or(false);
+                                    found
+                                })
+                            });
+                            if !found_same_type_match{
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03017, &[]) {
+                                    self.diagnostics.push(Diagnostic {
+                                        range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                        ..diagnostic_base.clone()
+                                    });
+                                }
 
+                            }
                         }
-                    } else if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) {
-                        let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
-                            continue;
-                        };
-                        let maybe_model = session.sync_odoo.models.get(&Sy!(comodel_field_name.clone()));
-                        if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false){
-                            let model = maybe_model.unwrap().clone();
-                            let Some(ref from_module) = maybe_from_module else {continue};
-                            if !model.clone().borrow().model_in_deps(session, from_module) {
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03015, &[&comodel_field_name]) {
+                    }
+                    'comodel_check: {
+                        if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) {
+                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                break 'comodel_check;
+                            };
+                            let Some(file_symbol) = class_ref.get_file().and_then(|file| file.upgrade()) else {
+                                break 'comodel_check;
+                            };
+                            let maybe_model = session.sync_odoo.models.get(&Sy!(comodel_field_name.clone()));
+                            if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false){
+                                let model = maybe_model.unwrap().clone();
+                                file_symbol.borrow_mut().add_model_dependencies(&model);
+                                let Some(ref from_module) = maybe_from_module else {break 'comodel_check;};
+                                if !model.clone().borrow().model_in_deps(session, from_module) {
+                                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03015, &[&comodel_field_name]) {
+                                        self.diagnostics.push(Diagnostic {
+                                            range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
+                                            ..diagnostic_base.clone()
+                                        });
+                                    }
+                                } else {
+                                    break 'comodel_check;
+                                }
+                            } else {
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03016, &[&comodel_field_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
                                     });
                                 }
                             }
-                        } else {
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03016, &[&comodel_field_name]) {
-                                self.diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
-                                    ..diagnostic_base.clone()
-                                });
-                            }
-                            let Some(file_symbol) = class_ref.get_file().and_then(|file| file.upgrade()) else {
-                            return;
-                            };
                             file_symbol.borrow_mut().as_file_mut().not_found_models.insert(Sy!(comodel_field_name.clone()), BuildSteps::ARCH_EVAL);
                             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
                         }
@@ -507,9 +521,10 @@ impl PythonValidator {
                             false,
                             false,
                             true,
+                            true,
                             false
                         );
-                        let method_found = symbols.iter().any(|symbol| symbol.borrow().typ() == SymType::FUNCTION);
+                        let method_found = !symbols.is_empty();
                         if !method_found{
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
@@ -521,6 +536,80 @@ impl PythonValidator {
                                 });
                             }
 
+                        }
+                    }
+                    if let Some(inverse_name) = eval_weak.as_weak().context.get(&S!("inverse_name")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(model_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                            continue;
+                        };
+                        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+                            continue;
+                        };
+                        let Some(module) = class_ref.find_module() else {
+                            continue;
+                        };
+                        let main_syms = model.borrow().get_main_symbols(session, Some(module.clone()));
+                        let symbols: Vec<_> = main_syms.iter().flat_map(|main_sym|
+                            main_sym.clone().borrow().get_member_symbol(session, &inverse_name, Some(module.clone()), false, true, false, true, false).0
+                        ).collect();
+                        if symbols.is_empty() {
+                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03021, &[&inverse_name, &model_name]) {
+                                self.diagnostics.push(Diagnostic {
+                                    range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                    ..diagnostic_base.clone()
+                                });
+                            }
+                        }
+                        if symbols.iter().any(|sym| !sym.borrow().is_specific_field(session, &["Many2one", "Many2oneReference"])) {
+                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                continue;
+                            };
+                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03022, &[]) {
+                                self.diagnostics.push(Diagnostic {
+                                    range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                    ..diagnostic_base.clone()
+                                });
+                            }
+                        } else {
+                            // Check if we have a many2one field pointing to the comodel with another name than the current model
+                            let mut comodel_eval_weaks = Vec::new();
+                            for sym in symbols.iter() {
+                                let sym_ref = sym.borrow();
+                                let evals = sym_ref.evaluations().as_ref().unwrap().iter();
+                                for eval in evals {
+                                    let followed = Symbol::follow_ref(
+                                        &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                                        session,
+                                        &mut None,
+                                        true,
+                                        false,
+                                        None,
+                                        None,
+                                    );
+                                    comodel_eval_weaks.extend(followed);
+                                }
+                            }
+                            for comodel_eval_weak in comodel_eval_weaks {
+                                let Some(model_name) = comodel_eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                                    continue;
+                                };
+                                if model_name == model_data.name.to_string() { // valid
+                                    continue;
+                                }
+                                let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                    continue;
+                                };
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[&inverse_name, &model_data.name, &model_name]) {
+                                    self.diagnostics.push(Diagnostic {
+                                        range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
+                                        ..diagnostic_base.clone()
+                                    });
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

@@ -1,15 +1,15 @@
-use std::{io::Error, panic, sync::{atomic::AtomicBool, Arc, Mutex}, thread::JoinHandle};
+use std::{io::Error, panic, sync::{Arc, Mutex, atomic::AtomicBool}, thread::JoinHandle};
 
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument,
-    DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown}, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities};
+use lsp_types::{CancelParams, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions, notification::{Cancel, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+use ruff_source_file::PositionEncoding;
 use serde_json::json;
 #[cfg(target_os = "linux")]
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S};
+use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::{file_mgr::FileMgr, odoo::SyncOdoo}, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S, crash_buffer};
 
 
 /**
@@ -28,8 +28,9 @@ pub struct Server {
     delayed_process_thread: JoinHandle<()>,
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
-    interrupt_rebuild_boolean: Arc<AtomicBool>,
-    terminate_rebuild_boolean: Arc<AtomicBool>,
+    interrupt_rebuild_boolean: Arc<AtomicBool>, //ref to the one on sync_odoo
+    terminate_rebuild_boolean: Arc<AtomicBool>, //ref to the one on sync_odoo
+    running_request_ids: Arc<Mutex<Vec<RequestId>>>, //ref to the one on sync_odoo, but with dedicated mutex
 }
 
 #[derive(Debug)]
@@ -73,6 +74,7 @@ impl Server {
         let sync_odoo = Arc::new(Mutex::new(SyncOdoo::new()));
         let interrupt_rebuild_boolean = sync_odoo.lock().unwrap().interrupt_rebuild.clone();
         let terminate_rebuild_boolean = sync_odoo.lock().unwrap().terminate_rebuild.clone();
+        let running_request_ids = sync_odoo.lock().unwrap().running_request_ids.clone();
         let mut receivers_w_to_s = vec![];
         let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
         let (req_sender_s_to_main, generic_receiver_s_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
@@ -83,8 +85,9 @@ impl Server {
         let main_thread = {
             let sync_odoo = sync_odoo.clone();
             let sender_to_delayed_process = sender_to_delayed_process.clone();
+            let running_request_ids = running_request_ids.clone();
             std::thread::spawn(move || {
-                message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone(), sender_to_delayed_process);
+                message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone(), sender_to_delayed_process, running_request_ids);
             })
         };
 
@@ -108,7 +111,8 @@ impl Server {
             delayed_process_thread,
             sync_odoo: sync_odoo,
             interrupt_rebuild_boolean: interrupt_rebuild_boolean,
-            terminate_rebuild_boolean
+            terminate_rebuild_boolean,
+            running_request_ids: running_request_ids,
         }
     }
 
@@ -125,6 +129,7 @@ impl Server {
         if let Some(initialize_params) = initialize_params.process_id {
             self.client_process_id = initialize_params;
         }
+        #[allow(deprecated)]
         if let Some(workspace_folders) = initialize_params.workspace_folders {
             let sync_odoo = self.sync_odoo.lock().unwrap();
             let file_mgr = sync_odoo.get_file_mgr();
@@ -175,6 +180,12 @@ impl Server {
                         work_done_progress: Some(false)
                     },
                 })),
+                workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
+                    resolve_provider: Some(true),
+                    work_done_progress_options: WorkDoneProgressOptions {
+                        work_done_progress: Some(false)
+                    },
+                })),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -218,6 +229,13 @@ impl Server {
                         ..WorkspaceFileOperationsServerCapabilities::default()
                     })
                 }),
+                position_encoding: Some(
+                    match self.sync_odoo.lock().unwrap().encoding {
+                        PositionEncoding::Utf8 => lsp_types::PositionEncodingKind::UTF8,
+                        PositionEncoding::Utf16 => lsp_types::PositionEncodingKind::UTF16,
+                        PositionEncoding::Utf32 => lsp_types::PositionEncodingKind::UTF32,
+                    }
+                ),
                 ..ServerCapabilities::default()
             }
         };
@@ -293,6 +311,8 @@ impl Server {
             }
 
             if index == 0 { //comes from client
+                // Save messages to crash buffer
+                crash_buffer::push_message(msg.clone());
                 if let Message::Request(r) = &msg {
                     if r.method == "shutdown" {
                         let resp = lsp_server::Response::new_ok(r.id.clone(), ());
@@ -310,6 +330,14 @@ impl Server {
                         }
                         self.shutdown_threads("Got a client exit notification. Exiting.");
                         break;
+                    } else if n.method == Cancel::METHOD {
+                        let cancel_params = serde_json::from_value::<CancelParams>(n.params.clone()).unwrap();
+                        let req_id: RequestId = match cancel_params.id {
+                            lsp_types::NumberOrString::Number(id) => id.into(),
+                            lsp_types::NumberOrString::String(id) => id.into(),
+                        };
+                        self.running_request_ids.lock().unwrap().retain(|id| id != &req_id);
+                        continue;
                     }
                 }
                 self.forward_message(msg);
@@ -352,15 +380,10 @@ impl Server {
     fn forward_message(&mut self, msg: Message) {
         match msg {
             Message::Request(r) => {
+                self.running_request_ids.lock().unwrap().push(r.id.clone());
                 match r.method.as_str() {
-                    HoverRequest::METHOD | GotoDefinition::METHOD | References::METHOD | DocumentSymbolRequest::METHOD=> {
-                        self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
-                        if DEBUG_THREADS {
-                            info!("Sending request to main thread : {} - {}", r.method, r.id);
-                        }
-                        self.req_sender_s_to_main.send(Message::Request(r)).unwrap();
-                    },
-                    Completion::METHOD => {
+                    HoverRequest::METHOD | GotoDefinition::METHOD | References::METHOD | DocumentSymbolRequest::METHOD |
+                    WorkspaceSymbolRequest::METHOD | WorkspaceSymbolResolve::METHOD | Completion::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
                             info!("Sending request to main thread : {} - {}", r.method, r.id);

@@ -55,6 +55,10 @@ OLS01008, DiagnosticSetting::Error, "{0} got an unexpected keyword argument '{1}
  */
 OLS01009, DiagnosticSetting::Warning, "Arguments are not valid for all function or method definitions",
 /**
+ * Arguments are not valid for all function or method definitions
+ */
+OLS01010, DiagnosticSetting::Error, "Missing keyword-only argument(s): {0}",
+/**
 * Check your python environment, the effective your sys.path and your addon paths.
 */
 OLS02001, DiagnosticSetting::Warning, "{0} not found",
@@ -151,10 +155,35 @@ OLS03018, DiagnosticSetting::Error, "Method does not exist on current model",
 */
 OLS03019, DiagnosticSetting::Error, "Compute method not set to modify this field",
 /**
- * _name is set on a class which creaes a model, but the name is already used by another model.
+ * _name is set on a class which creates a model, but the name is already used by another model.
  * Hence, this model is shadowing an existing model.
  */
 OLS03020, DiagnosticSetting::Warning, "Model {0} is shadowing an existing model in dependencies",
+/**
+ * On a One2many field, the inverse_name should be a field on the comodel.
+ */
+OLS03021, DiagnosticSetting::Error, "Inverse field {0} does not exist on comodel {1}",
+/**
+ * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one or a Many2oneReference to the current model.
+ */
+OLS03022, DiagnosticSetting::Error, "Inverse field is neither a Many2one nor a Many2oneReference field",
+/**
+ * On a One2many field, the inverse_name should be a field on the comodel that is a Many2one to the current model
+ * -> current_model is not right
+ */
+OLS03023, DiagnosticSetting::Error, "Inverse field {0} is not pointing to the current model {1}, but rather to {2}",
+/**
+ * Models declared in a function are not supported by OdooLS. This info is indicating that no features will be enabled for this model.
+ */
+OLS03024, DiagnosticSetting::Info, "Models declared in a function are not supported by OdooLS. OdooLS will use it as a normal class for the rest of the function only",
+/**
+* Form is no longer available on odoo.tests.common, thus it should not be imported from there.
+*/
+OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",
+/**
+* Deprecation Warning
+*/
+OLS03302, DiagnosticSetting::Warning, "The active key is deprecated",
 /**
 * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
 * Do not store any other information in it.
@@ -202,13 +231,13 @@ OLS04010, DiagnosticSetting::Error, "Module {0} depends on {1} which is not foun
 */
 OLS04011, DiagnosticSetting::Error, "Do not use dict unpacking to build your manifest",
 /**
-* Form is no longer available on odoo.tests.common, thus it should not be imported from there.
+* Module dependency cycle: make sure nested dependencies are correct
 */
-OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",
+OLS04012, DiagnosticSetting::Error, "Module dependency: module {0} depends on current module",
 /**
-* Deprecation Warning
+* Parsing error in XML file
 */
-OLS03302, DiagnosticSetting::Warning, "The active key is deprecated",
+OLS05000, DiagnosticSetting::Error, "Unable to parse XML file: {0}",
 /**
 * The XML ID you referenced has not been found in any XML in this module or its dependencies
 */
@@ -238,7 +267,7 @@ OLS05006, DiagnosticSetting::Error, "menuitem node must contains an id attribute
 OLS05007, DiagnosticSetting::Error, "Invalid attribute {0} in menuitem node",
 /**
 */
-OLS05008, DiagnosticSetting::Error, "Sequence attribute must be a string representing a number",
+OLS05008, DiagnosticSetting::Error, "Sequence attribute must be a string representing an integer",
 /**
 */
 OLS05009, DiagnosticSetting::Error, "SubmenuItem is not allowed when action and parent attributes are defined on a menuitem",
@@ -307,13 +336,13 @@ OLS05025, DiagnosticSetting::Error, "Invalid attribute {0} in field node",
 */
 OLS05026, DiagnosticSetting::Error, "Fields only allow 'record' children nodes",
 /**
-* The 'search' attribute cannot be used together with 'eval' or 'type' on a <value> node.
+* The 'search' attribute cannot be used together with 'eval', 'type', `file`, or text data on a <value> node.
 */
-OLS05027, DiagnosticSetting::Error, "search attribute is not allowed when eval or type attribute is present",
+OLS05027, DiagnosticSetting::Error, "search attribute is not allowed when eval, type, file, or text content is present",
 /**
-* The 'eval' attribute cannot be used together with 'search' or 'type' on a <value> node.
+* The 'eval' attribute cannot be used together with 'search', 'type', `file`, or text data on a <value> node.
 */
-OLS05028, DiagnosticSetting::Error, "eval attribute is not allowed when search or type attribute is present",
+OLS05028, DiagnosticSetting::Error, "eval attribute is not allowed when search, type, file, or text content is present",
 /**
 * The 'type' attribute cannot be used together with 'search' or 'eval' on a <value> node.
 */
@@ -323,9 +352,9 @@ OLS05029, DiagnosticSetting::Error, "type attribute is not allowed when search o
 */
 OLS05030, DiagnosticSetting::Error, "text content is not allowed on a value that contains a file attribute",
 /**
-* The 'file' attribute is only allowed on <value> nodes with a 'type' attribute.
+* The 'file' attribute cannot be used together with 'search' or 'eval' on a <value> node.
 */
-OLS05031, DiagnosticSetting::Error, "file attribute is only allowed on value node with type attribute",
+OLS05031, DiagnosticSetting::Error, "file attribute is not allowed when search or eval attribute is present",
 /**
 * The attribute is not valid for <value> nodes.
 */
@@ -343,21 +372,21 @@ OLS05034, DiagnosticSetting::Error, "delete node cannot have both id and search 
 */
 OLS05035, DiagnosticSetting::Error, "delete node must have either id or search attribute",
 /**
-* An <act_window> node must have the specified attribute (id, name, or res_model).
+* Empty Value data, text data or file attribute has to be provided on a <value> node.
 */
-OLS05036, DiagnosticSetting::Error, "act_window node must contain a {0} attribute",
+OLS05036, DiagnosticSetting::Error, "Empty Value data, text data or file attribute has to be provided when `type` attribute is present",
 /**
-* The attribute is not valid for <act_window> nodes.
+* Empty Value data, one of text data, `file`, `eval`, or `search` has to be provided.
 */
-OLS05037, DiagnosticSetting::Error, "Invalid attribute {0} in act_window node",
+OLS05037, DiagnosticSetting::Error, "Empty Value data, one of text data, `file`, `eval`, or `search` has to be provided",
 /**
-* <act_window> nodes cannot have text content.
+* Empty Function data, either of `eval` attribute , or one or more `value`, or `function` children have to be provided.
 */
-OLS05038, DiagnosticSetting::Error, "act_window node cannot have text content",
+OLS05038, DiagnosticSetting::Error, "Empty Function data, either of `eval` attribute , or one or more `value`, or `function` children have to be provided",
 /**
-* The 'binding_type' attribute must be either 'action' or 'report'.
+* You provided an empty XML ID. Please provide a valid XML ID.
 */
-OLS05039, DiagnosticSetting::Error, "binding_type attribute must be either 'action' or 'report', found {0}",
+OLS05039, DiagnosticSetting::Error, "Empty XML ID. Please provide a valid XML ID.",
 /**
 * The 'binding_views' attribute must match the required pattern.
 */
@@ -399,7 +428,7 @@ OLS05048, DiagnosticSetting::Error, "Invalid child node {0} in function node",
 OLS05049, DiagnosticSetting::Error, "Data file {0} not found in the module",
 /**
 */
-OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML or CSV file",
+OLS05050, DiagnosticSetting::Error, "Data file {0} is not a valid XML, CSV, or SQL file",
 /**
 * An XML_ID should be in the format 'xml_id' or 'module.xml_id', but can't contains more dots
 */
@@ -415,11 +444,11 @@ OLS05053, DiagnosticSetting::Error, "Action with id '{0}' does not exist",
 /**
  * A menuitem is specifying a group that has not been declared before the menuitem
  */
-OLS05054, DiagnosticSetting::Error, "Group with id '{0}' does not exist",
+OLS05054, DiagnosticSetting::Error, "Group(s) with id(s) '{0}' does not exist",
 /**
- * Model not found
+ * Model not found in current module or its dependencies
  */
-OLS05055, DiagnosticSetting::Error, "Model '{0}' not found in module '{1}'",
+OLS05055, DiagnosticSetting::Error, "Model '{0}' not found in module '{1}' or its dependencies",
 /**
  * Model not found
  */

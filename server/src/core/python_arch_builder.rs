@@ -107,7 +107,7 @@ impl PythonArchBuilder {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
-                if ast_index.as_u32() != u32::MAX {
+                if ast_index.as_u32().is_some() {
                     let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
@@ -146,16 +146,21 @@ impl PythonArchBuilder {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
             }
         } else if self.file_mode {
-            drop(file_info);
-            let mut file_info = file_info_rc.borrow_mut();
-            file_info.publish_diagnostics(session);
+            if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+                //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+            } else {
+                drop(file_info);
+                let mut file_info = file_info_rc.borrow_mut();
+                file_info.publish_diagnostics(session);
+            }
         }
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
     }
 
-    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: Option<u32>, _range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -170,70 +175,76 @@ impl PythonArchBuilder {
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
                     self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    let file_tree_flattened = [import_result.file_tree.0.clone(), import_result.file_tree.1.clone()].concat();
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree_flattened));
+                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, import_result.file_tree.clone()));
                     continue;
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<OYarn> = vec![];
-                if let Some(all) = import_result.symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
-                    let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                        Rc::downgrade(&all), None, false
-                    )), session, &mut None, false, true, None);
-                    if let Some(all_value_first) = all_value.get(0) {
-                        if !all_value_first.is_expired_if_weak() {
-                            let all_upgraded = all_value_first.upgrade_weak();
-                            if let Some(all_upgraded_unwrapped) = all_upgraded {
-                                let all_upgraded_unwrapped_bw = (*all_upgraded_unwrapped).borrow();
-                                if all_upgraded_unwrapped_bw.evaluations().is_some() && all_upgraded_unwrapped_bw.evaluations().unwrap().len() == 1 {
-                                    let value = &all_upgraded_unwrapped_bw.evaluations().unwrap()[0].value;
-                                    if value.is_some() {
-                                        let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
-                                        if parse_error {
-                                            warn!("error during parsing __all__ import in file {}", (*import_result.symbol).borrow().paths()[0] )
+                for import_symbol in import_result.symbols{
+                    if let Some(all) = import_symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
+                        let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                            Rc::downgrade(&all), None, false
+                        )), session, &mut None, false, true, None, None);
+                        if let Some(all_value_first) = all_value.get(0) {
+                            if !all_value_first.is_expired_if_weak() {
+                                let all_upgraded = all_value_first.upgrade_weak();
+                                if let Some(all_upgraded_unwrapped) = all_upgraded {
+                                    let all_upgraded_unwrapped_bw = (*all_upgraded_unwrapped).borrow();
+                                    if all_upgraded_unwrapped_bw.evaluations().is_some() && all_upgraded_unwrapped_bw.evaluations().unwrap().len() == 1 {
+                                        let value = &all_upgraded_unwrapped_bw.evaluations().unwrap()[0].value;
+                                        if value.is_some() {
+                                            let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
+                                            if parse_error {
+                                                warn!("error during parsing __all__ import in file {}", import_symbol.borrow().paths()[0] )
+                                            }
+                                            name_filter = nf;
+                                            all_name_allowed = false;
+                                        } else {
+                                            warn!("invalid __all__ import in file {} - no value found", import_symbol.borrow().paths()[0])
                                         }
-                                        name_filter = nf;
-                                        all_name_allowed = false;
                                     } else {
-                                        warn!("invalid __all__ import in file {} - no value found", (*import_result.symbol).borrow().paths()[0])
+                                        warn!("invalid __all__ import in file {} - multiple evaluation found", import_symbol.borrow().paths()[0])
                                     }
                                 } else {
-                                    warn!("invalid __all__ import in file {} - multiple evaluation found", (*import_result.symbol).borrow().paths()[0])
+                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", import_symbol.borrow().paths()[0])
                                 }
                             } else {
-                                warn!("invalid __all__ import in file {} - localizedSymbol not found", (*import_result.symbol).borrow().paths()[0])
+                                warn!("invalid __all__ import in file {} - expired symbol", import_symbol.borrow().paths()[0])
                             }
                         } else {
-                            warn!("invalid __all__ import in file {} - expired symbol", (*import_result.symbol).borrow().paths()[0])
-                        }
-                    } else {
-                        warn!("invalid __all__ import in file {} - no symbol found", (*import_result.symbol).borrow().paths()[0])
-                    }
-                }
-                let mut dep_to_add = vec![];
-                let symbol = import_result.symbol.borrow();
-                if symbol.typ() != SymType::COMPILED {
-                    for (name, loc_syms) in symbol.iter_symbols() {
-                        if all_name_allowed || name_filter.contains(&name) {
-                            let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
-                            let mut loc = variable.borrow_mut();
-                            loc.as_variable_mut().is_import_variable = true;
-                            loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
-                            dep_to_add.push(variable.clone());
+                            warn!("invalid __all__ import in file {} - no symbol found", import_symbol.borrow().paths()[0])
                         }
                     }
-                }
-                drop(symbol);
-                for sym in dep_to_add {
-                    let mut sym_bw = sym.borrow_mut();
-                    let evaluation = &sym_bw.as_variable_mut().evaluations[0];
-                    let evaluated_type = &evaluation.symbol;
-                    let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
-                    if !evaluated_type.is_expired() {
-                        let evaluated_type = evaluated_type.upgrade().unwrap();
-                        let evaluated_type_file = evaluated_type.borrow().get_file().unwrap().clone().upgrade().unwrap();
-                        if !Rc::ptr_eq(&self.file, &evaluated_type_file) {
-                            self.file.borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                    let mut dep_to_add = vec![];
+                    let sym_type = import_symbol.borrow().typ();
+                    if sym_type != SymType::COMPILED {
+                        if !Rc::ptr_eq(self.sym_stack.last().unwrap(), &import_symbol) { /*We have to check that the imported symbol is not the current one. It can
+                            happen for example in a .pyi that is importing the .pyd file with the same name. As both exists, odools will try to import the pyi a second time in the same file,
+                            and so create a borrow error here
+                            */
+                            let symbol = import_symbol.borrow();
+                            for (name, loc_syms) in symbol.iter_symbols() {
+                                if all_name_allowed || name_filter.contains(&name) {
+                                    let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
+                                    let mut loc = variable.borrow_mut();
+                                    loc.as_variable_mut().is_import_variable = true;
+                                    loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
+                                    dep_to_add.push(variable.clone());
+                                }
+                            }
+                        }
+                    }
+                    for sym in dep_to_add {
+                        let mut sym_bw = sym.borrow_mut();
+                        let evaluation = &sym_bw.as_variable_mut().evaluations[0];
+                        let evaluated_type = &evaluation.symbol;
+                        let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
+                        if !evaluated_type.is_expired() {
+                            let evaluated_type = evaluated_type.upgrade().unwrap();
+                            let evaluated_type_file = evaluated_type.borrow().get_file().unwrap().clone().upgrade().unwrap();
+                            if !Rc::ptr_eq(&self.file, &evaluated_type_file) {
+                                self.file.borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                            }
                         }
                     }
                 }
@@ -255,10 +266,10 @@ impl PythonArchBuilder {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, None, &import_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, 0, &import_stmt.range)?
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
-                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, Some(import_from_stmt.level), &import_from_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
                     self._visit_ann_assign(session, ann_assign_stmt);
@@ -651,7 +662,7 @@ impl PythonArchBuilder {
             session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
         let mut sym_bw = sym.borrow_mut();
 
-        sym_bw.node_index_mut().set(func_def.node_index.load().as_u32());
+        sym_bw.node_index_mut().set(func_def.node_index.load());
 
         let func_sym = sym_bw.as_func_mut();
         for decorator in func_def.decorator_list.iter() {
@@ -674,6 +685,11 @@ impl PythonArchBuilder {
                     func_sym.is_class_method = true;
                 }
             }
+        }
+        // __init_subclass__ and __class_getitem__ are always classmethods
+        // see https://docs.python.org/3/reference/datamodel.html
+        if ["__init_subclass__", "__class_getitem__"].contains(&func_sym.name.as_str()) {
+            func_sym.is_class_method = true;
         }
         if func_def.body[0].is_expr_stmt() {
             let expr: &ruff_python_ast::StmtExpr = func_def.body[0].as_expr_stmt().unwrap();
@@ -726,7 +742,7 @@ impl PythonArchBuilder {
             param.borrow_mut().as_variable_mut().is_parameter = true;
             sym.borrow_mut().as_func_mut().args.push(Argument {
                 symbol: Rc::downgrade(&param),
-                default_value: None,
+                default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
                 arg_type: ArgumentType::KWORD_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });

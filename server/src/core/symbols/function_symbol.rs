@@ -74,7 +74,7 @@ impl FunctionSymbol {
             is_static: false,
             is_property: false,
             diagnostics: HashMap::new(),
-            node_index: AtomicNodeIndex::dummy(),
+            node_index: AtomicNodeIndex::default(),
             doc_string: None,
             evaluations: vec![],
             arch_status: BuildStatus::PENDING,
@@ -171,10 +171,12 @@ impl FunctionSymbol {
         if index > (call.arguments.args.len()-1) as u32 {
             call_arg_keyword = call.arguments.keywords.get((index - call.arguments.args.len() as u32) as usize);
         }
-        let mut arg_index = 0;
-        if is_on_instance.is_some() {
-            arg_index += 1;
-        }
+        let arg_index = if is_on_instance.unwrap_or(false) {
+            index + 1
+        } else {
+            index
+        };
+
         if let Some(keyword) = call_arg_keyword {
             for arg in self.args.iter() {
                 if arg.symbol.upgrade().unwrap().borrow().name().to_string() == keyword.arg.as_ref().unwrap().id {

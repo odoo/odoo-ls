@@ -5,6 +5,8 @@ pub mod constants;
 pub mod core;
 pub mod threads;
 pub mod features;
+pub mod fifo_ptr_weak_hash_set;
 pub mod server;
 pub mod tasks;
 pub mod utils;
+pub mod crash_buffer;

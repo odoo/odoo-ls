@@ -11,7 +11,9 @@ use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use tracing::warn;
+use weak_table::traits::WeakElement;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::evaluation::GetSymbolHook;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbols::symbol::Symbol;
@@ -108,7 +110,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("bool")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
@@ -116,7 +118,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("int")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
@@ -124,7 +126,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("float")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
@@ -132,7 +134,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("float")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
@@ -140,7 +142,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("str")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
@@ -148,7 +150,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("str")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
@@ -156,7 +158,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("markupsafe")], vec![Sy!("Markup")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
@@ -164,7 +166,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("datetime")], vec![Sy!("date")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
@@ -172,7 +174,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("datetime")], vec![Sy!("datetime")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
@@ -180,7 +182,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("bytes")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
@@ -188,7 +190,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("bytes")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
@@ -196,7 +198,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("str")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
@@ -204,7 +206,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("str")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
@@ -212,7 +214,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("object")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
@@ -220,7 +222,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("object")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
@@ -228,7 +230,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |odoo: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval(odoo.sync_odoo, entry, symbol.clone(), (vec![Sy!("builtins")], vec![Sy!("object")]));
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), false);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
@@ -236,14 +238,14 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |_odoo: &mut SessionInfo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval_relational(symbol.clone());
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), true);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), Some(oyarn!("Many2one")));
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
                             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many")]))],
                             if_exist_only: true,
                             func: |_odoo: &mut SessionInfo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
-                PythonArchEvalHooks::_update_field_init(symbol.clone(), true);
+                PythonArchEvalHooks::_update_field_init(symbol.clone(), Some(oyarn!("One2many")));
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
@@ -251,7 +253,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             if_exist_only: true,
                             func: |_odoo: &mut SessionInfo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: Rc<RefCell<Symbol>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_update_get_eval_relational(symbol.clone());
-        PythonArchEvalHooks::_update_field_init(symbol.clone(), true);
+        PythonArchEvalHooks::_update_field_init(symbol.clone(), Some(oyarn!("Many2many")));
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![(Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("_")]))],
@@ -441,8 +443,8 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         symbol.borrow_mut().set_evaluations(vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Weak::new(),
                 Some(true),
-                HashMap::from([(S!("hook_name"), ContextValue::STRING(S!("eval_env_get_item")))]),
-                Some(PythonArchEvalHooks::eval_env_get_item)
+                HashMap::new(),
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_get_item, name: S!("eval_env_get_item")})
             ),
             value: None,
             range: None
@@ -457,7 +459,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             symbol: EvaluationSymbol::new_with_symbol(Weak::new(),
                 Some(true),
                 HashMap::new(),
-                Some(PythonArchEvalHooks::eval_registry_get_item)
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_registry_get_item, name: S!("eval_registry_get_item")})
             ),
             value: None,
             range: None
@@ -492,8 +494,15 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("mapped")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("mapped")]))],
+                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered")])),
+                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered")]))],
+                        if_exist_only: true,
+                        func: |_odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered_domain")])),
+                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered_domain")]))],
                         if_exist_only: true,
                         func: |_odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
         symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
@@ -503,8 +512,9 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-        let mut search: std::cell::RefMut<Symbol> = symbol.borrow_mut();
-        let func = search.as_func_mut();
+        symbol.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+        let search = symbol.borrow();
+        let func = search.as_func();
         if func.args.len() > 1 {
             if let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade() {
                 if arg_symbol.borrow().name().eq(&Sy!("domain")) {
@@ -578,6 +588,25 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         if_exist_only: true,
                         func: |_odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
         PythonArchEvalHooks::_validation_env_ref(symbol.clone());
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")])),
+                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")]))],
+                        if_exist_only: true,
+                        func: |_odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        let Some(fields_class_sym) = symbol.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(|s| s.upgrade()) else {
+            return;
+        };
+        symbol.borrow_mut().set_evaluations(vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(
+                Rc::downgrade(&fields_class_sym),
+                Some(true),
+                HashMap::new(),
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: S!("eval_init")})
+            ),
+            value: None,
+            range: None,
+        }]);
     }},
 ]});
 
@@ -690,7 +719,7 @@ impl PythonArchEvalHooks {
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
             for eval in dec_evals {
-                followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+                followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
             }
             for decorator_eval in followed_evals {
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
@@ -727,9 +756,9 @@ impl PythonArchEvalHooks {
         let Some(ContextValue::STRING(s)) = context.get(&S!("args")) else {
             return res
         };
-        let maybe_model = session.sync_odoo.models.get(&oyarn!("{}", s));
+        let maybe_model = session.sync_odoo.models.get(&oyarn!("{}", s)).cloned();
         let has_class_in_parents = scope.as_ref().map(|scope| scope.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some()).unwrap_or(false);
-        if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
+        if maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
             let Some(model) = maybe_model else {unreachable!()};
             let module = context.get(&S!("module"));
             let from_module = if let Some(ContextValue::MODULE(m)) = module {
@@ -737,14 +766,21 @@ impl PythonArchEvalHooks {
             } else {
                 None
             };
-            if let Some(scope) = scope
+            if let Some(scope_file) = scope
                 .and_then(|s| s.borrow().get_file())
                 .and_then(|w| w.upgrade()) {
-                let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
-                let env_file = env_files.last().unwrap();
-                if !Rc::ptr_eq(env_file, &scope) {
-                    let mut f = scope.borrow_mut();
-                    f.add_model_dependencies(model);
+                //exclude orm files
+                if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") < Ordering::Equal {
+                    let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
+                    let env_file = env_files.last().unwrap();
+                    if !Rc::ptr_eq(env_file, &scope_file) {
+                        scope_file.borrow_mut().add_model_dependencies(&model);
+                    }
+                } else {
+                    let tree = scope_file.borrow().get_main_entry_tree(session);
+                    if !tree.0.starts_with(&[Sy!("odoo"), Sy!("orm")]) {
+                        scope_file.borrow_mut().add_model_dependencies(&model);
+                    }
                 }
             }
             let model = model.clone();
@@ -848,7 +884,7 @@ impl PythonArchEvalHooks {
                 Rc::downgrade(return_sym.last().unwrap()),
                 Some(true),
                 HashMap::new(),
-                Some(PythonArchEvalHooks::eval_get)
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
             range: None
@@ -872,7 +908,7 @@ impl PythonArchEvalHooks {
                 Rc::downgrade(return_sym),
                 Some(true),
                 HashMap::new(),
-                Some(PythonArchEvalHooks::eval_get)
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
             range: None
@@ -952,7 +988,7 @@ impl PythonArchEvalHooks {
                 Weak::new(),
                 Some(true),
                 HashMap::new(),
-                Some(PythonArchEvalHooks::eval_relational)
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
             ),
             value: None,
             range: None,
@@ -965,7 +1001,7 @@ impl PythonArchEvalHooks {
                 Weak::new(),
                 Some(true),
                 HashMap::new(),
-                Some(PythonArchEvalHooks::eval_relational)
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
             ),
             value: None,
             range: None,
@@ -980,7 +1016,7 @@ impl PythonArchEvalHooks {
         })
     }
 
-    fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>, relational: bool) -> Option<EvaluationSymbolPtr>
+    fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
     {
         let Some(context) = maybe_context else {return None};
 
@@ -991,12 +1027,17 @@ impl PythonArchEvalHooks {
             context.get(&S!("range")).unwrap().as_text_range().start().to_u32(),
             false
         );
-        let mut context = HashMap::new();
+        let mut result_context = HashMap::new();
 
         let mut contexts_to_add = HashMap::new();
         if relational {
             if let Some(first_param) = parameters.args.get(0) {
                 contexts_to_add.insert("comodel_name", (first_param, first_param.range(), "str"));
+            }
+            if one2many {
+                if let Some(second_param) = parameters.args.get(1) {
+                    contexts_to_add.insert("inverse_name", (second_param, second_param.range(), "str"));
+                }
             }
         }
 
@@ -1005,6 +1046,9 @@ impl PythonArchEvalHooks {
             ("comodel_name", "str"),
             ("related", "str"),
             ("compute", "str"),
+            ("inverse", "str"),
+            ("search", "str"),
+            ("inverse_name", "str"),
             ("delegate", "bool"),
             ("required", "bool"),
             ("default", "bool"),
@@ -1020,42 +1064,50 @@ impl PythonArchEvalHooks {
         for (arg_name, (field_name_expr, arg_range, bool_or_str)) in contexts_to_add {
             match bool_or_str {
                 "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0 {
-                    context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
-                    context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
+                    result_context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
+                    result_context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
                 },
                 "bool" => {
                     let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
                     if let Some(boolean) = maybe_boolean {
-                        context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                        result_context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
                     }
                     if arg_name == "default" {
-                        context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
+                        result_context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
                     }
                 },
                 _ => {}
             }
         }
 
-        context.extend([
+        result_context.extend([
             (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
         ]);
+        let weak_eval = match context.get(&S!("constructing_class")) {
+            Some(ContextValue::SYMBOL(weak)) if !weak.is_expired() => weak.clone(),
+            _ => evaluation_sym.get_weak().weak.clone(),
+        };
         return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
-            weak: evaluation_sym.get_weak().weak.clone(),
-            context,
+            weak: weak_eval,
+            context: result_context,
             instance: Some(true),
             is_super: false
         }));
     }
 
     fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr> {
-        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, false)
+        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, false, false)
     }
 
     fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr> {
-        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true)
+        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, false)
     }
 
-    fn _update_field_init(symbol: Rc<RefCell<Symbol>>, relational: bool) {
+    fn eval_init_relational_one2many(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr> {
+        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, true)
+    }
+
+    fn _update_field_init(symbol: Rc<RefCell<Symbol>>, relational: Option<OYarn>) {
         let init_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__init__")]), u32::MAX);
         if init_sym.is_empty() {
             return;
@@ -1065,7 +1117,11 @@ impl PythonArchEvalHooks {
                 Rc::downgrade(&symbol), //use the weak to keep reference to the class for the hook.
                 Some(true),
                 HashMap::new(),
-                Some(if relational {PythonArchEvalHooks::eval_init_relational} else {PythonArchEvalHooks::eval_init})
+                Some(match relational {
+                    Some(oyarn) if oyarn == oyarn!("One2many") => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational_one2many, name: S!("eval_init_relational_one2many")},
+                    Some(_) => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational, name: S!("eval_init_relational")},
+                    None => GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: S!("eval_init")},
+                })
             ),
             value: None,
             range: None,
@@ -1125,7 +1181,7 @@ impl PythonArchEvalHooks {
         for arg in arguments.args.iter() {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_string();
-            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, false, true, false);
+            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, true, false, true, false);
             if syms.is_empty(){
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
@@ -1189,6 +1245,14 @@ impl PythonArchEvalHooks {
         let mut xml_id_split = xml_id_str.split('.');
         let module_name = xml_id_split.next().unwrap();
         let xml_id = xml_id_split.collect::<Vec<&str>>().join(".");
+        if in_validation && xml_id.contains(".") { // invalid xml_id format, should not contain any dots, i.e. module.xml_id
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                    ..diagnostic
+                });
+            }
+        }
         let module = session.sync_odoo.modules.get(module_name).cloned();
         if module.is_none() {
             if in_validation {
@@ -1216,15 +1280,12 @@ impl PythonArchEvalHooks {
         let module_rc_bw = module_rc.borrow();
         let Some(_symbol) = module_rc_bw.as_module_package().xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
-                /*diagnostics.push(Diagnostic::new(
-                    FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                    Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String(S!("OLS30329"))),
-                    Some(EXTENSION_NAME.to_string()),
-                    S!("Unknown XML ID"),
-                    None,
-                    None
-                ));*/ //removed, because there is too many valid place where we can't evaluate it correctly (see stock tests)
+                /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
+                    diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                        ..diagnostic
+                    });
+                }*/ //removed, because there is too many valid place where we can't evaluate it correctly (see stock tests)
             }
             return None;
         };
@@ -1242,7 +1303,7 @@ impl PythonArchEvalHooks {
                 Rc::downgrade(&func_sym),
                 Some(true),
                 HashMap::new(),
-                Some(PythonArchEvalHooks::eval_env_ref)
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_ref, name: S!("eval_env_ref")})
             ),
             value: None,
             range: None

@@ -11,6 +11,7 @@ use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
+use tracing::error;
 
 use crate::constants::{CONFIG_WIKI_URL};
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
@@ -66,13 +67,13 @@ impl Default for MergeMethod {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticFilterPathType {
-    IN,
-    NOT_IN
+    In,
+    NotIn
 }
 
 impl Default for DiagnosticFilterPathType {
     fn default() -> Self {
-        DiagnosticFilterPathType::IN
+        DiagnosticFilterPathType::In
     }
 }
 
@@ -523,7 +524,7 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
     };
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     match fill_validate_path(ws_folders, workspace_name, var.value(), |p| PathBuf::from(p).exists(), HashMap::new(), &config_dir) {
-        Some(filled_path) => {
+        Ok(filled_path) => {
             let var_pb = PathBuf::from(&filled_path);
             if var_pb.is_file() {
                 // If it is a file, we can return the file name
@@ -552,8 +553,11 @@ fn process_version(var: Sourced<String>, ws_folders: &HashMap<String, String>, w
             };
             Sourced { value: S!(suffix.as_os_str().to_string_lossy()), sources: var.sources.clone(), ..Default::default() }
         },
-        // Not a valid path, just return the variable as is
-        None => var,
+        // Not a valid path, just return the variable as is, log info
+        Err(err) => {
+            error!("Failed to process $version path for variable {:?}: {}", var, err);
+            var
+        },
     }
 }
 
@@ -766,7 +770,7 @@ pub fn default_profile_name() -> String {
     "default".to_string()
 }
 
-fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, predicate: &F, var_map: HashMap<String, String>) -> Option<Sourced<String>>
+fn fill_or_canonicalize<F>(sourced_path: &Sourced<String>, ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, predicate: &F, var_map: HashMap<String, String>) -> Result<Sourced<String>, String>
 where
 F: Fn(&String) -> bool,
 {
@@ -776,7 +780,7 @@ F: Fn(&String) -> bool,
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     if has_template(&sourced_path.value) {
         return fill_validate_path(ws_folders, workspace_name, &sourced_path.value, predicate, var_map, &config_dir)
-        .and_then(|p| std::fs::canonicalize(PathBuf::from(p)).ok())
+        .and_then(|p| std::fs::canonicalize(PathBuf::from(p)).map_err(|e| e.to_string()))
         .map(|p| p.sanitize())
         .map(|path| Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default()});
     }
@@ -784,11 +788,13 @@ F: Fn(&String) -> bool,
     if path.is_relative() {
         path = config_dir.join(sourced_path.value.clone());
     }
-    std::fs::canonicalize(path)
-    .map(|p| p.sanitize())
-    .ok()
-    .filter(|p| predicate(&p))
-    .map(|path| Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default()})
+    let path = std::fs::canonicalize(path)
+    .map_err(|e| e.to_string())?
+    .sanitize();
+    if !predicate(&path) {
+        return Err(format!("Path '{}' does not satisfy the required conditions", path));
+    }
+    Ok(Sourced { value: path, sources: sourced_path.sources.clone(), ..Default::default() })
 }
 
 fn process_paths(
@@ -804,7 +810,10 @@ fn process_paths(
         var_map.insert(S!("base"), b.value().clone());
     }
     entry.odoo_path =  entry.odoo_path.as_ref()
-        .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone()));
+        .and_then(|p| fill_or_canonicalize(p, ws_folders, workspace_name, &is_odoo_path, var_map.clone())
+            .map_err(|err| error!("Failed to process odoo path for variable {:?}: {}", p, err))
+            .ok()
+        );
 
     let infer = entry.addons_paths.as_mut().map_or(true, |ps| {
         let initial_len = ps.len();
@@ -814,6 +823,8 @@ fn process_paths(
     entry.addons_paths = entry.addons_paths.as_ref().map(|paths|
         paths.iter().filter_map(|sourced| {
             fill_or_canonicalize(sourced, ws_folders, workspace_name, &is_addon_path, var_map.clone())
+            .map_err(|err| error!("Failed to process addons path for variable {:?}: {}", sourced, err))
+            .ok()
         }).collect()
     );
     if infer {
@@ -834,6 +845,8 @@ fn process_paths(
                 Some(p.clone())
             } else {
                 fill_or_canonicalize(p, ws_folders, workspace_name, &is_python_path, var_map.clone())
+                .map_err(|err| error!("Failed to fill or canonicalize python path for variable {:?}: {}", p, err))
+                .ok()
             }
         });
     entry.stdlib.as_mut().map(|std|{
@@ -847,6 +860,27 @@ fn process_paths(
                 std.info = format!("Failed to canonicalize stdlib path: {}", err);
             }
         }
+    });
+    entry.diagnostic_filters.iter_mut().for_each(|filter| {
+        let Some(config_path) = filter.sources.iter().next().map(PathBuf::from) else {
+            unreachable!("Expected at least one source for sourced_path: {:?}", filter);
+        };
+        let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        filter.value.paths = filter.value.paths.iter().filter_map(|pattern| {
+            let pattern_string = pattern.to_string();
+            let processed_pattern = fill_validate_path(ws_folders, workspace_name, &pattern_string, &|_: &String| true, var_map.clone(), &config_dir)
+                .and_then(|p| Pattern::new(&p)
+                .map_err(|e| e.to_string()));
+            match processed_pattern {
+                Ok(p) => Some(p),
+                Err(err) => {
+                    let message = format!("Failed to process pattern '{}': {}", pattern_string, err);
+                    filter.info = filter.info.clone() + &message;
+                    error!(message);
+                    None
+                }
+            }
+        }).collect();
     });
 }
 
@@ -1167,7 +1201,7 @@ fn load_config_from_workspace(
             let Some(parent_dir) = version_path.parent()  else {
                 continue;
             };
-            let Some(parent_dir) = fill_or_canonicalize(
+            let Ok(parent_dir) = fill_or_canonicalize(
                 &{Sourced { value: parent_dir.sanitize(), sources: version_var.sources.clone(), ..Default::default() }},
                 ws_folders,
                 Some(workspace_name),

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::constants::SymType;
+use crate::constants::{PackageType, SymType};
 use crate::constants::OYarn;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::core::symbols::symbol::Symbol;
@@ -45,7 +45,7 @@ struct InferredType {
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
-    pub fn find_field_symbols(
+    pub fn find_kwarg_methods_symbols(
         session: &mut SessionInfo,
         scope: Rc<RefCell<Symbol>>,
         from_module: Option<Rc<RefCell<Symbol>>>,
@@ -53,12 +53,15 @@ impl FeaturesUtils {
         call_expr: &ExprCall,
         offset: &usize,
     ) -> Vec<Rc<RefCell<Symbol>>>{
-        if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
+        if let Some(keyword) = call_expr.arguments.keywords.iter().find(|arg|
             *offset > arg.range().start().to_usize() && *offset <= arg.range().end().to_usize()
         ){
             let Some(ref arg_id) = keyword.arg else {
                 return vec![];
             };
+            if arg_id.as_str() == "inverse_name" {
+                return FeaturesUtils::find_inverse_name_field_symbol(session, from_module, field_value, call_expr);
+            }
             if !["compute", "inverse", "search"].contains(&arg_id.as_str()){
                 return vec![];
             }
@@ -74,14 +77,49 @@ impl FeaturesUtils {
         let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in evaluations {
-            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+            followed_evals.extend(
+                Symbol::follow_ref(
+                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    session,
+                    &mut None,
+                    true,
+                    false,
+                    None,
+                    None,
+                )
+            );
         }
         if !followed_evals.iter().any(|eval|
             eval.is_weak() && eval.as_weak().weak.upgrade().map(|sym| sym.borrow().is_field_class(session)).unwrap_or(false)
         ) {
             return vec![];
         }
-        parent_class.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, false, true, false).0
+        parent_class.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, false, true, true, false).0
+    }
+
+    fn find_inverse_name_field_symbol(
+        session: &mut SessionInfo,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+        field_value: &String,
+        call_expr: &ExprCall,
+    ) -> Vec<Rc<RefCell<Symbol>>>{
+        let model_name = if let Some(Expr::StringLiteral(expr)) = call_expr.arguments.args.first() {
+            expr.value.to_string()
+        } else {
+            let Some(model_name) = call_expr.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
+                .and_then(|kw| match &kw.value {
+                    Expr::StringLiteral(expr) => Some(expr.value.to_string()),
+                    _ => None
+                }) else {
+                    return vec![];
+                };
+            model_name
+        };
+        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+            return vec![];
+        };
+        let main_syms = model.borrow().get_main_symbols(session, from_module.clone());
+        main_syms.iter().flat_map(|main_sym| main_sym.clone().borrow().get_member_symbol(session, field_value, from_module.clone(), false, true, false, true, false).0).collect()
     }
 
     fn find_simple_decorator_field_symbol(
@@ -96,7 +134,7 @@ impl FeaturesUtils {
         if parent_class.borrow().as_class_sym()._model.is_none(){
             return vec![];
         }
-        parent_class.clone().borrow().get_member_symbol(session, field_name, from_module.clone(), false, false, true, false).0
+        parent_class.clone().borrow().get_member_symbol(session, field_name, from_module.clone(), false, true, false, true, false).0
     }
 
     fn find_nested_fields(
@@ -119,7 +157,7 @@ impl FeaturesUtils {
             let range_end = range_start + TextSize::new((name.len() + 1) as u32);
             let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
             if cursor_section {
-                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, true, false).0;
+                let fields = parent_object.clone().unwrap().borrow().get_member_symbol(session, &name, from_module.clone(), false, true, false, true, false).0;
                 return fields.into_iter().map(|f| (f, TextRange::new(range_start, range_end - TextSize::new(1)))).collect();
             } else {
                 let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
@@ -127,6 +165,7 @@ impl FeaturesUtils {
                     from_module.clone(),
                     false,
                     true,
+                    false,
                     true,
                     false);
                 if symbols.is_empty() {
@@ -192,7 +231,17 @@ impl FeaturesUtils {
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
-            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+            followed_evals.extend(
+                Symbol::follow_ref(
+                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    session,
+                    &mut None,
+                    true,
+                    false,
+                    None,
+                    None,
+                )
+            );
         }
         for callable_eval in followed_evals {
             let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
@@ -265,7 +314,17 @@ impl FeaturesUtils {
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope.clone(), &call_expr.func.range().start(), false, &mut vec![]).0;
         let mut followed_evals = vec![];
         for eval in callable_evals {
-            followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+            followed_evals.extend(
+                Symbol::follow_ref(
+                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    session,
+                    &mut None,
+                    true,
+                    false,
+                    None,
+                    None,
+                )
+            );
         }
         for callable_eval in followed_evals {
             let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
@@ -313,14 +372,21 @@ impl FeaturesUtils {
         if string_domain_fields_syms.len() >= 1 {
             return string_domain_fields_syms.into_iter().map(|(sym, _)| sym).collect();
         }
-        let compute_kwarg_syms = FeaturesUtils::find_field_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, &offset);
-        if compute_kwarg_syms.len() >= 1{
-            return compute_kwarg_syms;
+        let kwarg_syms = FeaturesUtils::find_kwarg_methods_symbols(session, scope.clone(), from_module.clone(),  string_val, call_expr, &offset);
+        if kwarg_syms.len() >= 1{
+            return kwarg_syms;
         }
         vec![]
     }
 
-    pub fn build_markdown_description(session: &mut SessionInfo, file_symbol: Option<Rc<RefCell<Symbol>>>, evals: &Vec<Evaluation>, call_expr: &Option<ExprCall>, offset: Option<usize>) -> String {
+    pub fn build_markdown_description(
+        session: &mut SessionInfo,
+        file_symbol: Option<Rc<RefCell<Symbol>>>,
+        file_path: Option<&String>,
+        evals: &Vec<Evaluation>,
+        call_expr: &Option<ExprCall>,
+        offset: Option<usize>
+    ) -> String {
         #[derive(Debug, Eq, PartialEq, Hash)]
         struct SymbolKey {
             name: OYarn,
@@ -337,8 +403,23 @@ impl FeaturesUtils {
         for (index, eval) in evals.iter().enumerate() {
             //search for a constant evaluation like a model name or domain field
             if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(expr))) = eval.value.as_ref() {
-                let mut block = S!("");
                 let str = expr.value.to_string();
+                if let Some(SymType::PACKAGE(PackageType::MODULE)) = file_symbol.as_ref().map(|fs| fs.borrow().typ())
+                && file_path.map_or(false, |fp| fp.ends_with("__manifest__.py")) {
+                    let mut block = S!("");
+                    // If we are in manifest, we check if the string is a module and list the underlying module dependencies
+                    if let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", str)).and_then(|m| m.upgrade()) {
+                        block += format!("Module: {}", module.borrow().name()).as_str();
+                        let module_ref = module.borrow();
+                        let dependencies = module_ref.as_module_package().get_all_depends();
+                        if !dependencies.is_empty() {
+                            block += "  \n***  \nDependencies:  \n";
+                            block += &dependencies.iter().map(|dep| format!("- {}", dep)).join("  \n");
+                        }
+                    }
+                    blocks.push(block);
+                    continue;
+                }
                 let from_module = file_symbol.as_ref().and_then(|file_symbol| file_symbol.borrow().find_module());
                 if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol.as_ref(), offset){
                     let mut special_string_syms = FeaturesUtils::check_for_string_special_syms(session, &str, call_expression, offset, expr.range, file_sym);
@@ -365,7 +446,7 @@ impl FeaturesUtils {
                             .chain(evals.iter().take(index).cloned())
                             .chain(evals.iter().skip(index + 1).cloned())
                             .collect();
-                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, &string_domain_fields_evals, call_expr, Some(offset));
+                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, file_path, &string_domain_fields_evals, call_expr, Some(offset));
                         // remove the injected `base_attr` context value
                         special_string_syms.iter_mut().for_each(|sym_rc| {
                             sym_rc.borrow_mut().evaluations_mut().into_iter().flatten().for_each(|eval| {
@@ -386,6 +467,7 @@ impl FeaturesUtils {
                 }
                 if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
                     let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
+                    let mut block = S!("");
                     for main_class_rc in main_classes.iter() {
                         let main_class = main_class_rc.borrow();
                         if let Some(main_class_module) = main_class.find_module() {
@@ -419,9 +501,9 @@ impl FeaturesUtils {
                                 }).collect::<String>();
                         }
                     }
+                    blocks.push(block);
+                    continue;
                 }
-                blocks.push(block);
-                continue;
             }
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let Some(symbol) = eval_symbol.upgrade_weak() else {
@@ -435,7 +517,7 @@ impl FeaturesUtils {
                 continue;
             };
             let mut context = Some(eval_symbol.as_weak().context.clone());
-            let evaluation_ptrs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None);
+            let evaluation_ptrs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None, None);
 
             let symbol_type = symbol.borrow().typ();
             let symbol_name = symbol.borrow().name().clone();
@@ -473,6 +555,7 @@ impl FeaturesUtils {
             SymType::VARIABLE if symbol.as_variable().is_parameter => S!("parameter"),
             SymType::FUNCTION if symbol.as_func().is_property => S!("property"),
             SymType::FUNCTION if symbol.parent().unwrap().upgrade().unwrap().borrow().typ() == SymType::CLASS => S!("method"),
+            SymType::PACKAGE(_) => S!("package"),
             type_ => type_.to_string().to_lowercase()
         }
     }
@@ -528,7 +611,7 @@ impl FeaturesUtils {
                                 Some(func_eval) => {
                                     let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
                                         let eval_symbol = eval.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None);
-                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None);
+                                        let weak_eval_symbols = Symbol::follow_ref(&eval_symbol, session, context, true, false, None, None);
                                         weak_eval_symbols.iter().map(|weak_eval_symbol| match weak_eval_symbol.upgrade_weak(){
                                             //if fct is a variable, it means that evaluation is None.
                                             Some(s_type) if s_type.borrow().typ() != SymType::VARIABLE => s_type.borrow().name().to_string(),
@@ -622,7 +705,7 @@ impl FeaturesUtils {
     }
 
     /// Finds and returns useful links for an evaluation
-    fn get_useful_link(session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
+    fn get_useful_link(_session: &mut SessionInfo, typ: &EvaluationSymbolPtr) -> String {
         // Possibly add more links in the future
         let Some(typ) = typ.upgrade_weak() else {
             return S!("")

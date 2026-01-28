@@ -1,8 +1,10 @@
-use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
+use crate::core::file_mgr::legacy_unc_paths;
 use path_slash::{PathBufExt, PathExt};
 use regex::Regex;
 use ruff_text_size::TextSize;
 use std::process::Command;
+use std::sync::atomic::Ordering;
+use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 
 use crate::{constants::Tree, oyarn};
 
@@ -135,12 +137,16 @@ pub trait ToFilePath {
 }
 
 impl ToFilePath for lsp_types::Uri {
-
     fn to_file_path(&self) -> Result<PathBuf, ()> {
-        let url = url::Url::from_str(self.as_str()).map_err(|_| ())?;
+        let s = self.as_str();
+        // Detect legacy UNC path (file:////)
+        if s.starts_with("file:////") {
+            legacy_unc_paths().store(true, Ordering::Relaxed);
+        }
+        let str_repr = s.replace("file:////", "file://");
+        let url = url::Url::from_str(&str_repr).map_err(|_| ())?;
         url.to_file_path()
     }
-
 }
 
 pub trait PathSanitizer {
@@ -152,10 +158,9 @@ pub trait PathSanitizer {
 impl PathSanitizer for PathBuf {
 
     fn sanitize(&self) -> String {
-        let mut path = self.to_slash_lossy().to_string();
-
         #[cfg(windows)]
         {
+            let mut path = self.to_slash_lossy().to_string();
             // check if path begins with //?/ if yes remove it
             // to handle extended-length path prefix
             // https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
@@ -167,9 +172,11 @@ impl PathSanitizer for PathBuf {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
                 path.replace_range(0..1, &disk_letter.to_string());
             }
+            return path;
         }
 
-        path
+        #[cfg(not(windows))]
+        return self.to_slash_lossy().to_string();
     }
 
     /// Convert the path to a tree structure.
@@ -198,10 +205,9 @@ impl PathSanitizer for PathBuf {
 impl PathSanitizer for Path {
 
     fn sanitize(&self) -> String {
-        let mut path = self.to_slash_lossy().to_string();
-
         #[cfg(windows)]
         {
+            let mut path = self.to_slash_lossy().to_string();
             if path.starts_with("\\\\?\\") {
                 path = path[4..].to_string();
             }
@@ -210,9 +216,11 @@ impl PathSanitizer for Path {
                 let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
                 path.replace_range(0..1, &disk_letter.to_string());
             }
+            return path;
         }
 
-        path
+        #[cfg(not(windows))]
+        return self.to_slash_lossy().to_string();
     }
 
     fn to_tree(&self) -> Tree {
@@ -249,19 +257,22 @@ pub fn has_template(template: &str) -> bool {
     TEMPLATE_REGEX.is_match(template)
 }
 
-pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Option<String> {
-    let mut invalid = false;
+pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Result<String, String> {
+    let mut invalid = None;
 
     let result = TEMPLATE_REGEX.replace_all(template, |captures: &regex::Captures| -> String{
         let key = captures[1].to_string();
         if let Some(value) = vars.get(&key) {
             value.clone()
         } else {
-            invalid = true;
+            invalid = Some(format!("Invalid key ({}) in pattern", key));
             S!("")
         }
     });
-    if invalid {None} else {Some(S!(result))}
+    match invalid {
+        Some(err) => Err(err),
+        None => Ok(S!(result)),
+    }
 }
 
 
@@ -282,7 +293,7 @@ pub fn build_pattern_map(ws_folders: &HashMap<String, String>) -> HashMap<String
 /// While also checking it with the predicate function.
 /// pass `|_| true` to skip the predicate check.
 /// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
-pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Option<String>
+pub fn fill_validate_path<F, P>(ws_folders: &HashMap<String, String>, workspace_name: Option<&String>, template: &str, predicate: F, var_map: HashMap<String, String>, parent_path: P) -> Result<String, String>
 where
     F: Fn(&String) -> bool,
     P: AsRef<Path>
@@ -291,19 +302,18 @@ where
         if let Some(path) = workspace_name.and_then(|name| ws_folders.get(name)) {
             pattern_map.insert(S!("workspaceFolder"), path.clone());
         }
-        if let Some(path) = fill_template(template, &pattern_map) {
-            if predicate(&path) {
-                return Some(path);
-            }
-            // Attempt to convert the path to an absolute path
-            if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
-                let abs_path    = abs_path.sanitize();
-                if predicate(&abs_path) {
-                    return Some(abs_path);
-                }
+        let path = fill_template(template, &pattern_map)?;
+        if predicate(&path) {
+            return Ok(path);
+        }
+        // Attempt to convert the path to an absolute path
+        if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
+            let abs_path    = abs_path.sanitize();
+            if predicate(&abs_path) {
+                return Ok(abs_path);
             }
         }
-        None
+        Err(format!("Failed to fill and validate path: {} from template {}", path, template))
     }
 
 fn is_really_module(directory_path: &str, entry: &DirEntry) -> bool {
@@ -332,6 +342,25 @@ pub fn is_python_path(path: &String) -> bool {
         Ok(output) => output.status.success(),
         Err(_) => false,
     }
+}
+
+pub fn string_fuzzy_contains(string: &str, pattern: &str) -> bool {
+    let mut pattern_char_iter = pattern.chars();
+    let mut pattern_char = match pattern_char_iter.next() {
+        Some(c) => c.to_ascii_lowercase(),
+        None => return true,
+    };
+    for char in string.chars() {
+        if char.to_ascii_lowercase() == pattern_char {
+            pattern_char = match pattern_char_iter.next() {
+                Some(c) => c.to_ascii_lowercase(),
+                None => {
+                    return true;
+                }
+            };
+        }
+    }
+    false
 }
 
 #[macro_export]

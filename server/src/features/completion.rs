@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
 use itertools::Itertools;
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent};
-use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
+use ruff_python_ast::{Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSlice, ExprSubscript, ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal};
 use ruff_text_size::{Ranged, TextSize};
 
-use crate::constants::{BuildStatus, BuildSteps, OYarn, SymType};
+use crate::constants::{OYarn, SymType};
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
@@ -34,6 +34,7 @@ pub enum ExpectedType {
     CLASS(Rc<RefCell<Symbol>>),
     SIMPLE_FIELD(Option<OYarn>),
     NESTED_FIELD(Option<OYarn>),
+    EXTERNAL_FIELD(OYarn), // Like in inverse_name='field_name', we attach the comodel_name
     METHOD_NAME,
     INHERITS,
 }
@@ -48,7 +49,7 @@ impl CompletionFeature {
         line: u32,
         character: u32
     ) -> Option<CompletionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character);
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
         let ast = file_info_ast.get_stmts().unwrap();
@@ -309,12 +310,13 @@ fn complete_assert_stmt(session: &mut SessionInfo<'_>, file: &Rc<RefCell<Symbol>
 fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImport, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
     for alias in stmt_import.names.iter() {
-        if alias.name.range().end().to_usize() == offset {
-            let names = import_resolver::get_all_valid_names(session, file, None, S!(alias.name.id.as_str()), None);
-            for name in names {
+        if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
+            let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
+            let names = import_resolver::get_all_valid_names(session, file, None, to_complete, 0, false);
+            for (name, sym_typ) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
-                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    kind: Some(get_completion_item_kind(&sym_typ)),
                     ..Default::default()
                 });
             }
@@ -329,24 +331,26 @@ fn complete_import_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, s
 fn complete_import_from_stmt(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, stmt_import: &StmtImportFrom, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
     if let Some(module) = stmt_import.module.as_ref() {
-        if module.range.end().to_usize() == offset && !stmt_import.names.is_empty() {
-            let names = import_resolver::get_all_valid_names(session, file, None, S!(stmt_import.names[0].name.id.as_str()), Some(stmt_import.level));
-            for name in names {
+        if module.range.start().to_usize() < offset && module.range.end().to_usize() >= offset {
+            let to_complete = module.id.to_string().get(0 .. offset - module.range.start().to_usize()).unwrap_or("").to_string();
+            let names = import_resolver::get_all_valid_names(session, file, Some(to_complete), S!(""), stmt_import.level, true);
+            for (name, sym_type) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
-                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    kind: Some(get_completion_item_kind(&sym_type)),
                     ..Default::default()
                 });
             }
         }
     }
     for alias in stmt_import.names.iter() {
-        if alias.name.range().end().to_usize() == offset {
-            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref(), S!(alias.name.id.as_str()), Some(stmt_import.level));
-            for name in names {
+        if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
+            let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
+            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref().map(|m| m.id.to_string()), to_complete, stmt_import.level, false);
+            for (name, sym_type) in names {
                 items.push(CompletionItem {
                     label: name.to_string(),
-                    kind: Some(lsp_types::CompletionItemKind::MODULE),
+                    kind: Some(get_completion_item_kind(&sym_type)),
                     ..Default::default()
                 });
             }
@@ -403,7 +407,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: &Rc<RefCell<Symbo
         Expr::Name(expr_name) => complete_name_expression(session, file, expr_name, offset, is_param, expected_type),
         Expr::List(expr_list) => complete_list(session, file, expr_list, offset, is_param, expected_type),
         Expr::Tuple(expr_tuple) => complete_tuple(session, file, expr_tuple, offset, is_param, expected_type),
-        Expr::Slice(_) => None,
+        Expr::Slice(expr_slice) => complete_slice(session, file, expr_slice, offset, is_param, expected_type),
         Expr::IpyEscapeCommand(_) => None,
     }
 }
@@ -542,7 +546,9 @@ fn complete_decorator_call(
     let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope.clone(), max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
-        followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None));
+        followed_evals.extend(
+            Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None)
+        );
     }
     for decorator_eval in followed_evals{
         let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
@@ -638,35 +644,44 @@ fn complete_call(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_cal
             return complete_expr(arg, session, file, offset, is_param, &vec![]);
         }
     }
-    for keyword in expr_call.arguments.keywords.iter(){
-        if offset <= keyword.value.range().start().to_usize() || offset > keyword.value.range().end().to_usize() {
+    let Some(keyword) = expr_call.arguments.keywords.iter().find(|arg|
+        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()) else {
+        return None;
+    };
+    for callable_eval in callable_evals.iter() {
+        let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+        let Some(callable_sym) = callable.weak.upgrade() else {continue};
+        if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
             continue;
         }
-        for callable_eval in callable_evals.iter() {
-            let callable = callable_eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
-            let Some(callable_sym) = callable.weak.upgrade() else {continue};
-            if callable_sym.borrow().typ() != SymType::CLASS || !callable_sym.borrow().is_field_class(session){
-                continue;
+        let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
+            match kw_arg_id.id.as_str() {
+                "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(oyarn!("{}", callable_sym.borrow().name())))]),
+                "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
+                        Some(vec![ExpectedType::MODEL_NAME])
+                    } else {
+                        None
+                    },
+                "inverse_name" => {
+                    if let Some(Expr::StringLiteral(expr)) = expr_call.arguments.args.first() {
+                        Some(vec![ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))])
+                    } else {
+                        expr_call.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
+                        .and_then(|kw| match &kw.value {
+                            Expr::StringLiteral(expr) => Some(vec![ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))]),
+                            _ => None
+                        })
+                    }
+                },
+                "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
+                _ => None,
             }
-            let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
-                match kw_arg_id.id.as_str() {
-                    "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(oyarn!("{}", callable_sym.borrow().name())))]),
-                    "comodel_name" => if callable_sym.borrow().is_specific_field_class(session, &["Many2one", "One2many", "Many2many"]){
-                            Some(vec![ExpectedType::MODEL_NAME])
-                        } else {
-                            None
-                        },
-                    "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
-                    _ => None,
-                }
-            ) else {
-                continue;
-            };
-            return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
-        }
-        return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
+        ) else {
+            continue;
+        };
+        return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
     }
-    None
+    return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
 }
 
 fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
@@ -771,6 +786,15 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
                     _ => unreachable!()
                 }
             },
+            ExpectedType::EXTERNAL_FIELD(model_name) => {
+                let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+                    break;
+                };
+                let main_syms = model.borrow().get_main_symbols(session, current_module.clone());
+                main_syms.iter().for_each(|model_sym| {
+                    add_model_attributes(session, &mut items, current_module.clone(), model_sym.clone(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
+                });
+            },
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
         }
@@ -799,7 +823,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
             //TODO shouldn't we set and clean context here?
             let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
             if !parent_sym_eval.is_expired_if_weak() {
-                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None);
+                let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, None);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
                     add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str(), &None)
@@ -820,7 +844,7 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope.clone()));
         if !eval_symbol.is_expired_if_weak() {
-            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None);
+            let symbol_types = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak() {
                     let borrowed = symbol_type.borrow();
@@ -829,10 +853,8 @@ fn complete_subscript(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, exp
                         if get_item.borrow().evaluations().as_ref().unwrap().len() == 1 {
                             let get_item_bw = get_item.borrow();
                             let get_item_eval = get_item_bw.evaluations().as_ref().unwrap().first().unwrap();
-                            if let EvaluationSymbolPtr::WEAK(w) = get_item_eval.symbol.get_symbol_ptr() {
-                                if matches!(w.context.get(&S!("hook_name")), Some(hook_name) if hook_name.as_string() == "eval_env_get_item") {
-                                    return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
-                                }
+                            if get_item_eval.symbol.get_symbol_hook.as_ref().map(|hook| &hook.name == "eval_env_get_item").unwrap_or_default(){
+                                return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
                             }
                         }
                     }
@@ -942,6 +964,19 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: &Rc<RefCell<Symb
     None
 }
 
+fn complete_slice(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, expr_slice: &ExprSlice, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+    // And incomplete subscript is always a slice, so self.env["ffff is a slice with ffff as lower
+    if expr_slice.lower.is_some() && offset > expr_slice.lower.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.lower.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_slice.lower.as_ref().unwrap(), session, file, offset, is_param, expected_type);
+    }
+    if expr_slice.upper.is_some() && offset > expr_slice.upper.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.upper.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_slice.upper.as_ref().unwrap(), session, file, offset, is_param, &vec![]);
+    }
+    if expr_slice.step.is_some() && offset > expr_slice.step.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.step.as_ref().unwrap().range().end().to_usize() {
+        return complete_expr( expr_slice.step.as_ref().unwrap(), session, file, offset, is_param, &vec![]);
+    }
+    None
+}
 /* *********************************************************************
 **************************** Common utils ******************************
 ********************************************************************** */
@@ -1006,6 +1041,7 @@ fn add_nested_field_names(
                     from_module.clone(),
                     false,
                     true,
+                    false,
                     true,
                     false);
                 if symbols.is_empty() {
@@ -1070,7 +1106,7 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
             Rc::downgrade(symbol),
             None,
             false,
-        )), session, &mut None, false, false, None)
+        )), session, &mut None, false, false, None, None)
     ).collect::<Vec<_>>();
     let type_details = typ.iter().map(|eval|
         FeaturesUtils::get_inferred_types(session, eval, &mut Some(context_of_symbol.clone()), &symbols[0].borrow().typ())
@@ -1091,12 +1127,12 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
             description: label_details_description,
         }),
         detail: Some(type_details.iter().map(|detail| detail.to_string()).join(" | ").to_string()),
-        kind: Some(get_completion_item_kind(&symbols[0])),
+        kind: Some(get_completion_item_kind(&symbols[0].borrow().typ())),
         sort_text: Some(get_sort_text_for_symbol(&symbols[0])),
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: FeaturesUtils::build_markdown_description(session, None, &symbols.iter().map(|symbol|
+                value: FeaturesUtils::build_markdown_description(session, None, None, &symbols.iter().map(|symbol|
                     Evaluation {
                         symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
                             context_of_symbol.clone(),
@@ -1136,8 +1172,8 @@ fn get_sort_text_for_symbol(sym: &Rc<RefCell<Symbol>>/*, cl: Option<Rc<RefCell<S
     text
 }
 
-fn get_completion_item_kind(symbol: &Rc<RefCell<Symbol>>) -> CompletionItemKind {
-    match symbol.borrow().typ() {
+fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
+    match typ {
         SymType::ROOT => CompletionItemKind::TEXT,
         SymType::DISK_DIR => CompletionItemKind::FOLDER,
         SymType::NAMESPACE => CompletionItemKind::FOLDER,

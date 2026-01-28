@@ -17,6 +17,15 @@ use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
 
+pub const MAGIC_FIELDS: [&str; 6] = [
+    "id",
+    "display_name",
+    "create_uid",
+    "create_date",
+    "write_uid",
+    "write_date"
+];
+
 pub struct PythonOdooBuilder {
     symbol: Rc<RefCell<Symbol>>,
 }
@@ -35,9 +44,10 @@ impl PythonOdooBuilder {
         if sym.borrow().typ() != SymType::CLASS {
             return diagnostics;
         }
-        if !self.test_symbol_is_model(session, &mut diagnostics) {
+        if !self.is_symbol_model(session, &mut diagnostics) {
             return diagnostics;
         }
+        self.symbol.borrow_mut().as_class_sym_mut()._model = Some(ModelData::new());
         self._load_class_inherit(session, &mut diagnostics);
         self._load_class_name(session, &mut diagnostics);
         if sym.borrow().as_class_sym()._model.is_none() {
@@ -194,7 +204,7 @@ impl PythonOdooBuilder {
     }
 
     fn _get_attribute(session: &mut SessionInfo, loc_sym: &mut Symbol, attr: &String, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
-        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false, false, false);
+        let (attr_sym, _) = loc_sym.get_member_symbol(session, attr, None, true, false, false, false, false);
         if attr_sym.len() == 0 {
             return None;
         }
@@ -342,90 +352,43 @@ impl PythonOdooBuilder {
         }
     }
 
-    /* true if the symbol inherit from odoo.models.BaseModel. symbol must be the data of rc_symbol and must be a Class */
-    fn test_symbol_is_model(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
+    /* true if the symbol inherits from BaseModel, Model, TransientModel, or CachedModel. symbol must be the data of rc_symbol and must be a Class */
+    fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
         let symbol = &self.symbol.clone();
-        let odoo_symbol_tree = symbol.borrow().get_main_entry_tree(session);
-        let mut sym = symbol.borrow_mut();
-        if (
-            compare_semver(session.sync_odoo.full_version.as_str(), "18.1") == Ordering::Less && odoo_symbol_tree.0.len() == 2
-            && odoo_symbol_tree.1.len() == 1
-            && odoo_symbol_tree.0[0] == "odoo"
-            && odoo_symbol_tree.0[1] == "models"
-            && (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel"))
-            || (compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal && odoo_symbol_tree.0.len() == 3
-            && odoo_symbol_tree.1.len() == 1
-            && odoo_symbol_tree.0[0] == "odoo"
-            && odoo_symbol_tree.0[1] == "orm"
-            && odoo_symbol_tree.0[2] == "models"
-            && (odoo_symbol_tree.1[0] == "BaseModel" || odoo_symbol_tree.1[0] == "Model" || odoo_symbol_tree.1[0] == "TransientModel"))
-            || (compare_semver(session.sync_odoo.full_version.as_str(), "18.3") >= Ordering::Equal && odoo_symbol_tree.0.len() == 3
-            && odoo_symbol_tree.1.len() == 1
-            && odoo_symbol_tree.0[0] == "odoo"
-            && odoo_symbol_tree.0[1] == "orm"
-            && odoo_symbol_tree.0[2] == "models_transient"
-            && odoo_symbol_tree.1[0] == "TransientModel") {
-            //we don't want to compare these classes with themselves (> 18.3)
+        if symbol.borrow().as_class_sym().bases.is_empty() || symbol.borrow().find_module().is_none(){
+            // We only consider symbols that has inheritance base or defined in modules as models
             return false;
-        } else {
-            if sym.as_class_sym().bases.is_empty() {
-                return false;
-            }
-            let mut base_model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")]);
-            let mut model_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("Model")]);
-            let mut transient_tree = (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("TransientModel")]);
-            if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
-                base_model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]);
-                model_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("Model")]);
-                transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("TransientModel")]);
-            }
-            if compare_semver(session.sync_odoo.full_version.as_str(), "18.3") >= Ordering::Equal {
-                transient_tree = (vec![Sy!("odoo"), Sy!("orm"), Sy!("models_transient")], vec![Sy!("TransientModel")]);
-            }
-            let base_model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
-            let model = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &model_tree, u32::MAX);
-            let transient = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &transient_tree, u32::MAX);
-            if base_model.is_empty() || model.is_empty() || transient.is_empty() {
-                //one of them is not already loaded, but that's not really an issue, as now odoo step has been merged
-                //with arch eval step, some files will be odooed before loading the orm fully. In this case we should
-                //ignore this error. Moreover if a base is set on the class, it means that the base has been loaded, so
-                //it is NOT a model.
-                // session.send_notification(ShowMessage::METHOD, ShowMessageParams{
-                //     typ: MessageType::ERROR,
-                //     message: "Odoo base models are not found. OdooLS will be unable to generate valid diagnostics".to_string()
-                // });
-                return false;
-            }
-            let base_model = base_model[0].clone();
-            let model = model[0].clone();
-            let transient = transient[0].clone();
-            if Rc::ptr_eq(symbol, &base_model) ||
-                Rc::ptr_eq(symbol, &model) ||
-                Rc::ptr_eq(symbol, &transient) {
-                return false;
-            }
-            if !sym.as_class_sym().inherits(&base_model, &mut None) {
-                return false;
-            }
         }
-        sym.as_class_sym_mut()._model = Some(ModelData::new());
-        let register = sym.get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
+        let base_model_tree = if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
+            (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")])
+        } else {
+            (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])
+        };
+        let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
+        if base_model_syms.is_empty() {
+            // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
+            return false;
+        }
+        if !symbol.borrow().as_class_sym().inherits(&base_model_syms[0], &mut None) {
+            return false;
+        }
+        // Check if we have a _register = False
+        let register = symbol.borrow().get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
         if let Some(register) = register.last() {
             let loc_register = register.borrow();
-            let register_evals = &loc_register.evaluations().unwrap();
-            if register_evals.len() == 1 { //we don't handle multiple values
-                let eval = &register_evals[0];
-                let value = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-                if value.is_some() {
-                    let value = value.unwrap();
-                    if let EvaluationValue::CONSTANT(Expr::BooleanLiteral(b)) = value {
-                        if !b.value {
-                            return false;
-                        }
+            let register_evals = loc_register.evaluations().unwrap();
+            // Read all boolean values, ignore non-boolean-value evaluations, as they can be dynamic or type annotations
+            let register_evals_values: Vec<_> = register_evals.iter().filter_map(
+                |eval|
+                    match eval.follow_ref_and_get_value(session, &mut None, diagnostics)? {
+                        EvaluationValue::CONSTANT(Expr::BooleanLiteral(b)) => Some(b.value),
+                        _ => None,
                     }
-                }
+            ).collect();
+            // If we have exactly *one* False value evaluation, we consider _register = False, thus it is an abstract model
+            if register_evals_values == &[false] {
+                return false;
             }
-            return true;
         }
         true
     }
@@ -439,7 +402,7 @@ impl PythonOdooBuilder {
             };
             for eval in evals.iter() {
                 let eval_sym_ptr = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None);
+                let eval_ptrs = Symbol::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, None);
                 for eval_ptr in eval_ptrs.iter() {
                     let eval_weak = match &eval_ptr {
                         EvaluationSymbolPtr::WEAK(w) => w,

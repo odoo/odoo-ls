@@ -6,4 +6,5 @@ pub mod features_utils;
 pub mod hover;
 pub mod node_index_ast;
 pub mod references;
+pub mod workspace_symbols;
 pub mod xml_ast_utils;

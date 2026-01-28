@@ -3,7 +3,7 @@ use core::fmt;
 
 
 pub const EXTENSION_NAME: &str = "Odoo";
-pub const EXTENSION_VERSION: &str = "1.0.4";
+pub const EXTENSION_VERSION: &str = "1.1.2";
 
 pub const MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART: u32 = 10;
 
@@ -125,7 +125,7 @@ pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "un
 "cgi", "cgitb", "chunk", "crypt", "imghdr", "imp", "mailcap", "msilib", "nis", "nntplib", "optparse", "ossaudiodev",
 "pipes", "smtpd", "sndhdr", "spwd", "sunau", "telnetlib", "uu", "xdrlib", "struct", "codecs"];
 
-pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/Configuration-files";
+pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/3.-Configuration-files";
 
 use std::sync::LazyLock;
 

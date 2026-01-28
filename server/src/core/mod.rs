@@ -15,6 +15,7 @@ pub mod python_odoo_builder;
 pub mod python_validator;
 pub mod python_utils;
 pub mod symbols;
+pub mod text_document;
 pub mod xml_arch_builder;
 pub mod xml_arch_builder_rng_validation;
 pub mod xml_data;

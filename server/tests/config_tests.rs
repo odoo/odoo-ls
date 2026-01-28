@@ -1799,3 +1799,40 @@ fn test_base_and_version_resolve_for_workspace_subpaths() {
     let result = get_configuration(&ws_folders, &None);
     assert!(result.is_err(), "Expected error when $base is not a valid path");
 }
+
+#[test]
+fn test_diagnostic_filter_path_variable_expansion() {
+    use dirs;
+    use odoo_ls_server::utils::PathSanitizer;
+    // Setup temp workspace
+    let temp = TempDir::new().unwrap();
+    let ws1 = temp.child("ws1");
+    ws1.create_dir_all().unwrap();
+    let version = "vX.Y.Z";
+    // Write odools.toml with $userHome, ${workspaceFolder}, and $version in diagnostic_filters
+    let user_home = dirs::home_dir().map(|buf| buf.sanitize()).unwrap();
+    let toml_content = format!(r#"
+        [[config]]
+        name = "default"
+        "$version" = "{}"
+        [[config.diagnostic_filters]]
+        paths = ["${{userHome}}/some/path", "${{workspaceFolder}}/foo", "${{version}}/bar"]
+    "#, version);
+    ws1.child("odools.toml").write_str(&toml_content).unwrap();
+
+    let mut ws_folders = HashMap::new();
+    ws_folders.insert(S!("ws1"), ws1.path().sanitize().to_string());
+
+    let (config_map, _config_file) = get_configuration(&ws_folders, &None).unwrap();
+    let config = config_map.get("default").unwrap();
+    let filters = &config.diagnostic_filters;
+    assert!(!filters.is_empty(), "Expected at least one diagnostic filter");
+    let filter = &filters[0];
+    let patterns: Vec<String> = filter.paths.iter().map(|p| p.as_str().to_string()).collect();
+    // Check that $userHome was expanded
+    assert!(patterns.iter().any(|p| p.starts_with(&format!("{}/some/path", user_home))), "userHome variable not expanded: {:?}", patterns);
+    // Check that ${workspaceFolder} was expanded
+    assert!(patterns.iter().any(|p| p.ends_with("/foo") && p.contains(&ws1.path().sanitize())), "workspaceFolder variable not expanded: {:?}", patterns);
+    // Check that $version was expanded
+    assert!(patterns.iter().any(|p| p.ends_with("/bar") && p.contains(version)), "version variable not expanded: {:?}", patterns);
+}

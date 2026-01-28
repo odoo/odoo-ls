@@ -2,9 +2,9 @@ use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instan
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
-use lsp_types::{notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+use lsp_types::{CompletionResponse, DocumentSymbolResponse, Hover, Location, LogMessageParams, MessageType, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
-    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, References, Request, Shutdown}, CompletionResponse, DocumentSymbolResponse, Hover, Location, LogMessageParams, MessageType, ShowMessageParams};
+    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, References, Request, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -104,7 +104,7 @@ impl <'a> SessionInfo<'a> {
             let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::RESTART);
             return;
         }
-        let _ = SyncOdoo::_unload_path(session, &path, false);
+        let _ = SyncOdoo::unload_path(session, &path, false);
         Odoo::search_symbols_to_rebuild(session, &path.sanitize());
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
             if session.sync_odoo.get_rebuild_queue_size() < 10 {
@@ -138,12 +138,38 @@ impl <'a> SessionInfo<'a> {
             current_noqa: NoqaInfo::None,
         }
     }
+
+    /**
+     * Should only be used for tests, when sender is connected to the receiver, to verify messages that has been sent.
+     */
+    pub fn _consume_message(&self) -> Option<Message> {
+        match self.receiver.try_recv() {
+            Ok(msg) => Some(msg),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => {
+                error!("Session channel disconnected");
+                None
+            }
+        }
+    }
 }
 
 fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseError>) -> (Option<Value>, Option<ResponseError>) {
     let value = match &result {
         Ok(Some(r)) => Some(serde_json::json!(r)),
         Ok(None) => Some(serde_json::Value::Null),
+        Err(_) => None
+    };
+    let mut error = None;
+    if result.is_err() {
+        error = Some(result.unwrap_err());
+    }
+    (value, error)
+}
+
+fn to_value_not_null<T: Serialize + std::fmt::Debug>(result: Result<T, ResponseError>) -> (Option<Value>, Option<ResponseError>) {
+    let value = match &result {
+        Ok(r) => Some(serde_json::json!(r)),
         Err(_) => None
     };
     let mut error = None;
@@ -169,7 +195,7 @@ pub enum DelayedProcessingMessage {
     EXIT, //exit the thread
 }
 
-pub fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>) {
+fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>) {
     let message = "Too many requests, possible change of branch, restarting Odoo LS";
     info!(message);
     {
@@ -181,8 +207,22 @@ pub fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<
             noqas_stack: vec![],
             current_noqa: NoqaInfo::None,
         };
-        // Drain channel before resetting
         session.send_notification("$Odoo/restartNeeded", ());
+    }
+}
+
+fn notify_git_lock(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Message>, receiver_session: &Receiver<Message>, delayed_process_sender: &Sender<DelayedProcessingMessage>, status: &str) {
+    {
+        let session = SessionInfo{
+            sender: sender_session.clone(),
+            receiver: receiver_session.clone(),
+            sync_odoo: &mut sync_odoo.lock().unwrap(),
+            delayed_process_sender: Some(delayed_process_sender.clone()),
+            noqas_stack: vec![],
+            current_noqa: NoqaInfo::None,
+        };
+        error!("Git index lock detected, notifying client: {}", status);
+        session.send_notification("$Odoo/loadingStatusUpdate", status);
     }
 }
 
@@ -199,10 +239,19 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
         // Check if immediate reaction is needed, else add the message to the list
         match msg {
             Ok(DelayedProcessingMessage::RESTART) => {
-                if let Some(main_entry_path) = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned() {
+                let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned(); //avoid keeping lock
+                if let Some(main_entry_path) = main_entry_path {
                     let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
+                    let mut notified = false;
                     while index_lock_path.exists(){
+                        if !notified {
+                            notify_git_lock(&sync_odoo, &sender_session, &receiver_session, &delayed_process_sender, "git_locked");
+                            notified = true;
+                        }
                         std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                    if notified {
+                        notify_git_lock(&sync_odoo, &sender_session, &receiver_session, &delayed_process_sender, "stop");
                     }
                 }
                 if !waiting_restart {
@@ -252,7 +301,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
     }
 }
 
-pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
+pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>, running_request_ids: Arc<Mutex<Vec<RequestId>>>) {
     let mut buffer = VecDeque::new();
     loop {
         // Drain all available messages into buffer
@@ -295,6 +344,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
         if let Some(msg) = buffer.pop_front() {
             match msg {
                 Message::Request(r) => {
+                    sync_odoo.lock().unwrap().current_request_id = Some(r.id.clone());
                     let (value, error) = match r.method.as_str() {
                         HoverRequest::METHOD => {
                             let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
@@ -315,6 +365,14 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                             let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
                             to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
+                        WorkspaceSymbolRequest::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            to_value::<WorkspaceSymbolResponse>(Odoo::handle_workspace_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        WorkspaceSymbolResolve::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            to_value_not_null::<WorkspaceSymbol>(Odoo::handle_workspace_symbols_resolve(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
                         Completion::METHOD => {
                             let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
                             SyncOdoo::process_rebuilds(&mut session, true);
@@ -326,6 +384,8 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                             data: None
                         }))}
                     };
+                    sync_odoo.lock().unwrap().current_request_id = None;
+                    running_request_ids.lock().unwrap().retain(|id| id != &r.id);
                     sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
                 },
                 Message::Notification(n) => {

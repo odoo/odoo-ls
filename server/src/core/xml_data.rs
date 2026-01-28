@@ -25,6 +25,7 @@ pub struct OdooDataField {
     pub name: OYarn,
     pub range: Range<usize>,
     pub text: Option<String>,
+    pub ref_key: Option<(String, Range<usize>)>,
     pub text_range: Option<Range<usize>>,
 }
 

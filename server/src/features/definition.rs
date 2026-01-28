@@ -4,15 +4,16 @@ use ruff_text_size::TextSize;
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::constants::SymType;
-use crate::core::evaluation::{Evaluation, EvaluationValue};
+use crate::constants::{PackageType, SymType};
+use crate::core::evaluation::{Evaluation, EvaluationValue, ExprOrIdent};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::odoo::SyncOdoo;
+use crate::core::python_odoo_builder::MAGIC_FIELDS;
 use crate::core::symbols::symbol::Symbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
 use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
-use crate::oyarn;
+use crate::{S, oyarn};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 
@@ -76,7 +77,7 @@ impl DefinitionFeature {
                 }
             }
             if let Some(model_file_sym) = class_symbol.get_file().and_then(|model_file_sym_weak| model_file_sym_weak.upgrade()){
-                let path = model_file_sym.borrow().paths()[0].clone();
+                let path = model_file_sym.borrow().get_symbol_first_path();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
                 model_found = true;
                 links.push(LocationLink{
@@ -88,6 +89,33 @@ impl DefinitionFeature {
             }
         }
         model_found
+    }
+
+    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, file_path: &String, links: &mut Vec<LocationLink>) -> bool {
+        if file_symbol.borrow().typ() != SymType::PACKAGE(PackageType::MODULE) || !file_path.ends_with("__manifest__.py") {
+            // If not on manifest, we don't check for modules
+            return false;
+        };
+        let value = if let Some(eval_value) = eval.value.as_ref() {
+            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+                oyarn!("{}", expr.value.to_string())
+            } else {
+                return false;
+            }
+        } else {
+            return  false;
+        };
+        let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", value)).and_then(|m| m.upgrade()) else {
+            return false;
+        };
+        let path = PathBuf::from(module.borrow().paths()[0].clone()).join("__manifest__.py").sanitize();
+        links.push(LocationLink{
+            origin_selection_range: None,
+            target_uri: FileMgr::pathname2uri(&path),
+            target_selection_range: Range::default(),
+            target_range: Range::default(),
+        });
+        true
     }
 
     fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, links: &mut Vec<LocationLink>) -> bool {
@@ -130,10 +158,10 @@ impl DefinitionFeature {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let compute_symbols = FeaturesUtils::find_field_symbols(
+        let method_symbols = FeaturesUtils::find_kwarg_methods_symbols(
             session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &value, call_expr, &offset
         );
-        compute_symbols.iter().for_each(|field|{
+        method_symbols.iter().for_each(|field|{
             if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                 let path = file_sym.borrow().paths()[0].clone();
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field.borrow().range());
@@ -145,7 +173,50 @@ impl DefinitionFeature {
                 });
             }
         });
-        compute_symbols.len() > 0
+        method_symbols.len() > 0
+    }
+
+    pub fn add_display_name_compute_methods(session: &mut SessionInfo, links: &mut Vec<LocationLink>, expr: &ExprOrIdent, file_symbol: &Rc<RefCell<Symbol>>, offset: usize) {
+        // now we want `_compute_display_name` definition(s)
+        // we need the symbol of the model/ then we run get member symbol
+        // to do that, we need the expr, match it to attribute, get the value, get its evals
+        // with those evals, we run get_member_symbol on `_compute_display_name`
+        let crate::core::evaluation::ExprOrIdent::Expr(Expr::Attribute(attr_expr)) = expr else {
+            return;
+        };
+        let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &crate::core::evaluation::ExprOrIdent::Expr(&attr_expr.value), offset as u32);
+        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| Symbol::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None, None)).collect::<Vec<_>>();
+        let maybe_module = file_symbol.borrow().find_module();
+        let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
+            let Some(symbol) = eval_ptr.upgrade_weak() else {
+                return  vec![];
+            };
+            symbol.borrow().get_member_symbol(session, &S!("_compute_display_name"), maybe_module.clone(), false, false, true, true, false).0
+        }).collect::<Vec<_>>();
+        for symbol in symbols {
+            if let Some(file) = symbol.borrow().get_file() {
+                for path in file.upgrade().unwrap().borrow().paths().iter() {
+                    let full_path = match file.upgrade().unwrap().borrow().typ() {
+                        SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
+                        _ => path.clone()
+                    };
+                    let range = if symbol.borrow().has_range() {
+                        if symbol.borrow().range().contains(TextSize::new(offset as u32)) {
+                            continue; //skip if we are already on the definition
+                        }
+                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range())
+                    } else {
+                        Range::default()
+                    };
+                    links.push(LocationLink{
+                        origin_selection_range: None,
+                        target_uri: FileMgr::pathname2uri(&full_path),
+                        target_selection_range: range,
+                        target_range: range,
+                    });
+                }
+            }
+        }
     }
 
     pub fn get_location(session: &mut SessionInfo,
@@ -154,20 +225,50 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character);
-        let (analyse_ast_result, _range, call_expr) = AstUtils::get_symbols(session, file_symbol, file_info, offset as u32);
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
+        let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
+        let file_info_ast_ref = file_info_ast_clone.borrow();
+        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return None;
         }
         let mut links = vec![];
         let mut evaluations = analyse_ast_result.evaluations.clone();
+        // Filter out magic fields
+        let mut dislay_name_found = false;
+        evaluations.retain(|eval| {
+            // Filter out, variables, whose parents are a class, whose name is one of the magic fields, and have the same range as their parent
+            let eval_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let Some(eval_sym) = eval_sym.upgrade_weak() else { return true; };
+            if !MAGIC_FIELDS.contains(&eval_sym.borrow().name().as_str()) || eval_sym.borrow().typ() != SymType::VARIABLE || !eval_sym.borrow().is_field(session) {
+                return true;
+            }
+            if eval_sym.borrow().name() == "display_name" {
+                dislay_name_found = true;
+            }
+            let Some(parent_sym) = eval_sym.borrow().parent().and_then(|parent| parent.upgrade()) else { return true; };
+            if parent_sym.borrow().typ() != SymType::CLASS {
+                return true;
+            }
+            eval_sym.borrow().range() != parent_sym.borrow().range()
+        });
+        if let Some(expr) = expr && dislay_name_found {
+            DefinitionFeature::add_display_name_compute_methods(session, &mut links, &expr, file_symbol, offset);
+        }
+        drop(file_info_ast_ref);
         let mut index = 0;
         while index < evaluations.len() {
             let eval = evaluations[index].clone();
             if DefinitionFeature::check_for_domain_field(session, &eval, file_symbol, &call_expr, offset, &mut links) ||
               DefinitionFeature::check_for_compute_string(session, &eval, file_symbol,&call_expr, offset, &mut links) ||
+              DefinitionFeature::check_for_module_string(session, &eval, file_symbol, &file_info.borrow().uri, &mut links) ||
               DefinitionFeature::check_for_model_string(session, &eval, file_symbol, &mut links) ||
               DefinitionFeature::check_for_xml_id_string(session, &eval, file_symbol, &mut links) {
+                index += 1;
+                continue;
+            }
+            if matches!(eval.value, Some(EvaluationValue::CONSTANT(_))) {
+                // Skip go to definition on literals
                 index += 1;
                 continue;
             }
@@ -176,8 +277,8 @@ impl DefinitionFeature {
                 continue;
             };
             if let Some(file) = symbol.borrow().get_file() {
-                //if the symbol is at the given offset, let's take the next evaluation instead
-                if Rc::ptr_eq(&file.upgrade().unwrap(), file_symbol) && symbol.borrow().has_range() && symbol.borrow().range().contains(TextSize::new(offset as u32)) {
+                //For import variable, we should take the next evaluation if we are at the same location than the offset, as the get_symbol will return the current import variable (special case as the definition is from outside the file)
+                if symbol.borrow().typ() == SymType::VARIABLE && symbol.borrow().as_variable().is_import_variable && Rc::ptr_eq(&file.upgrade().unwrap(), file_symbol) && symbol.borrow().has_range() && symbol.borrow().range().contains(TextSize::new(offset as u32)) {
                     evaluations.remove(index);
                     let symbol = symbol.borrow();
                     let sym_eval = symbol.evaluations();
@@ -191,9 +292,10 @@ impl DefinitionFeature {
                         SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
                         _ => path.clone()
                     };
-                    let range = match symbol.borrow().typ() {
-                        SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                        _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range()),
+                    let range = if symbol.borrow().has_range() {
+                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range())
+                    } else {
+                        Range::default()
                     };
                     links.push(LocationLink{
                         origin_selection_range: None,
@@ -214,8 +316,8 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character);
-        let data = file_info.borrow().file_info_ast.borrow().text_rope.as_ref().unwrap().to_string();
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
+        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             let root = document.root_element();
@@ -233,9 +335,10 @@ impl DefinitionFeature {
                                     SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
                                     _ => path.clone()
                                 };
-                                let range = match s.borrow().typ() {
-                                    SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                    _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range()),
+                                let range = if s.borrow().has_range() {
+                                    session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range())
+                                } else {
+                                    Range::default()
                                 };
                                 let link_range = if link_range.is_some() {
                                     Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
