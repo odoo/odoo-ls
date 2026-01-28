@@ -101,8 +101,15 @@ impl PythonArchBuilder {
             file_info_rc.borrow_mut().prepare_ast(session);
         }
         let file_info = file_info_rc.borrow();
-        if file_info.file_info_ast.borrow().indexed_module.is_some() {
-            let file_info_ast= file_info.file_info_ast.borrow();
+        let file_info_ast_rc = file_info.file_info_ast.clone();
+        let file_noqa =if self.file_mode {
+             file_info.noqas_blocs.get(&0).cloned()
+        } else {
+            None
+        };
+        drop(file_info);
+        let file_info_ast= file_info_ast_rc.borrow();
+        if file_info_ast.indexed_module.is_some() {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
@@ -123,14 +130,13 @@ impl PythonArchBuilder {
             let old_stack_noqa = session.noqas_stack.clone();
             session.noqas_stack.clear();
             let old_noqa = if self.file_mode {
-                let file_noqa = file_info.noqas_blocs.get(&0);
                 if let Some(file_noqa) = file_noqa {
-                    session.noqas_stack.push(file_noqa.clone());
+                    session.noqas_stack.push(file_noqa);
                 }
                 symbol.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack)); //only set for file, functions are set in visit_func_def
                 let old = session.current_noqa.clone();
                 session.current_noqa = symbol.borrow().get_noqas().clone();
-                symbol.borrow_mut().set_processed_text_hash(file_info.file_info_ast.borrow().text_hash);
+                symbol.borrow_mut().set_processed_text_hash(file_info_ast.text_hash);
                 old
             } else {
                 session.noqas_stack.push(symbol.borrow().get_noqas().clone());
@@ -150,7 +156,6 @@ impl PythonArchBuilder {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
             } else {
-                drop(file_info);
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.publish_diagnostics(session);
             }

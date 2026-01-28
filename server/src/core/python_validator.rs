@@ -107,14 +107,16 @@ impl PythonValidator {
                     self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if file_info.file_info_ast.borrow().indexed_module.is_some() {
+                let file_info_ast_rc = file_info.file_info_ast.clone();
+                let file_info_ast = file_info_ast_rc.borrow();
+                drop(file_info);
+                if file_info_ast.indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = self.sym_stack[0].borrow().get_noqas();
-                    let file_info_ast = file_info.file_info_ast.borrow();
                     self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
                     session.current_noqa = old_noqa;
                 }
-                drop(file_info);
+                drop(file_info_ast);
                 if self.sym_stack[0].borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
                     ModuleSymbol::validate_manifest(&self.sym_stack[0], session);
                 }
@@ -152,8 +154,10 @@ impl PythonValidator {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
-                if file_info.file_info_ast.borrow().indexed_module.is_some() {
-                    let file_info_ast = file_info.file_info_ast.borrow();
+                let file_info_ast_rc = file_info.file_info_ast.clone();
+                let file_info_ast = file_info_ast_rc.borrow();
+                drop(file_info);
+                if file_info_ast.indexed_module.is_some() {
                     let func_index = self.sym_stack[0].borrow().node_index().unwrap().load();
                     if func_index != NodeIndex::NONE {
                         let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(func_index);
