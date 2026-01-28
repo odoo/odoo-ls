@@ -2,7 +2,7 @@ use lsp_types::{Diagnostic, NumberOrString};
 use once_cell::sync::Lazy;
 use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc};
 
-use odoo_ls_server::{S, core::{file_mgr::FileInfo, symbols::symbol::Symbol}, threads::SessionInfo, utils::compare_semver};
+use odoo_ls_server::{S, core::{file_mgr::FileInfo, symbols::symbol::Symbol}, features::ast_utils::AstUtils, threads::SessionInfo, utils::compare_semver};
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
@@ -129,4 +129,43 @@ pub fn verify_diagnostics_against_doc(
             }).collect::<Vec<String>>().join(", "),
         );
     }
+}
+
+pub fn get_resolved_symbols_at_position(
+    session: &mut SessionInfo,
+    file_symbol: &Rc<RefCell<Symbol>>,
+    file_info: &Rc<RefCell<FileInfo>>,
+    line: u32,
+    character: u32,
+) -> Vec<Rc<RefCell<Symbol>>> {
+    // Get evaluations at the given position
+    let offset = file_info
+        .borrow()
+        .position_to_offset(line, character, session.sync_odoo.encoding);
+    let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
+    let file_info_ast_ref = file_info_ast_clone.borrow();
+    let (analyse_ast_result, _, _, _) =
+        AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
+    let evals = analyse_ast_result.evaluations;
+    assert!(
+        !evals.is_empty(),
+        "No evaluations at line {line} character {character}"
+    );
+
+    // Follow refs for each evaluation to resolve final types
+    evals
+        .iter()
+        .flat_map(|eval| {
+            Symbol::follow_ref(
+                eval.symbol.get_symbol_ptr(),
+                session,
+                &mut None,
+                false,
+                false,
+                None,
+                None,
+            )
+        })
+        .filter_map(|ev| ev.upgrade_weak())
+        .collect()
 }
