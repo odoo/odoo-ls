@@ -651,7 +651,9 @@ impl PythonArchBuilder {
 
     fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
         self.visit_expr(session, &named_expr.value);
-        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", named_expr.target.as_name_expr().unwrap().id), &named_expr.target.range());
+        if let Some(name_expr) = named_expr.target.as_name_expr() { // Only handle valid named expressions
+            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &named_expr.target.range());
+        }
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
