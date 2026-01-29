@@ -1401,10 +1401,13 @@ impl Symbol {
 
     /**
      * Return the tree without the entrypoint tree.
+     * As long as the tree starts with the entrypoint tree,
+     * otherwise return the full tree, even if it is related to an entrypoint.
+     * Which is possible due to relative imports e.g. `from ..module import X`.
      */
     pub fn get_local_tree(&self) -> Tree {
         let (mut tree, entry) = self.get_tree_and_entry();
-        if let Some(entry) = entry {
+        if let Some(entry) = entry && tree.0.starts_with(&entry.borrow().tree) {
             tree.0.drain(0..entry.borrow().tree.len());
         }
         tree
