@@ -3,7 +3,7 @@ use core::fmt;
 
 
 pub const EXTENSION_NAME: &str = "Odoo";
-pub const EXTENSION_VERSION: &str = "1.1.2";
+pub const EXTENSION_VERSION: &str = "1.1.3";
 
 pub const MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART: u32 = 10;
 

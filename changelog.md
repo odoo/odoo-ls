@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.1.3] - 2026/02/02 - Various fixes
+
+### Fixes
+
+- Fix failure to detect models when `CachedModel` is missing
+- Fix crash on SQL datafiles
+- Fix crash on missing python command
+- Fix crash on model classes outside a module
+- Load modules in the same order Odoo load them
+- Ignore invalid `Named` expression on incomplete AST
+- Handle models subscripts like `self.search([])[:5]`
+- Add missing Self evaluation to `search` method on BaseModel
+- Methods `__init_subclass__` and `__class_getitem__` are now automatically detected as `classmethod`s
+- Allow `M2OReference` on `inverse_name`
+- Fix index calculation in the arguments of functions
+- Fix crash on empty config received from client
+- Improve borrowing to avoid some borrow errors
+- `next_ref` will now rebuild descriptor on-the-fly if needed
+- Fix `follow_ref` sometimes dropping evaluations incorrectly
+- Remove wrong stop_on_type in features
+- Check all relational fields during domain validation
+- Correctly identify non-registry model classes
+- Update typeshed
+- Improve the `env.__getitem__` to handle multiple evaluation
+- Improve the `follow_ref` method to handle `typing.Self` evaluations
+
 ## [1.1.2] - 2025/12/10 - CachedModel fixes
 
 ### Server
