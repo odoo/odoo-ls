@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 
 
 
@@ -108,26 +108,26 @@ impl XmlValidator {
 
     fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: &OdooDataRecord, all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>, missing_model_dependencies: &mut HashSet<OYarn>) {
         //Compute mandatory fields
-        let mut mandatory_fields: Vec<String> = vec![];
-        for (field_name, field_sym) in all_fields.iter() {
-            for (fs, deps) in field_sym.iter() {
-                if deps.is_none() {
-                    let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-                    .any(|eval|
-                        eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-                        .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
-                    );
-                    let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-                    .any(|eval|
-                        eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-                        .context.contains_key("default")
-                    );
-                    if has_required && !has_default {
-                        mandatory_fields.push(field_name.to_string());
-                    }
-                }
-            }
-        }
+        // let mut mandatory_fields: Vec<String> = vec![];
+        // for (field_name, field_sym) in all_fields.iter() {
+        //     for (fs, deps) in field_sym.iter() {
+        //         if deps.is_none() {
+        //             let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+        //             .any(|eval|
+        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+        //                 .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
+        //             );
+        //             let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+        //             .any(|eval|
+        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+        //                 .context.contains_key("default")
+        //             );
+        //             if has_required && !has_default {
+        //                 mandatory_fields.push(field_name.to_string());
+        //             }
+        //         }
+        //     }
+        // }
         //check each field in the record
         for field in &xml_data_record.fields {
             let mut field_name = Sy!(field.name.clone());
@@ -189,7 +189,7 @@ impl XmlValidator {
             }
             //Check that the field belong to the model
             if all_fields.contains_key(&field_name) {
-                mandatory_fields.retain(|f| f != &field_name.to_string());
+                // mandatory_fields.retain(|f| f != &field_name.to_string());
                 //Check specific attributes
                 let (Some(field_text), Some(field_text_range)) = (field.text.as_ref(), field.text_range.as_ref()) else {
                     continue;
