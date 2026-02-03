@@ -144,14 +144,19 @@ impl FileInfo {
             _ => {},
         }
         self.diagnostics.clear();
-        if let Some(content) = content {
+        if let (Some(content), Some(version)) = (content, version) {
             // If we are in did open, we create a new text_document
             // I.E. we have one content change event with no range
             // See [`Odoo:handle_did_open`]
             if content.len() == 1 && content[0].range.is_none() {
                 self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content[0].text.clone(), self.version.expect("Expected version on file did Open")));
             } else {
-                self.file_info_ast.borrow_mut().text_document.as_mut().unwrap().apply_changes(content.clone(), version.unwrap(), session.sync_odoo.encoding);
+                if let Some(text_document_mut) = self.file_info_ast.borrow_mut().text_document.as_mut(){
+                    text_document_mut.apply_changes(content.clone(), version, session.sync_odoo.encoding);
+                } else {
+                    session.show_message(MessageType::WARNING, format!("Invalid file state at: {}, consider reloading the file or restarting the server", path));
+                    return false;
+                };
             }
         } else if is_untitled {
             session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
@@ -168,7 +173,7 @@ impl FileInfo {
             };
         }
         let mut hasher = DefaultHasher::new();
-        self.file_info_ast.borrow_mut().text_document.clone().unwrap().hash(&mut hasher);
+        self.file_info_ast.borrow_mut().text_document.clone().expect("Expected text_document to be set").hash(&mut hasher);
         let old_hash = self.file_info_ast.borrow().text_hash;
         self.file_info_ast.borrow_mut().text_hash = hasher.finish();
         if old_hash == self.file_info_ast.borrow().text_hash {
