@@ -99,6 +99,8 @@ pub struct SyncOdoo {
     pub capabilities: lsp_types::ClientCapabilities,
     pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
+    pub evaluation_search: Option<Rc<RefCell<Symbol>>>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
+    pub evaluation_locations: Vec<Location>,
 
     pub test_mode: bool,
 }
@@ -145,6 +147,8 @@ impl SyncOdoo {
             capabilities: lsp_types::ClientCapabilities::default(),
             encoding: PositionEncoding::Utf16,
             opened_files: vec![],
+            evaluation_search: None,
+            evaluation_locations: vec![],
 
             test_mode: false,
         };
