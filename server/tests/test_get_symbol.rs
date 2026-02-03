@@ -310,13 +310,13 @@ fn test_model_subscription() {
 #[test]
 fn test_references() {
     // setup
-    let mut odoo = setup::setup::setup_server(true);
+    let (mut odoo, config) = setup::setup::setup_server(true);
     let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module1_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
     // test file exists
     assert!(PathBuf::from(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
-    let mut session = setup::setup::create_session(&mut odoo);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let m1_tf_file_info = file_mgr.borrow().get_file_info(&module1_test_file).unwrap();

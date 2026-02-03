@@ -102,6 +102,8 @@ pub struct SyncOdoo {
     pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
     pub symbol_table: SymbolTable,
+    pub evaluation_search: Option<SymbolKey>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
+    pub evaluation_locations: Vec<Location>,
 
     pub test_mode: bool,
 }
@@ -149,6 +151,8 @@ impl SyncOdoo {
             encoding: PositionEncoding::Utf16,
             opened_files: vec![],
             symbol_table: SymbolTable::new(),
+            evaluation_search: None,
+            evaluation_locations: vec![],
 
             test_mode: false,
         };

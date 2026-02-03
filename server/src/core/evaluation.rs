@@ -2,7 +2,9 @@ use itertools::Itertools;
 use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use lsp_types::{Diagnostic, Position, Range};
+use lsp_types::{Diagnostic, Location, Position, Range};
+use tracing::error;
+use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
@@ -662,6 +664,7 @@ impl Evaluation {
         let mut evals = vec![];
         let mut diagnostics = vec![];
         let module = st!().find_module(parent);
+        let mut found_one_reference = false;
 
         match ast {
             ExprOrIdent::Expr(Expr::StringLiteral(expr)) => {
@@ -956,6 +959,9 @@ impl Evaluation {
                             Some(ContextValue::SYMBOL(s)) => *s,
                             _ => Weak::null(),
                         };
+                        if session.sync_odoo.evaluation_search.is_some() {
+                            Evaluation::search_reference_in_arg(session, expr, parent);
+                        }
                         if is_in_validation {
                             let on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool());
                             call_argument_diagnostics.last_mut().unwrap().extend(Evaluation::validate_call_arguments(session,
@@ -1214,11 +1220,13 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::BinOp(operator)) => {
-                match operator.op {
-                    Operator::Add => {
-
-                    },
-                    _ => {}
+                if odoo.evaluation_search.is_some() {
+                    match operator.op {
+                        Operator::Add | Operator::Mult | Operator::Sub | Operator::Div | Operator::BitAnd | Operator::BitOr | Operator::BitXor |Operator::FloorDiv | Operator::LShift | Operator::MatMult | Operator::Mod | Operator::Pow | Operator::RShift => {
+                            Evaluation::eval_from_ast(session, &operator.left, parent.clone(), max_infer, false, required_dependencies);
+                            Evaluation::eval_from_ast(session, &operator.right, parent.clone(), max_infer, false, required_dependencies);
+                        }
+                    }
                 }
             },
             ExprOrIdent::Expr(Expr::If(if_expr)) => {
@@ -1250,6 +1258,9 @@ impl Evaluation {
                             value: None,
                             range: Some(unary_operator.range()),
                         });
+                        if odoo.evaluation_search.is_some() { //Still evaluate if we are searching for something
+                            Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer, for_annotation, required_dependencies);
+                        }
                         break 'u_op_block
                     },
                 };
@@ -1298,6 +1309,30 @@ impl Evaluation {
                 );
             }
             _ => {}
+        }
+        if let Some(evaluation_search) = session.sync_odoo.evaluation_search {
+            for eval in evals.iter() {
+                if eval.symbol.sym.is_weak() && let Some(weak) = eval.symbol.sym.as_weak().weak.upgrade(&st!()) {
+                    if weak == evaluation_search {
+                        if found_one_reference {
+                            //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
+                            continue;
+                        }
+                        let file = st!().get_file(parent).unwrap();
+                        let file_path = &st!().paths(file)[0];
+                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(file_path);
+                        if let Some(file_info) = file_info {
+                            found_one_reference = true;
+                            let range= ast.range();
+                            let tranformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
+                            session.sync_odoo.evaluation_locations.push(Location {
+                                uri: FileMgr::pathname2uri(file_path),
+                                range: tranformed_range,
+                            });
+                        }
+                    }
+                }
+            }
         }
         AnalyzeAstResult { evaluations: evals, diagnostics }
     }
@@ -1688,6 +1723,18 @@ impl Evaluation {
             }
         }
         diagnostics
+    }
+
+    fn search_reference_in_arg(session: &mut SessionInfo, expr_call: &ExprCall, parent: SymbolKey) {
+        for arg in expr_call.arguments.args.iter() {
+            if arg.is_starred_expr() {
+                continue;
+            }
+            let (_, diags) = Evaluation::eval_from_ast(session, arg, parent, &expr_call.range.start(), false, &mut vec![]);
+        }
+        for arg in expr_call.arguments.keywords.iter() {
+            let (_, diags) = Evaluation::eval_from_ast(session, &arg.value, parent, &expr_call.range.start(), false, &mut vec![]);
+        }
     }
 }
 
