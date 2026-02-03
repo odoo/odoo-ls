@@ -19,7 +19,7 @@ use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use lsp_server::{RequestId, ResponseError};
+use lsp_server::{ErrorCode, RequestId, ResponseError};
 use lsp_types::notification::{Notification, Progress};
 use lsp_types::request::WorkDoneProgressCreate;
 use lsp_types::*;
@@ -1377,7 +1377,13 @@ impl Odoo {
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
                     Ok(path) => path.sanitize(),
-                    Err(_) => return Ok(None),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document_position_params.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
                 }
             },
             Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
@@ -1424,7 +1430,13 @@ impl Odoo {
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
                     Ok(path) => path.sanitize(),
-                    Err(_) => return Ok(None),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document_position_params.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
                 }
             },
             Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
@@ -1509,7 +1521,13 @@ impl Odoo {
                 }
                 match params.text_document_position.text_document.uri.to_file_path(){
                     Ok(path) => (schema, path.sanitize()),
-                    Err(_) => return Ok(None),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document_position.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
                 }
             },
             Some(schema) if schema == "untitled" => (schema, params.text_document_position.text_document.uri.to_string()),
@@ -1582,7 +1600,12 @@ impl Odoo {
             return
         }
         for uri in file_uris.iter() {
-            let path = uri.to_file_path().unwrap();
+            let Ok(path) = uri.to_file_path() else {
+                let msg = format!("Invalid file URI: {}", uri.to_string());
+                session.log_message(MessageType::ERROR, msg.clone());
+                warn!("{}", &msg);
+                continue;
+            };
             if Odoo::check_handle_config_file_update(session, &path) {
                 continue; //config file update, handled by the config file handler
             }
@@ -1639,7 +1662,10 @@ impl Odoo {
                         }
                     },
                     Err(_) => {
-                        warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
+                        let msg = format!("Invalid file URI: {}", params.text_document.uri.to_string());
+                        session.log_message(MessageType::ERROR, msg.clone());
+                        session.show_message(MessageType::ERROR, msg.clone());
+                        warn!("{}", &msg);
                         return;
                     }
                 }
@@ -1681,7 +1707,7 @@ impl Odoo {
                 match params.text_document.uri.to_file_path().map(|path_buf| path_buf.sanitize()){
                     Ok(path) => path,
                     Err(_) => {
-                        warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
+                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
                         return;
                     }
                 }
@@ -1830,7 +1856,7 @@ impl Odoo {
                 match params.text_document.uri.to_file_path(){
                     Ok(path) => (schema, path.sanitize()),
                     Err(_) => {
-                        warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
+                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
                         return;
                     }
                 }
@@ -1859,7 +1885,12 @@ impl Odoo {
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
-        let path = params.text_document.uri.to_file_path().unwrap();
+        let Ok(path) = params.text_document.uri.to_file_path() else {
+            let msg = format!("Invalid file URI: {}", params.text_document.uri.to_string());
+            session.log_message(MessageType::ERROR, msg.clone());
+            warn!("{}", &msg);
+            return;
+        };
         if Odoo::check_handle_config_file_update(session, &path) {
             return; //config file update, handled by the config file handler
         }
@@ -1900,7 +1931,7 @@ impl Odoo {
                 match params.text_document.uri.to_file_path(){
                     Ok(path) => (schema, path.sanitize()),
                     Err(_) => {
-                        warn!("Unable to get file path from URI: {}", params.text_document.uri.to_string());
+                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
                         return Ok(None);
                     }
                 }
