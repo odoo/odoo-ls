@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc, Weak}, u32};
+use std::{cell::RefCell, cmp, collections::HashMap, path::{Path, PathBuf}, rc::{Rc, Weak}, u32};
 
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
@@ -201,9 +201,13 @@ impl EntryPointMgr {
                         warn!("new custom entry point for manifest without related init.py is not supported outside of main entry point. skipping...");
                         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(tree_path);
                     } else {
-                        // There was an __init__.py, that was renamed or deleted.
-                        // Another notification will come for the deletion of the file, so we just warn here.
-                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", new_sym.borrow().paths());
+                        if Path::new(file_path).exists() || !file_path.ends_with("__init__.py") {
+                            // a file exists, or does not end with __init__.py
+                            // This should be unreachable.
+                            warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", new_sym.borrow().paths());
+                        }
+                        // Otherwise, this is okay, this is an old didOpen on a file that has been deleted
+                        // a didClose will come after anyway
                     }
                     return false;
                 }
