@@ -1729,7 +1729,7 @@ impl Odoo {
             file_info.borrow_mut().opened = false;
             file_info.borrow_mut().version = None;
         }
-        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
+        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&PathBuf::from(path).to_tree_path().sanitize());
     }
 
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &String) {
@@ -1845,7 +1845,7 @@ impl Odoo {
             //1 - delete old uri
             let _ = SyncOdoo::unload_path(session, &PathBuf::from(&path), false);
             FileMgr::delete_path(session, &path);
-            session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&path);
+            session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&PathBuf::from(path).to_tree_path().sanitize());
         }
         SyncOdoo::process_rebuilds(session, false);
     }
