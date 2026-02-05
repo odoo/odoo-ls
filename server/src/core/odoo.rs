@@ -1103,6 +1103,12 @@ impl SyncOdoo {
         path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
     }
 
+    fn is_non_main_manifest_file(file_symbol: &Rc<RefCell<Symbol>>, file_path_buff: &PathBuf) -> bool {
+        file_symbol.borrow().get_entry().map_or(false, |e| !e.borrow().is_main())
+        && file_path_buff.components().last()
+        .map_or(false, |c| c.as_os_str().to_str().map_or(false, |s| s == "__manifest__.py"))
+    }
+
     pub fn refresh_evaluations(session: &mut SessionInfo) {
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
@@ -1389,7 +1395,12 @@ impl Odoo {
             Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
             _ => return Ok(None),
         };
-        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+        let file_path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+            if SyncOdoo::is_non_main_manifest_file(&file_symbol, &file_path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
             if let Some(file_info) = file_info {
                 if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
@@ -1442,7 +1453,12 @@ impl Odoo {
             Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
             _ => return Ok(None),
         };
-        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+        let file_path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+            if SyncOdoo::is_non_main_manifest_file(&file_symbol, &file_path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
                 if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
@@ -1477,8 +1493,13 @@ impl Odoo {
             params.text_document_position.position.character));
         let uri = params.text_document_position.text_document.uri.to_string();
         let path = FileMgr::uri2pathname(uri.as_str());
+        let file_path_buf = PathBuf::from(path.clone());
         if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
-            if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(path.clone())) {
+            if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+                if SyncOdoo::is_non_main_manifest_file(&file_symbol, &file_path_buf) {
+                    //If the file is not in main entry, and is a manifest file, we skip it
+                    return Ok(None);
+                }
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
                     if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
@@ -1535,6 +1556,10 @@ impl Odoo {
         };
         let path_buf = PathBuf::from(path.clone());
         if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &path_buf) {
+            if SyncOdoo::is_non_main_manifest_file(&file_symbol, &path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
             if let Some(file_info) = file_info {
                 if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
