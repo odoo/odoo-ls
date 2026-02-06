@@ -15,7 +15,6 @@ use tracing::error;
 
 use crate::constants::{CONFIG_WIKI_URL};
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
-use crate::core::file_mgr::FileMgr;
 use crate::threads::SessionInfo;
 use crate::utils::{fill_validate_path, get_python_command, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
 use crate::S;
