@@ -18,7 +18,6 @@ use crate::threads::SessionInfo;
 use crate::S;
 
 use super::file_mgr::FileMgr;
-use super::python_validator::PythonValidator;
 use super::symbols::function_symbol::{Argument, ArgumentType};
 use super::symbols::symbol_mgr::SectionIndex;
 

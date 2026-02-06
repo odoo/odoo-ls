@@ -5,7 +5,6 @@ use weak_table::traits::WeakElement;
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::file_mgr::{FileMgr, NoqaInfo};
-use crate::core::python_validator::PythonValidator;
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
