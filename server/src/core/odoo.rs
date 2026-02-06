@@ -742,7 +742,6 @@ impl SyncOdoo {
         session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
-        let mut already_validation_rebuilt: HashSet<Tree> = HashSet::new();
 
         //workdone progress
         let mut last_update_status = Instant::now() - Duration::from_secs(10);
@@ -774,6 +773,9 @@ impl SyncOdoo {
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
             if let Some(sym_key) = sym {
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FROM ARCH - {}", st!().debug_path(sym_key));
+                }
                 let (tree, entry) = st!().get_tree_and_entry(sym_key);
                 if already_arch_rebuilt.contains(&tree) {
                     info!("Already arch rebuilt, skipping");
@@ -785,25 +787,26 @@ impl SyncOdoo {
                 continue;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH_EVAL);
-            if let Some(sym_rc) = sym {
-                let (tree, entry) = st!().get_tree_and_entry(sym_rc);
+            if let Some(sym_key) = sym {
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FROM ARCH_EVAL - {}", st!().debug_path(sym_key));
+                }
+                let (tree, entry) = st!().get_tree_and_entry(sym_key);
                 if already_arch_eval_rebuilt.contains(&tree) {
                     info!("Already arch eval rebuilt, skipping");
                     continue;
                 }
                 already_arch_eval_rebuilt.insert(tree);
-                let mut builder = PythonArchEval::new(entry.unwrap(), sym_rc);
+                let mut builder = PythonArchEval::new(entry.unwrap(), sym_key);
                 builder.eval_arch(session);
                 continue;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::VALIDATION);
             if let Some(sym_key) = sym {
-                let (tree, entry) = st!().get_tree_and_entry(sym_key);
-                if already_validation_rebuilt.contains(&tree) {
-                    info!("Already validation rebuilt, skipping");
-                    continue;
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FROM VALIDATION - {}", st!().debug_path(sym_key));
                 }
-                already_validation_rebuilt.insert(tree);
+                let (_, entry) = st!().get_tree_and_entry(sym_key);
                 if session.sync_odoo.state_init == InitState::ODOO_READY {
                     let mut no_validation = no_validation;
                     if session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
@@ -975,6 +978,9 @@ impl SyncOdoo {
     }
 
     pub fn remove_from_rebuild(&mut self, symbol: SymbolKey, step: BuildSteps) {
+        if DEBUG_STEPS {
+            trace!("REMOVED FROM {step:?} - {}", self.symbol_table.debug_path(symbol));
+        }
         if step == BuildSteps::ARCH {
             self.rebuild_arch.remove(&symbol);
         } else if step == BuildSteps::ARCH_EVAL {
