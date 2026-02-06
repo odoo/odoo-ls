@@ -1,5 +1,5 @@
-use ruff_python_ast::{ModModule, PySourceType, Stmt};
-use ruff_python_parser::{Parsed, Token, TokenKind};
+use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
+use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
