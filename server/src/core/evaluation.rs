@@ -659,6 +659,24 @@ impl Evaluation {
         (None, value.diagnostics)
     }
 
+    /* Given an Expr, try to return the single Symbol it evaluates to. None if it can't be achieved */
+    pub fn expr_to_symbol(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<Weak<RefCell<Symbol>>>, Vec<Diagnostic>) {
+        let (evaluations, eval_diagnostics) = Evaluation::eval_from_ast(session, ast, parent, max_infer, for_annotation, &mut vec![]);
+        if evaluations.len() != 1 {
+            return (None, eval_diagnostics);
+        }
+        let eval = &evaluations[0];
+        let eval_symbol = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
+        let evals = Symbol::follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
+        if evals.len() != 1 {
+            return (None, eval_diagnostics);
+        }
+        if let EvaluationSymbolPtr::WEAK(w) = &evals[0] && !w.weak.is_expired() {
+            return (Some(w.weak.clone()), eval_diagnostics);
+        }
+        (None, eval_diagnostics)
+    }
+
 
     /**
     analyze_ast will extract all known information about an ast:

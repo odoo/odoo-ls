@@ -1059,6 +1059,7 @@ impl PythonArchEvalHooks {
             ("delegate", "bool"),
             ("required", "bool"),
             ("default", "bool"),
+            ("translate", "bool_or_callable"),
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
@@ -1082,6 +1083,20 @@ impl PythonArchEvalHooks {
                     if arg_name == "default" {
                         result_context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
                     }
+                },
+                "bool_or_callable" => {
+                    if let Some(boolean) = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0 {
+                        result_context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                        continue;
+                    }
+                    if let Some(weak_sym) = Evaluation::expr_to_symbol(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0 {
+                        // We don't actually check whether it's a callable other than a function, as it's not needed for now. 
+                        // For the "translate" arg, this is expected to be the `html_translate` or `xml_translate` functions.
+                        if let Some(symbol) = weak_sym.upgrade() && symbol.borrow().typ() == SymType::FUNCTION {
+                            result_context.insert(S!(arg_name), ContextValue::SYMBOL(weak_sym));
+                        };
+                    }
+
                 },
                 _ => {}
             }
