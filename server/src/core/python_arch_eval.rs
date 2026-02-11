@@ -784,7 +784,7 @@ impl PythonArchEval {
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
                     let arg_sym = st!()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
-                    let evaluation = Evaluation::eval_from_symbol(&st!(), scope, Some(!is_class_method));
+                    let evaluation = Evaluation::new_self(scope, Some(!is_class_method));
                     st!()[v].evaluations.push(evaluation);
                     is_first = false;
                     continue;
@@ -1044,10 +1044,12 @@ impl PythonArchEval {
                     None
                 ).len() > 0
             ){
-                st!()[func_sym].evaluations = vec![Evaluation::new_self()];
+                if let Some(base) = st!().get_in_parents(func_sym.into(), &[SymType::CLASS], true) {
+                    let is_class_method = st!()[func_sym].is_class_method;
+                    st!()[func_sym].evaluations = vec![Evaluation::new_self(base, Some(!is_class_method))];
+                }
                 return;
             }
-            // @arena: this for loop below is dead code (evaluations is never read or assigned)
             for eval in evaluations.iter_mut() { //as this is an evaluation, we need to set the instance to true
                 match eval.symbol.get_mut_symbol_ptr() {
                     EvaluationSymbolPtr::WEAK(sym_weak) => {

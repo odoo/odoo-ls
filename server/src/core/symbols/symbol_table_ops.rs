@@ -117,6 +117,7 @@ impl SymbolTable {
         tree
     }
 
+    // @arena todo: take impl Into<SymbolKey> and convert to key at the beginning of the method
     pub fn get_in_parents(&self, target: SymbolKey, sym_types: &[SymType], stop_same_file: bool) -> Option<SymbolKey> {
         let target_type = target.typ();
         if sym_types.contains(&target_type) {
@@ -1853,7 +1854,7 @@ impl SymbolTable {
             if !get_result.weak.is_expired(&st!()) {
                 let mut eval = Evaluation::eval_from_symbol(&st!(), get_result.weak, get_result.instance);
                 match eval.symbol.get_mut_symbol_ptr() {
-                    EvaluationSymbolPtr::WEAK(weak) => {
+                    EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
                         if let Some(eval_sym) = weak.weak.upgrade(&st!()) {
                             if eval_sym == class_key.into() {
                                 continue;
@@ -1877,7 +1878,7 @@ impl SymbolTable {
         for eval in evaluations.iter() {
             let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
             let mut sym = eval.symbol.get_symbol(session, ctx, &mut vec![], None);
-            if let EvaluationSymbolPtr::WEAK(ref mut w) = sym {
+            if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
                 if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
                     if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
                         w.context.insert(S!("base_attr"), base_attr.clone());
@@ -1968,10 +1969,14 @@ impl SymbolTable {
         let mut results = Vec::new();
         let mut visited = HashSet::new();
         while let Some(current_eval) = work_queue.pop_front() {
-            let EvaluationSymbolPtr::WEAK(next_ref_weak) = &current_eval else  {
-                // Non-weak references are final
-                results.push(current_eval);
-                continue;
+            let next_ref_weak = match &current_eval {
+                EvaluationSymbolPtr::WEAK(weak)
+                | EvaluationSymbolPtr::SELF(weak) => weak,
+                _ => {
+                    // Non-weak references are final
+                    results.push(current_eval);
+                    continue;
+                }
             };
             let Some(sym_key) = next_ref_weak.weak.upgrade(&st!()) else {
                 // Discard evaluation to expired reference
@@ -2017,8 +2022,12 @@ impl SymbolTable {
                     // /!\ we want to keep instance = True if previous evaluation was set to True!
                     if next_ref_weak_instance.is_some_and(|v| v) {
                         next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
-                            if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
-                                weak.instance = Some(true);
+                           match next_results {
+                                EvaluationSymbolPtr::WEAK(ref mut weak)
+                                | EvaluationSymbolPtr::SELF(ref mut weak) =>  {
+                                    weak.instance = Some(true);
+                                },
+                                _ => {}
                             }
                             next_results
                         }).collect();
@@ -2045,7 +2054,7 @@ impl SymbolTable {
         if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
             results.retain(|r| {
                 match r {
-                    EvaluationSymbolPtr::WEAK(weak) => {
+                    EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
                         if let Some(key) = weak.weak.upgrade(&st!()) {
                             stop_on_tree_syms.iter().any(|&s| s == key)
                         } else {

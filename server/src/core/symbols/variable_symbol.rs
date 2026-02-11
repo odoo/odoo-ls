@@ -69,7 +69,7 @@ impl VariableSymbol {
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak(&st!()) {
                     if ["Many2one", "One2many", "Many2many"].contains(&st!().name(symbol).as_str()) {
-                        let Some(comodel) = eval_weak.as_weak().context.get("comodel_name") else {
+                        let Some(comodel) = eval_weak.get_weak().context.get("comodel_name") else {
                             continue;
                         };
                         let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", &comodel.as_string())).cloned() else {

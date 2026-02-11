@@ -314,4 +314,29 @@ impl Model {
             }
         }
     }
+
+    pub fn inherits_from(&self, session: &SessionInfo, base: &Rc<RefCell<Model>>) -> bool {
+        fn inner(this: &Model, session: &SessionInfo, base: &Rc<RefCell<Model>>, checked: &mut HashSet<OYarn>) -> bool {
+            if checked.contains(&this.name) {
+                return false;
+            }
+            checked.insert(this.name.clone());
+            let symbol_table = &session.sync_odoo.symbol_table;
+            for symbol in this.symbols.iter_valid(|&k| symbol_table.contains_key(k)) {
+                let Some(model_data) = &symbol_table[symbol]._model else {continue};
+                for inherit in model_data.inherit.iter() {
+                    if inherit == &base.borrow().name {
+                        return true;
+                    }
+                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
+                        if inner(&model.borrow(), session, base, checked) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }
+        inner(self, session, base, &mut HashSet::new())
+    }
 }

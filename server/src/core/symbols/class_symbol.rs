@@ -6,8 +6,8 @@ use crate::constants::OYarn;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::oyarn;
-use crate::core::symbols::symbol_table::{SymbolTable};
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, Weak};
+use crate::threads::SessionInfo;
 use crate::utils::NoHashBuilder;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -53,22 +53,33 @@ impl ClassSymbol {
         res
     }
 
-    // @arena: search stop when a visited class is encountered, instead of just skipping it. Bug?
-    pub fn inherits(symbol_table: &SymbolTable, class_key: ClassKey, base: ClassKey, checked: &mut Option<HashSet<ClassKey>>) -> bool {
+    pub fn inherits(session: &mut SessionInfo, class_key: ClassKey, base: ClassKey, checked: &mut Option<HashSet<ClassKey>>) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if checked.is_none() {
             *checked = Some(HashSet::new());
         }
-        let class_symbol = &symbol_table[class_key]; // former self on method
-        for b in class_symbol.bases.iter().filter_map(|w| w.upgrade(symbol_table)) {
+        let bases: Vec<_> = st!()[class_key].bases.iter().filter_map(|w| w.upgrade(&st!())).collect();
+        for b in bases {
             if b == base {
                 return true;
             }
             let checked_mut = checked.as_mut().unwrap();
             if checked_mut.contains(&b) {
-                return false;
+                continue;
             }
             checked_mut.insert(b);
-            if ClassSymbol::inherits(symbol_table, b, base, checked) {
+            if ClassSymbol::inherits(session, b, base, checked) {
+                return true;
+            }
+        }
+        if let (Some(self_model), Some(base_model)) = (
+            st!()[class_key]._model.as_ref().and_then(|model_data|
+                session.sync_odoo.models.get(&model_data.name).cloned()
+            ),
+            st!()[base]._model.as_ref().and_then(|model_data|
+                session.sync_odoo.models.get(&model_data.name).cloned()
+            )){
+            if self_model.borrow().inherits_from(session, &base_model) {
                 return true;
             }
         }

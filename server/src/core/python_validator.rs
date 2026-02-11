@@ -421,8 +421,8 @@ impl PythonValidator {
                         continue;
                     }
                     'related_check: {
-                        if let Some(related_field_name) = eval_weak.as_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(_))).map(|ctx_val| ctx_val.as_string()) {
-                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                        if let Some(related_field_name) = eval_weak.get_weak().context.get(&S!("related")).filter(|val| matches!(val, ContextValue::STRING(_))).map(|ctx_val| ctx_val.as_string()) {
+                            let Some(special_arg_range) = eval_weak.get_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 break 'related_check;
                             };
                             let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class, maybe_from_module);
@@ -478,8 +478,8 @@ impl PythonValidator {
                         }
                     }
                     'comodel_check: {
-                        if let Some(comodel_field_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) {
-                            let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                        if let Some(comodel_field_name) = eval_weak.get_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) {
+                            let Some(special_arg_range) = eval_weak.get_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 break 'comodel_check;
                             };
                             let Some(file_symbol) = st!().get_file(class.into()) else {
@@ -514,7 +514,7 @@ impl PythonValidator {
                         }
                     }
                     for special_fn_field_name in ["compute", "inverse", "search"]{
-                        let Some(method_name) = eval_weak.as_weak().context.get(&S!(special_fn_field_name)).map(|ctx_val| ctx_val.as_string()) else {
+                        let Some(method_name) = eval_weak.get_weak().context.get(&S!(special_fn_field_name)).map(|ctx_val| ctx_val.as_string()) else {
                             continue;
                         };
                         let Some(module) = maybe_from_module else {
@@ -531,7 +531,7 @@ impl PythonValidator {
                         );
                         let method_found = !symbols.is_empty();
                         if !method_found{
-                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("{special_fn_field_name}_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            let Some(arg_range) = eval_weak.get_weak().context.get(&format!("{special_fn_field_name}_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03018, &[&method_name]) {
@@ -543,8 +543,8 @@ impl PythonValidator {
 
                         }
                     }
-                    if let Some(inverse_name) = eval_weak.as_weak().context.get(&S!("inverse_name")).map(|ctx_val| ctx_val.as_string()) {
-                        let Some(comodel_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                    if let Some(inverse_name) = eval_weak.get_weak().context.get(&S!("inverse_name")).map(|ctx_val| ctx_val.as_string()) {
+                        let Some(comodel_name) = eval_weak.get_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
                             continue;
                         };
                         let Some(model) = session.sync_odoo.models.get(comodel_name.as_str()).cloned() else {
@@ -558,7 +558,7 @@ impl PythonValidator {
                             SymbolTable::get_member_symbol(session, main_sym.into(), &inverse_name, Some(module), false, true, false, true, false).0
                         ).collect();
                         if symbols.is_empty() {
-                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            let Some(arg_range) = eval_weak.get_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03021, &[&inverse_name, &comodel_name]) {
@@ -569,7 +569,7 @@ impl PythonValidator {
                             }
                         }
                         if symbols.iter().any(|&sym| !SymbolTable::is_specific_field(session, sym, &["Many2one", "Many2oneReference"])) {
-                            let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                            let Some(arg_range) = eval_weak.get_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03022, &[]) {
@@ -598,13 +598,13 @@ impl PythonValidator {
                                 }
                             }
                             for comodel_eval_weak in comodel_eval_weaks {
-                                let Some(comodel_name) = comodel_eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                                let Some(comodel_name) = comodel_eval_weak.get_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
                                     continue;
                                 };
                                 if comodel_name == model_name.to_string() { // valid
                                     continue;
                                 }
-                                let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
+                                let Some(arg_range) = eval_weak.get_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                     continue;
                                 };
                                 if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[&inverse_name, &model_name, &comodel_name]) {

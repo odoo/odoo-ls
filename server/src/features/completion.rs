@@ -866,7 +866,7 @@ fn complete_attribut(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, attr
                 let parent_sym_types = Symbol::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, None);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak() else {continue};
-                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.as_weak().is_super, false, false, attr.attr.id.as_str(), &None)
+                    add_model_attributes(session, &mut items, from_module.clone(), parent_sym, parent_sym_eval.get_weak().is_super, false, false, attr.attr.id.as_str(), &None)
                 }
             }
         }

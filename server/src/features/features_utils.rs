@@ -89,7 +89,7 @@ impl FeaturesUtils {
             );
         }
         if !followed_evals.iter().any(|eval|
-            eval.is_weak() && eval.as_weak().weak.upgrade().map(|sym| sym.borrow().is_field_class(session)).unwrap_or(false)
+            eval.has_weak() && eval.get_weak().weak.upgrade().map(|sym| sym.borrow().is_field_class(session)).unwrap_or(false)
         ) {
             return vec![];
         }
@@ -554,7 +554,7 @@ impl FeaturesUtils {
                 }
                 continue;
             };
-            let mut context = Some(eval_symbol.as_weak().context.clone());
+            let mut context = Some(eval_symbol.get_weak().context.clone());
             let evaluation_ptrs = Symbol::follow_ref(&eval_symbol, session, &mut context, false, false, None, None);
 
             let symbol_type = symbol.borrow().typ();
@@ -628,12 +628,13 @@ impl FeaturesUtils {
             return TypeInfo::VALUE(S!(""));
         }
         match eval {
-            EvaluationSymbolPtr::WEAK(eval_weak) => {
+            EvaluationSymbolPtr::WEAK(eval_weak) | EvaluationSymbolPtr::SELF(eval_weak)  => {
                 if let Some(inferred_type) = eval.upgrade_weak() {
                     let inferred_type = inferred_type.borrow();
                     match inferred_type.typ() {
                         SymType::FUNCTION if !inferred_type.as_func().is_property => {
-                            let call_parent = match eval.as_weak().context.get(&S!("base_attr")){
+                            let base_attr_ctx_ref = eval.get_weak().context.get(&S!("base_attr")).or(context.as_mut().and_then(|ctx| ctx.get(&S!("base_attr"))));
+                            let call_parent = match base_attr_ctx_ref {
                                 Some(ContextValue::SYMBOL(s)) => s.clone(),
                                 _ => {
                                     let parent = inferred_type.parent().and_then(|parent_weak| parent_weak.upgrade());
@@ -693,7 +694,7 @@ impl FeaturesUtils {
         let mut single_func_eval = false;
         //variable name
         if inferred_types.len() == 1
-        && inferred_types[0].eval_ptr.is_weak()
+        && inferred_types[0].eval_ptr.has_weak()
         && inferred_types[0].eval_ptr.upgrade_weak().unwrap().borrow().typ() == SymType::FUNCTION
         && !inferred_types[0].eval_ptr.upgrade_weak().unwrap().borrow().as_func().is_property {
             //display 'def' only if there is only a single evaluation to a function
@@ -703,7 +704,7 @@ impl FeaturesUtils {
             };
             value += &format!("def {}({}) -> ", symbol_name, arguments);
         } else {
-            if symbol_type == SymType::CLASS && inferred_types.len() == 1 && inferred_types[0].eval_ptr.is_weak() && inferred_types[0].eval_ptr.as_weak().is_super {
+            if symbol_type == SymType::CLASS && inferred_types.len() == 1 && inferred_types[0].eval_ptr.has_weak() && inferred_types[0].eval_ptr.get_weak().is_super {
                 value += &format!("(super[{}]) ", symbol_name);
             } else {
                 value += symbol_name;
