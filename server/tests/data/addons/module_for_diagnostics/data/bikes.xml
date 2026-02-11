@@ -93,4 +93,7 @@
     <record id="bikes.bike" model="ir.ui.view"><field name="model">module_2.empty_model</field></record> <!-- OLS05055 -->
     <record id="bikes.bike" model="ir.ui.view"><field name="model">wrong.model</field></record> <!-- OLS05056 -->
     <record id="bike_translation_1" model="bikes.bike"><field name="name@nl_WV">Da's gin geldige taal, jonge.</field></record> <!-- West Flemish is not a valid language, unfortunately (OLS05058: unknown language code) -->
+    <record id="bike_translation_2" model="bikes.bike"><field name="description@fr_BE">Non-translatable</field></record> <!-- OLS05059: field not translatable -->
+    <record id="bike_translation_3" model="bikes.bike"><field name="name@fr_BE">Valid translation</field></record> <!-- OK: valid lang, translatable field -->
+    <record id="bike_translation_3" model="bikes.bike"><field name="name@fr">Valid translation</field></record> <!-- OK: valid base lang, translatable field -->
 </odoo>

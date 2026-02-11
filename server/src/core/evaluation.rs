@@ -595,70 +595,47 @@ impl Evaluation {
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
     pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
-        let from_module;
-        if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
-        } else {
-            from_module = ContextValue::BOOLEAN(false);
-        }
-        let mut context: Option<Context> = Some(HashMap::from([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
-        ]));
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
-        if value.evaluations.len() == 1 { //only handle strict evaluations
-            let eval = &value.evaluations[0];
+        let (evaluations, eval_diagnostics) = Evaluation::eval_from_ast(session, ast, parent, max_infer, for_annotation, &mut vec![]);
+        if evaluations.len() == 1 { //only handle strict evaluations
+            let eval = &evaluations[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-            if let Some(v) = v {
-                match v {
-                    EvaluationValue::CONSTANT(v) => {
-                        match v {
-                            Expr::StringLiteral(s) => {
-                                return (Some(s.value.to_string()), value.diagnostics);
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
+            if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = v {
+                return (Some(s.value.to_string()), eval_diagnostics);
             }
         }
-        (None, value.diagnostics)
+        (None, eval_diagnostics)
     }
 
     /* Given an Expr, try to return the represented Boolean. None if it can't be achieved */
     pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
-        let from_module;
-        if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
-        } else {
-            from_module = ContextValue::BOOLEAN(false);
-        }
-        let mut context: Option<Context> = Some(HashMap::from([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
-        ]));
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
-        if value.evaluations.len() == 1 { //only handle strict evaluations
-            let eval = &value.evaluations[0];
+        let (evaluations, eval_diagnostics) = Evaluation::eval_from_ast(session, ast, parent, max_infer, for_annotation, &mut vec![]);
+        if evaluations.len() == 1 {
+            let eval = &evaluations[0];
             let v = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-            if let Some(v) = v {
-                match v {
-                    EvaluationValue::CONSTANT(v) => {
-                        match v {
-                            Expr::BooleanLiteral(s) => {
-                                return (Some(s.value), value.diagnostics);
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
+            if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(s))) = v {
+                return (Some(s.value), eval_diagnostics);
             }
         }
-        (None, value.diagnostics)
+        (None, eval_diagnostics)
     }
 
+    /* Given an Expr, try to return the single Symbol it evaluates to. None if it can't be achieved */
+    pub fn expr_to_symbol(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<Weak<RefCell<Symbol>>>, Vec<Diagnostic>) {
+        let (evaluations, eval_diagnostics) = Evaluation::eval_from_ast(session, ast, parent, max_infer, for_annotation, &mut vec![]);
+        if evaluations.len() != 1 {
+            return (None, eval_diagnostics);
+        }
+        let eval = &evaluations[0];
+        let eval_symbol = eval.symbol.get_symbol(session, &mut None, diagnostics, None);
+        let evals = Symbol::follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
+        if evals.len() != 1 {
+            return (None, eval_diagnostics);
+        }
+        if let EvaluationSymbolPtr::WEAK(w) = &evals[0] && !w.weak.is_expired() {
+            return (Some(w.weak.clone()), eval_diagnostics);
+        }
+        (None, eval_diagnostics)
+    }
 
     /**
     analyze_ast will extract all known information about an ast:

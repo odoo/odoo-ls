@@ -2799,6 +2799,28 @@ impl Symbol {
         }
     }
 
+     pub fn get_field_info(&self, session: &mut SessionInfo) -> Option<(OYarn, Context)> {
+        let evals = match self {
+            Self::Variable(v) => &v.evaluations,
+            _ => return None
+        };
+        if evals.len() != 1 {
+            // Ambiguous evaluations not supported for fields.
+            return None;
+        }
+        let weak_eval = evals[0].symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+        let sym_rc = weak_eval.weak.upgrade()?;
+        let sym = sym_rc.borrow();
+        if !sym.is_field_class(session) {
+            // Not a field.
+            return None
+        }
+        // TODO: check if just .name would'n be enough
+        let field_name = sym.get_main_entry_tree(session).1.last().cloned()?;
+        let context = weak_eval.context;
+        Some((field_name, context))
+    }
+
     pub fn match_tree_from_any_entry(&self, session: &mut SessionInfo, tree: &Tree) -> bool {
         let (mut self_tree, entry) = self.get_tree_and_entry();
         'outer: for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(&entry.unwrap()) {

@@ -45,6 +45,10 @@ fn test_ols05000s_xml_file() {
     let check_xml_warning = |ols_code: &str, line: u32| {
         check_xml_diagnostic(&bikes_xml_diagnostics, ols_code, line, DiagnosticSeverity::WARNING);
     };
+    let check_no_diag = |line: u32| {
+        let line_diagnostics = diag_on_line(&bikes_xml_diagnostics, line);
+        assert!(line_diagnostics.is_empty(), "Expected no diagnostics on line {}, found {:?}", line, line_diagnostics);
+    };
     // OLS05001 - Disabled TODO: Re-enable when OLS05001 is implemented
     check_xml_diag("OLS05003", 25);
     check_xml_diag("OLS05004", 36);
@@ -100,6 +104,9 @@ fn test_ols05000s_xml_file() {
     check_xml_diag("OLS05055", 92);
     check_xml_diag("OLS05056", 93);
     check_xml_warning("OLS05058", 94);
+    check_xml_warning("OLS05059", 95);
+    check_no_diag(96);
+    check_no_diag(97);
 }
 
 #[test]
