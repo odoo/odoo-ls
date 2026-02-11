@@ -369,7 +369,7 @@ impl PythonOdooBuilder {
             // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;
         }
-        if !symbol.borrow().as_class_sym().inherits(&base_model_syms[0], &mut None) {
+        if !symbol.borrow().as_class_sym().inherits(session, &base_model_syms[0], &mut None) {
             return false;
         }
         // Check if we have a _register = False

@@ -8,6 +8,7 @@ use crate::constants::{OYarn, SymType};
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::Sy;
+use crate::threads::SessionInfo;
 use crate::utils::NoHashBuilder;
 
 use super::symbol::Symbol;
@@ -61,9 +62,12 @@ impl ClassSymbol {
         res
     }
 
-    pub fn inherits(&self, base: &Rc<RefCell<Symbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>) -> bool {
+    pub fn inherits(&self, session: &mut SessionInfo, base: &Rc<RefCell<Symbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>) -> bool {
         if checked.is_none() {
             *checked = Some(PtrWeakHashSet::new());
+        }
+        if base.borrow().typ() != SymType::CLASS {
+            return false;
         }
         for base_weak in self.bases.iter() {
             let b = match base_weak.upgrade(){
@@ -74,10 +78,21 @@ impl ClassSymbol {
                 return true;
             }
             if checked.as_ref().unwrap().contains(&b) {
-                return false;
+                continue;
             }
             checked.as_mut().unwrap().insert(b.clone());
-            if b.borrow().as_class_sym().inherits(base, checked) {
+            if b.borrow().as_class_sym().inherits(session, base, checked) {
+                return true;
+            }
+        }
+        if let (Some(self_model), Some(base_model)) = (
+            self._model.as_ref().and_then(|model_data|
+                session.sync_odoo.models.get(&model_data.name).cloned()
+            ),
+            base.borrow().as_class_sym()._model.as_ref().and_then(|model_data|
+                session.sync_odoo.models.get(&model_data.name).cloned()
+            )){
+            if self_model.borrow().inherits_from(session, &base_model) {
                 return true;
             }
         }

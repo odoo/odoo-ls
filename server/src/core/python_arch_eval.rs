@@ -756,7 +756,7 @@ impl PythonArchEval {
                         let mut var_bw = function_sym.borrow_mut();
                         let is_class_method = var_bw.as_func().is_class_method;
                         let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
-                        symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap()), Some(!is_class_method)));
+                        symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::new_self(Rc::downgrade(self.sym_stack.last().unwrap()), Some(!is_class_method)));
                         is_first = false;
                         continue;
                     }
@@ -1022,7 +1022,11 @@ impl PythonArchEval {
                     None
                 ).len() > 0
             ){
-                func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+                let mut func_ref_mut = func_sym.borrow_mut();
+                if let Some(base) = func_ref_mut.get_in_parents(&vec![SymType::CLASS], true){
+                    let is_class_method = func_ref_mut.as_func().is_class_method.clone();
+                    func_ref_mut.set_evaluations(vec![Evaluation::new_self(base, Some(!is_class_method))]);
+                }
                 return;
             }
             for eval in evaluations.iter_mut() { //as this is an evaluation, we need to set the instance to true
