@@ -2156,7 +2156,7 @@ impl Symbol {
                                     if !get_result.weak.is_expired() {
                                         let mut eval = Evaluation::eval_from_symbol(&get_result.weak, get_result.instance);
                                         match eval.symbol.get_mut_symbol_ptr() {
-                                            EvaluationSymbolPtr::WEAK(weak) => {
+                                            EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak)=> {
                                                 if let Some(eval_sym_rc) = weak.weak.upgrade(){
                                                     if Rc::ptr_eq(&eval_sym_rc, &symbol_rc){
                                                         continue;
@@ -2182,8 +2182,8 @@ impl Symbol {
             for eval in v.evaluations.iter() {
                 let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
                 let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
-                match sym {
-                    EvaluationSymbolPtr::WEAK(ref mut w) => {
+                match &mut sym {
+                    EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w)=> {
                         if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
                             if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
                                 w.context.insert(S!("base_attr"), base_attr.clone());
@@ -2220,11 +2220,12 @@ impl Symbol {
             // can't find the tree symbol, stop here
             return default_result;
         }
-        let EvaluationSymbolPtr::WEAK(w) = evaluation else {
-            // Non-weak evaluations are final
-            return default_result
+        let eval_with_weak = match evaluation {
+            EvaluationSymbolPtr::WEAK(weak)
+            | EvaluationSymbolPtr::SELF(weak) => weak,
+            _ => return default_result // Non-weak evaluations are final
         };
-        let Some(symbol) = w.weak.upgrade() else {
+        let Some(symbol) = eval_with_weak.weak.upgrade() else {
             return default_result;
         };
         if stop_on_value {
@@ -2237,15 +2238,19 @@ impl Symbol {
             }
         }
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-        let mut work_queue = Symbol::next_refs(session, symbol.clone(), context, &w.context, stop_on_type, &mut vec![]);
+        let mut work_queue = Symbol::next_refs(session, symbol.clone(), context, &eval_with_weak.context, stop_on_type, &mut vec![]);
         if work_queue.is_empty() {
             return default_result;
         }
-        if w.instance.is_some_and(|v| v) {
+        if eval_with_weak.instance.is_some_and(|v| v) {
             //if the previous evaluation was set to True, we want to keep it
             work_queue = work_queue.into_iter().map(|mut r| {
-                if let EvaluationSymbolPtr::WEAK(ref mut weak) = r {
+                match r {
+                    EvaluationSymbolPtr::WEAK(ref mut weak)
+                    | EvaluationSymbolPtr::SELF(ref mut weak) =>  {
                     weak.instance = Some(true);
+                    },
+                    _ => {}
                 }
                 r
             }).collect();
@@ -2254,10 +2259,14 @@ impl Symbol {
         let mut visited: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         let can_eval_external = !symbol.borrow().is_external();
         while let Some(current_eval) = work_queue.pop_front() {
-            let EvaluationSymbolPtr::WEAK(next_ref_weak) = &current_eval else  {
+            let next_ref_weak = match &current_eval {
+                EvaluationSymbolPtr::WEAK(weak)
+                | EvaluationSymbolPtr::SELF(weak) => weak,
+                _ => {
                 // Non-weak references are final
                 results.push(current_eval);
                 continue;
+                }
             };
             let Some(sym_rc) = next_ref_weak.weak.upgrade() else {
                 // Discard evaluation to expired reference
@@ -2307,8 +2316,12 @@ impl Symbol {
                     // /!\ we want to keep instance = True if previous evaluation was set to True!
                     if next_ref_weak_instance.is_some_and(|v| v) {
                         next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
-                            if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
-                                weak.instance = Some(true);
+                            match next_results {
+                                EvaluationSymbolPtr::WEAK(ref mut weak)
+                                | EvaluationSymbolPtr::SELF(ref mut weak) =>  {
+                                    weak.instance = Some(true);
+                                },
+                                _ => {}
                             }
                             next_results
                         }).collect();
@@ -2335,7 +2348,7 @@ impl Symbol {
         if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
             results.retain(|r| {
                 match r {
-                    EvaluationSymbolPtr::WEAK(weak) => {
+                    EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
                         if let Some(sym_rc) = weak.weak.upgrade() {
                             stop_on_tree_syms.iter().any(|s| Rc::ptr_eq(s, &sym_rc))
                         } else {
