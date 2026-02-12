@@ -48,7 +48,7 @@ use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
 use crate::core::python_validator::PythonValidator;
-use crate::utils::{PathSanitizer, ToFilePath as _};
+use crate::utils::{PathSanitizer, ToFilePath as _, expand_language_code};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
 
@@ -1382,11 +1382,7 @@ impl SyncOdoo {
             .languages_by_source
             .entry(source_file.clone())
             .or_insert_with(HashSet::new);
-        languages.insert(lang_code.to_string());
-        // Also add base language (e.g., "fr" from "fr_BE")
-        if let Some((base_lang, _)) = lang_code.split_once('_') {
-            languages.insert(base_lang.to_string());
-        }
+        languages.extend(expand_language_code(lang_code));
         self.revalidate_language_dependents();
     }
 
@@ -1401,6 +1397,7 @@ impl SyncOdoo {
     pub fn check_language_and_track(&mut self, lang: &str, dependent: &Rc<RefCell<Symbol>>) -> bool {
         self.language_dependents.insert(dependent.clone());
         self.languages_by_source.values().any(|langs| langs.contains(lang))
+            || self.config.additional_languages.contains(lang)
     }
 
     /// For testing purposes only. Use `check_language_and_track` for actual
@@ -1409,11 +1406,12 @@ impl SyncOdoo {
         self.languages_by_source
             .values()
             .flat_map(|langs| langs.iter().cloned())
+            .chain(self.config.additional_languages.iter().cloned())
             .collect()
     }
 
     /// Schedule revalidation for all language-dependent symbols.
-    fn revalidate_language_dependents(&mut self) {
+    pub(crate) fn revalidate_language_dependents(&mut self) {
         let to_revalidate: Vec<_> = self.language_dependents.drain().collect();
         for sym in to_revalidate {
             self.add_to_validations(sym);
@@ -2249,11 +2247,16 @@ impl Odoo {
                         session.send_notification("$Odoo/restartNeeded", ());
                     } else {
                         // Changes can be applied without restart
+                        let languages_changed = session.sync_odoo.config.additional_languages != new_config.additional_languages;
                         session.sync_odoo.config_file = Some(cfg_file);
                         session.sync_odoo.config = new_config;
                         // Recalculate diagnostic filters
                         session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
                         session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay);
+                        if languages_changed {
+                            session.sync_odoo.revalidate_language_dependents();
+                            SyncOdoo::process_rebuilds(session, false);
+                        }
                     }
                 }
                 Err(err) => {

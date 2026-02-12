@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use lsp_types::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
@@ -212,5 +213,21 @@ fn test_language_validation() {
         !has_diagnostic_code(&diagnostics, "OLS05068"),
         "After adding nl_WV via extra_languages.xml: OLS05068 should be CLEARED. Diagnostics: {:?}",
         diagnostics
+    );
+}
+
+/// Test that additional_languages config option makes languages recognized
+/// without needing res.lang records in data files.
+#[test]
+fn test_additional_languages_config() {
+    let (mut odoo, mut config) = setup_server(false);
+    config.additional_languages = HashSet::from(["zz".to_string()]);
+    let session = create_init_session(&mut odoo, config);
+
+    let languages = session.sync_odoo._get_languages();
+    assert!(
+        languages.contains("zz"),
+        "additional_languages should include zz. Available: {:?}",
+        languages
     );
 }
