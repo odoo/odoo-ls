@@ -6,6 +6,7 @@ use odoo_ls_server::core::config::get_configuration;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -1895,4 +1896,42 @@ fn test_ambiguous_workspace_names_pattern_ignored() {
     // both ws1 and ws2 should be present in addons_paths
     assert!(config.addons_paths.iter().any(|p| p == &ws1.path().sanitize()));
     assert!(config.addons_paths.iter().any(|p| p == &ws2.path().sanitize()));
+}
+
+#[test]
+fn test_additional_languages_merge_and_base_expansion() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    // Parent config declares fr_WA
+    let parent_toml = r#"
+        [[config]]
+        name = "default"
+        additional_languages = ["fr_WA"]
+    "#;
+    temp.child("odools.toml").write_str(parent_toml).unwrap();
+
+    // Workspace config declares nl_WV
+    let ws_toml = r#"
+        [[config]]
+        name = "default"
+        additional_languages = ["nl_WV"]
+    "#;
+    ws_folder.child("odools.toml").write_str(ws_toml).unwrap();
+
+    // let mut ws_folders = HashMap::new();
+    // ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
+    let ws_folders = [(S!("ws1"), ws_folder.path().sanitize().to_string())]; 
+    let mut session = mock_session_with_workspaces(&ws_folders);
+    let (config_map, _) = get_configuration(&mut session).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    // Both files' languages should be merged
+    assert!(config.additional_languages.contains("fr_WA"), "fr_WA should be present: {:?}", config.additional_languages);
+    assert!(config.additional_languages.contains("nl_WV"), "nl_WV should be present: {:?}", config.additional_languages);
+
+    // Base languages should be auto-expanded
+    assert!(config.additional_languages.contains("fr"), "base language fr should be expanded from fr_WA: {:?}", config.additional_languages);
+    assert!(config.additional_languages.contains("nl"), "base language nl should be expanded from nl_WV: {:?}", config.additional_languages);
 }

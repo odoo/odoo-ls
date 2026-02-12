@@ -382,6 +382,14 @@ pub fn string_fuzzy_contains(string: &str, pattern: &str) -> bool {
     false
 }
 
+/// Expand a language code into itself and its base language (if applicable).
+/// E.g., "fr_BE" yields ["fr_BE", "fr"], while "en" yields just ["en"].
+pub fn expand_language_code(code: &str) -> impl Iterator<Item = String> + use<> {
+    let lang = code.to_string();
+    let base = code.split_once('_').map(|(b, _)| b.to_string());
+    std::iter::once(lang).chain(base)
+}
+
 #[macro_export]
 macro_rules! warn_or_panic {
     ($($arg:tt)*) => {

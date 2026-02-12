@@ -16,7 +16,7 @@ use tracing::error;
 use crate::constants::{CONFIG_WIKI_URL};
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
 use crate::threads::SessionInfo;
-use crate::utils::{fill_validate_path, get_python_command, has_template, is_addon_path, is_odoo_path, is_python_path, PathSanitizer};
+use crate::utils::{PathSanitizer, expand_language_code, fill_validate_path, get_python_command, has_template, is_addon_path, is_odoo_path, is_python_path};
 use crate::S;
 
 
@@ -326,7 +326,7 @@ impl ConfigFile {
             if let serde_json::Value::Object(map) = entry_val {
                 let order = [
                     "name", "extends", "odoo_path", "abstract", "addons_paths", "addons_merge",
-                    "python_path", "stdlib", "additional_stubs", "additional_stubs_merge",
+                    "python_path", "stdlib", "additional_stubs", "additional_stubs_merge", "additional_languages",
                     "refresh_mode", "file_cache", "diag_missing_imports",
                     "ac_filter_model_names", "auto_refresh_delay",
                     "diagnostic_settings", "diagnostic_filters", "no_typeshed_stubs"
@@ -601,6 +601,10 @@ pub struct ConfigEntryRaw {
     #[schemars(with = "Option<MergeMethod>")]
     additional_stubs_merge: Option<Sourced<MergeMethod>>,
 
+    #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<Vec<String>>")]
+    additional_languages: Option<Vec<Sourced<String>>>,
+
     #[serde(default, serialize_with = "serialize_file_cache")]
     #[schemars(with = "Option<bool>")]
     file_cache: Option<Sourced<bool>>,
@@ -685,6 +689,7 @@ impl Default for ConfigEntryRaw {
             python_path: None,
             additional_stubs: None,
             additional_stubs_merge: None,
+            additional_languages: None,
             file_cache: None,
             diag_missing_imports: None,
             ac_filter_model_names: None,
@@ -730,6 +735,7 @@ pub struct ConfigEntry {
     pub addons_paths: HashSet<String>,
     pub python_path: String,
     pub additional_stubs: HashSet<String>,
+    pub additional_languages: HashSet<String>,
     pub file_cache: bool,
     pub diag_missing_imports: DiagMissingImportsMode,
     pub ac_filter_model_names: bool,
@@ -749,6 +755,7 @@ impl Default for ConfigEntry {
             addons_paths: HashSet::new(),
             python_path: S!(get_python_command().unwrap_or_default()),
             additional_stubs: HashSet::new(),
+            additional_languages: HashSet::new(),
             file_cache: true,
             diag_missing_imports: DiagMissingImportsMode::default(),
             ac_filter_model_names: true,
@@ -924,6 +931,13 @@ fn read_config_from_file<P: AsRef<Path>>(path: P) -> Result<HashMap<String, Conf
             });
         });
 
+        // additional_languages
+        entry.additional_languages.iter_mut().for_each(|langs| {
+            langs.iter_mut().for_each(|sourced| {
+                sourced.sources.insert(path.sanitize());
+            });
+        });
+
         // python_path
         entry.python_path.as_mut().map(|sourced| { sourced.sources.insert(path.sanitize());});
 
@@ -1009,6 +1023,11 @@ fn apply_merge(
         },
         MergeMethod::Override => child.additional_stubs.clone(),
     };
+    let additional_languages = match (child.additional_languages.clone(), parent.additional_languages.clone()) {
+        (Some(existing), Some(new)) => Some(existing.into_iter().chain(new.into_iter()).collect()),
+        (Some(v), None) | (None, Some(v)) => Some(v),
+        (None, None) => None,
+    };
     let file_cache = child.file_cache.clone().or(parent.file_cache.clone());
     let diag_missing_imports = child.diag_missing_imports.clone().or(parent.diag_missing_imports.clone());
     let ac_filter_model_names = child.ac_filter_model_names.clone().or(parent.ac_filter_model_names.clone());
@@ -1029,6 +1048,7 @@ fn apply_merge(
         python_path,
         addons_paths,
         additional_stubs,
+        additional_languages,
         file_cache,
         diag_missing_imports,
         ac_filter_model_names,
@@ -1288,6 +1308,7 @@ fn process_config(
             if entry.abstract_ { return; }
             entry.addons_paths = entry.addons_paths.clone().map(|paths| group_sourced_iters(paths).collect());
             entry.additional_stubs = entry.additional_stubs.clone().map(|stubs| group_sourced_iters(stubs).collect());
+            entry.additional_languages = entry.additional_languages.clone().map(|langs| group_sourced_iters(langs).collect());
         });
 
     Ok(config_map)
@@ -1335,6 +1356,13 @@ fn merge_all_workspaces(
                     Some(merge_sourced_iters(existing, new).collect())
                 }
                 (Some(paths), None) | (None, Some(paths)) => Some(paths),
+                (None, None) => None,
+            };
+            merged_entry.additional_languages = match (merged_entry.additional_languages.clone(), raw_entry.additional_languages.clone()) {
+                (Some(existing), Some(new)) => {
+                    Some(merge_sourced_iters(existing, new).collect())
+                }
+                (Some(langs), None) | (None, Some(langs)) => Some(langs),
                 (None, None) => None,
             };
             merged_entry.file_cache = merge_sourced_options(
@@ -1410,6 +1438,8 @@ fn merge_all_workspaces(
                 addons_paths: raw_entry.addons_paths.into_iter().flatten().map(|op| op.value).collect(),
                 python_path: raw_entry.python_path.map(|op| op.value).unwrap_or(S!(get_python_command().unwrap_or_default())),
                 additional_stubs: raw_entry.additional_stubs.into_iter().flatten().map(|op| op.value).collect(),
+                additional_languages: raw_entry.additional_languages.into_iter().flatten().map(|op| op.value)
+                    .flat_map(|code| expand_language_code(&code)).collect(),
                 file_cache: raw_entry.file_cache.map(|op| op.value).unwrap_or(true),
                 diag_missing_imports: raw_entry.diag_missing_imports.map(|op| op.value).unwrap_or_default(),
                 ac_filter_model_names: raw_entry.ac_filter_model_names.map(|op| op.value).unwrap_or(true),
