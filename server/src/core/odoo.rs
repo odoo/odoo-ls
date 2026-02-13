@@ -875,7 +875,7 @@ impl SyncOdoo {
                 }
                 match sym_key {
                     SymbolKey::XmlFile(xml) => {
-                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), xml);
+                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), xml, &st!());
                         validator.validate(session);
                     },
                     SymbolKey::CsvFile(csv) => {
