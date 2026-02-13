@@ -1,7 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use lsp_types::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
+use odoo_ls_server::core::config::ConfigFile;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::threads::SessionInfo;
@@ -229,5 +230,61 @@ fn test_additional_languages_config() {
         languages.contains("zz"),
         "additional_languages should include zz. Available: {:?}",
         languages
+    );
+}
+
+/// Test that changing additional_languages via config update clears/restores OLS05068 diagnostics.
+#[test]
+fn test_config_additional_languages_updates_diagnostics() {
+    let (mut odoo, config) = setup_server(true);
+    let mut session = create_init_session(&mut odoo, config);
+
+    let items_xml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/addons/module_lang_test/data/lang_test_items.xml")
+        .sanitize();
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&items_xml_path).unwrap();
+    let force_republish_diagnostic = |session: &mut SessionInfo| {
+        let mut file_info_borrow = file_info.borrow_mut();
+        // This does not rebuild validation steps. It just sets need_push to true.
+        file_info_borrow.update_validation_diagnostics(HashMap::new());
+        file_info_borrow.publish_diagnostics(session);
+    };
+
+    // Verify OLS05068 is present initially (nl_WV is unknown)
+    let diagnostics = get_diagnostics_for_path(&mut session, &items_xml_path);
+    assert!(
+        has_diagnostic_code(&diagnostics, "OLS05068"),
+        "Initial: OLS05068 should be present for nl_WV. Diagnostics: {:?}",
+        diagnostics
+    );
+
+    // Add nl_WV and nl to additional_languages via config update
+    let mut new_config = session.sync_odoo.config.clone();
+    new_config.additional_languages = HashSet::from(["nl_WV".to_string(), "nl".to_string()]);
+    Odoo::handle_config_update(&mut session, new_config, ConfigFile::new());
+
+    // OLS05068 should be gone now
+    // We need to force republish diagnostics to avoid a false negative, as the
+    // previous check consumes the messages.
+    force_republish_diagnostic(&mut session);
+    let diagnostics = get_diagnostics_for_path(&mut session, &items_xml_path);
+    assert!(
+        !has_diagnostic_code(&diagnostics, "OLS05068"),
+        "After adding nl_WV to additional_languages: OLS05068 should be CLEARED. Diagnostics: {:?}",
+        diagnostics
+    );
+
+    // Restore original config (without nl_WV) and verify diagnostic reappears
+    let mut restored_config = session.sync_odoo.config.clone();
+    restored_config.additional_languages = HashSet::new();
+    Odoo::handle_config_update(&mut session, restored_config, ConfigFile::new());
+
+    let diagnostics = get_diagnostics_for_path(&mut session, &items_xml_path);
+    assert!(
+        has_diagnostic_code(&diagnostics, "OLS05068"),
+        "After removing nl_WV from additional_languages: OLS05068 should REAPPEAR. Diagnostics: {:?}",
+        diagnostics
     );
 }

@@ -2242,22 +2242,7 @@ impl Odoo {
 
             match config_result {
                 Ok((new_config, cfg_file)) => {
-                    if config::needs_restart(&session.sync_odoo.config, &new_config) {
-                        // Changes require a restart, ask the client to restart the server
-                        session.send_notification("$Odoo/restartNeeded", ());
-                    } else {
-                        // Changes can be applied without restart
-                        let languages_changed = session.sync_odoo.config.additional_languages != new_config.additional_languages;
-                        session.sync_odoo.config_file = Some(cfg_file);
-                        session.sync_odoo.config = new_config;
-                        // Recalculate diagnostic filters
-                        session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
-                        session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay);
-                        if languages_changed {
-                            session.sync_odoo.revalidate_language_dependents();
-                            SyncOdoo::process_rebuilds(session, false);
-                        }
-                    }
+                    Odoo::handle_config_update(session, new_config, cfg_file);
                 }
                 Err(err) => {
                     // Invalid config, send a notification to the user and add the error to the logs
@@ -2273,4 +2258,22 @@ impl Odoo {
         }
     }
 
+    pub fn handle_config_update(session: &mut SessionInfo, new_config: ConfigEntry, cfg_file: ConfigFile) {
+        if config::needs_restart(&session.sync_odoo.config, &new_config) {
+            // Changes require a restart, ask the client to restart the server
+            session.send_notification("$Odoo/restartNeeded", ());
+            return;
+        }
+        // Changes can be applied without restart
+        let languages_changed = session.sync_odoo.config.additional_languages != new_config.additional_languages;
+        session.sync_odoo.config_file = Some(cfg_file);
+        // Recalculate diagnostic filters
+        session.sync_odoo.config = new_config;
+        session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
+        session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay);
+        if languages_changed {
+            session.sync_odoo.revalidate_language_dependents();
+            SyncOdoo::process_rebuilds(session, false);
+        }
+    }
 }
