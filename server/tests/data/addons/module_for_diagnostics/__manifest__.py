@@ -17,6 +17,7 @@ This is the description of the module for diagnostics
     "data": [
         "data/bikes.xml",
         "data/bike_parts.wheel.csv",
+        "data/bench_records.xml",
         "data/file.does.not.exist", # OLS05049
         "data/file.invalid", # OLS05050
     ],

@@ -1,0 +1,202 @@
+<odoo>
+    <record id="bench_wheel_01" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 01</field>
+        <field name="price">101.0</field>
+    </record>
+    <record id="bench_wheel_02" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 02</field>
+        <field name="price">102.0</field>
+    </record>
+    <record id="bench_wheel_03" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 03</field>
+        <field name="price">103.0</field>
+    </record>
+    <record id="bench_wheel_04" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 04</field>
+        <field name="price">104.0</field>
+    </record>
+    <record id="bench_wheel_05" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 05</field>
+        <field name="price">105.0</field>
+    </record>
+    <record id="bench_wheel_06" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 06</field>
+        <field name="price">106.0</field>
+    </record>
+    <record id="bench_wheel_07" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 07</field>
+        <field name="price">107.0</field>
+    </record>
+    <record id="bench_wheel_08" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 08</field>
+        <field name="price">108.0</field>
+    </record>
+    <record id="bench_wheel_09" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 09</field>
+        <field name="price">109.0</field>
+    </record>
+    <record id="bench_wheel_10" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 10</field>
+        <field name="price">110.0</field>
+    </record>
+    <record id="bench_wheel_11" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 11</field>
+        <field name="price">111.0</field>
+    </record>
+    <record id="bench_wheel_12" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 12</field>
+        <field name="price">112.0</field>
+    </record>
+    <record id="bench_wheel_13" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 13</field>
+        <field name="price">113.0</field>
+    </record>
+    <record id="bench_wheel_14" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 14</field>
+        <field name="price">114.0</field>
+    </record>
+    <record id="bench_wheel_15" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 15</field>
+        <field name="price">115.0</field>
+    </record>
+    <record id="bench_wheel_16" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 16</field>
+        <field name="price">116.0</field>
+    </record>
+    <record id="bench_wheel_17" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 17</field>
+        <field name="price">117.0</field>
+    </record>
+    <record id="bench_wheel_18" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 18</field>
+        <field name="price">118.0</field>
+    </record>
+    <record id="bench_wheel_19" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 19</field>
+        <field name="price">119.0</field>
+    </record>
+    <record id="bench_wheel_20" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 20</field>
+        <field name="price">120.0</field>
+    </record>
+    <record id="bench_wheel_21" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 21</field>
+        <field name="price">121.0</field>
+    </record>
+    <record id="bench_wheel_22" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 22</field>
+        <field name="price">122.0</field>
+    </record>
+    <record id="bench_wheel_23" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 23</field>
+        <field name="price">123.0</field>
+    </record>
+    <record id="bench_wheel_24" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 24</field>
+        <field name="price">124.0</field>
+    </record>
+    <record id="bench_wheel_25" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 25</field>
+        <field name="price">125.0</field>
+    </record>
+    <record id="bench_wheel_26" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 26</field>
+        <field name="price">126.0</field>
+    </record>
+    <record id="bench_wheel_27" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 27</field>
+        <field name="price">127.0</field>
+    </record>
+    <record id="bench_wheel_28" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 28</field>
+        <field name="price">128.0</field>
+    </record>
+    <record id="bench_wheel_29" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 29</field>
+        <field name="price">129.0</field>
+    </record>
+    <record id="bench_wheel_30" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 30</field>
+        <field name="price">130.0</field>
+    </record>
+    <record id="bench_wheel_31" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 31</field>
+        <field name="price">131.0</field>
+    </record>
+    <record id="bench_wheel_32" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 32</field>
+        <field name="price">132.0</field>
+    </record>
+    <record id="bench_wheel_33" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 33</field>
+        <field name="price">133.0</field>
+    </record>
+    <record id="bench_wheel_34" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 34</field>
+        <field name="price">134.0</field>
+    </record>
+    <record id="bench_wheel_35" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 35</field>
+        <field name="price">135.0</field>
+    </record>
+    <record id="bench_wheel_36" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 36</field>
+        <field name="price">136.0</field>
+    </record>
+    <record id="bench_wheel_37" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 37</field>
+        <field name="price">137.0</field>
+    </record>
+    <record id="bench_wheel_38" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 38</field>
+        <field name="price">138.0</field>
+    </record>
+    <record id="bench_wheel_39" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 39</field>
+        <field name="price">139.0</field>
+    </record>
+    <record id="bench_wheel_40" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 40</field>
+        <field name="price">140.0</field>
+    </record>
+    <record id="bench_wheel_41" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 41</field>
+        <field name="price">141.0</field>
+    </record>
+    <record id="bench_wheel_42" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 42</field>
+        <field name="price">142.0</field>
+    </record>
+    <record id="bench_wheel_43" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 43</field>
+        <field name="price">143.0</field>
+    </record>
+    <record id="bench_wheel_44" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 44</field>
+        <field name="price">144.0</field>
+    </record>
+    <record id="bench_wheel_45" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 45</field>
+        <field name="price">145.0</field>
+    </record>
+    <record id="bench_wheel_46" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 46</field>
+        <field name="price">146.0</field>
+    </record>
+    <record id="bench_wheel_47" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 47</field>
+        <field name="price">147.0</field>
+    </record>
+    <record id="bench_wheel_48" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 48</field>
+        <field name="price">148.0</field>
+    </record>
+    <record id="bench_wheel_49" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 49</field>
+        <field name="price">149.0</field>
+    </record>
+    <record id="bench_wheel_50" model="bike_parts.wheel">
+        <field name="name">Bench Wheel 50</field>
+        <field name="price">150.0</field>
+    </record>
+</odoo>
