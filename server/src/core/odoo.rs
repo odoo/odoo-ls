@@ -326,6 +326,34 @@ impl SyncOdoo {
         if result {
             SyncOdoo::build_modules(session);
         }
+        if let Some(downcaster) = crate::TIMING_DOWNCASTER.get() {
+            tracing::dispatcher::get_default(|dispatch| {
+                if let Some(timing) = downcaster.downcast(dispatch) {
+                    timing.force_synchronize();
+                    timing.with_histograms(|hs| {
+                        for (span_group, events) in hs {
+                            for (event_group, h) in events {
+                                h.refresh();
+                                let count = h.len();
+                                if count > 0 {
+                                    info!(
+                                        span = ?span_group,
+                                        event = ?event_group,
+                                        count = count,
+                                        p50_ms = h.value_at_quantile(0.5) as f64 / 1_000_000.0,
+                                        p90_ms = h.value_at_quantile(0.9) as f64 / 1_000_000.0,
+                                        p99_ms = h.value_at_quantile(0.99) as f64 / 1_000_000.0,
+                                        max_ms = h.max() as f64 / 1_000_000.0,
+                                        total_ms = h.mean() * count as f64 / 1_000_000.0,
+                                        "Timing histogram"
+                                    );
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
     }
 
     pub fn read_version(session: &mut SessionInfo, release_path: PathBuf) -> (u32, u32, u32) {
@@ -773,6 +801,7 @@ impl SyncOdoo {
                 let typ = sym_rc.borrow().typ();
                 match typ {
                     SymType::XML_FILE => {
+                        let _span = tracing::info_span!("xml_validation").entered();
                         let mut validator = XmlValidator::new(entry.as_ref().unwrap(), sym_rc);
                         validator.validate(session);
                     },

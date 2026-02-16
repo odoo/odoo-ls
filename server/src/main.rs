@@ -1,11 +1,13 @@
 use lsp_server::Notification;
 use serde_json::json;
-use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer, crash_buffer};
+use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer, crash_buffer, TIMING_DOWNCASTER};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
-use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, filter::LevelFilter, Layer, Registry};
+use tracing_timing::Builder as TimingBuilder;
+use hdrhistogram::Histogram;
 
 use std::{env, path::PathBuf, process};
 
@@ -52,17 +54,26 @@ fn main() {
         .build(log_dir)
         .expect("failed to initialize rolling file appender");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    let subscriber = FmtSubscriber::builder()
+
+    let timing_layer = TimingBuilder::default()
+        .span_close_events()
+        .layer(|| Histogram::new_with_max(60_000_000_000, 2).unwrap());
+    let downcaster = timing_layer.downcaster();
+    TIMING_DOWNCASTER.set(downcaster).ok();
+
+    let fmt_layer = fmt::layer()
         .with_thread_ids(true)
         .with_file(false)
-        .with_max_level(log_level)
         .with_ansi(false)
         .with_writer(file_writer)
-        .finish();
+        .with_filter(LevelFilter::from_level(log_level));
+
     if cli.parse || use_debug {
-        let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
-        tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber)).expect("Unable to set default tracing subscriber");
+        let stdout_layer = fmt::layer().with_writer(std::io::stdout).with_ansi(true).with_filter(LevelFilter::from_level(log_level));
+        let subscriber = Registry::default().with(timing_layer).with(fmt_layer).with(stdout_layer);
+        tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");
     } else {
+        let subscriber = Registry::default().with(timing_layer).with(fmt_layer);
         tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");
     }
     ctrlc::set_handler(move || {
