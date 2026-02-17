@@ -5,6 +5,7 @@ use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
+use crate::features::declaration::DeclarationFeature;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::features::references::ReferenceFeature;
 use crate::features::workspace_symbols::WorkspaceSymbolFeature;
@@ -21,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use lsp_server::{ErrorCode, RequestId, ResponseError};
 use lsp_types::notification::{Notification, Progress};
-use lsp_types::request::WorkDoneProgressCreate;
+use lsp_types::request::{GotoDeclarationResponse, WorkDoneProgressCreate};
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_source_file::PositionEncoding;
@@ -1458,10 +1459,18 @@ impl Odoo {
     }
 
     pub fn handle_goto_definition(session: &mut SessionInfo, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>, ResponseError> {
+        return Odoo::handle_gotos(session, params, false)
+    }
+
+    pub fn handle_goto_declaration(session: &mut SessionInfo, params: GotoDefinitionParams) -> Result<Option<GotoDeclarationResponse>, ResponseError> {
+        return Odoo::handle_gotos(session, params, true)
+    }
+
+    fn handle_gotos(session: &mut SessionInfo, params: GotoDefinitionParams, is_declaration: bool) -> Result<Option<GotoDeclarationResponse>, ResponseError> {
         if session.sync_odoo.state_init == InitState::NOT_READY {
             return Ok(None);
         }
-        session.log_message(MessageType::INFO, format!("GoToDefinition requested on {} at {} - {}",
+        session.log_message(MessageType::INFO, format!("GoToDeclaration requested on {} at {} - {}",
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
@@ -1500,14 +1509,28 @@ impl Odoo {
                 match ast_type {
                     AstType::Python => {
                         if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
-                            return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            if is_declaration {
+                                return Ok(DeclarationFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+
+                            } else {
+                                return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                            }
                         }
                     },
                     AstType::Xml => {
-                        return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        if is_declaration {
+                            return Ok(DeclarationFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+
+                        } else {
+                            return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        }
                     },
                     AstType::Csv => {
-                        return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        if is_declaration {
+                            return Ok(DeclarationFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        } else {
+                            return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        }
                     },
                 }
             }

@@ -2,9 +2,9 @@ use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instan
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
-use lsp_types::{CompletionResponse, DocumentSymbolResponse, Hover, Location, LogMessageParams, MessageType, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, LogMessageParams, MessageType, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
-    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, References, Request, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDeclarationResponse, GotoDefinition, GotoTypeDefinitionResponse, HoverRequest, References, Request, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -365,7 +365,12 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_re
                         GotoDefinition::METHOD => {
                             let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
                             SyncOdoo::process_rebuilds(&mut session, true);
-                            to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
+                            to_value::<GotoDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        GotoDeclaration::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            to_value::<GotoDeclarationResponse>(Odoo::handle_goto_declaration(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         References::METHOD => {
                             let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
