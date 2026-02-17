@@ -4,12 +4,13 @@ use lsp_types::{Location, Range};
 use ruff_python_ast::visitor::{walk_expr, walk_stmt, Visitor};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use tracing::error;
 
 use crate::S;
 use crate::constants::OYarn;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::odoo::SyncOdoo;
-use crate::features::definition::{DefinitionFeature, DefinitionSourceType};
+use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
 use crate::{constants::SymType, core::{file_mgr::{FileInfo, FileMgr}, symbols::symbol::Symbol}, features::xml_ast_utils::{XmlAstResult, XmlAstUtils}, threads::SessionInfo, utils::PathSanitizer};
 
 
@@ -25,12 +26,12 @@ impl ReferenceFeature {
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
-        let def_sources = DefinitionFeature::get_symbols(session, file_symbol, file_info, line, character);
+        let def_sources = GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character);
 
         let mut locations = Vec::new();
         for definition in def_sources.iter() {
             match &definition.source {
-                DefinitionSourceType::Symbol(target_symbol) => {
+                GotoSourceType::Symbol(target_symbol) => {
                     let symbol_name = target_symbol.borrow().name().to_string();
 
                     locations.extend(ReferenceFeature::references_in_file(session, file_symbol, file_info, &symbol_name, &target_symbol));
@@ -80,6 +81,7 @@ impl ReferenceFeature {
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, symbol_name: &String, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
         SyncOdoo::process_rebuilds(session, false);
+        error!("Searching references for symbol {} in file {}", symbol_name, file_symbol.borrow().paths()[0]);
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let mut visitor = ReferenceVisitor {
             sym_stack: vec![],
