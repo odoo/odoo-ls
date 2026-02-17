@@ -1,4 +1,5 @@
-use lsp_types::{GotoDefinitionResponse, LocationLink, Range};
+use lsp_types::request::GotoDeclarationResponse;
+use lsp_types::{LocationLink, Range};
 use std::path::PathBuf;
 use std::{cell::RefCell, rc::Rc};
 
@@ -10,24 +11,24 @@ use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 
-pub struct DefinitionFeature {}
+pub struct DeclarationFeature {}
 
-impl DefinitionFeature {
+impl DeclarationFeature {
 
     pub fn get_location(session: &mut SessionInfo,
         file_symbol: &Rc<RefCell<Symbol>>,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
-    ) -> Option<GotoDefinitionResponse> {
-        let definitions_sources = GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character);
+    ) -> Option<GotoDeclarationResponse> {
+        let definitions_sources = GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character);
         let mut links = vec![];
         for def in definitions_sources.iter() {
             if let Some(link) = GotoUtils::goto_source_to_location(session, def) {
                 links.push(link);
             }
         }
-        Some(GotoDefinitionResponse::Link(links))
+        Some(GotoDeclarationResponse::Link(links))
     }
 
     pub fn get_location_xml(session: &mut SessionInfo,
@@ -35,7 +36,7 @@ impl DefinitionFeature {
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
-    ) -> Option<GotoDefinitionResponse> {
+    ) -> Option<GotoDeclarationResponse> {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let document = roxmltree::Document::parse(&data);
@@ -104,7 +105,7 @@ impl DefinitionFeature {
                     }
                 }
             }
-            return Some(GotoDefinitionResponse::Link(links));
+            return Some(GotoDeclarationResponse::Link(links));
         }
         None
     }
@@ -114,7 +115,7 @@ impl DefinitionFeature {
         _file_info: &Rc<RefCell<FileInfo>>,
         _line: u32,
         _character: u32
-    ) -> Option<GotoDefinitionResponse> {
+    ) -> Option<GotoDeclarationResponse> {
         None
     }
 

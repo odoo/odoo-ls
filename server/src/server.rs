@@ -2,7 +2,7 @@ use std::{io::Error, panic, sync::{Arc, Mutex, atomic::AtomicBool}, thread::Join
 
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
-use lsp_types::{CancelParams, CompletionOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions, notification::{Cancel, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+use lsp_types::{CancelParams, CompletionOptions, DeclarationOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions, notification::{Cancel, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
 use ruff_source_file::PositionEncoding;
 use serde_json::json;
 #[cfg(target_os = "linux")]
@@ -157,6 +157,13 @@ impl Server {
                     save: Some(lsp_types::TextDocumentSyncSaveOptions::SaveOptions(SaveOptions{include_text: Some(false)})) //TODO could deactivate if set on 'afterDelay?
                 })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                declaration_provider: Some(lsp_types::DeclarationCapability::Options(
+                    DeclarationOptions {
+                        work_done_progress_options: WorkDoneProgressOptions {
+                            work_done_progress: Some(false)
+                        }
+                    }
+                )),
                 definition_provider: Some(OneOf::Right(DefinitionOptions{
                     work_done_progress_options: WorkDoneProgressOptions{
                         work_done_progress: Some(false)
@@ -380,7 +387,7 @@ impl Server {
             Message::Request(r) => {
                 self.running_request_ids.lock().unwrap().push(r.id.clone());
                 match r.method.as_str() {
-                    HoverRequest::METHOD | GotoDefinition::METHOD | References::METHOD | DocumentSymbolRequest::METHOD |
+                    HoverRequest::METHOD | GotoDefinition::METHOD | GotoDeclaration::METHOD | References::METHOD | DocumentSymbolRequest::METHOD |
                     WorkspaceSymbolRequest::METHOD | WorkspaceSymbolResolve::METHOD | Completion::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
