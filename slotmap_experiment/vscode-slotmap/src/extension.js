@@ -75,8 +75,9 @@ function activate(context) {
                 }
             }
 
-            // Add $slot to Watch panel if not already there
+            // Add watch expressions: $slot (latest) and $slot_<key> (per-key)
             await addWatchIfMissing('$slot');
+            await addWatchIfMissing(`$slot_${keyName}`);
             await refreshWatchPanel();
         }),
 
