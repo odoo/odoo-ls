@@ -1,5 +1,30 @@
 const vscode = require('vscode');
 
+/**
+ * After setting a GDB convenience variable, VS Code's Watch panel doesn't
+ * know the value changed (no "stop" event occurred). We force a refresh
+ * by executing a harmless step-granularity evaluation that cpptools
+ * recognizes as state-changing, causing it to invalidate variables.
+ */
+async function refreshWatchPanel() {
+    // customRequest('evaluate') bypasses VS Code's debug console widget,
+    // so the Watch panel never refreshes. We need to go through the actual
+    // REPL widget: focus it and submit an empty command (= pressing Enter).
+    try {
+        await vscode.commands.executeCommand('workbench.debug.action.focusRepl');
+        await new Promise(r => setTimeout(r, 50));
+        await vscode.commands.executeCommand('repl.action.acceptInput');
+    } catch (_) {}
+}
+
+async function runSlotmapGet(session, mapName, keyName) {
+    await session.customRequest('evaluate', {
+        expression: `-exec slotmap_get ${mapName} ${keyName}`,
+        context: 'repl',
+    });
+    await refreshWatchPanel();
+}
+
 function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('slotmap.lookup', async (variable) => {
@@ -24,33 +49,9 @@ function activate(context) {
 
             // Execute the GDB command
             try {
-                const result = await session.customRequest('evaluate', {
-                    expression: `-exec slotmap_get ${mapName} ${keyName}`,
-                    context: 'repl',
-                });
-
-                // If it failed (map not found), prompt for the map name
-                if (result.result && result.result.includes('No symbol')) {
-                    mapName = await vscode.window.showInputBox({
-                        prompt: 'SlotMap variable name',
-                        placeHolder: 'sm',
-                        value: mapName,
-                    });
-                    if (!mapName) return;
-
-                    // Save the new default
-                    await vscode.workspace.getConfiguration('slotmap').update(
-                        'mapVariable', mapName, vscode.ConfigurationTarget.Workspace
-                    );
-
-                    // Retry
-                    await session.customRequest('evaluate', {
-                        expression: `-exec slotmap_get ${mapName} ${keyName}`,
-                        context: 'repl',
-                    });
-                }
+                await runSlotmapGet(session, mapName, keyName);
             } catch (e) {
-                // cpptools returns errors as exceptions; prompt for map name
+                // Map not found — prompt for the name
                 const mapNameNew = await vscode.window.showInputBox({
                     prompt: 'SlotMap variable not found. Enter map variable name:',
                     placeHolder: 'sm',
@@ -65,10 +66,7 @@ function activate(context) {
                 }
 
                 try {
-                    await session.customRequest('evaluate', {
-                        expression: `-exec slotmap_get ${mapNameNew} ${keyName}`,
-                        context: 'repl',
-                    });
+                    await runSlotmapGet(session, mapNameNew, keyName);
                 } catch (e2) {
                     vscode.window.showErrorMessage(`SlotMap lookup failed: ${e2.message}`);
                 }
