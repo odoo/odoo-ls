@@ -9,3 +9,4 @@ server/cross/
 *.log
 *.vsix
 *.lock
+slotmap_experiment/target
