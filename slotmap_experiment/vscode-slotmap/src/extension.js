@@ -12,6 +12,18 @@ async function refreshWatchPanel() {
     } catch (_) {}
 }
 
+const watchedExpressions = new Set();
+
+async function addWatchIfMissing(expression) {
+    if (watchedExpressions.has(expression)) return;
+    try {
+        await vscode.commands.executeCommand('debug.addToWatchExpressions', {
+            variable: { evaluateName: expression }
+        });
+        watchedExpressions.add(expression);
+    } catch (_) {}
+}
+
 function activate(context) {
     context.subscriptions.push(
         vscode.commands.registerCommand('slotmap.lookup', async (variable) => {
@@ -63,6 +75,8 @@ function activate(context) {
                 }
             }
 
+            // Add $slot to Watch panel if not already there
+            await addWatchIfMissing('$slot');
             await refreshWatchPanel();
         }),
 
