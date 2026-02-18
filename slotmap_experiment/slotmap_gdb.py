@@ -71,6 +71,18 @@ def read_u32_at(addr):
     return struct.unpack('<I', bytes(data))[0]
 
 
+def get_slotmap_type_info(sm_val):
+    """Extract slot_size and value type from a SlotMap's debug info.
+    Returns (slot_size, val_type) or (None, None) if extraction fails."""
+    try:
+        slot_type = sm_val['slots'].type.template_argument(0)
+        slot_size = slot_type.sizeof
+        val_type = slot_type.template_argument(0)
+        return slot_size, val_type
+    except gdb.error:
+        return None, None
+
+
 def detect_version_offset(base_ptr, slot_size):
     """Auto-detect version field offset within a Slot.
 
@@ -126,12 +138,10 @@ def parse_args(arg_string, need_key=False):
 
 class SlotMapGet(gdb.Command):
     """Look up a value in a SlotMap by key.
-    Usage: slotmap_get <map> <key> --slot-size N [--type TypeName]
+    Usage: slotmap_get <map> <key> [--slot-size N] [--type TypeName]
 
-    With --type, the value is cast and displayed using GDB pretty-printers,
-    giving full struct/enum navigation (like the Variables panel in VS Code).
-
-    Without --type, a raw hex dump is shown."""
+    Slot size and value type are auto-detected from debug info.
+    Result is stored in $slot (and $slot_<key>) for Watch panel navigation."""
 
     def __init__(self):
         super().__init__("slotmap_get", gdb.COMMAND_DATA)
@@ -139,13 +149,18 @@ class SlotMapGet(gdb.Command):
     def invoke(self, arg, from_tty):
         parsed = parse_args(arg, need_key=True)
         if parsed is None:
-            raise gdb.GdbError(
-                "Usage: slotmap_get <map> <key> --slot-size N [--type TypeName]"
-            )
+            raise gdb.GdbError("Usage: slotmap_get <map> <key>")
         sm_name, key_name, slot_size, type_name = parsed
 
         sm = gdb.parse_and_eval(sm_name)
         key = gdb.parse_and_eval(key_name)
+
+        # Auto-detect from debug info if not overridden
+        auto_slot_size, auto_val_type = get_slotmap_type_info(sm)
+        if slot_size is None:
+            slot_size = auto_slot_size
+        if type_name is None and auto_val_type is not None:
+            type_name = auto_val_type.name
 
         base_ptr = get_vec_base_ptr(sm['slots'])
         vec_len = get_vec_len(sm['slots'])
@@ -156,7 +171,7 @@ class SlotMapGet(gdb.Command):
 
         if slot_size is None:
             raise gdb.GdbError(
-                "Error: --slot-size is required. Use slotmap_detect to find it."
+                "Could not detect slot size. Use --slot-size N."
             )
 
         version_offset = detect_version_offset(base_ptr, slot_size)
@@ -181,11 +196,11 @@ class SlotMapGet(gdb.Command):
             val_type = gdb.lookup_type(type_name)
             ptr = gdb.Value(slot_addr).cast(val_type.pointer())
             value = ptr.dereference()
-            # Store as $slot_<keyname> for navigatable Watch panel access.
-            var_name = f"slot_{key_name}"
-            gdb.set_convenience_variable(var_name, value)
+            # Store in $slot (add to Watch once, always shows last lookup)
+            # and in $slot_<keyname> for comparing multiple keys.
+            gdb.set_convenience_variable('slot', value)
+            gdb.set_convenience_variable(f"slot_{key_name}", value)
             print(value)
-            print(f"  -> ${var_name}")
         else:
             # Raw hex dump
             value_size = version_offset
@@ -202,7 +217,9 @@ class SlotMapGet(gdb.Command):
 
 class SlotMapDump(gdb.Command):
     """Dump all occupied slots in a SlotMap.
-    Usage: slotmap_dump <map> --slot-size N [--type TypeName] [--max M]"""
+    Usage: slotmap_dump <map> [--slot-size N] [--type TypeName] [--max M]
+
+    Slot size and value type are auto-detected from debug info."""
 
     def __init__(self):
         super().__init__("slotmap_dump", gdb.COMMAND_DATA)
@@ -210,8 +227,8 @@ class SlotMapDump(gdb.Command):
     def invoke(self, arg, from_tty):
         args_list = arg.split()
         sm_name = args_list[0] if args_list else None
-        slot_size = None
-        type_name = None
+        slot_size = _default_slot_size
+        type_name = _default_type_name
         max_display = 20
 
         i = 1
@@ -228,12 +245,23 @@ class SlotMapDump(gdb.Command):
             else:
                 i += 1
 
-        if not sm_name or not slot_size:
-            raise gdb.GdbError(
-                "Usage: slotmap_dump <map> --slot-size N [--type TypeName] [--max M]"
-            )
+        if not sm_name:
+            raise gdb.GdbError("Usage: slotmap_dump <map> [--max M]")
 
         sm = gdb.parse_and_eval(sm_name)
+
+        # Auto-detect from debug info if not overridden
+        auto_slot_size, auto_val_type = get_slotmap_type_info(sm)
+        if slot_size is None:
+            slot_size = auto_slot_size
+        if type_name is None and auto_val_type is not None:
+            type_name = auto_val_type.name
+
+        if slot_size is None:
+            raise gdb.GdbError(
+                "Could not detect slot size. Use --slot-size N."
+            )
+
         base_ptr = get_vec_base_ptr(sm['slots'])
         vec_len = get_vec_len(sm['slots'])
         num_elems = int(sm['num_elems'])
