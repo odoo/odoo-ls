@@ -3,9 +3,18 @@ GDB commands for inspecting slotmap::SlotMap values.
 
 Usage:
     (gdb) source slotmap_gdb.py
-    (gdb) slotmap_get sm k --slot-size 56 --type slotmap_experiment::Symbol
-    (gdb) slotmap_dump sm --slot-size 56 --type slotmap_experiment::Symbol
+
+    # Configure defaults (do this once):
+    (gdb) slotmap_config --slot-size 56 --type slotmap_experiment::Symbol
+
+    # Then just:
+    (gdb) slotmap_get sm k          # result in $slot_k
+    (gdb) slotmap_get sm l          # result in $slot_l
+    (gdb) slotmap_dump sm
     (gdb) slotmap_detect sm
+
+    # Or override defaults per-call:
+    (gdb) slotmap_get sm k --slot-size 24 --type other::Type
 
 Add to ~/.gdbinit for automatic loading:
     source /path/to/slotmap_gdb.py
@@ -15,6 +24,12 @@ Requires rust-gdb (or GDB with Rust pretty-printers loaded) for best output.
 
 import gdb
 import struct
+
+
+# --- Defaults (set via slotmap_config) ---
+
+_default_slot_size = None
+_default_type_name = None
 
 
 # --- SlotMap layout knowledge ---
@@ -74,15 +89,16 @@ def detect_version_offset(base_ptr, slot_size):
 
 
 def parse_args(arg_string, need_key=False):
-    """Parse command arguments. Returns (sm_name, key_name, slot_size, type_name)."""
+    """Parse command arguments. Returns (sm_name, key_name, slot_size, type_name).
+    Falls back to defaults from slotmap_config if not specified."""
     args = arg_string.split()
     if len(args) < 1:
         return None
 
     sm_name = args[0]
     key_name = None
-    slot_size = None
-    type_name = None
+    slot_size = _default_slot_size
+    type_name = _default_type_name
 
     i = 1
     if need_key:
@@ -165,11 +181,11 @@ class SlotMapGet(gdb.Command):
             val_type = gdb.lookup_type(type_name)
             ptr = gdb.Value(slot_addr).cast(val_type.pointer())
             value = ptr.dereference()
-            # Store as convenience variable so it's navigatable in VS Code Watch panel.
-            # Add $slot_value to Watch to expand/navigate the struct.
-            gdb.set_convenience_variable('slot_value', value)
+            # Store as $slot_<keyname> for navigatable Watch panel access.
+            var_name = f"slot_{key_name}"
+            gdb.set_convenience_variable(var_name, value)
             print(value)
-            print("  -> stored in $slot_value (add to Watch panel to navigate)")
+            print(f"  -> ${var_name}")
         else:
             # Raw hex dump
             value_size = version_offset
@@ -324,9 +340,40 @@ class SlotMapDetect(gdb.Command):
                 print(f"  slot_size = {ss}  (version at offset {vo})")
 
 
+class SlotMapConfig(gdb.Command):
+    """Set default slot-size and type for slotmap commands.
+    Usage: slotmap_config --slot-size N --type TypeName
+
+    After this, you can just use:
+        slotmap_get sm k
+    instead of:
+        slotmap_get sm k --slot-size 56 --type my::Type"""
+
+    def __init__(self):
+        super().__init__("slotmap_config", gdb.COMMAND_DATA)
+
+    def invoke(self, arg, from_tty):
+        global _default_slot_size, _default_type_name
+        args = arg.split()
+        i = 0
+        while i < len(args):
+            if args[i] == '--slot-size' and i + 1 < len(args):
+                _default_slot_size = int(args[i + 1])
+                i += 2
+            elif args[i] == '--type' and i + 1 < len(args):
+                _default_type_name = args[i + 1]
+                i += 2
+            else:
+                raise gdb.GdbError(f"Unknown argument: {args[i]}")
+
+        print(f"SlotMap defaults: slot_size={_default_slot_size}, "
+              f"type={_default_type_name}")
+
+
 # --- Registration ---
 
 SlotMapGet()
 SlotMapDump()
 SlotMapDetect()
-print("SlotMap GDB commands loaded: slotmap_get, slotmap_dump, slotmap_detect")
+SlotMapConfig()
+print("SlotMap GDB commands loaded: slotmap_get, slotmap_dump, slotmap_detect, slotmap_config")
