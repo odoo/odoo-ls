@@ -1,0 +1,42 @@
+{
+  "name": "slotmap-lookup",
+  "displayName": "SlotMap Lookup",
+  "description": "Look up slotmap values by key from the debug Variables panel",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Debuggers"],
+  "activationEvents": ["onDebug"],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "slotmap.lookup",
+        "title": "SlotMap Lookup"
+      },
+      {
+        "command": "slotmap.setMap",
+        "title": "SlotMap: Set Map Variable Name"
+      }
+    ],
+    "menus": {
+      "debug/variables/context": [
+        {
+          "command": "slotmap.lookup",
+          "when": "inDebugMode"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SlotMap Lookup",
+      "properties": {
+        "slotmap.mapVariable": {
+          "type": "string",
+          "default": "sm",
+          "description": "Name of the SlotMap variable to look up keys in"
+        }
+      }
+    }
+  }
+}
