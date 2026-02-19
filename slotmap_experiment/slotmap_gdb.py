@@ -31,8 +31,7 @@ import struct
 
 _default_slot_size = None
 _default_type_name = None
-_map_var_name = None         # SlotMap variable name for the pretty-printer
-_known_key_types = set()     # Type names recognized as slotmap keys
+_key_to_map = {}             # key_type_name → map variable expression
 _in_children = False         # True while children() is resolving; prevents recursion
 
 
@@ -250,10 +249,19 @@ def parse_args(arg_string, need_key=False):
 
 def slotmap_resolve(key_val):
     """Try to resolve a slotmap key to its value. Returns gdb.Value or None."""
-    if _map_var_name is None:
+    if not _key_to_map:
+        return None
+    # Find the map expression for this key's type
+    key_type = str(key_val.type.strip_typedefs())
+    map_expr = None
+    for kt, expr in _key_to_map.items():
+        if kt in key_type or key_type in kt:
+            map_expr = expr
+            break
+    if map_expr is None:
         return None
     try:
-        sm = gdb.parse_and_eval(_map_var_name)
+        sm = gdb.parse_and_eval(map_expr)
         slot_size, val_type = get_slotmap_type_info(sm)
         if slot_size is None or val_type is None:
             return None
@@ -336,10 +344,10 @@ def slotmap_type_lookup(val):
     """GDB pretty-printer lookup function. Returns a printer if the type
     is a known slotmap key or Option<key>, otherwise None (fall through
     to default printers)."""
-    if _in_children or not _known_key_types:
+    if _in_children or not _key_to_map:
         return None
     type_name = str(val.type.strip_typedefs())
-    for kt in _known_key_types:
+    for kt in _key_to_map:
         if kt in type_name:
             if 'Option' in type_name:
                 return SlotMapOptionKeyPrinter(val)
@@ -350,6 +358,40 @@ def slotmap_type_lookup(val):
 
 # Register the lookup function globally (checked before objfile printers)
 gdb.pretty_printers.append(slotmap_type_lookup)
+
+
+# --- Auto-detection on stop ---
+
+def _on_stop(event):
+    """Auto-detect SlotMap variables in the current frame and register
+    key_type → variable mappings for the pretty-printer."""
+    try:
+        frame = gdb.selected_frame()
+        block = frame.block()
+    except Exception:
+        return
+    while block is not None:
+        if block.is_global or block.is_static:
+            break
+        for sym in block:
+            if not sym.is_variable:
+                continue
+            try:
+                val = sym.value(frame)
+                type_name = str(val.type)
+                if 'SlotMap<' not in type_name:
+                    continue
+                key_type = val.type.template_argument(0)
+                key_type_name = str(key_type)
+                prev = _key_to_map.get(key_type_name)
+                if prev != sym.name:
+                    _key_to_map[key_type_name] = sym.name
+                    print(f"SlotMap auto-detected: {key_type_name} \u2192 {sym.name}")
+            except Exception:
+                continue
+        block = block.superblock
+
+gdb.events.stop.connect(_on_stop)
 
 
 # --- Commands ---
@@ -611,8 +653,9 @@ class SlotMapConfig(gdb.Command):
         super().__init__("slotmap_config", gdb.COMMAND_DATA)
 
     def invoke(self, arg, from_tty):
-        global _default_slot_size, _default_type_name, _map_var_name
+        global _default_slot_size, _default_type_name
         args = arg.split()
+        map_var = None
         i = 0
         while i < len(args):
             if args[i] == '--slot-size' and i + 1 < len(args):
@@ -622,25 +665,24 @@ class SlotMapConfig(gdb.Command):
                 _default_type_name = args[i + 1]
                 i += 2
             elif args[i] == '--map' and i + 1 < len(args):
-                _map_var_name = args[i + 1]
+                map_var = args[i + 1]
                 i += 2
             else:
                 raise gdb.GdbError(f"Unknown argument: {args[i]}")
 
-        # Auto-detect key type from the SlotMap if --map was given
-        if _map_var_name:
+        # Register key type → map mapping if --map was given
+        if map_var:
             try:
-                sm = gdb.parse_and_eval(_map_var_name)
-                # SlotMap<K, V> — K is template_argument(0)
+                sm = gdb.parse_and_eval(map_var)
                 key_type = sm.type.template_argument(0)
                 key_type_name = str(key_type)
-                _known_key_types.add(key_type_name)
-                print(f"Registered pretty-printer for key type: {key_type_name}")
+                _key_to_map[key_type_name] = map_var
+                print(f"Registered: {key_type_name} \u2192 {map_var}")
             except gdb.error as e:
-                print(f"Warning: could not detect key type from '{_map_var_name}': {e}")
+                print(f"Warning: could not detect key type from '{map_var}': {e}")
                 print("Use slotmap_config when the map variable is in scope.")
 
-        print(f"SlotMap defaults: map={_map_var_name}, "
+        print(f"SlotMap config: maps={_key_to_map}, "
               f"slot_size={_default_slot_size}, type={_default_type_name}")
 
 

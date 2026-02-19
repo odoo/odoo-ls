@@ -185,6 +185,34 @@ function activate(context) {
             }
         }),
 
+        vscode.commands.registerCommand('slotmap.configMap', async (contextArg) => {
+            const session = vscode.debug.activeDebugSession;
+            if (!session) {
+                vscode.window.showErrorMessage('No active debug session');
+                return;
+            }
+
+            const varName = contextArg?.variable?.evaluateName || contextArg?.variable?.name;
+            if (!varName) {
+                vscode.window.showErrorMessage('No variable selected');
+                return;
+            }
+
+            outputChannel.appendLine(`--- SlotMap Config ---`);
+            outputChannel.appendLine(`Setting map variable: ${varName}`);
+
+            try {
+                await session.customRequest('evaluate', {
+                    expression: `-exec slotmap_config --map ${varName}`,
+                    context: 'repl',
+                });
+                vscode.window.showInformationMessage(`SlotMap configured: ${varName}`);
+            } catch (e) {
+                outputChannel.appendLine(`Error: ${e.message}`);
+                vscode.window.showErrorMessage(`Failed to configure SlotMap: ${e.message}`);
+            }
+        }),
+
         vscode.debug.onDidTerminateDebugSession(() => {})
     );
 }

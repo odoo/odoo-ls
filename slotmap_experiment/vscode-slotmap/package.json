@@ -18,6 +18,10 @@
       {
         "command": "slotmap.setMap",
         "title": "SlotMap: Set Map Variable Name"
+      },
+      {
+        "command": "slotmap.configMap",
+        "title": "SlotMap: Use as Lookup Map"
       }
     ],
     "menus": {
@@ -25,11 +29,19 @@
         {
           "command": "slotmap.lookup",
           "when": "inDebugMode"
+        },
+        {
+          "command": "slotmap.configMap",
+          "when": "inDebugMode"
         }
       ],
       "debug/watch/context": [
         {
           "command": "slotmap.lookup",
+          "when": "inDebugMode"
+        },
+        {
+          "command": "slotmap.configMap",
           "when": "inDebugMode"
         }
       ]
