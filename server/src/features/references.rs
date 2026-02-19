@@ -1,3 +1,4 @@
+use std::rc::Weak;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use lsp_types::{Location, Range};
@@ -5,6 +6,7 @@ use ruff_python_ast::visitor::{walk_expr, walk_stmt, Visitor};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
+use weak_table::PtrWeakHashSet;
 
 use crate::S;
 use crate::constants::OYarn;
@@ -29,6 +31,7 @@ impl ReferenceFeature {
         let def_sources = GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character);
 
         let mut locations = Vec::new();
+        let mut already_processed: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         for definition in def_sources.iter() {
             match &definition.source {
                 GotoSourceType::Symbol(target_symbol) => {
@@ -54,6 +57,10 @@ impl ReferenceFeature {
                     if target_symbol.borrow().typ() == SymType::CLASS {
                         if let Some(model_data) = target_symbol.borrow().as_class_sym()._model.as_ref() {
                             if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
+                                let main_sym = model.borrow().get_main_symbols(session, target_symbol.borrow().find_module());
+                                if main_sym.len() == 1 && !Rc::ptr_eq(target_symbol, &main_sym[0]) {
+                                    continue;
+                                }
                                 let dependents = model.borrow().dependents.clone();
                                 for dep_symbol_rc in dependents.iter() {
                                     let Some(Some(file)) = dep_symbol_rc.borrow().get_file().map(|x| x.upgrade()) else { //to be sure we are on a file
@@ -81,6 +88,9 @@ impl ReferenceFeature {
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, symbol_name: &String, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
         error!("Searching references for symbol {} in file {}", symbol_name, file_symbol.borrow().paths()[0]);
+        if file_symbol.borrow().paths()[0].contains("test_event_sale_with_product_configurator") {
+            error!("found one");
+        }
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let mut visitor = ReferenceVisitor {
             sym_stack: vec![],
