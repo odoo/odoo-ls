@@ -3,6 +3,7 @@ use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
+use tracing::error;
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
@@ -1176,7 +1177,7 @@ impl Evaluation {
                 let bases = Symbol::follow_ref(&base, session, &mut None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent.clone(), max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
-                 for base in bases.iter() {
+                for base in bases.iter() {
                     match base {
                         EvaluationSymbolPtr::WEAK(base_sym_weak_eval) if base_sym_weak_eval.instance == Some(false) => {
                             if let Some(SymType::CLASS) = base.upgrade_weak().map(|s| s.borrow().typ()) {
@@ -1370,12 +1371,48 @@ impl Evaluation {
                         if let Some(file_info) = file_info {
                             found_one_reference = true;
                             let range= ast.range();
-                            let tranformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
-                            session.sync_odoo.evaluation_locations.push(Location {
-                                uri: FileMgr::pathname2uri(&file.borrow().paths().first().unwrap()),
-                                range: tranformed_range,
-                            });
+                            let transformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
+                            //check that a previous call to analyze_ast (recursively for ex) didn't already add this expression
+                            let uri = FileMgr::pathname2uri(&file.borrow().paths().first().unwrap());
+                            if session.sync_odoo.evaluation_locations.is_empty() ||
+                            session.sync_odoo.evaluation_locations.last().unwrap().uri != uri ||
+                            session.sync_odoo.evaluation_locations.last().unwrap().range.start.line != transformed_range.start.line{
+                                session.sync_odoo.evaluation_locations.push(Location {
+                                    uri: uri,
+                                    range: transformed_range,
+                                });
+                            }
                         }
+                    }
+                }
+                if let Some(value) = eval.value.as_ref() {
+                    match value {
+                        EvaluationValue::CONSTANT(constant) => {
+                            match constant {
+                                Expr::StringLiteral(s) => {
+                                    if evaluation_search.borrow().typ() == SymType::CLASS {
+                                        let class_bw = evaluation_search.borrow();
+                                        let class = class_bw.as_class_sym();
+                                        if let Some(model_data) = class._model.as_ref() {
+                                            if s.value.to_str() == model_data.name {
+                                                let file = parent.borrow().get_file().unwrap().upgrade().unwrap();
+                                                let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]);
+                                                if let Some(file_info) = file_info {
+                                                    let transformed_range = file_info.borrow().text_range_to_range(&s.range, session.sync_odoo.encoding);
+                                                    let uri = FileMgr::pathname2uri(&file.borrow().paths().first().unwrap());
+                                                    session.sync_odoo.evaluation_locations.push(Location {
+                                                        uri: uri,
+                                                        range: transformed_range,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                _ => {}
+                            }
+                        },
+                        _ => {}
                     }
                 }
             }
