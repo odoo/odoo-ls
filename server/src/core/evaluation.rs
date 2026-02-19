@@ -3,6 +3,7 @@ use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
+use tracing::error;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
@@ -1319,12 +1320,47 @@ impl Evaluation {
                         if let Some(file_info) = file_info {
                             found_one_reference = true;
                             let range= ast.range();
-                            let tranformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
-                            session.sync_odoo.evaluation_locations.push(Location {
-                                uri: FileMgr::pathname2uri(file_path),
-                                range: tranformed_range,
-                            });
+                            let transformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
+                            //check that a previous call to analyze_ast (recursively for ex) didn't already add this expression
+                            let uri = FileMgr::pathname2uri(file_path);
+                            if session.sync_odoo.evaluation_locations.is_empty() ||
+                            session.sync_odoo.evaluation_locations.last().unwrap().uri != uri ||
+                            session.sync_odoo.evaluation_locations.last().unwrap().range.start.line != transformed_range.start.line {
+                                session.sync_odoo.evaluation_locations.push(Location {
+                                    uri: uri,
+                                    range: transformed_range,
+                                });
+                            }
                         }
+                    }
+                }
+                if let Some(value) = eval.value.as_ref() {
+                    match value {
+                        EvaluationValue::CONSTANT(constant) => {
+                            match constant {
+                                Expr::StringLiteral(s) => {
+                                    if let SymbolKey::Class(class_key) = evaluation_search {
+                                        if let Some(model_data) = st!()[class_key]._model.as_ref() {
+                                            if model_data.name == s.value.to_str() {
+                                                let file = st!().get_file(parent).unwrap();
+                                                let file_path = &st!().paths(file)[0];
+                                                let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(file_path);
+                                                if let Some(file_info) = file_info {
+                                                    let transformed_range = file_info.borrow().text_range_to_range(&s.range, session.sync_odoo.encoding);
+                                                    let uri = FileMgr::pathname2uri(file_path);
+                                                    session.sync_odoo.evaluation_locations.push(Location {
+                                                        uri: uri,
+                                                        range: transformed_range,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                _ => {}
+                            }
+                        },
+                        _ => {}
                     }
                 }
             }
