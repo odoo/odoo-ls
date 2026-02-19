@@ -374,3 +374,27 @@ macro_rules! warn_or_panic {
         }
     }
 }
+
+use std::hash::{BuildHasherDefault, Hasher};
+#[derive(Default)]
+pub struct U32IdentityHasher(u64);
+
+impl Hasher for U32IdentityHasher {
+	fn write(&mut self, bytes: &[u8]) {
+		// fallback lent (rare si on n'utilise que u32)
+		let mut v = 0u64;
+		for (i, b) in bytes.iter().enumerate().take(8) {
+			v |= (*b as u64) << (i * 8);
+		}
+		self.0 = v;
+	}
+
+	fn write_u32(&mut self, i: u32) {
+		self.0 = i as u64;
+	}
+
+	fn finish(&self) -> u64 {
+		self.0
+	}
+}
+pub type NoHashBuilder = BuildHasherDefault<U32IdentityHasher>;
