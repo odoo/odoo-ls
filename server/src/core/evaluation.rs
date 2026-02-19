@@ -11,6 +11,7 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::utils::NoHashBuilder;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -283,7 +284,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: odoo.get_ts_list(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -299,7 +300,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: odoo.get_ts_tuple(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -315,7 +316,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: odoo.get_ts_dict(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -331,7 +332,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().expect("builtins set not found")),
+                    weak: odoo.get_ts_set(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -355,25 +356,25 @@ impl Evaluation {
     }
 
     pub fn new_constant(odoo: &mut SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
-        let tree_value = match &values {
+        let symbol = match &values {
             Expr::StringLiteral(_s) => {
-                (vec![Sy!("builtins")], vec![Sy!("str")])
+                odoo.get_ts_string()
             },
             Expr::BooleanLiteral(_b) => {
-                (vec![Sy!("builtins")], vec![Sy!("bool")])
+                odoo.get_ts_boolean()
             },
             Expr::NumberLiteral(_n) => {
                 match _n.value {
-                    Number::Float(_) => (vec![Sy!("builtins")], vec![Sy!("float")]),
-                    Number::Int(_) => (vec![Sy!("builtins")], vec![Sy!("int")]),
-                    Number::Complex { .. } => (vec![Sy!("builtins")], vec![Sy!("complex")]),
+                    Number::Float(_) => odoo.get_ts_float(),
+                    Number::Int(_) => odoo.get_ts_int(),
+                    Number::Complex { .. } => odoo.get_ts_complex(),
                 }
             },
             Expr::BytesLiteral(_b) => {
-                (vec![Sy!("builtins")], vec![Sy!("bytes")])
+                odoo.get_ts_bytes()
             },
             Expr::EllipsisLiteral(_e) => {
-                (vec![Sy!("builtins")], vec![Sy!("Ellipsis")])
+                odoo.get_ts_ellipsis()
             },
             Expr::NoneLiteral(_n) => {
                 let mut eval = Evaluation::new_none();
@@ -381,14 +382,10 @@ impl Evaluation {
                 eval.value = Some(EvaluationValue::CONSTANT(values));
                 return eval
             }
-            _ => {(vec![Sy!("builtins")], vec![Sy!("object")])}
+            _ => {
+                odoo.get_ts_object()
+            }
         };
-        let symbol;
-        if !values.is_none_literal_expr() {
-            symbol = Rc::downgrade(&odoo.get_symbol("", &tree_value, u32::MAX).last().expect("builtins class not found"));
-        } else {
-            symbol = Weak::new();
-        }
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
@@ -512,7 +509,7 @@ impl Evaluation {
     /// else:
     ///     i="test"
     /// It will return two evaluation for i, one with 5 and one for "test"
-    pub fn from_sections(parent: &Symbol, sections: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>) -> Vec<Evaluation> {
+    pub fn from_sections(parent: &Symbol, sections: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>) -> Vec<Evaluation> {
         let mut res = vec![];
         let section = parent.as_symbol_mgr().get_section_for(u32::MAX);
         let content_symbols = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
@@ -1299,7 +1296,7 @@ impl Evaluation {
                         evals.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().expect("builtins class not found")),
+                                    weak: odoo.get_ts_boolean(),
                                     context: HashMap::new(),
                                     instance: Some(true),
                                     is_super: false,
@@ -1347,7 +1344,7 @@ impl Evaluation {
                     Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().expect("builtins class not found")),
+                                weak: odoo.get_ts_string(),
                                 context: HashMap::new(),
                                 instance: Some(true),
                                 is_super: false,

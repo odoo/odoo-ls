@@ -28,6 +28,7 @@ use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_source_file::PositionEncoding;
 use serde_json::Value;
 use tracing::{error, warn, info, trace};
+use weak_table::traits::WeakElement;
 
 use std::collections::HashSet;
 use std::process::Command;
@@ -60,6 +61,42 @@ pub enum InitState {
     NOT_READY,
     PYTHON_READY,
     ODOO_READY,
+}
+
+#[derive(Debug)]
+pub struct TypeshedWeakReferences {
+    dict: Weak<RefCell<Symbol>>,
+    tuple: Weak<RefCell<Symbol>>,
+    set: Weak<RefCell<Symbol>>,
+    list: Weak<RefCell<Symbol>>,
+    string: Weak<RefCell<Symbol>>,
+    boolean: Weak<RefCell<Symbol>>,
+    int: Weak<RefCell<Symbol>>,
+    float: Weak<RefCell<Symbol>>,
+    complex: Weak<RefCell<Symbol>>,
+    ellipsis: Weak<RefCell<Symbol>>,
+    bytes: Weak<RefCell<Symbol>>,
+    object: Weak<RefCell<Symbol>>,
+}
+
+impl TypeshedWeakReferences {
+
+    pub fn new() -> Self {
+        Self {
+            dict: Weak::new(),
+            tuple: Weak::new(),
+            set: Weak::new(),
+            list: Weak::new(),
+            string: Weak::new(),
+            boolean: Weak::new(),
+            int: Weak::new(),
+            float: Weak::new(),
+            complex: Weak::new(),
+            ellipsis: Weak::new(),
+            bytes: Weak::new(),
+            object: Weak::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -102,6 +139,8 @@ pub struct SyncOdoo {
     pub opened_files: Vec<String>,
     pub evaluation_search: Option<Rc<RefCell<Symbol>>>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
     pub evaluation_locations: Vec<Location>,
+    pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
+
 
     pub test_mode: bool,
 }
@@ -150,7 +189,7 @@ impl SyncOdoo {
             opened_files: vec![],
             evaluation_search: None,
             evaluation_locations: vec![],
-
+            typeshed_weak_cache: TypeshedWeakReferences::new(),
             test_mode: false,
         };
         sync_odoo
@@ -1220,6 +1259,90 @@ impl SyncOdoo {
         let module = module.unwrap();
         let module = module.borrow();
         module.as_module_package().get_xml_id(&oyarn!("{}", id_split.last().unwrap()))
+    }
+
+    pub fn get_ts_dict(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.dict.is_expired() {
+            self.typeshed_weak_cache.dict = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.dict.clone()
+    }
+
+    pub fn get_ts_tuple(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.tuple.is_expired() {
+            self.typeshed_weak_cache.tuple = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.tuple.clone()
+    }
+
+    pub fn get_ts_set(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.set.is_expired() {
+            self.typeshed_weak_cache.set = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.set.clone()
+    }
+
+    pub fn get_ts_list(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.list.is_expired() {
+            self.typeshed_weak_cache.list = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.list.clone()
+    }
+
+    pub fn get_ts_string(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.string.is_expired() {
+            self.typeshed_weak_cache.string = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.string.clone()
+    }
+
+    pub fn get_ts_boolean(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.boolean.is_expired() {
+            self.typeshed_weak_cache.boolean = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.boolean.clone()
+    }
+
+    pub fn get_ts_int(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.int.is_expired() {
+            self.typeshed_weak_cache.int = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("int")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.int.clone()
+    }
+
+    pub fn get_ts_float(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.float.is_expired() {
+            self.typeshed_weak_cache.float = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("float")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.float.clone()
+    }
+
+    pub fn get_ts_complex(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.complex.is_expired() {
+            self.typeshed_weak_cache.complex = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("complex")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.complex.clone()
+    }
+
+    pub fn get_ts_ellipsis(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.ellipsis.is_expired() {
+            self.typeshed_weak_cache.ellipsis = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("Ellipsis")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.ellipsis.clone()
+    }
+
+    pub fn get_ts_bytes(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.bytes.is_expired() {
+            self.typeshed_weak_cache.bytes = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bytes")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.bytes.clone()
+    }
+
+    pub fn get_ts_object(&mut self) -> Weak<RefCell<Symbol>> {
+        if self.typeshed_weak_cache.object.is_expired() {
+            self.typeshed_weak_cache.object = Rc::downgrade(&self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("object")]), u32::MAX).last().unwrap().clone());
+        }
+        self.typeshed_weak_cache.object.clone()
     }
 
 }

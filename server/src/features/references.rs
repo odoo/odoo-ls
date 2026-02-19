@@ -13,7 +13,6 @@ use crate::core::odoo::SyncOdoo;
 use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
 use crate::{constants::SymType, core::{file_mgr::{FileInfo, FileMgr}, symbols::symbol::Symbol}, features::xml_ast_utils::{XmlAstResult, XmlAstUtils}, threads::SessionInfo, utils::PathSanitizer};
 
-
 pub struct ReferenceFeature {
 
 }
@@ -26,6 +25,7 @@ impl ReferenceFeature {
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
+        SyncOdoo::process_rebuilds(session, false);
         let def_sources = GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character);
 
         let mut locations = Vec::new();
@@ -80,7 +80,6 @@ impl ReferenceFeature {
     }
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, symbol_name: &String, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
-        SyncOdoo::process_rebuilds(session, false);
         error!("Searching references for symbol {} in file {}", symbol_name, file_symbol.borrow().paths()[0]);
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let mut visitor = ReferenceVisitor {

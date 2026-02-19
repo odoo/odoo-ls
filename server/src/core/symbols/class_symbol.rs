@@ -8,6 +8,7 @@ use crate::constants::{OYarn, SymType};
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::Sy;
+use crate::utils::NoHashBuilder;
 
 use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -30,7 +31,7 @@ pub struct ClassSymbol {
     //Trait SymbolMgr
     //--- Body symbols
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>>,
     //--- dynamics variables
     pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
     pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
@@ -84,7 +85,7 @@ impl ClassSymbol {
     }
 
     pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::new());
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::default());
         let section_vec = sections.entry(section).or_insert(vec![]);
         section_vec.push(content.clone());
     }

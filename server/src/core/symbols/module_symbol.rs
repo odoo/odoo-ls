@@ -18,7 +18,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
-use crate::utils::PathSanitizer as _;
+use crate::utils::{NoHashBuilder, PathSanitizer as _};
 use crate::S;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
@@ -61,7 +61,7 @@ pub struct ModuleSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>>,
     //--- dynamics variables
     pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
     pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>,
@@ -136,7 +136,7 @@ impl ModuleSymbol {
     }
 
     pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::default());
         let section_vec = sections.entry(section).or_insert_with(|| vec![]);
         section_vec.push(content.clone());
     }

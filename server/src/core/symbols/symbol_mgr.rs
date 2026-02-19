@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc, collections::{HashMap, HashSet}};
 use ruff_text_size::TextSize;
 
 use crate::constants::OYarn;
+use crate::utils::NoHashBuilder;
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::Symbol};
 
@@ -34,7 +35,7 @@ pub trait SymbolMgr {
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols;
     fn _init_symbol_mgr(&mut self);
-    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
+    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
     fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>;
 }
 
@@ -101,7 +102,7 @@ macro_rules! impl_section_mgr_for {
 
         ///Return all the symbols that are valid as last declaration for the given position
         fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols {
-            let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
+            let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>> = self.symbols.get(&name);
             let mut content = if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
                 self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
@@ -117,7 +118,7 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
             let mut res = ContentSymbols::default();
             match index {
                 SectionIndex::NONE => { return res; },
