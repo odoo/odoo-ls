@@ -13,7 +13,7 @@ use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbo
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
-use crate::utils::{compare_semver, PathSanitizer as _};
+use crate::utils::{NoHashBuilder, PathSanitizer as _, compare_semver};
 use crate::S;
 use core::panic;
 use std::cmp::Ordering;
@@ -1121,7 +1121,7 @@ impl Symbol {
         }
     }
 
-    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<'_, OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> {
+    pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<'_, OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>, NoHashBuilder>> {
         match self {
             Symbol::File(f) => {
                 f.symbols.iter()

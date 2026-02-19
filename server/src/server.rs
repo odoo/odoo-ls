@@ -177,7 +177,7 @@ impl Server {
                 references_provider: Some(OneOf::Right(ReferencesOptions {
                     work_done_progress_options: WorkDoneProgressOptions {
                         work_done_progress: Some(false)
-                    }
+                    },
                 })),
                 document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions{
                     label: Some(S!("Odoo")),
