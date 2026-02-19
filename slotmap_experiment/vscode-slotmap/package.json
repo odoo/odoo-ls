@@ -18,10 +18,20 @@
       {
         "command": "slotmap.setMap",
         "title": "SlotMap: Set Map Variable Name"
+      },
+      {
+        "command": "slotmap.resetWatched",
+        "title": "SlotMap: Reset Watch Tracking"
       }
     ],
     "menus": {
       "debug/variables/context": [
+        {
+          "command": "slotmap.lookup",
+          "when": "inDebugMode"
+        }
+      ],
+      "debug/watch/context": [
         {
           "command": "slotmap.lookup",
           "when": "inDebugMode"
