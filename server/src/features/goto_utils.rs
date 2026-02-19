@@ -245,7 +245,7 @@ impl GotoUtils {
             }
             if matches!(goto_request, GotoRequest::Definition) {
                 let eval_ptr = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                let end_symbols = Symbol::follow_ref(&eval_ptr, session, &mut None, true, false, None, None);
+                let end_symbols = Symbol::follow_imported_ref(&eval_ptr, session, &mut None);
                 for end_symbol in end_symbols.iter() {
                     if let Some(symbol) = end_symbol.upgrade_weak() {
                         definition_sources.push(GotoSource{
@@ -276,14 +276,18 @@ impl GotoUtils {
                 if let Some(file_symbol) = symbol.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
                     let paths = file_symbol.borrow().paths();
                     for path in paths.iter() {
+                        let full_path = match file_symbol.borrow().typ() {
+                            SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file_symbol.borrow().as_package().i_ext())).sanitize(),
+                            _ => path.clone()
+                        };
                         let symbol_range = if symbol.borrow().has_range() {
-                            session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &symbol.borrow().range())
+                            session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range())
                         } else {
                             Range::default()
                         };
                         res.push(LocationLink{
                             origin_selection_range: def.origin_selection_range.clone(),
-                            target_uri: FileMgr::pathname2uri(&path),
+                            target_uri: FileMgr::pathname2uri(&full_path),
                             target_selection_range: symbol_range,
                             target_range: symbol_range,
                         });

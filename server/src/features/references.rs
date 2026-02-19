@@ -1,9 +1,11 @@
+use std::rc::Weak;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use lsp_types::{Location, Range};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
+use weak_table::PtrWeakHashSet;
 
 use crate::S;
 use crate::constants::OYarn;
@@ -31,21 +33,19 @@ impl ReferenceFeature {
         for definition in def_sources.iter() {
             match &definition.source {
                 GotoSourceType::Symbol(target_symbol) => {
+                    let mut to_check: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
                     let symbol_name = target_symbol.borrow().name().to_string();
 
                     locations.extend(ReferenceFeature::references_in_file(session, file_symbol, file_info, &symbol_name, &target_symbol));
+                    to_check.insert(file_symbol.clone());
 
                     //take arch and arch_eval dependents
-                    for dep in file_symbol.borrow().dependents()[0].iter().take(2) {
-                        if let Some(dep_set) = dep {
-                            for dep_symbol_rc in dep_set.iter() {
-                                let Some(Some(file)) = dep_symbol_rc.borrow().get_file().map(|x| x.upgrade()) else { //to be sure we are on a file
-                                    continue;
-                                };
-                                let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]) else {
-                                    continue;
-                                };
-                                locations.extend(ReferenceFeature::references_in_file(session, &dep_symbol_rc, &dep_file_info, &symbol_name, &target_symbol));
+                    if !file_symbol.borrow().dependents().is_empty() { // file could be out of workspace
+                        for dep in file_symbol.borrow().dependents()[0].iter().take(2) {
+                            if let Some(dep_set) = dep {
+                                for dep_symbol_rc in dep_set.iter() {
+                                    to_check.insert(dep_symbol_rc.clone());
+                                }
                             }
                         }
                     }
@@ -53,22 +53,21 @@ impl ReferenceFeature {
                     if target_symbol.borrow().typ() == SymType::CLASS {
                         if let Some(model_data) = target_symbol.borrow().as_class_sym()._model.as_ref() {
                             if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
-                                let main_sym = model.borrow().get_main_symbols(session, target_symbol.borrow().find_module());
-                                if main_sym.len() == 1 && !Rc::ptr_eq(target_symbol, &main_sym[0]) {
-                                    continue;
-                                }
-                                let dependents = model.borrow().dependents.clone();
-                                for dep_symbol_rc in dependents.iter() {
-                                    let Some(Some(file)) = dep_symbol_rc.borrow().get_file().map(|x| x.upgrade()) else { //to be sure we are on a file
-                                        continue;
-                                    };
-                                    let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]) else {
-                                        continue;
-                                    };
-                                    locations.extend(ReferenceFeature::references_in_file(session, &dep_symbol_rc, &dep_file_info, &symbol_name, &target_symbol));
+                                to_check.extend(model.borrow().dependents.clone());
+                                for symbol in model.borrow().all_symbols(session, None, false) {
+                                    to_check.insert(symbol.0);
                                 }
                             }
                         }
+                    }
+                    for sym in to_check.iter() {
+                        let Some(Some(file)) = sym.borrow().get_file().map(|x| x.upgrade()) else { //to be sure we are on a file
+                            continue;
+                        };
+                        let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]) else {
+                            continue;
+                        };
+                        locations.extend(ReferenceFeature::references_in_file(session, &sym, &dep_file_info, &symbol_name, &target_symbol));
                     }
                 },
                 _ => continue,
@@ -83,10 +82,6 @@ impl ReferenceFeature {
     }
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, symbol_name: &String, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
-        error!("Searching references for symbol {} in file {}", symbol_name, file_symbol.borrow().paths()[0]);
-        if file_symbol.borrow().paths()[0].contains("test_event_sale_with_product_configurator") {
-            error!("found one");
-        }
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let mut visitor = ReferenceVisitor {
             sym_stack: vec![],
@@ -338,6 +333,14 @@ impl ReferenceVisitor {
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
+        match *assign.value {
+            Expr::StringLiteral(ref s) => {
+                if s.value.to_str() == "pygls.tests.base_test_model" {
+                    error!("here");
+                }
+            },
+            _=> {}
+        }
         self.visit_expr(session, &assign.value, &assign.range.start());
     }
 
