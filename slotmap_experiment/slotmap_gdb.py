@@ -23,6 +23,7 @@ Requires rust-gdb (or GDB with Rust pretty-printers loaded) for best output.
 """
 
 import gdb
+import re
 import struct
 
 
@@ -46,10 +47,72 @@ def get_vec_len(vec_val):
     return int(vec_val['len'])
 
 
+def unwrap_option(val):
+    """If val is an Option<T>, return the inner T (or None if it's None variant).
+    If val is not an Option, return it unchanged."""
+    type_name = str(val.type.strip_typedefs())
+    if 'Option' not in type_name:
+        return val
+
+    # Rust's Option with niche optimization (e.g. Option<Key> where Key
+    # contains NonZeroU32) has no discriminant — None is represented by 0.
+    # GDB with Rust pretty-printers exposes the variant as a field.
+    # Try common GDB representations:
+    try:
+        # Some compilers/versions: variant field accessible directly
+        # Check if this looks like None by trying to read the inner value
+        inner = val['__0']
+        # Verify it's not a null/zero key (None with niche optimization)
+        # by checking if we can extract valid key data from it
+        return inner
+    except gdb.error:
+        pass
+
+    # Try enum variant access patterns
+    for field_name in ['value', 'Some', '__0']:
+        try:
+            inner = val[field_name]
+            # For Some(v), the value is often one more level in
+            try:
+                return inner['__0']
+            except gdb.error:
+                return inner
+        except gdb.error:
+            continue
+
+    return val
+
+
 def get_key_fields(key_val):
-    """Extract (idx, version) from a slotmap key value."""
+    """Extract (idx, version) from a slotmap key value.
+    Handles Option<Key> wrapping automatically."""
+    # Unwrap Option if present
+    key_val = unwrap_option(key_val)
+
     # Keys are newtypes: ExampleKey(__0: KeyData { idx, version })
-    keydata = key_val['__0']
+    # Try direct KeyData access first, then unwrap one newtype layer
+    keydata = None
+    for candidate in [key_val, ]:
+        try:
+            kd = candidate['__0']
+            # Verify it has idx and version (it's KeyData)
+            _ = kd['idx']
+            keydata = kd
+            break
+        except gdb.error:
+            continue
+
+    if keydata is None:
+        # Maybe key_val IS the KeyData directly
+        try:
+            _ = key_val['idx']
+            keydata = key_val
+        except gdb.error:
+            raise gdb.GdbError(
+                f"Cannot extract key fields from type {key_val.type}. "
+                "Expected a slotmap key or Option<Key>."
+            )
+
     idx = int(keydata['idx'])
     # version is NonZeroU32 which wraps: version.__0.__0 or just version
     version_field = keydata['version']
@@ -98,6 +161,51 @@ def detect_version_offset(base_ptr, slot_size):
             if v == 0:
                 return offset
     return slot_size - 8  # fallback
+
+
+def sanitize_var_name(expr):
+    """Turn an arbitrary GDB expression into a valid convenience variable name.
+    E.g. '$slot_l.__0.__0.parent' -> 'slot_l___0___0_parent'"""
+    # Remove leading $
+    name = expr.lstrip('$')
+    # Replace any non-alphanumeric/underscore chars with _
+    name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    # Collapse multiple underscores
+    name = re.sub(r'_+', '_', name)
+    # Strip leading/trailing underscores
+    name = name.strip('_')
+    return name
+
+
+def is_option_none(val):
+    """Check if a value is Option::None."""
+    type_name = str(val.type.strip_typedefs())
+    if 'Option' not in type_name:
+        return False
+    # For niche-optimized Option<Key> (where Key contains NonZeroU32),
+    # None is represented by the niche value (0 in the NonZero field).
+    # Try to read the inner value and check if it's zero/null.
+    try:
+        inner = val['__0']
+        # Check if it looks like a key with version=0 (None niche)
+        try:
+            kd = inner['__0']  # KeyData inside newtype
+            version_field = kd['version']
+            try:
+                v = int(version_field['__0']['__0'])
+            except gdb.error:
+                try:
+                    v = int(version_field['__0'])
+                except gdb.error:
+                    v = int(version_field)
+            return v == 0  # NonZeroU32 == 0 means None
+        except gdb.error:
+            pass
+    except gdb.error:
+        pass
+    # Fallback: check string representation
+    val_str = str(val)
+    return 'None' in val_str
 
 
 def parse_args(arg_string, need_key=False):
@@ -149,11 +257,16 @@ class SlotMapGet(gdb.Command):
     def invoke(self, arg, from_tty):
         parsed = parse_args(arg, need_key=True)
         if parsed is None:
-            raise gdb.GdbError("Usage: slotmap_get <map> <key>")
-        sm_name, key_name, slot_size, type_name = parsed
+            raise gdb.GdbError("Usage: slotmap_get <map> <key-expr>")
+        sm_name, key_expr, slot_size, type_name = parsed
 
         sm = gdb.parse_and_eval(sm_name)
-        key = gdb.parse_and_eval(key_name)
+        key = gdb.parse_and_eval(key_expr)
+
+        # Check for Option::None before trying to extract key fields
+        if is_option_none(key):
+            print(f"Key expression '{key_expr}' is None (no parent/target)")
+            return
 
         # Auto-detect from debug info if not overridden
         auto_slot_size, auto_val_type = get_slotmap_type_info(sm)
@@ -191,15 +304,19 @@ class SlotMapGet(gdb.Command):
 
         print(f"Slot {idx}: OCCUPIED (version={slot_version})")
 
+        # Build a clean convenience variable name from the key expression
+        var_suffix = sanitize_var_name(key_expr)
+
         if type_name:
             # Cast to the value type — GDB pretty-printers handle the rest
             val_type = gdb.lookup_type(type_name)
             ptr = gdb.Value(slot_addr).cast(val_type.pointer())
             value = ptr.dereference()
             # Store in $slot (add to Watch once, always shows last lookup)
-            # and in $slot_<keyname> for comparing multiple keys.
+            # and in $slot_<suffix> for comparing multiple lookups.
             gdb.set_convenience_variable('slot', value)
-            gdb.set_convenience_variable(f"slot_{key_name}", value)
+            gdb.set_convenience_variable(f"slot_{var_suffix}", value)
+            print(f"  → $slot, $slot_{var_suffix}")
             print(value)
         else:
             # Raw hex dump

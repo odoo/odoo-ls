@@ -33,20 +33,23 @@ function activate(context) {
                 return;
             }
 
-            let keyName = variable?.variable?.name;
-            if (!keyName) {
-                keyName = await vscode.window.showInputBox({
-                    prompt: 'Key variable name',
+            // Prefer evaluateName (full GDB expression) over name (field name only).
+            // This is critical for struct fields: evaluateName gives us e.g.
+            // "$slot_l.__0.__0.parent" while name just gives "parent".
+            let keyExpr = variable?.variable?.evaluateName || variable?.variable?.name;
+            if (!keyExpr) {
+                keyExpr = await vscode.window.showInputBox({
+                    prompt: 'Key expression (variable name or struct.field path)',
                     placeHolder: 'k',
                 });
-                if (!keyName) return;
+                if (!keyExpr) return;
             }
 
             const mapName = vscode.workspace.getConfiguration('slotmap').get('mapVariable', 'sm');
 
             try {
                 await session.customRequest('evaluate', {
-                    expression: `-exec slotmap_get ${mapName} ${keyName}`,
+                    expression: `-exec slotmap_get ${mapName} ${keyExpr}`,
                     context: 'repl',
                 });
             } catch (e) {
@@ -66,7 +69,7 @@ function activate(context) {
 
                 try {
                     await session.customRequest('evaluate', {
-                        expression: `-exec slotmap_get ${mapNameNew} ${keyName}`,
+                        expression: `-exec slotmap_get ${mapNameNew} ${keyExpr}`,
                         context: 'repl',
                     });
                 } catch (e2) {
@@ -75,9 +78,13 @@ function activate(context) {
                 }
             }
 
-            // Add watch expressions: $slot (latest) and $slot_<key> (per-key)
+            // Build a clean suffix for the watch variable name
+            // (mirrors the sanitize_var_name logic in slotmap_gdb.py)
+            const varSuffix = keyExpr.replace(/^\$/, '').replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+            // Add watch expressions: $slot (latest) and $slot_<suffix> (per-lookup)
             await addWatchIfMissing('$slot');
-            await addWatchIfMissing(`$slot_${keyName}`);
+            await addWatchIfMissing(`$slot_${varSuffix}`);
             await refreshWatchPanel();
         }),
 
