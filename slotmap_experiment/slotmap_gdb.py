@@ -31,6 +31,9 @@ import struct
 
 _default_slot_size = None
 _default_type_name = None
+_map_var_name = None         # SlotMap variable name for the pretty-printer
+_known_key_types = set()     # Type names recognized as slotmap keys
+_in_children = False         # True while children() is resolving; prevents recursion
 
 
 # --- SlotMap layout knowledge ---
@@ -203,9 +206,10 @@ def is_option_none(val):
             pass
     except gdb.error:
         pass
-    # Fallback: check string representation
-    val_str = str(val)
-    return 'None' in val_str
+    # If niche detection failed, assume not-None
+    # (worst case: we try to resolve and fail gracefully).
+    # Do NOT use str(val) here — it triggers our to_string() → infinite recursion.
+    return False
 
 
 def parse_args(arg_string, need_key=False):
@@ -240,6 +244,112 @@ def parse_args(arg_string, need_key=False):
             raise gdb.GdbError(f"Unknown argument: {args[i]}")
 
     return sm_name, key_name, slot_size, type_name
+
+
+# --- Pretty-printer for slotmap keys ---
+
+def slotmap_resolve(key_val):
+    """Try to resolve a slotmap key to its value. Returns gdb.Value or None."""
+    if _map_var_name is None:
+        return None
+    try:
+        sm = gdb.parse_and_eval(_map_var_name)
+        slot_size, val_type = get_slotmap_type_info(sm)
+        if slot_size is None or val_type is None:
+            return None
+        base_ptr = get_vec_base_ptr(sm['slots'])
+        vec_len = get_vec_len(sm['slots'])
+        idx, key_version = get_key_fields(key_val)
+        if idx >= vec_len:
+            return None
+        version_offset = detect_version_offset(base_ptr, slot_size)
+        slot_addr = base_ptr + idx * slot_size
+        slot_version = read_u32_at(slot_addr + version_offset)
+        if slot_version % 2 == 0 or slot_version != key_version:
+            return None
+        ptr = gdb.Value(slot_addr).cast(val_type.pointer())
+        return ptr.dereference()
+    except Exception:
+        return None
+
+
+class SlotMapKeyPrinter:
+    """Pretty-printer for slotmap key types.
+    Shows key info and resolves the value as an expandable child."""
+
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        global _in_children
+        _in_children = False  # reset flag so this top-level key can resolve
+        try:
+            idx, version = get_key_fields(self.val)
+            return f"Key(idx={idx}, v={version})"
+        except Exception:
+            return "<key>"  # safe static string; str(self.val) would recurse
+
+    def children(self):
+        global _in_children
+        _in_children = True  # suppress printer on nested keys during resolution
+        try:
+            resolved = slotmap_resolve(self.val)
+            if resolved is not None:
+                yield ("[value]", resolved)
+        except Exception:
+            pass
+
+
+class SlotMapOptionKeyPrinter:
+    """Pretty-printer for Option<Key> that resolves Some keys inline."""
+
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        global _in_children
+        _in_children = False  # reset flag so this top-level key can resolve
+        if is_option_none(self.val):
+            return "None"
+        try:
+            key = unwrap_option(self.val)
+            idx, version = get_key_fields(key)
+            return f"Some(Key(idx={idx}, v={version}))"
+        except Exception:
+            return "<option key>"  # safe static string; str(self.val) would recurse
+
+    def children(self):
+        global _in_children
+        _in_children = True  # suppress printer on nested keys during resolution
+        if is_option_none(self.val):
+            return
+        try:
+            key = unwrap_option(self.val)
+            resolved = slotmap_resolve(key)
+            if resolved is not None:
+                yield ("[value]", resolved)
+        except Exception:
+            pass
+
+
+def slotmap_type_lookup(val):
+    """GDB pretty-printer lookup function. Returns a printer if the type
+    is a known slotmap key or Option<key>, otherwise None (fall through
+    to default printers)."""
+    if _in_children or not _known_key_types:
+        return None
+    type_name = str(val.type.strip_typedefs())
+    for kt in _known_key_types:
+        if kt in type_name:
+            if 'Option' in type_name:
+                return SlotMapOptionKeyPrinter(val)
+            else:
+                return SlotMapKeyPrinter(val)
+    return None
+
+
+# Register the lookup function globally (checked before objfile printers)
+gdb.pretty_printers.append(slotmap_type_lookup)
 
 
 # --- Commands ---
@@ -486,19 +596,22 @@ class SlotMapDetect(gdb.Command):
 
 
 class SlotMapConfig(gdb.Command):
-    """Set default slot-size and type for slotmap commands.
-    Usage: slotmap_config --slot-size N --type TypeName
+    """Set defaults for slotmap commands and enable inline key resolution.
+    Usage: slotmap_config --map <variable> [--slot-size N] [--type TypeName]
 
-    After this, you can just use:
-        slotmap_get sm k
-    instead of:
-        slotmap_get sm k --slot-size 56 --type my::Type"""
+    --map enables the pretty-printer: expanding a key field in the
+    Variables/Watch panel will automatically show the resolved value.
+    The key type is auto-detected from the SlotMap's type info.
+
+    Example:
+        slotmap_config --map sm
+        # Now 'parent: Some(Key(idx=0, v=1))' is expandable → shows the Symbol"""
 
     def __init__(self):
         super().__init__("slotmap_config", gdb.COMMAND_DATA)
 
     def invoke(self, arg, from_tty):
-        global _default_slot_size, _default_type_name
+        global _default_slot_size, _default_type_name, _map_var_name
         args = arg.split()
         i = 0
         while i < len(args):
@@ -508,11 +621,27 @@ class SlotMapConfig(gdb.Command):
             elif args[i] == '--type' and i + 1 < len(args):
                 _default_type_name = args[i + 1]
                 i += 2
+            elif args[i] == '--map' and i + 1 < len(args):
+                _map_var_name = args[i + 1]
+                i += 2
             else:
                 raise gdb.GdbError(f"Unknown argument: {args[i]}")
 
-        print(f"SlotMap defaults: slot_size={_default_slot_size}, "
-              f"type={_default_type_name}")
+        # Auto-detect key type from the SlotMap if --map was given
+        if _map_var_name:
+            try:
+                sm = gdb.parse_and_eval(_map_var_name)
+                # SlotMap<K, V> — K is template_argument(0)
+                key_type = sm.type.template_argument(0)
+                key_type_name = str(key_type)
+                _known_key_types.add(key_type_name)
+                print(f"Registered pretty-printer for key type: {key_type_name}")
+            except gdb.error as e:
+                print(f"Warning: could not detect key type from '{_map_var_name}': {e}")
+                print("Use slotmap_config when the map variable is in scope.")
+
+        print(f"SlotMap defaults: map={_map_var_name}, "
+              f"slot_size={_default_slot_size}, type={_default_type_name}")
 
 
 # --- Registration ---
