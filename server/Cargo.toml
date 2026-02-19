@@ -46,11 +46,11 @@ csv = "1.3.1"
 nix = { version = "0.29.0", features = ["process"] }
 
 [[bench]]
-name = "iai_profiler"
+name = "gungraun_bench"
 harness = false
 
 [dev-dependencies]
-iai-callgrind = "0.14.2"
+gungraun = "0.17.2"
 assert_fs = "1.1"
 
 [features]
