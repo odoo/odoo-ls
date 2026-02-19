@@ -8,20 +8,20 @@ use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
 use std::env;
 
-use iai_callgrind::{
-    library_benchmark, library_benchmark_group, main, LibraryBenchmarkConfig,
-    FlamegraphConfig
+use gungraun::{
+    Callgrind, FlamegraphConfig, LibraryBenchmarkConfig, library_benchmark, library_benchmark_group, main
 };
 use std::hint::black_box;
 
 /*
-To run iai-callgrind:
+To run gungraun-callgrind:
 install valgrind
-run cargo install --version 0.14.0 iai-callgrind-runner
+run cargo install --version 0.14.0 gungraun-runner
+run cargo bench -- --nocapture
 */
 
 #[library_benchmark]
-fn iai_main() {
+fn gungraun_main() {
     // TODO: Audit that the environment access only happens in single-threaded code.
     unsafe { env::set_var("RUST_BACKTRACE", "full") };
 
@@ -87,9 +87,11 @@ fn iai_main() {
     info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
 }
 
-library_benchmark_group!(name = my_group; benchmarks = iai_main);
+library_benchmark_group!(name = my_group; benchmarks = gungraun_main);
 
 main!(
-    config = LibraryBenchmarkConfig::default().flamegraph(FlamegraphConfig::default());
+    config = LibraryBenchmarkConfig::default().tool(Callgrind::default()
+            .flamegraph(FlamegraphConfig::default())
+        ),
     library_benchmark_groups = my_group
 );
