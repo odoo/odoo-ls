@@ -5,7 +5,7 @@ use ruff_python_ast::{AtomicNodeIndex, Expr};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::{FunctionKey, SymbolKey}}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::{FunctionKey, SymbolKey}}, oyarn,  utils::NoHashBuilder, threads::SessionInfo};
 
 use super::{symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -55,7 +55,8 @@ pub struct FunctionSymbol {
     //Trait SymbolMgr
     //--- Body content
     pub sections: Vec<SectionRange>,
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    // @arena: dead code, clean me!
     //--- dynamics variables
     pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
     pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>

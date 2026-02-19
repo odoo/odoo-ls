@@ -12,6 +12,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ContainsKey, FunctionKey, ModuleKey, SymbolKey, Weak};
 use crate::core::symbols::variable_symbol::VariableSymbol;
+use crate::utils::NoHashBuilder;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -258,11 +259,11 @@ impl AnalyzeAstResult {
 
 impl Evaluation {
 
-    pub fn new_list(odoo: &SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
+    pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().copied().expect("builtins list not found").into(),
+                    weak: odoo.get_ts_list(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -274,11 +275,11 @@ impl Evaluation {
         }
     }
 
-    pub fn new_tuple(odoo: &SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
+    pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().copied().expect("builtins list not found").into(),
+                    weak: odoo.get_ts_tuple(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -290,11 +291,11 @@ impl Evaluation {
         }
     }
 
-    pub fn new_dict(odoo: &SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
+    pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().copied().expect("builtins list not found").into(),
+                    weak: odoo.get_ts_dict(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -306,11 +307,11 @@ impl Evaluation {
         }
     }
 
-    pub fn new_set(odoo:&SyncOdoo, range: TextRange) -> Evaluation {
+    pub fn new_set(odoo: &mut SyncOdoo, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().copied().expect("builtins set not found").into(),
+                    weak: odoo.get_ts_set(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -322,7 +323,7 @@ impl Evaluation {
         }
     }
 
-    pub fn new_domain(_odoo: &SyncOdoo) -> Evaluation {
+    pub fn new_domain(_odoo: &mut SyncOdoo) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::DOMAIN,
@@ -333,26 +334,26 @@ impl Evaluation {
         }
     }
 
-    pub fn new_constant(odoo: &SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
-        let tree_value = match &values {
+    pub fn new_constant(odoo: &mut SyncOdoo, values: Expr, range: TextRange) -> Evaluation {
+        let symbol = match &values {
             Expr::StringLiteral(_s) => {
-                (vec![Sy!("builtins")], vec![Sy!("str")])
+                odoo.get_ts_string()
             },
             Expr::BooleanLiteral(_b) => {
-                (vec![Sy!("builtins")], vec![Sy!("bool")])
+                odoo.get_ts_boolean()
             },
             Expr::NumberLiteral(_n) => {
                 match _n.value {
-                    Number::Float(_) => (vec![Sy!("builtins")], vec![Sy!("float")]),
-                    Number::Int(_) => (vec![Sy!("builtins")], vec![Sy!("int")]),
-                    Number::Complex { .. } => (vec![Sy!("builtins")], vec![Sy!("complex")]),
+                    Number::Float(_) => odoo.get_ts_float(),
+                    Number::Int(_) => odoo.get_ts_int(),
+                    Number::Complex { .. } => odoo.get_ts_complex(),
                 }
             },
             Expr::BytesLiteral(_b) => {
-                (vec![Sy!("builtins")], vec![Sy!("bytes")])
+                odoo.get_ts_bytes()
             },
             Expr::EllipsisLiteral(_e) => {
-                (vec![Sy!("builtins")], vec![Sy!("Ellipsis")])
+                odoo.get_ts_ellipsis()
             },
             Expr::NoneLiteral(_n) => {
                 let mut eval = Evaluation::new_none();
@@ -360,14 +361,10 @@ impl Evaluation {
                 eval.value = Some(EvaluationValue::CONSTANT(values));
                 return eval
             }
-            _ => {(vec![Sy!("builtins")], vec![Sy!("object")])}
+            _ => {
+                odoo.get_ts_object()
+            }
         };
-        let symbol;
-        if !values.is_none_literal_expr() {
-            symbol = odoo.get_symbol("", &tree_value, u32::MAX).last().copied().expect("builtins class not found").into();
-        } else {
-            symbol = Weak::null();
-        }
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
@@ -482,7 +479,7 @@ impl Evaluation {
     ///     i="test"
     /// It will return two evaluation for i, one with 5 and one for "test"
     /// @ arena: formerly took a Symbol as parent (borrowed from strong RC by the caller)
-    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &HashMap<u32, Vec<SymbolKey>>) -> Vec<Evaluation> {
+    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &HashMap<u32, Vec<SymbolKey>, NoHashBuilder>) -> Vec<Evaluation> {
         let parent_sym_mgr = symbol_table.get_as_symbol_mgr(parent_key);
         let mut res = vec![];
         let section = parent_sym_mgr.get_section_for(u32::MAX);
@@ -660,11 +657,11 @@ impl Evaluation {
      */
     pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: SymbolKey, max_infer: &TextSize, context: &mut Option<Context>, for_annotation: bool, required_dependencies: &mut Vec<Vec<SymbolKey>>) -> AnalyzeAstResult {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let odoo: &SyncOdoo = session.sync_odoo;
         let mut evals = vec![];
         let mut diagnostics = vec![];
         let module = st!().find_module(parent);
         let mut found_one_reference = false;
+        let odoo = &mut session.sync_odoo;
 
         match ast {
             ExprOrIdent::Expr(Expr::StringLiteral(expr)) => {
@@ -1248,7 +1245,7 @@ impl Evaluation {
                         evals.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().copied().expect("builtins class not found").into(),
+                                    weak: odoo.get_ts_boolean(),
                                     context: HashMap::new(),
                                     instance: Some(true),
                                     is_super: false,
@@ -1296,7 +1293,7 @@ impl Evaluation {
                     Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().copied().expect("builtins class not found").into(),
+                                weak: odoo.get_ts_string(),
                                 context: HashMap::new(),
                                 instance: Some(true),
                                 is_super: false,

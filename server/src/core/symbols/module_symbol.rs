@@ -20,7 +20,7 @@ use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
-use crate::utils::PathSanitizer as _;
+use crate::utils::{NoHashBuilder, PathSanitizer as _};
 use std::path::PathBuf;
 use std::rc::Weak;
 use std::cell::RefCell;
@@ -62,7 +62,7 @@ pub struct ModuleSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
 
     pub data_symbols: HashMap<String, SymbolKey>,
 }

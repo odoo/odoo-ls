@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey, xml_data::OdooData}, oyarn, weak_hash_set::WeakSet};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey, xml_data::OdooData}, oyarn, utils::NoHashBuilder, weak_hash_set::WeakSet};
 use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Weak};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -28,7 +28,7 @@ pub struct PythonPackageSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
 
     // @arena: dead code?
     //--- dynamics variables

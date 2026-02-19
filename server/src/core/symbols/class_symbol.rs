@@ -8,6 +8,7 @@ use crate::core::model::ModelData;
 use crate::oyarn;
 use crate::core::symbols::symbol_table::{SymbolTable};
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, Weak};
+use crate::utils::NoHashBuilder;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
@@ -28,7 +29,7 @@ pub struct ClassSymbol {
     //Trait SymbolMgr
     //--- Body symbols
     pub sections: Vec<SectionRange>,
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
 }
 
 impl ClassSymbol {

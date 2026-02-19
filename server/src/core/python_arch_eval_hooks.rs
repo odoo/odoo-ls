@@ -73,7 +73,8 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SymbolKey, symbol: SymbolKey| {
         let values: Vec<ruff_python_ast::Expr> = Vec::new();
         let range = odoo.symbol_table.range(symbol).clone();
-        odoo.symbol_table.set_evaluations(symbol, vec![Evaluation::new_list(odoo, values, range)]);
+        let evaluations = vec![Evaluation::new_list(odoo, values, range)];
+        odoo.symbol_table.set_evaluations(symbol, evaluations);
     }},
     /*PythonArchEvalFileHook {file_tree: vec![Sy!("odoo"), Sy!("models")],
                         content_tree: vec![Sy!("BaseModel"), Sy!("search_count")],
@@ -527,7 +528,8 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             // @arena: skipped an upgrade here (args.symbol used to be weak, now it can be trusted as strong?)
             let arg_symbol = func.args.get(1).unwrap().symbol;
             if odoo.symbol_table.name(arg_symbol) == "domain" {
-                odoo.symbol_table.set_evaluations(arg_symbol, vec![Evaluation::new_domain(odoo)]);
+                let evaluations = vec![Evaluation::new_domain(odoo)];
+                odoo.symbol_table.set_evaluations(arg_symbol, evaluations);
             } else {
                 warn!("domain not found on search signature")
             }

@@ -65,6 +65,42 @@ pub enum InitState {
 }
 
 #[derive(Debug)]
+pub struct TypeshedWeakReferences {
+    dict: Weak<SymbolKey>,
+    tuple: Weak<SymbolKey>,
+    set: Weak<SymbolKey>,
+    list: Weak<SymbolKey>,
+    string: Weak<SymbolKey>,
+    boolean: Weak<SymbolKey>,
+    int: Weak<SymbolKey>,
+    float: Weak<SymbolKey>,
+    complex: Weak<SymbolKey>,
+    ellipsis: Weak<SymbolKey>,
+    bytes: Weak<SymbolKey>,
+    object: Weak<SymbolKey>,
+}
+
+impl TypeshedWeakReferences {
+
+    pub fn new() -> Self {
+        Self {
+            dict: Weak::null(),
+            tuple: Weak::null(),
+            set: Weak::null(),
+            list: Weak::null(),
+            string: Weak::null(),
+            boolean: Weak::null(),
+            int: Weak::null(),
+            float: Weak::null(),
+            complex: Weak::null(),
+            ellipsis: Weak::null(),
+            bytes: Weak::null(),
+            object: Weak::null(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct SyncOdoo {
     pub version_major: u32,
     pub version_minor: u32,
@@ -105,6 +141,8 @@ pub struct SyncOdoo {
     pub symbol_table: SymbolTable,
     pub evaluation_search: Option<SymbolKey>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
     pub evaluation_locations: Vec<Location>,
+    pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
+
 
     pub test_mode: bool,
 }
@@ -154,7 +192,7 @@ impl SyncOdoo {
             symbol_table: SymbolTable::new(),
             evaluation_search: None,
             evaluation_locations: vec![],
-
+            typeshed_weak_cache: TypeshedWeakReferences::new(),
             test_mode: false,
         };
         sync_odoo
@@ -1290,6 +1328,90 @@ impl SyncOdoo {
         }
         let module = module.unwrap();
         ModuleSymbol::get_xml_id(&st!(), module, &oyarn!("{}", id_split.last().unwrap()))
+    }
+
+    pub fn get_ts_dict(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.dict.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.dict = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.dict
+    }
+
+    pub fn get_ts_tuple(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.tuple.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.tuple = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.tuple
+    }
+
+    pub fn get_ts_set(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.set.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.set = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.set
+    }
+
+    pub fn get_ts_list(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.list.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.list = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.list
+    }
+
+    pub fn get_ts_string(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.string.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.string = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.string
+    }
+
+    pub fn get_ts_boolean(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.boolean.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.boolean = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.boolean
+    }
+
+    pub fn get_ts_int(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.int.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.int = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("int")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.int
+    }
+
+    pub fn get_ts_float(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.float.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.float = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("float")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.float
+    }
+
+    pub fn get_ts_complex(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.complex.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.complex = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("complex")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.complex
+    }
+
+    pub fn get_ts_ellipsis(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.ellipsis.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.ellipsis = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("Ellipsis")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.ellipsis
+    }
+
+    pub fn get_ts_bytes(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.bytes.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.bytes = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bytes")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.bytes
+    }
+
+    pub fn get_ts_object(&mut self) -> Weak<SymbolKey> {
+        if self.typeshed_weak_cache.object.is_expired(&self.symbol_table) {
+            self.typeshed_weak_cache.object = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("object")]), u32::MAX).last().copied().unwrap().into();
+        }
+        self.typeshed_weak_cache.object
     }
 
 }

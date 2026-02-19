@@ -6,7 +6,7 @@ use ruff_text_size::TextRange;
 use tracing::trace;
 
 use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree, tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
-Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_table::SymbolTable }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
+Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_table::SymbolTable }, xml_data::OdooData}, threads::SessionInfo, utils::{NoHashBuilder, PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
 
 impl SymbolTable {
 
@@ -236,7 +236,7 @@ impl SymbolTable {
 
      ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
      /// @arena: rename this method (at least remove underscore): formerly in SymbolMgr trait, thus public
-    pub fn _get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+    pub fn _get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>, NoHashBuilder>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
         let mut res = ContentSymbols::default();
         match index {
             SectionIndex::NONE => { return res; },
@@ -976,7 +976,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
+    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>> {
         match target {
             SymbolKey::File(f) => {
                 self[f].symbols.iter()

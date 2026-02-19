@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use ruff_text_size::TextSize;
 
 use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey};
+use crate::utils::NoHashBuilder;
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol};
 
@@ -29,7 +30,7 @@ pub struct SectionRange {
 
 pub trait SymbolMgr {
     fn get_sections(&self) -> &[SectionRange];
-    fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>;
+    fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>;
     fn get_section_for(&self, position: u32) -> SectionRange;
     fn get_last_index(&self) -> u32;
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
@@ -76,7 +77,7 @@ macro_rules! impl_section_mgr_for {
             &self.sections
         }
 
-        fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>> {
+        fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>> {
             &self.symbols
         }
 
