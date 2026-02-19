@@ -80,16 +80,11 @@ async function refreshWatchPanel() {
     } catch (_) {}
 }
 
-async function addWatchIfMissing(context, expression) {
-    const key = 'slotmap.watched';
-    const watched = context.workspaceState.get(key, []);
-    if (watched.includes(expression)) return;
+async function addWatch(expression) {
     try {
         await vscode.commands.executeCommand('debug.addToWatchExpressions', {
             variable: { evaluateName: expression }
         });
-        watched.push(expression);
-        await context.workspaceState.update(key, watched);
     } catch (_) {}
 }
 
@@ -171,8 +166,8 @@ function activate(context) {
             const varSuffix = keyExpr.replace(/^\$/, '').replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
             // Add watch expressions: $slot (latest) and $slot_<suffix> (per-lookup)
-            await addWatchIfMissing(context, '$slot');
-            await addWatchIfMissing(context, `$slot_${varSuffix}`);
+            await addWatch('$slot');
+            await addWatch(`$slot_${varSuffix}`);
             await refreshWatchPanel();
         }),
 
@@ -190,11 +185,7 @@ function activate(context) {
             }
         }),
 
-        // Command to reset tracked watch expressions (if you cleaned up manually)
-        vscode.commands.registerCommand('slotmap.resetWatched', async () => {
-            await context.workspaceState.update('slotmap.watched', []);
-            vscode.window.showInformationMessage('SlotMap: watch expression tracking reset');
-        })
+        vscode.debug.onDidTerminateDebugSession(() => {})
     );
 }
 
