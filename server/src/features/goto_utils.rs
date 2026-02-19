@@ -125,7 +125,7 @@ impl GotoUtils {
         for xml_id in xml_ids {
             let file = xml_id.get_file_symbol();
             if let Some(file) = file {
-                if let Some(file) = file.upgrade() {
+                if let Some(_file) = file.upgrade() { //test that file is valid to set xml_found to true
                     xml_found = true;
                     sources.push(GotoSource{
                         source: GotoSourceType::OdooData(xml_id.clone()),
@@ -182,14 +182,10 @@ impl GotoUtils {
             symbol.borrow().get_member_symbol(session, &S!("_compute_display_name"), maybe_module.clone(), false, false, true, true, false).0
         }).collect::<Vec<_>>();
         for symbol in symbols {
-            if let Some(file) = symbol.borrow().get_file() {
-                for path in file.upgrade().unwrap().borrow().paths().iter() {
-                    sources.push(GotoSource {
-                        source: GotoSourceType::Symbol(symbol.clone()),
-                        origin_selection_range: None,
-                    });
-                }
-            }
+            sources.push(GotoSource {
+                source: GotoSourceType::Symbol(symbol.clone()),
+                origin_selection_range: None,
+            });
         }
     }
 
@@ -273,27 +269,30 @@ impl GotoUtils {
         definition_sources
     }
 
-    pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Option<LocationLink> {
+    pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Vec<LocationLink> {
+        let mut res = vec![];
         match &def.source {
             GotoSourceType::Symbol(symbol) => {
                 if let Some(file_symbol) = symbol.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
-                    let path = file_symbol.borrow().get_symbol_first_path();
-                    let symbol_range = if symbol.borrow().has_range() {
-                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &symbol.borrow().range())
-                    } else {
-                        Range::default()
-                    };
-                    return Some(LocationLink{
-                        origin_selection_range: def.origin_selection_range.clone(),
-                        target_uri: FileMgr::pathname2uri(&path),
-                        target_selection_range: symbol_range,
-                        target_range: symbol_range,
-                    });
+                    let paths = file_symbol.borrow().paths();
+                    for path in paths.iter() {
+                        let symbol_range = if symbol.borrow().has_range() {
+                            session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &symbol.borrow().range())
+                        } else {
+                            Range::default()
+                        };
+                        res.push(LocationLink{
+                            origin_selection_range: def.origin_selection_range.clone(),
+                            target_uri: FileMgr::pathname2uri(&path),
+                            target_selection_range: symbol_range,
+                            target_range: symbol_range,
+                        });
+                    }
                 }
             },
             GotoSourceType::Module(module) => {
                 let path = PathBuf::from(module.borrow().paths()[0].clone()).join("__manifest__.py").sanitize();
-                return Some(LocationLink{
+                res.push(LocationLink{
                     origin_selection_range: None,
                     target_uri: FileMgr::pathname2uri(&path),
                     target_selection_range: Range::default(),
@@ -305,7 +304,7 @@ impl GotoUtils {
                 if let Some(file) = file {
                     if let Some(file) = file.upgrade() {
                         let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &file.borrow().paths()[0], &xml_id.get_range());
-                        return Some(LocationLink {
+                        res.push(LocationLink {
                             origin_selection_range: def.origin_selection_range.clone(),
                             target_uri: FileMgr::pathname2uri(&file.borrow().paths()[0]),
                             target_range: range,
@@ -314,6 +313,6 @@ impl GotoUtils {
                 }
             }
         }
-        None
+        res
     }
 }

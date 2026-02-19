@@ -3,7 +3,6 @@ use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
-use tracing::error;
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
@@ -1771,10 +1770,10 @@ impl Evaluation {
             if arg.is_starred_expr() {
                 continue;
             }
-            let (_, diags) = Evaluation::eval_from_ast(session, arg, parent.clone(), &expr_call.range.start(), false, &mut vec![]);
+            Evaluation::eval_from_ast(session, arg, parent.clone(), &expr_call.range.start(), false, &mut vec![]);
         }
         for arg in expr_call.arguments.keywords.iter() {
-            let (_, diags) = Evaluation::eval_from_ast(session, &arg.value, parent.clone(), &expr_call.range.start(), false, &mut vec![]);
+            Evaluation::eval_from_ast(session, &arg.value, parent.clone(), &expr_call.range.start(), false, &mut vec![]);
         }
     }
 }
