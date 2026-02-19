@@ -24,9 +24,7 @@ impl DeclarationFeature {
         let definitions_sources = GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character);
         let mut links = vec![];
         for def in definitions_sources.iter() {
-            if let Some(link) = GotoUtils::goto_source_to_location(session, def) {
-                links.push(link);
-            }
+            links.extend(GotoUtils::goto_source_to_location(session, def));
         }
         Some(GotoDeclarationResponse::Link(links))
     }

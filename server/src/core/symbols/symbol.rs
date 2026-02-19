@@ -2849,7 +2849,7 @@ impl Symbol {
     ) -> (Vec<Rc<RefCell<Symbol>>>, Vec<Diagnostic>) {
         let mut result: Vec<Rc<RefCell<Symbol>>> = vec![];
         let mut visited_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
-        let mut extend_result = |syms: Vec<Rc<RefCell<Symbol>>>, result: &mut Vec<Rc<RefCell<Symbol>>>, visited_symbols: &mut PtrWeakHashSet<Weak<RefCell<Symbol>>>| {
+        let extend_result = |syms: Vec<Rc<RefCell<Symbol>>>, result: &mut Vec<Rc<RefCell<Symbol>>>, visited_symbols: &mut PtrWeakHashSet<Weak<RefCell<Symbol>>>| {
             syms.iter().for_each(|sym|{
                 if !visited_symbols.contains(sym){
                     visited_symbols.insert(sym.clone());
