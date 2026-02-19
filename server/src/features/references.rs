@@ -1,12 +1,9 @@
-use std::rc::Weak;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use lsp_types::{Location, Range};
-use ruff_python_ast::visitor::{walk_expr, walk_stmt, Visitor};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
-use weak_table::PtrWeakHashSet;
 
 use crate::S;
 use crate::constants::OYarn;
@@ -31,7 +28,6 @@ impl ReferenceFeature {
         let def_sources = GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character);
 
         let mut locations = Vec::new();
-        let mut already_processed: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
         for definition in def_sources.iter() {
             match &definition.source {
                 GotoSourceType::Symbol(target_symbol) => {
@@ -100,36 +96,6 @@ impl ReferenceFeature {
         visitor.browse_file(session, file_symbol, file_info_ast.borrow().get_stmts().as_ref().unwrap());
         session.sync_odoo.evaluation_search = None;
         std::mem::take(&mut session.sync_odoo.evaluation_locations)
-    }
-
-    fn is_same_or_imported(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, target_symbol: &Rc<RefCell<Symbol>>) -> bool {
-        if Rc::ptr_eq(symbol, target_symbol) {
-            return true;
-        }
-
-        // Check if symbol is an imported symbol that points to the target symbol
-        if symbol.borrow().typ() != SymType::VARIABLE {
-            return false;
-        }
-        if symbol.borrow().as_variable().is_import_variable {
-            if symbol.borrow().evaluations().as_ref().unwrap().is_empty() {
-                return false;
-            }
-            let file_symbol = symbol.borrow().get_file().unwrap().upgrade().unwrap();
-            for eval in symbol.borrow().evaluations().as_ref().unwrap().iter() {
-                let eval_ptr = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(file_symbol.clone()));
-                match eval_ptr {
-                    EvaluationSymbolPtr::WEAK(w) => {
-                        if let Some(sym_upg) = w.weak.upgrade() {
-                            return ReferenceFeature::is_same_or_imported(session, &sym_upg, target_symbol)
-                        }
-                    },
-                    _ => {continue;}
-                }
-            }
-        }
-
-        false
     }
 
     pub fn get_references_xml(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
