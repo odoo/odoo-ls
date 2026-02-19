@@ -343,7 +343,7 @@ def slotmap_type_lookup(val):
         if kt in type_name:
             if 'Option' in type_name:
                 return SlotMapOptionKeyPrinter(val)
-            else:
+            elif '<' not in type_name:
                 return SlotMapKeyPrinter(val)
     return None
 

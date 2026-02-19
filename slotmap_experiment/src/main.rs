@@ -38,6 +38,6 @@ fn main() {
         parent: Some(k),
     }));
     // println!("{:?} -> {:?}", k, sm[k]);
-    println!("key is copiable: {:?}", k);
+    // println!("key is copiable: {:?}", k);
     println!("stop");
 }
