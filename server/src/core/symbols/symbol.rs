@@ -2342,6 +2342,34 @@ impl Symbol {
         results
     }
 
+    pub fn follow_imported_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>) -> Vec<EvaluationSymbolPtr> {
+        let mut res = vec![];
+        let mut symbols = VecDeque::new();
+        symbols.push_back(evaluation.clone());
+        while let Some(current_sym) = symbols.pop_front() {
+            let EvaluationSymbolPtr::WEAK(w) = &current_sym else {
+                res.push(current_sym.clone());
+                continue;
+            };
+            let Some(symbol) = w.weak.upgrade() else {
+                res.push(current_sym.clone());
+                continue;
+            };
+            if symbol.borrow().typ() == SymType::VARIABLE && symbol.borrow().as_variable().is_import_variable {
+                let sym_b = symbol.borrow();
+                let evaluations = sym_b.evaluations();
+                if let Some(evals) = evaluations {
+                    for eval in evals.iter() {
+                        symbols.push_back(eval.symbol.get_symbol(session, context, &mut vec![], None));
+                    }
+                }
+            } else {
+                res.push(current_sym);
+            }
+        }
+        res
+    }
+
     pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> + use<> {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
         //be returned.
