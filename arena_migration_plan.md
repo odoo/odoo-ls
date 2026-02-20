@@ -1,6 +1,6 @@
 ## 1st phase: CLI mode only
 
-### Have a CLI only version (done)
+### 1.1. Have a CLI only version (done)
 - Remove any dependencies to features in odoo.rs
 
 TO DECIDE: start with a fresh code (copy paste cli parts) of comment out every thing?
@@ -9,11 +9,16 @@ TO DECIDE: start with a fresh code (copy paste cli parts) of comment out every t
     - copy paste stuff, commit
     - then make incremental changes migration to arena, commiting along the way
 
-### Migrate to SymbolTable
+### 1.2 Migrate to SymbolTable
 [ ] symbol_table module
 [ ] adapt Symbol variants definitions
 [ ] follow compiler errors: adapt functions (bottom-up)
 [ ] test output: compare with pre_refactor_diagnostics.json
+
+### 1.3 left for later:
+[ ] split PackageSymbol slotmap into 2 different ones
+
+- do we need self_key?
 
 
 ## 2nd phase: server + features, 
