@@ -11,7 +11,7 @@ pub struct RootSymbol {
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
     // @todo: this is always None
     pub parent: Option<SymbolKey>,
-    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 impl RootSymbol {
