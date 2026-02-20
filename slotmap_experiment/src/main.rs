@@ -7,24 +7,30 @@ new_key_type! { pub struct FunctionKey; }
 enum SymbolKey {
     Variable(VariableKey),
     Function(FunctionKey),
+    // + other symbol types like classes, modules, etc.
 }
 
 struct SymbolTable {
     variables: SlotMap<VariableKey, VariableSymbol>,
     functions: SlotMap<FunctionKey, FunctionSymbol>,
+    // + other symbol types like classes, modules, etc.
 }
 
+// Simplified example
 struct VariableSymbol {
     pub name: String,
     pub is_parameter: bool,
     pub parent: Option<SymbolKey>,
 }
 
+// Simplified example
 struct FunctionSymbol {
     pub name: String,
     pub args: Vec<Argument>,
     pub parent: Option<SymbolKey>,
 }
+
+// Simplified example
 enum Symbol<'a> {
     Variable(&'a VariableSymbol),
     Function(&'a FunctionSymbol),
