@@ -1,6 +1,6 @@
 use lsp_server::Notification;
 use serde_json::json;
-use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, utils::PathSanitizer, crash_buffer};
+use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer, crash_buffer};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -85,6 +85,37 @@ fn main() {
         info!("starting server (single parse mode)");
         let backend = CliBackend::new(cli);
         backend.run();
+    } else {
+        let mut serv = if use_debug {
+            info!(tag = "test", "starting server (debug mode)");
+            Server::new_tcp().expect("Unable to start tcp connection")
+        } else {
+            info!("starting server");
+            Server::new_stdio()
+        };
+        serv.initialize().expect("Error while initializing server");
+        cli.config_path.map(|config_path| {
+            serv.set_config_path(config_path.clone());
+        });
+        let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            let backtrace = std::backtrace::Backtrace::capture();
+            panic_hook(panic_info);
+            let recent_msgs = crash_buffer::get_messages();
+            let recent_msgs_json = serde_json::to_string_pretty(&recent_msgs).unwrap_or_default();
+            let _ = sender_panic.send(lsp_server::Message::Notification(Notification{
+                method: "Odoo/displayCrashNotification".to_string(),
+                params: json!({
+                    "crashInfo": format!("{panic_info}\n\nTraceback:\n{backtrace}"),
+                    "recentMessages": recent_msgs_json,
+                    "pid": std::process::id()
+                })
+            }));
+        }));
+        if !serv.run(cli.clientProcessId) {
+            info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
+            process::exit(1);
+        }
     }
     info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
 }
