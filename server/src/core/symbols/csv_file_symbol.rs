@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::SectionRange};
@@ -10,8 +10,8 @@ pub struct CsvFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
@@ -40,7 +40,7 @@ impl CsvFileSymbol {
             name: oyarn!("{}", name),
             path,
             is_external,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,

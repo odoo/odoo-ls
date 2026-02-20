@@ -1,7 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::{OYarn, SymType}, core::evaluation::{ContextValue, Evaluation}, oyarn, threads::SessionInfo, S};
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
+use crate::{S, constants::{OYarn, SymType}, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::SymbolKey}, oyarn, threads::SessionInfo};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use super::symbol::Symbol;
 
@@ -10,8 +10,9 @@ pub struct VariableSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    // @todo: is it possible to have a variable that does not have a parent?
+    pub parent: Option<SymbolKey>,
     pub is_import_variable: bool,
     pub is_parameter: bool,
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
@@ -25,7 +26,7 @@ impl VariableSymbol {
             name,
             is_external,
             doc_string: None,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             range,
             is_import_variable: false,

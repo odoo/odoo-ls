@@ -2,7 +2,7 @@ use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use crate::constants::OYarn;
+use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey};
 
 use super::symbol::Symbol;
 
@@ -18,8 +18,8 @@ pub struct NamespaceSymbol {
     pub name: OYarn,
     pub directories: Vec<NamespaceDirectory>,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     in_workspace: bool,
     pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
     pub dependents: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
@@ -40,7 +40,7 @@ impl NamespaceSymbol {
             name: OYarn::from(name),
             directories: directories,
             is_external,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             in_workspace: false,
             dependencies: vec![],

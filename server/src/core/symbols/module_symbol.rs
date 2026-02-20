@@ -8,6 +8,7 @@ use std::ffi::OsStr;
 
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
@@ -47,8 +48,8 @@ pub struct ModuleSymbol {
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
@@ -89,7 +90,7 @@ impl ModuleSymbol {
             depends: vec!((OYarn::from("base"), TextRange::default())),
             all_depends: HashSet::new(),
             data: Vec::new(),
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             module_symbols: HashMap::new(),
             arch_status: BuildStatus::PENDING,

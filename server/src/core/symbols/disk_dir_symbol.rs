@@ -1,7 +1,7 @@
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use crate::{constants::OYarn, oyarn, utils::PathSanitizer};
+use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn, utils::PathSanitizer};
 
 use super::symbol::Symbol;
 
@@ -14,8 +14,8 @@ pub struct DiskDirSymbol {
     pub path: String,
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub in_workspace: bool,
 }
 
@@ -26,7 +26,7 @@ impl DiskDirSymbol {
             name: oyarn!("{}", name),
             path: PathBuf::from(path).sanitize(),
             is_external,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             in_workspace: false,
             module_symbols: HashMap::new()

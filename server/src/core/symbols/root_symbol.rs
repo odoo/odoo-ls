@@ -1,4 +1,4 @@
-use crate::{constants::OYarn, core::entry_point::EntryPoint, oyarn};
+use crate::{constants::OYarn, core::{entry_point::EntryPoint, symbols::symbol_table::SymbolKey}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::symbol::Symbol;
@@ -9,7 +9,8 @@ pub struct RootSymbol {
     pub entry_point: Option<Rc<RefCell<EntryPoint>>>,
     pub paths: Vec<String>,
     pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // @todo: this is always None
+    pub parent: Option<SymbolKey>,
     pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
 }
 

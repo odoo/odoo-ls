@@ -3,6 +3,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
+use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoPtrWeakHashSet;
@@ -93,6 +94,7 @@ pub struct SyncOdoo {
     pub capabilities: lsp_types::ClientCapabilities,
     pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
+    pub symbol_table: SymbolTable,
 
     pub test_mode: bool,
 }

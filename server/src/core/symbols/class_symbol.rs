@@ -8,6 +8,7 @@ use crate::constants::{OYarn, SymType};
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::Sy;
+use crate::core::symbols::symbol_table::SymbolKey;
 
 use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -19,8 +20,8 @@ pub struct ClassSymbol {
     pub is_external: bool,
     pub doc_string: Option<String>,
     pub bases: Vec<Weak<RefCell<Symbol>>>,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub range: TextRange,
     pub body_range: TextRange,
     pub _model: Option<ModelData>,
@@ -42,7 +43,7 @@ impl ClassSymbol {
         let mut res = Self {
             name: OYarn::from(name),
             is_external,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             range,
             body_range: TextRange::new(body_start, range.end()),

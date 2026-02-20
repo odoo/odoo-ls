@@ -2,6 +2,7 @@ use lsp_types::Diagnostic;
 use roxmltree::Error;
 use weak_table::PtrWeakHashSet;
 
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
@@ -13,8 +14,8 @@ pub struct XmlFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
@@ -42,7 +43,7 @@ impl XmlFileSymbol {
             name: oyarn!("{}", name),
             path,
             is_external,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,

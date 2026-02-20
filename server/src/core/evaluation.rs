@@ -10,6 +10,7 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -115,29 +116,30 @@ impl ExprOrIdent<'_> {
 
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
-    MODULE(Weak<RefCell<Symbol>>),
-    SYMBOL(Weak<RefCell<Symbol>>),
+    MODULE(SymbolKey),
+    SYMBOL(SymbolKey),
     ARGUMENTS(Arguments),
     RANGE(TextRange)
 }
 
-impl PartialEq for ContextValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ContextValue::MODULE(me), ContextValue::MODULE(them)) => Symbol::weak_ptr_eq(me, them),
-            (ContextValue::SYMBOL(me), ContextValue::SYMBOL(them)) => Symbol::weak_ptr_eq(me, them),
-            (ContextValue::BOOLEAN(me), ContextValue::BOOLEAN(them)) => me == them,
-            (ContextValue::STRING(me), ContextValue::STRING(them)) => me == them,
-            (ContextValue::ARGUMENTS(me), ContextValue::ARGUMENTS(them)) => me == them,
-            (ContextValue::RANGE(me), ContextValue::RANGE(them)) => me == them,
-            _ => false,
-        }
-    }
-}
+// @todo: maybe this is not necessary at all
+// impl PartialEq for ContextValue {
+//     fn eq(&self, other: &Self) -> bool {
+//         match (self, other) {
+//             (ContextValue::MODULE(me), ContextValue::MODULE(them)) => me == them,
+//             (ContextValue::SYMBOL(me), ContextValue::SYMBOL(them)) => me == them,
+//             (ContextValue::BOOLEAN(me), ContextValue::BOOLEAN(them)) => me == them,
+//             (ContextValue::STRING(me), ContextValue::STRING(them)) => me == them,
+//             (ContextValue::ARGUMENTS(me), ContextValue::ARGUMENTS(them)) => me == them,
+//             (ContextValue::RANGE(me), ContextValue::RANGE(them)) => me == them,
+//             _ => false,
+//         }
+//     }
+// }
 
 impl ContextValue {
     pub fn as_bool(&self) -> bool {
@@ -154,16 +156,16 @@ impl ContextValue {
         }
     }
 
-    pub fn as_module(&self) -> Weak<RefCell<Symbol>> {
+    pub fn as_module(&self) -> SymbolKey {
         match self {
-            ContextValue::MODULE(m) => m.clone(),
+            ContextValue::MODULE(m) => *m,
             _ => panic!("Not a module")
         }
     }
 
-    pub fn as_symbol(&self) -> Weak<RefCell<Symbol>> {
+    pub fn as_symbol(&self) -> SymbolKey {
         match self {
-            ContextValue::SYMBOL(s) => s.clone(),
+            ContextValue::SYMBOL(s) => *s,
             _ => panic!("Not a symbol")
         }
     }
@@ -578,10 +580,10 @@ impl Evaluation {
     * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
     * not build but required during the eval_from_ast, it will NOT be built
     */
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let from_module;
-        if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
+        if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
+            from_module = ContextValue::MODULE(module);
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -594,10 +596,10 @@ impl Evaluation {
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
+    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let from_module;
-        if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
+        if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
+            from_module = ContextValue::MODULE(module);
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -627,10 +629,10 @@ impl Evaluation {
     }
 
     /* Given an Expr, try to return the represented Boolean. None if it can't be achieved */
-    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
+    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
         let from_module;
-        if let Some(module) = parent.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
+        if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
+            from_module = ContextValue::MODULE(module);
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }

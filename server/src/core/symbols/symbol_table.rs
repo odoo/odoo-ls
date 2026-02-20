@@ -19,8 +19,8 @@ new_key_type! { pub struct VariableKey; }
 new_key_type! { pub struct XmlFileKey; }
 new_key_type! { pub struct CsvFileKey; }
 
-#[derive(Clone, Copy)]
-enum SymbolKey {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SymbolKey {
     Root(RootKey),
     DiskDir(DiskDirKey),
     Namespace(NamespaceKey),
@@ -35,7 +35,7 @@ enum SymbolKey {
 }
 
 #[derive(Debug)]
-pub enum SymbolNew<'a> {
+pub enum Symbol_<'a> {
     Root(&'a RootSymbol),
     DiskDir(&'a DiskDirSymbol),
     Namespace(&'a NamespaceSymbol),
@@ -49,7 +49,27 @@ pub enum SymbolNew<'a> {
     CsvFileSymbol(&'a CsvFileSymbol),
 }
 
-struct SymbolTable {
+impl Symbol_<'_> {
+    pub fn parent(&self) -> Option<SymbolKey> {
+        match self {
+            Symbol_::Root(s) => s.parent,
+            Symbol_::DiskDir(s) => s.parent,
+            Symbol_::Namespace(s) => s.parent,
+            Symbol_::Package(s) => s.parent(),
+            Symbol_::File(s) => s.parent,
+            Symbol_::Compiled(s) => s.parent,
+            Symbol_::Class(s) => s.parent,
+            Symbol_::Function(s) => s.parent,
+            Symbol_::Variable(s) => s.parent,
+            Symbol_::XmlFileSymbol(s) => s.parent,
+            Symbol_::CsvFileSymbol(s) => s.parent,
+        }
+    }
+
+}
+
+#[derive(Debug)]
+pub struct SymbolTable {
     pub roots: SlotMap<RootKey, RootSymbol>,
     pub disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
     pub namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
@@ -90,19 +110,19 @@ impl SymbolTable {
         SymbolKey::Function(key)
     }
 
-    pub fn get_symbol(&self, key: SymbolKey) -> Option<SymbolNew<'_>> {
+    pub fn get_symbol(&self, key: SymbolKey) -> Option<Symbol_<'_>> {
         match key {
-            SymbolKey::Root(k) => self.roots.get(k).map(SymbolNew::Root),
-            SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(SymbolNew::DiskDir),
-            SymbolKey::Namespace(k) => self.namespaces.get(k).map(SymbolNew::Namespace),
-            SymbolKey::Package(k) => self.packages.get(k).map(SymbolNew::Package),
-            SymbolKey::File(k) => self.files.get(k).map(SymbolNew::File),
-            SymbolKey::Compiled(k) => self.compiled.get(k).map(SymbolNew::Compiled),
-            SymbolKey::Class(k) => self.classes.get(k).map(SymbolNew::Class),
-            SymbolKey::Function(k) => self.functions.get(k).map(SymbolNew::Function),
-            SymbolKey::Variable(k) => self.variables.get(k).map(SymbolNew::Variable),
-            SymbolKey::XmlFile(k) => self.xml_files.get(k).map(SymbolNew::XmlFileSymbol),
-            SymbolKey::CsvFile(k) => self.csv_files.get(k).map(SymbolNew::CsvFileSymbol),
+            SymbolKey::Root(k) => self.roots.get(k).map(Symbol_::Root),
+            SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(Symbol_::DiskDir),
+            SymbolKey::Namespace(k) => self.namespaces.get(k).map(Symbol_::Namespace),
+            SymbolKey::Package(k) => self.packages.get(k).map(Symbol_::Package),
+            SymbolKey::File(k) => self.files.get(k).map(Symbol_::File),
+            SymbolKey::Compiled(k) => self.compiled.get(k).map(Symbol_::Compiled),
+            SymbolKey::Class(k) => self.classes.get(k).map(Symbol_::Class),
+            SymbolKey::Function(k) => self.functions.get(k).map(Symbol_::Function),
+            SymbolKey::Variable(k) => self.variables.get(k).map(Symbol_::Variable),
+            SymbolKey::XmlFile(k) => self.xml_files.get(k).map(Symbol_::XmlFileSymbol),
+            SymbolKey::CsvFile(k) => self.csv_files.get(k).map(Symbol_::CsvFileSymbol),
         }
     }
     // pub fn get_symbol_mut(&mut self, key: SymbolKey) -> Option<SymbolMut<'_>> {
@@ -111,4 +131,18 @@ impl SymbolTable {
     //         SymbolKey::Function(k) => self.functions.get_mut(k).map(SymbolMut::Function),
     //     }
     // }
+
+
+    // ========= former Symbol methods =========
+
+    // Formerly called like self.find_module on a Symbol after borrowing the Rc/RefCell
+    // No called directly with the key
+    pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
+        let symbol = self.get_symbol(key)?;
+        if let Symbol_::Package(PackageSymbol::Module(_)) = symbol {
+            return Some(key);
+        }
+        return self.find_module(symbol.parent()?);
+    }
+        
 }

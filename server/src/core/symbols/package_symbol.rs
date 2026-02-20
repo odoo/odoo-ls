@@ -1,6 +1,6 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn, threads::SessionInfo, S};
+use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn, threads::SessionInfo};
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -28,10 +28,10 @@ impl PackageSymbol {
             PackageSymbol::Module(m) => &m.name,
         }
     }
-    pub fn parent(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn parent(&self) -> Option<SymbolKey> {
         match self {
-            PackageSymbol::Module(m) => m.parent.clone(),
-            PackageSymbol::PythonPackage(p) => p.parent.clone()
+            PackageSymbol::Module(m) => m.parent,
+            PackageSymbol::PythonPackage(p) => p.parent,
         }
     }
     pub fn set_parent(&mut self, parent: Option<Weak<RefCell<Symbol>>>) {
@@ -102,8 +102,8 @@ pub struct PythonPackageSymbol {
     pub path: String,
     pub i_ext: String,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -134,7 +134,7 @@ impl PythonPackageSymbol {
             path,
             is_external,
             i_ext: S!(""),
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,

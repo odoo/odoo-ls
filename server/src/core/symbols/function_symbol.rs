@@ -5,7 +5,7 @@ use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey}, oyarn, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -40,8 +40,8 @@ pub struct FunctionSymbol {
     pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
+    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    pub parent: Option<SymbolKey>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -67,7 +67,7 @@ impl FunctionSymbol {
         let mut res = Self {
             name: oyarn!("{}", name),
             is_external,
-            weak_self: None,
+            // weak_self: None,
             parent: None,
             range,
             body_range: TextRange::new(body_start, range.end()),
