@@ -1,11 +1,11 @@
 use slotmap::{SlotMap, new_key_type};
 
-use crate::core::symbols::{
+use crate::{constants::{PackageType, SymType}, core::symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol,
     disk_dir_symbol::DiskDirSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol,
     namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol,
     variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol,
-};
+}};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -34,8 +34,12 @@ pub enum SymbolKey {
     CsvFile(CsvFileKey),
 }
 
+impl From<FileKey> for SymbolKey {
+    fn from(key: FileKey) -> Self { SymbolKey::File(key) }
+}
+
 #[derive(Debug)]
-pub enum Symbol_<'a> {
+pub enum SymbolView<'a> {
     Root(&'a RootSymbol),
     DiskDir(&'a DiskDirSymbol),
     Namespace(&'a NamespaceSymbol),
@@ -49,20 +53,53 @@ pub enum Symbol_<'a> {
     CsvFileSymbol(&'a CsvFileSymbol),
 }
 
-impl Symbol_<'_> {
+impl SymbolView<'_> {
     pub fn parent(&self) -> Option<SymbolKey> {
         match self {
-            Symbol_::Root(s) => s.parent,
-            Symbol_::DiskDir(s) => s.parent,
-            Symbol_::Namespace(s) => s.parent,
-            Symbol_::Package(s) => s.parent(),
-            Symbol_::File(s) => s.parent,
-            Symbol_::Compiled(s) => s.parent,
-            Symbol_::Class(s) => s.parent,
-            Symbol_::Function(s) => s.parent,
-            Symbol_::Variable(s) => s.parent,
-            Symbol_::XmlFileSymbol(s) => s.parent,
-            Symbol_::CsvFileSymbol(s) => s.parent,
+            Self::Root(s) => s.parent,
+            Self::DiskDir(s) => s.parent,
+            Self::Namespace(s) => s.parent,
+            Self::Package(s) => s.parent(),
+            Self::File(s) => s.parent,
+            Self::Compiled(s) => s.parent,
+            Self::Class(s) => s.parent,
+            Self::Function(s) => s.parent,
+            Self::Variable(s) => s.parent,
+            Self::XmlFileSymbol(s) => s.parent,
+            Self::CsvFileSymbol(s) => s.parent,
+        }
+    }
+
+    pub fn is_external(&self) -> bool {
+        match self {
+            Self::Root(_) => false,
+            Self::DiskDir(d) => d.is_external,
+            Self::Namespace(n) => n.is_external,
+            Self::Package(p) => p.is_external(),
+            Self::File(f) => f.is_external,
+            Self::Compiled(c) => c.is_external,
+            Self::Class(c) => c.is_external,
+            Self::Function(f) => f.is_external,
+            Self::Variable(v) => v.is_external,
+            Self::XmlFileSymbol(x) => x.is_external,
+            Self::CsvFileSymbol(c) => c.is_external,
+        }
+    }
+
+    pub fn typ(&self) -> SymType {
+        match self {
+            Self::Root(_) => SymType::ROOT,
+            Self::Namespace(_) => SymType::NAMESPACE,
+            Self::DiskDir(_) => SymType::DISK_DIR,
+            Self::Package(PackageSymbol::Module(_)) => SymType::PACKAGE(PackageType::MODULE),
+            Self::Package(PackageSymbol::PythonPackage(_)) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
+            Self::File(_) => SymType::FILE,
+            Self::Compiled(_) => SymType::COMPILED,
+            Self::Class(_) => SymType::CLASS,
+            Self::Function(_) => SymType::FUNCTION,
+            Self::Variable(_) => SymType::VARIABLE,
+            Self::XmlFileSymbol(_) => SymType::XML_FILE,
+            Self::CsvFileSymbol(_) => SymType::CSV_FILE,
         }
     }
 
@@ -110,19 +147,19 @@ impl SymbolTable {
         SymbolKey::Function(key)
     }
 
-    pub fn get_symbol(&self, key: SymbolKey) -> Option<Symbol_<'_>> {
+    pub fn get_symbol(&self, key: SymbolKey) -> Option<SymbolView<'_>> {
         match key {
-            SymbolKey::Root(k) => self.roots.get(k).map(Symbol_::Root),
-            SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(Symbol_::DiskDir),
-            SymbolKey::Namespace(k) => self.namespaces.get(k).map(Symbol_::Namespace),
-            SymbolKey::Package(k) => self.packages.get(k).map(Symbol_::Package),
-            SymbolKey::File(k) => self.files.get(k).map(Symbol_::File),
-            SymbolKey::Compiled(k) => self.compiled.get(k).map(Symbol_::Compiled),
-            SymbolKey::Class(k) => self.classes.get(k).map(Symbol_::Class),
-            SymbolKey::Function(k) => self.functions.get(k).map(Symbol_::Function),
-            SymbolKey::Variable(k) => self.variables.get(k).map(Symbol_::Variable),
-            SymbolKey::XmlFile(k) => self.xml_files.get(k).map(Symbol_::XmlFileSymbol),
-            SymbolKey::CsvFile(k) => self.csv_files.get(k).map(Symbol_::CsvFileSymbol),
+            SymbolKey::Root(k) => self.roots.get(k).map(SymbolView::Root),
+            SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(SymbolView::DiskDir),
+            SymbolKey::Namespace(k) => self.namespaces.get(k).map(SymbolView::Namespace),
+            SymbolKey::Package(k) => self.packages.get(k).map(SymbolView::Package),
+            SymbolKey::File(k) => self.files.get(k).map(SymbolView::File),
+            SymbolKey::Compiled(k) => self.compiled.get(k).map(SymbolView::Compiled),
+            SymbolKey::Class(k) => self.classes.get(k).map(SymbolView::Class),
+            SymbolKey::Function(k) => self.functions.get(k).map(SymbolView::Function),
+            SymbolKey::Variable(k) => self.variables.get(k).map(SymbolView::Variable),
+            SymbolKey::XmlFile(k) => self.xml_files.get(k).map(SymbolView::XmlFileSymbol),
+            SymbolKey::CsvFile(k) => self.csv_files.get(k).map(SymbolView::CsvFileSymbol),
         }
     }
     // pub fn get_symbol_mut(&mut self, key: SymbolKey) -> Option<SymbolMut<'_>> {
@@ -139,10 +176,47 @@ impl SymbolTable {
     // No called directly with the key
     pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
         let symbol = self.get_symbol(key)?;
-        if let Symbol_::Package(PackageSymbol::Module(_)) = symbol {
+        if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
             return Some(key);
         }
         return self.find_module(symbol.parent()?);
     }
+
+
+    // @arena: parent is a verified existing key
+    // Create a sub-symbol that is representing a file
+    pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+        let is_external = if let SymbolKey::Root(_) = parent {
+            // @arena: this would be simpler if is_external returned true for root
+            true
+        } else {
+            self.get_symbol(parent).expect("valid key").is_external()
+        };
+        let file_symbol = FileSymbol::new(name, path, parent, is_external);
+        let file_key = self.files.insert(file_symbol);
+        match parent {
+            // @arena: could get_unchecked_mut instead
+            SymbolKey::Namespace(n) => {
+                let namespace_symbol = self.namespaces.get_mut(n).unwrap();
+                namespace_symbol.add_file(file_key.into(), name, path);
+            }
+            SymbolKey::Package(p) => {
+                let package_symbol = self.packages.get_mut(p).unwrap();
+                package_symbol.add_file(file_key.into(), name);
+            },
+            SymbolKey::Root(r) => {
+                let root_symbol = self.roots.get_mut(r).unwrap();
+                root_symbol.add_file(file_key.into(), name);
+            },
+            SymbolKey::DiskDir(d) => {
+                let disk_dir_symbol = self.disk_dirs.get_mut(d).unwrap();
+                disk_dir_symbol.add_file(file_key.into(), name);
+            },
+            _ => { panic!("Impossible to add a file to a {}", self.get_symbol(parent).unwrap().typ()); }
+        }
+        file_key.into()
+    }
+
+
         
 }

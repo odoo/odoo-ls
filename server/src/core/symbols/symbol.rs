@@ -61,6 +61,7 @@ impl Symbol {
     pub fn weak_ptr_eq(me: &Weak<RefCell<Symbol>>, them: &Weak<RefCell<Symbol>>) -> bool{
         me.upgrade().and_then(|me_rc| them.upgrade().map(|them_rc| Rc::ptr_eq(&me_rc, &them_rc))).unwrap_or(false)
     }
+    // @arena: only one caller. Can be inlined.
     pub fn new_root() -> Rc<RefCell<Self>> {
         let root = Rc::new(RefCell::new(Symbol::Root(RootSymbol::new())));
         root.borrow_mut().set_weak_self(Rc::downgrade(&root));
@@ -68,6 +69,7 @@ impl Symbol {
     }
 
     //Create a sub-symbol that is representing a file
+    // @arena: moved to SymbolTable
     pub fn add_new_file(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let file = Rc::new(RefCell::new(Symbol::File(FileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         file.borrow_mut().set_weak_self(Rc::downgrade(&file));

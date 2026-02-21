@@ -33,8 +33,8 @@ impl DiskDirSymbol {
         }
     }
 
-    pub fn add_file(&mut self, file: SymbolKey, name: &OYarn) {
-        self.module_symbols.insert(name.clone(), file);
+    pub fn add_file(&mut self, file: SymbolKey, name: &str) {
+        self.module_symbols.insert(oyarn!("{}", name), file);
     }
 
     /*pub fn load(sesion: &mut SessionInfo, dir: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {

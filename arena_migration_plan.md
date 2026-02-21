@@ -44,3 +44,26 @@ RefCell to FileInfo, EntryPoint
   - the alterative would be store somewhere else, and pass it around as sibling field to SyncOdoo inside SessionInfo. This might make some borrow issues easier to resolve (when needing to mutate sync odoo while borrowing from the symbol table)
 
 - to decide: evaluations on secondary map?
+
+
+## Current changes
+
+Move Symbol::add_new_* to SymbolTable
+
+
+## Refactor oportunities for later
+
+NamespaceSymbol::add_file
+
+C-syle loop for finding most specific dir, could be written in more idiomatic Rust:
+```rust
+  let best = self.directories.iter()
+      .enumerate()
+      .filter(|(_, dir)| PathBuf::from(path).starts_with(&dir.path))
+      .max_by_key(|(_, dir)| dir.path.len());
+
+  match best {
+      Some((idx, _)) => self.directories[idx].module_symbols.insert(oyarn!("{}", name), file),
+      None => panic!("No valid path found..."),
+  };
+```

@@ -2,7 +2,7 @@ use weak_table::PtrWeakHashSet;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
 
-use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey};
+use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn};
 
 use super::symbol::Symbol;
 
@@ -10,7 +10,7 @@ use super::symbol::Symbol;
 #[derive(Debug)]
 pub struct NamespaceDirectory {
     pub path: String,
-    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 #[derive(Debug)]
@@ -49,21 +49,22 @@ impl NamespaceSymbol {
         }
     }
 
-    pub fn add_file(&mut self, file: &Rc<RefCell<Symbol>>) {
+    // @arena originaly got paths() from symbol and used only the first one (paths()[0])
+    pub fn add_file(&mut self, file: SymbolKey, name: &str, path: &str) {
         let mut best_index: i32 = -1;
         let mut best_length: i32 = -1;
         let mut index = 0;
         while index < self.directories.len() {
-            if PathBuf::from(&file.borrow().paths()[0]).starts_with(&self.directories[index].path) && self.directories[index].path.len() as i32 > best_length {
+            if PathBuf::from(path).starts_with(&self.directories[index].path) && self.directories[index].path.len() as i32 > best_length {
                 best_index = index as i32;
                 best_length = self.directories[index].path.len() as i32;
             }
             index += 1;
         }
         if best_index == -1 {
-            panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", file.borrow().paths()[0], self.name, self.directories);
+            panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", path, self.name, self.directories);
         } else {
-            self.directories[best_index as usize].module_symbols.insert(file.borrow().name().clone(), file.clone());
+            self.directories[best_index as usize].module_symbols.insert(oyarn!("{}", name), file);
         }
     }
 

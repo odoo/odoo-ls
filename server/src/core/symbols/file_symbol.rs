@@ -1,6 +1,6 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, xml_data::OdooData}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -11,6 +11,7 @@ pub struct FileSymbol {
     pub path: String,
     pub is_external: bool,
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
+    // @arena: probably always Some. Maybe remove the option.
     pub parent: Option<SymbolKey>,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
@@ -36,13 +37,13 @@ pub struct FileSymbol {
 
 impl FileSymbol {
 
-    pub fn new(name: String, path: String, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
-            path,
+            path: path.to_string(),
             is_external,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
