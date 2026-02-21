@@ -12,8 +12,8 @@ pub enum PackageSymbol {
 }
 
 impl PackageSymbol {
-    pub fn new_python_package(name: String, path: String, is_external: bool) -> Self {
-        PackageSymbol::PythonPackage(PythonPackageSymbol::new(name, path, is_external))
+    pub fn new_python_package(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
+        PackageSymbol::PythonPackage(PythonPackageSymbol::new(name, path, parent, is_external))
     }
     pub fn new_module_package(session: &mut SessionInfo, name: String, path: &PathBuf, is_external: bool) -> Option<Self> {
         if let Some(module) = ModuleSymbol::new(session, name, path, is_external) {
@@ -128,14 +128,14 @@ pub struct PythonPackageSymbol {
 
 impl PythonPackageSymbol {
 
-    pub fn new(name: String, path: String, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
-            path,
+            path: path.to_string(),
             is_external,
             i_ext: S!(""),
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,

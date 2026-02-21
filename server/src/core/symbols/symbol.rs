@@ -93,6 +93,7 @@ impl Symbol {
     }
 
     //Create a sub-symbol that is representing a package
+    // @arena: moved to SymbolTable
     pub fn add_new_python_package(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let package = Rc::new(
             RefCell::new(

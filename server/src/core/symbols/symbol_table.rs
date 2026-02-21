@@ -38,6 +38,10 @@ impl From<FileKey> for SymbolKey {
     fn from(key: FileKey) -> Self { SymbolKey::File(key) }
 }
 
+impl From<PackageKey> for SymbolKey {
+    fn from(key: PackageKey) -> Self { SymbolKey::Package(key) }
+}
+
 #[derive(Debug)]
 pub enum SymbolView<'a> {
     Root(&'a RootSymbol),
@@ -183,40 +187,60 @@ impl SymbolTable {
     }
 
 
+    // ====== Symbol creation methods ======
+
     // @arena: parent is a verified existing key
     // Create a sub-symbol that is representing a file
     pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
-        let is_external = if let SymbolKey::Root(_) = parent {
-            // @arena: this would be simpler if is_external returned true for root
-            true
-        } else {
-            self.get_symbol(parent).expect("valid key").is_external()
-        };
+        let is_external = self.parent_is_external(parent);
         let file_symbol = FileSymbol::new(name, path, parent, is_external);
         let file_key = self.files.insert(file_symbol);
-        match parent {
-            // @arena: could get_unchecked_mut instead
-            SymbolKey::Namespace(n) => {
-                let namespace_symbol = self.namespaces.get_mut(n).unwrap();
-                namespace_symbol.add_file(file_key.into(), name, path);
-            }
-            SymbolKey::Package(p) => {
-                let package_symbol = self.packages.get_mut(p).unwrap();
-                package_symbol.add_file(file_key.into(), name);
-            },
-            SymbolKey::Root(r) => {
-                let root_symbol = self.roots.get_mut(r).unwrap();
-                root_symbol.add_file(file_key.into(), name);
-            },
-            SymbolKey::DiskDir(d) => {
-                let disk_dir_symbol = self.disk_dirs.get_mut(d).unwrap();
-                disk_dir_symbol.add_file(file_key.into(), name);
-            },
-            _ => { panic!("Impossible to add a file to a {}", self.get_symbol(parent).unwrap().typ()); }
-        }
+        self.register_in_parent(parent, file_key.into(), name, path);
         file_key.into()
     }
 
+    // @arena: parent is a verified existing key - Consider adding a validate_key method
+    //Create a sub-symbol that is representing a package
+    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+        let is_external = self.parent_is_external(parent);
+        let package_symbol = PackageSymbol::new_python_package(name, path, parent, is_external);
+        let package_key = self.packages.insert(package_symbol);
+        self.register_in_parent(parent, package_key.into(), name, path);
+        package_key.into()
+    }
+
+    // ====== Helpers for symbol creation ======
+
+    // @arena: this would be simpler if is_external returned true for root
+    fn parent_is_external(&self, parent: SymbolKey) -> bool {
+        match parent {
+            SymbolKey::Root(_) => true,
+            _ => self.get_symbol(parent).expect("valid key").is_external(),
+        }
+    }
+
+    fn register_in_parent(&mut self, parent: SymbolKey, child: SymbolKey, name: &str, path: &str) {             
+        match parent {
+            SymbolKey::Namespace(n) => {
+                self.namespaces.get_mut(n).unwrap().add_file(child, name, path);
+            },
+            SymbolKey::Package(p) => {
+                self.packages.get_mut(p).unwrap().add_file(child, name);
+            },
+            SymbolKey::Root(r) => {
+                self.roots.get_mut(r).unwrap().add_file(child, name);
+            },
+            SymbolKey::DiskDir(d) => {
+                self.disk_dirs.get_mut(d).unwrap().add_file(child, name);
+            },
+            _ => {
+                panic!("Impossible to add a {} to a {}", 
+                    self.get_symbol(child).unwrap().typ(), 
+                    self.get_symbol(parent).unwrap().typ()
+                );
+            }
+        }
+    }
 
         
 }
