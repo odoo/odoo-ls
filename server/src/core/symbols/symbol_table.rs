@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{constants::{PackageType, SymType}, core::symbols::{
@@ -5,7 +7,7 @@ use crate::{constants::{PackageType, SymType}, core::symbols::{
     disk_dir_symbol::DiskDirSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol,
     namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol,
     variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol,
-}};
+}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -207,6 +209,16 @@ impl SymbolTable {
         let package_key = self.packages.insert(package_symbol);
         self.register_in_parent(parent, package_key.into(), name, path);
         package_key.into()
+    }
+
+    // @arena: not a method! (takes SessionInfo as arg)
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &String, path: &PathBuf) -> Option<SymbolKey> {
+        let is_external = session.sync_odoo.symbol_table.parent_is_external(parent);
+        let module = PackageSymbol::new_module_package(session, name.clone(), path, parent, is_external)?;
+        let symbol_table = &mut session.sync_odoo.symbol_table;
+        let module_key = symbol_table.packages.insert(module);
+        symbol_table.register_in_parent(parent, module_key.into(), name, &path.sanitize());
+        Some(module_key.into())
     }
 
     // ====== Helpers for symbol creation ======

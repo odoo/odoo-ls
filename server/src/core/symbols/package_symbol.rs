@@ -15,8 +15,8 @@ impl PackageSymbol {
     pub fn new_python_package(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         PackageSymbol::PythonPackage(PythonPackageSymbol::new(name, path, parent, is_external))
     }
-    pub fn new_module_package(session: &mut SessionInfo, name: String, path: &PathBuf, is_external: bool) -> Option<Self> {
-        if let Some(module) = ModuleSymbol::new(session, name, path, is_external) {
+    pub fn new_module_package(session: &mut SessionInfo, name: String, path: &PathBuf, parent:SymbolKey, is_external: bool) -> Option<Self> {
+        if let Some(module) = ModuleSymbol::new(session, name, path, parent, is_external) {
             Some(PackageSymbol::Module(module))
         } else {
             None

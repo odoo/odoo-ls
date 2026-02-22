@@ -71,7 +71,7 @@ pub struct ModuleSymbol {
 
 impl ModuleSymbol {
 
-    pub fn new(session: &mut SessionInfo, name: String, dir_path: &PathBuf, is_external: bool) -> Option<Self> {
+    pub fn new(session: &mut SessionInfo, name: String, dir_path: &PathBuf, parent: SymbolKey, is_external: bool) -> Option<Self> {
         let mut module = ModuleSymbol {
             name: oyarn!("{}", name),
             path: dir_path.sanitize(),
@@ -91,7 +91,7 @@ impl ModuleSymbol {
             all_depends: HashSet::new(),
             data: Vec::new(),
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             module_symbols: HashMap::new(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
