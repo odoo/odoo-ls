@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{constants::{PackageType, SymType}, core::symbols::{
+use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol,
     disk_dir_symbol::DiskDirSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol,
     namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol,
@@ -126,6 +126,66 @@ impl SymbolView<'_> {
             Self::XmlFileSymbol(_) => SymType::XML_FILE,
             Self::CsvFileSymbol(_) => SymType::CSV_FILE,
         }
+    }
+
+    pub fn name(&self) -> &OYarn {
+        match self {
+            Self::Root(s) => &s.name,
+            Self::DiskDir(s) => &s.name,
+            Self::Namespace(s) => &s.name,
+            Self::Package(p) => p.name(),
+            Self::File(f) => &f.name,
+            Self::Compiled(c) => &c.name,
+            Self::Class(c) => &c.name,
+            Self::Function(f) => &f.name,
+            Self::Variable(v) => &v.name,
+            Self::XmlFileSymbol(x) => &x.name,
+            Self::CsvFileSymbol(c) => &c.name,
+        }
+    }
+
+    pub fn is_file_content(&self) -> bool {
+        match self {
+            Self::Root(_)
+            | Self::Namespace(_)
+            | Self::DiskDir(_)
+            | Self::Package(_)
+            | Self::File(_)
+            | Self::Compiled(_)
+            | Self::XmlFileSymbol(_)
+            | Self::CsvFileSymbol(_) => false,
+            Self::Class(_) | Self::Function(_) | Self::Variable(_) => true,
+        }
+    }
+
+    // @arena get_symbol + unwrap is the equivalent of upgrade + unwrap on a weak ref
+    // @arena: probaly an anti-pattern, to require the SymbolTable. Maybe should
+    // be a method on SymbolTable instead.
+    pub fn get_tree(&self, symbol_table: &SymbolTable) -> Tree {
+        let mut res = (vec![], vec![]);
+        if self.is_file_content() {
+            res.1.insert(0, self.name().clone());
+        } else {
+            res.0.insert(0, self.name().clone());
+        }
+        if self.typ() == SymType::ROOT || self.parent().is_none() {
+            return res
+        }
+        let parent = self.parent();
+        let mut current_arc = parent.unwrap();
+        let mut current = symbol_table.get_symbol(current_arc).expect("valid key");
+        while current.typ() != SymType::ROOT && current.parent().is_some() {
+            if current.is_file_content() {
+                res.1.insert(0, current.name().clone());
+            } else {
+                res.0.insert(0, current.name().clone());
+            }
+            let parent = current.parent();
+            // drop(current);
+            current_arc = parent.unwrap();
+            current = symbol_table.get_symbol(current_arc).expect("valid key");
+        }
+        res
     }
 
 }
