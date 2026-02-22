@@ -123,6 +123,7 @@ impl Symbol {
     }
 
     //Create a sub-symbol that is representing a package
+    // @arena: moved to SymbolTable
     pub fn add_new_module_package(&mut self, session: &mut SessionInfo, name: &String, path: &PathBuf) -> Option<Rc<RefCell<Self>>> {
         let module = PackageSymbol::new_module_package(session, name.clone(), path, self.is_external());
         if module.is_none() {
@@ -156,6 +157,7 @@ impl Symbol {
         Some(package)
     }
 
+    // @arena: moved to SymbolTable
     pub fn add_new_namespace(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let namespace = Rc::new(RefCell::new(Symbol::Namespace(NamespaceSymbol::new(name.clone(), vec![path.clone()], self.is_external()))));
         namespace.borrow_mut().set_weak_self(Rc::downgrade(&namespace));

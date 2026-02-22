@@ -44,6 +44,10 @@ impl From<PackageKey> for SymbolKey {
     fn from(key: PackageKey) -> Self { SymbolKey::Package(key) }
 }
 
+impl From<NamespaceKey> for SymbolKey {
+    fn from(key: NamespaceKey) -> Self { SymbolKey::Namespace(key) }
+}
+
 #[derive(Debug)]
 pub enum SymbolView<'a> {
     Root(&'a RootSymbol),
@@ -209,6 +213,14 @@ impl SymbolTable {
         let package_key = self.packages.insert(package_symbol);
         self.register_in_parent(parent, package_key.into(), name, path);
         package_key.into()
+    }
+
+    pub fn add_new_namespace(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+        let is_external = self.parent_is_external(parent);
+        let namespace_symbol = NamespaceSymbol::new(name, vec![path.to_string()], parent, is_external);
+        let namespace_key = self.namespaces.insert(namespace_symbol);
+        self.register_in_parent(parent, namespace_key.into(), name, path);
+        namespace_key.into()
     }
 
     // @arena: not a method! (takes SessionInfo as arg)

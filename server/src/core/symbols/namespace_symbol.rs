@@ -28,20 +28,17 @@ pub struct NamespaceSymbol {
 
 impl NamespaceSymbol {
 
-    pub fn new(name: String, paths: Vec<String>, is_external: bool) -> Self {
-        let mut directories = vec![];
-        for p in paths.iter() {
-            directories.push(NamespaceDirectory {
-                path: p.clone(),
-                module_symbols: HashMap::new(),
-            })
-        }
+    pub fn new(name: &str, paths: Vec<String>, parent: SymbolKey, is_external: bool) -> Self {
+        let directories = paths.into_iter().map(|p| NamespaceDirectory {
+            path: p,
+            module_symbols: HashMap::new(),
+        }).collect();
         Self {
-            name: OYarn::from(name),
-            directories: directories,
+            name: oyarn!("{}", name),
+            directories,
             is_external,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             in_workspace: false,
             dependencies: vec![],
             dependents: vec![],
