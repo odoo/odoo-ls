@@ -36,16 +36,31 @@ pub enum SymbolKey {
     CsvFile(CsvFileKey),
 }
 
-impl From<FileKey> for SymbolKey {
-    fn from(key: FileKey) -> Self { SymbolKey::File(key) }
+// AI-generated
+macro_rules! impl_from_key {
+    ($($variant:ident($key_type:ty)),* $(,)?) => {
+        $(
+            impl From<$key_type> for SymbolKey {
+                fn from(key: $key_type) -> Self { SymbolKey::$variant(key) }
+            }
+        )*
+    };
 }
 
-impl From<PackageKey> for SymbolKey {
-    fn from(key: PackageKey) -> Self { SymbolKey::Package(key) }
-}
-
-impl From<NamespaceKey> for SymbolKey {
-    fn from(key: NamespaceKey) -> Self { SymbolKey::Namespace(key) }
+// Implements the From trait for each key type to allow easy conversion to SymbolKey
+// enables key.into() to convert a specific key type into a SymbolKey
+impl_from_key! {
+    Root(RootKey),
+    DiskDir(DiskDirKey),
+    Namespace(NamespaceKey),
+    Package(PackageKey),
+    File(FileKey),
+    Compiled(CompiledKey),
+    Class(ClassKey),
+    Function(FunctionKey),
+    Variable(VariableKey),
+    XmlFile(XmlFileKey),
+    CsvFile(CsvFileKey),
 }
 
 #[derive(Debug)]
