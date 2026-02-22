@@ -67,3 +67,29 @@ C-syle loop for finding most specific dir, could be written in more idiomatic Ru
       None => panic!("No valid path found..."),
   };
 ```
+
+SymbolTable::get_tree
+
+repeated logic before and inside the loop, handling the root case differently (which is likely wrong). If never called with a Root symbol (or with "Root" in the result is not correct), could be simplified:
+```rust
+  pub fn get_tree(&self, key: SymbolKey) -> Tree {
+      let mut res = (vec![], vec![]);
+      let mut current_key = key;
+      loop {
+          let current = self.get_symbol(current_key).expect("valid key");
+          if current.typ() == SymType::ROOT {
+              break;
+          }
+          if current.is_file_content() {
+              res.1.insert(0, current.name().clone());
+          } else {
+              res.0.insert(0, current.name().clone());
+          }
+          match current.parent() {
+              Some(parent) => current_key = parent,
+              None => break,
+          }
+      }
+      res
+  }
+```

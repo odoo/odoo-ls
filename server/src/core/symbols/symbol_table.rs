@@ -158,36 +158,6 @@ impl SymbolView<'_> {
         }
     }
 
-    // @arena get_symbol + unwrap is the equivalent of upgrade + unwrap on a weak ref
-    // @arena: probaly an anti-pattern, to require the SymbolTable. Maybe should
-    // be a method on SymbolTable instead.
-    pub fn get_tree(&self, symbol_table: &SymbolTable) -> Tree {
-        let mut res = (vec![], vec![]);
-        if self.is_file_content() {
-            res.1.insert(0, self.name().clone());
-        } else {
-            res.0.insert(0, self.name().clone());
-        }
-        if self.typ() == SymType::ROOT || self.parent().is_none() {
-            return res
-        }
-        let parent = self.parent();
-        let mut current_arc = parent.unwrap();
-        let mut current = symbol_table.get_symbol(current_arc).expect("valid key");
-        while current.typ() != SymType::ROOT && current.parent().is_some() {
-            if current.is_file_content() {
-                res.1.insert(0, current.name().clone());
-            } else {
-                res.0.insert(0, current.name().clone());
-            }
-            let parent = current.parent();
-            // drop(current);
-            current_arc = parent.unwrap();
-            current = symbol_table.get_symbol(current_arc).expect("valid key");
-        }
-        res
-    }
-
 }
 
 #[derive(Debug)]
@@ -267,6 +237,35 @@ impl SymbolTable {
         return self.find_module(symbol.parent()?);
     }
 
+
+    // @arena get_symbol + unwrap is the equivalent of upgrade + unwrap on a weak ref
+    // @arena, to check possibly weird things:
+    // - different behavior for root before and inside the loop
+    // - loop stops if symbol has no parent, without including it.
+    pub fn get_tree(&self, symbol_key: SymbolKey) -> Tree {
+        let symbol = self.get_symbol(symbol_key).expect("valid key");
+        let mut res = (vec![], vec![]);
+        if symbol.is_file_content() {
+            res.1.insert(0, symbol.name().clone());
+        } else {
+            res.0.insert(0, symbol.name().clone());
+        }
+        if symbol.typ() == SymType::ROOT || symbol.parent().is_none() {
+            return res
+        }
+        let mut current_key = symbol.parent().unwrap();
+        let mut current_sym = self.get_symbol(current_key).expect("valid key");
+        while current_sym.typ() != SymType::ROOT && current_sym.parent().is_some() {
+            if current_sym.is_file_content() {
+                res.1.insert(0, current_sym.name().clone());
+            } else {
+                res.0.insert(0, current_sym.name().clone());
+            }
+            current_key = current_sym.parent().unwrap();
+            current_sym = self.get_symbol(current_key).expect("valid key");
+        }
+        res
+    }
 
     // ====== Symbol creation methods ======
 
