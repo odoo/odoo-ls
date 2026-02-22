@@ -21,13 +21,13 @@ pub struct DiskDirSymbol {
 
 impl DiskDirSymbol {
 
-    pub fn new(name: String, path: String, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         Self {
             name: oyarn!("{}", name),
             path: PathBuf::from(path).sanitize(),
             is_external,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             in_workspace: false,
             module_symbols: HashMap::new()
         }

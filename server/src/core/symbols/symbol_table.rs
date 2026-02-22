@@ -238,6 +238,44 @@ impl SymbolTable {
         namespace_key.into()
     }
 
+    pub fn add_new_disk_dir(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+        let is_external = self.parent_is_external(parent);
+        let disk_dir_symbol = DiskDirSymbol::new(name, path, parent, is_external);
+        let disk_dir_key = self.disk_dirs.insert(disk_dir_symbol);
+        self.register_in_parent(parent, disk_dir_key.into(), name, path);
+        disk_dir_key.into()
+    }
+
+    pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+        let is_external = self.parent_is_external(parent);
+        let compiled_symbol = CompiledSymbol::new(name, path, parent, is_external);
+        let compiled_key: SymbolKey = self.compiled.insert(compiled_symbol).into();
+        match parent {
+            SymbolKey::Namespace(n) => {
+                self.namespaces.get_mut(n).unwrap().add_file(compiled_key, name, path);
+            },
+            SymbolKey::Package(p) => {
+                self.packages.get_mut(p).unwrap().add_file(compiled_key, name);
+            },
+            SymbolKey::Root(r) => {
+                self.roots.get_mut(r).unwrap().add_file(compiled_key, name);
+            },
+            SymbolKey::Compiled(c) => {
+                self.compiled.get_mut(c).unwrap().add_compiled(compiled_key, name);
+            }
+            SymbolKey::DiskDir(d) => {
+                self.disk_dirs.get_mut(d).unwrap().add_file(compiled_key, name);
+            },
+            _ => {
+                panic!("Impossible to add a {} to a {}", 
+                    self.get_symbol(compiled_key).unwrap().typ(), 
+                    self.get_symbol(parent).unwrap().typ()
+                );
+            }
+        }
+        compiled_key
+    }
+
     // @arena: not a method! (takes SessionInfo as arg)
     pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &String, path: &PathBuf) -> Option<SymbolKey> {
         let is_external = session.sync_odoo.symbol_table.parent_is_external(parent);

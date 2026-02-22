@@ -180,6 +180,7 @@ impl Symbol {
         namespace
     }
 
+    // @arean: moved to SymbolTable
     pub fn add_new_disk_dir(&mut self, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let namespace = Rc::new(RefCell::new(Symbol::DiskDir(DiskDirSymbol::new(name.clone(), path.clone(), self.is_external()))));
         namespace.borrow_mut().set_weak_self(Rc::downgrade(&namespace));
@@ -202,6 +203,7 @@ impl Symbol {
         namespace
     }
 
+    // @arean: moved to SymbolTable
     pub fn add_new_compiled(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let compiled = Rc::new(RefCell::new(Symbol::Compiled(CompiledSymbol::new(name.clone(), path.clone(), self.is_external()))));
         compiled.borrow_mut().set_weak_self(Rc::downgrade(&compiled));

@@ -1,8 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey};
+use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn};
 
 use super::symbol::Symbol;
 
@@ -13,26 +13,26 @@ pub struct CompiledSymbol {
     pub path: String,
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
-    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
+    pub module_symbols: HashMap<OYarn, SymbolKey>,
     pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
 }
 
 impl CompiledSymbol {
 
-    pub fn new(name: String, path: String, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         Self {
-            name: OYarn::from(name),
+            name: oyarn!("{}", name),
             is_external,
             // weak_self: None,
-            path,
+            path: path.to_string(),
             module_symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
-            parent: None,
+            parent: Some(parent),
         }
     }
 
-    pub fn add_compiled(&mut self, compiled: &Rc<RefCell<Symbol>>) {
-        self.module_symbols.insert(compiled.borrow().name().clone(), compiled.clone());
+    pub fn add_compiled(&mut self, compiled: SymbolKey, name: &str) {
+        self.module_symbols.insert(oyarn!("{}", name), compiled);
     }
 
 }
