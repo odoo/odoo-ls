@@ -62,7 +62,7 @@ pub struct ModuleSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
     pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
     pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>,

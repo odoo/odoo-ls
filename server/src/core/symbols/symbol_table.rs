@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{constants::{OYarn, PackageType, SymType, Tree, tree}, core::{file_mgr::FileMgr, symbols::{
@@ -156,27 +155,10 @@ impl SymbolView<'_> {
         }
     }
     
-    // @arena: review the need for this
     pub fn as_module_package(&self) -> &ModuleSymbol {
         match self {
             Self::Package(PackageSymbol::Module(m)) => m,
             _ => {panic!("Not a module package")}
-        }
-    }
-
-    pub fn range(&self) -> &TextRange {
-        match self {
-            Self::Root(_) => panic!(),
-            Self::DiskDir(_) => panic!(),
-            Self::Namespace(_) => panic!(),
-            Self::Package(_) => panic!(),
-            Self::File(_) => panic!(),
-            Self::Compiled(_) => panic!(),
-            Self::Class(c) => &c.range,
-            Self::Function(f) => &f.range,
-            Self::Variable(v) => &v.range,
-            Self::XmlFileSymbol(_) => panic!(),
-            Self::CsvFileSymbol(_) => panic!(),
         }
     }
 
