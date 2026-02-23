@@ -34,7 +34,8 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => p.parent,
         }
     }
-    pub fn set_parent(&mut self, parent: Option<Weak<RefCell<Symbol>>>) {
+    // @arena: ideally, this should not exist (parent should be set at construction and never change).
+    pub fn set_parent(&mut self, parent: Option<SymbolKey>) {
         match self {
             PackageSymbol::Module(m) => m.parent = parent,
             PackageSymbol::PythonPackage(p) => p.parent = parent,

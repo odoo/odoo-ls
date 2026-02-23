@@ -834,6 +834,7 @@ impl Symbol {
         }
     }
 
+    // @arena: ideally, this should not exist (parent should be set at construction and never change).
     fn set_parent(&mut self, parent: Option<Weak<RefCell<Symbol>>>) {
         match self {
             Symbol::Root(_) => panic!(),
