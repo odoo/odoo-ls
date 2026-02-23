@@ -163,7 +163,7 @@ impl SymbolView<'_> {
     }
 
     // @arena: consider factoring out first part into a decl_ext_symbols method in SymbolView
-    pub fn get_decl_ext_symbol(&self, symbol: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
+    pub fn get_decl_ext_symbol(&self, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
         let decl_ext_symbols = match self {
             Self::Class(c) => &c.decl_ext_symbols,
             Self::File(f) => &f.decl_ext_symbols,
@@ -173,7 +173,7 @@ impl SymbolView<'_> {
             _ => return vec![],
         };
         let mut result = vec![];
-        if let Some(object_decl_symbols) = decl_ext_symbols.get(&symbol) {
+        if let Some(object_decl_symbols) = decl_ext_symbols.get(&target) {
             if let Some(symbols) = object_decl_symbols.get(name) {
                 for end_symbols in symbols.values() {
                     //TODO actually we don't take position into account, but can we really?
@@ -405,6 +405,33 @@ impl SymbolTable {
 
     // ==== external symbols =====
 
+    // @arena: review this panic / factor out getting ext_symbols map
+    // This used to be a method in each Symbol variant
+    pub fn get_ext_symbol(&self, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
+        let target_symbol = self.get_symbol(target).expect("valid key");
+        // name -> set(owners)
+        let ext_symbols = match target_symbol {
+            SymbolView::Class(c) => &c.ext_symbols,
+            SymbolView::File(f) => &f.ext_symbols,
+            SymbolView::Function(f) => &f.ext_symbols,
+            SymbolView::Package(PackageSymbol::Module(m)) => &m.ext_symbols,
+            SymbolView::Package(PackageSymbol::PythonPackage(p)) => &p.ext_symbols,
+            SymbolView::Namespace(n) => &n.ext_symbols,
+            _ => panic!("Not implemented for this type of symbol"),
+        };
+
+        let mut result = vec![];
+        if let Some(owners) = ext_symbols.get(name) {
+            for &owner_key in owners {
+                let Some(owner_sym) = self.get_symbol(owner_key) else {
+                    // @arena: Equivalent of iterating on a PtrWeakHashSet, which cleans up expired weaks
+                    continue;
+                };
+                result.extend(owner_sym.get_decl_ext_symbol(target, name));
+            }
+        }
+        result
+    }
 
 
 

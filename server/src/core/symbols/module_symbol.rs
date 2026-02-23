@@ -538,16 +538,17 @@ impl ModuleSymbol {
         self.in_workspace
     }
 
-    pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut result = vec![];
-        if let Some(owners) = self.ext_symbols.get(name) {
-            for owner in owners.iter() {
-                let owner = owner.borrow();
-                result.extend(owner.get_decl_ext_symbol(&self.weak_self.as_ref().unwrap().upgrade().unwrap(), name));
-            }
-        }
-        result
-    }
+    // @arena: moved to SymbolTable
+    // pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+    //     let mut result = vec![];
+    //     if let Some(owners) = self.ext_symbols.get(name) {
+    //         for owner in owners.iter() {
+    //             let owner = owner.borrow();
+    //             result.extend(owner.get_decl_ext_symbol(&self.weak_self.as_ref().unwrap().upgrade().unwrap(), name));
+    //         }
+    //     }
+    //     result
+    // }
 
     // @arena: moved to SymbolView
     // pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
