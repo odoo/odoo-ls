@@ -2,13 +2,14 @@ use std::{cell::RefCell, rc::Rc, collections::{HashMap, HashSet}};
 
 use ruff_text_size::TextSize;
 
-use crate::constants::OYarn;
+use crate::{constants::OYarn, core::symbols::symbol_table::{SymbolKey, SymbolTable}};
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::Symbol};
 
+
 #[derive(Debug, Default)]
 pub struct ContentSymbols {
-    pub symbols: Vec<Rc<RefCell<Symbol>>>,
+    pub symbols: Vec<SymbolKey>,
     pub always_defined: bool
 }
 
@@ -32,10 +33,10 @@ pub trait SymbolMgr {
     fn get_last_index(&self) -> u32;
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
-    fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols;
+    fn get_content_symbol(&self, name: OYarn, position: u32, symbol_table: &SymbolTable) -> ContentSymbols;
     fn _init_symbol_mgr(&mut self);
-    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
-    fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>;
+    fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>, symbol_table: &SymbolTable) -> ContentSymbols;
+    fn get_all_visible_symbols(&self, name_prefix: &String, position: u32, symbol_table: &SymbolTable) -> HashMap<OYarn, Vec<SymbolKey>>;
 }
 
 
@@ -100,11 +101,11 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///Return all the symbols that are valid as last declaration for the given position
-        fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols {
-            let sections: Option<&HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> = self.symbols.get(&name);
+        fn get_content_symbol(&self, name: OYarn, position: u32, symbol_table: &SymbolTable) -> ContentSymbols {
+            let sections: Option<&HashMap<u32, Vec<SymbolKey>>> = self.symbols.get(&name);
             let mut content = if let Some(sections) = sections {
                 let section: SectionRange = self.get_section_for(position);
-                self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
+                self._get_loc_symbol(sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new(), symbol_table)
             } else {
                 ContentSymbols::default()
             };
@@ -117,7 +118,7 @@ macro_rules! impl_section_mgr_for {
         }
 
         ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+        fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>, symbol_table: &SymbolTable) -> ContentSymbols {
             let mut res = ContentSymbols::default();
             match index {
                 SectionIndex::NONE => { return res; },
@@ -129,9 +130,11 @@ macro_rules! impl_section_mgr_for {
                     let section = self.sections.get(*index as usize).unwrap();
                     //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
                     if let Some(symbols) = map.get(index) {
-                        for loc_sym in symbols.iter().rev() {
-                            if loc_sym.borrow().range().start().to_u32() < position {
-                                res.symbols.push(loc_sym.clone());
+                        for &loc_sym_key in symbols.iter().rev() {
+                            // @arena: Rc came from self.symbols, the actual owner of that symbol
+                            let loc_sym = symbol_table.get_symbol(loc_sym_key).expect("valid key");
+                            if loc_sym.range().start().to_u32() < position {
+                                res.symbols.push(loc_sym_key);
                                 break;
                             }
                         }
@@ -141,7 +144,7 @@ macro_rules! impl_section_mgr_for {
                         res.always_defined = true;
                         return res;
                     }
-                    res = self._get_loc_symbol(map, position, &section.previous_indexes, acc);
+                    res = self._get_loc_symbol(map, position, &section.previous_indexes, acc, symbol_table);
                 },
                 SectionIndex::OR(indexes) => {
                     if indexes.is_empty(){
@@ -149,7 +152,7 @@ macro_rules! impl_section_mgr_for {
                     }
                     res.always_defined = true;
                     for index in indexes.iter() {
-                        let sub_result = self._get_loc_symbol(map, position, index, acc);
+                        let sub_result = self._get_loc_symbol(map, position, index, acc, symbol_table);
                         res.symbols.extend(sub_result.symbols);
                         res.always_defined = res.always_defined && sub_result.always_defined;
                     }
@@ -158,7 +161,7 @@ macro_rules! impl_section_mgr_for {
             res
         }
 
-        fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>> {
+        fn get_all_visible_symbols(&self, name_prefix: &String, position: u32, symbol_table: &SymbolTable) -> HashMap<OYarn, Vec<SymbolKey>> {
             let mut result = HashMap::new();
             let current_section = self.get_section_for(position);
             let current_index = SectionIndex::INDEX(current_section.index);
@@ -168,7 +171,7 @@ macro_rules! impl_section_mgr_for {
                     continue;
                 }
                 let mut seen = HashSet::new();
-                let content = self._get_loc_symbol(section_map, position, &current_index, &mut seen);
+                let content = self._get_loc_symbol(section_map, position, &current_index, &mut seen, symbol_table);
 
                 if !content.symbols.is_empty() {
                     result.insert(name.clone(), content.symbols);
