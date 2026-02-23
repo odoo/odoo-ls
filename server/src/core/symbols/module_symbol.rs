@@ -33,7 +33,7 @@ use super::xml_file_symbol::XmlFileSymbol;
 pub struct ModuleSymbol {
     pub name: OYarn,
     pub path: String,
-    pub i_ext: String,
+    pub i_ext: &'static str,
     pub is_external: bool,
     root_path: String,
     loaded: bool,
@@ -71,11 +71,11 @@ pub struct ModuleSymbol {
 
 impl ModuleSymbol {
 
-    pub fn new(session: &mut SessionInfo, name: String, dir_path: &PathBuf, parent: SymbolKey, is_external: bool) -> Option<Self> {
+    pub fn new(session: &mut SessionInfo, name: &str, dir_path: &PathBuf, parent: SymbolKey, is_external: bool) -> Option<Self> {
         let mut module = ModuleSymbol {
             name: oyarn!("{}", name),
             path: dir_path.sanitize(),
-            i_ext: S!(""),
+            i_ext: "",
             is_external,
             not_found_paths: vec![],
             not_found_data: HashMap::new(),

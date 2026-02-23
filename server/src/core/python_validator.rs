@@ -53,7 +53,7 @@ impl PythonValidator {
         let file_symbol = self.file.borrow();
         let mut path = file_symbol.paths()[0].clone();
         if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
+            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext();
         }
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         let file_info_rc = match file_info_rc {

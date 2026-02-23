@@ -2,12 +2,9 @@ use std::path::PathBuf;
 
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol,
-    disk_dir_symbol::DiskDirSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol,
-    namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol,
-    variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol,
-}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{OYarn, PackageType, SymType, Tree, tree}, core::{file_mgr::FileMgr, symbols::{
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+}}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -157,6 +154,13 @@ impl SymbolView<'_> {
             Self::Class(_) | Self::Function(_) | Self::Variable(_) => true,
         }
     }
+    
+    pub fn as_module_package(&self) -> &ModuleSymbol {
+        match self {
+            Self::Package(PackageSymbol::Module(m)) => m,
+            _ => {panic!("Not a module package")}
+        }
+    }
 
 }
 
@@ -281,12 +285,12 @@ impl SymbolTable {
 
     // @arena: parent is a verified existing key - Consider adding a validate_key method
     //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str) -> PackageKey {
         let is_external = self.parent_is_external(parent);
         let package_symbol = PackageSymbol::new_python_package(name, path, parent, is_external);
         let package_key = self.packages.insert(package_symbol);
         self.register_in_parent(parent, package_key.into(), name, path);
-        package_key.into()
+        package_key
     }
 
     pub fn add_new_namespace(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
@@ -336,9 +340,9 @@ impl SymbolTable {
     }
 
     // @arena: not a method! (takes SessionInfo as arg)
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &String, path: &PathBuf) -> Option<SymbolKey> {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &str, path: &PathBuf) -> Option<SymbolKey> {
         let is_external = session.sync_odoo.symbol_table.parent_is_external(parent);
-        let module = PackageSymbol::new_module_package(session, name.clone(), path, parent, is_external)?;
+        let module = PackageSymbol::new_module_package(session, name, path, parent, is_external)?;
         let symbol_table = &mut session.sync_odoo.symbol_table;
         let module_key = symbol_table.packages.insert(module);
         symbol_table.register_in_parent(parent, module_key.into(), name, &path.sanitize());
@@ -378,5 +382,82 @@ impl SymbolTable {
         }
     }
 
-        
+}
+
+// @arena: make this a method of SyncOdoo?
+pub fn get_main_entry_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree {
+    let symbol_table = &session.sync_odoo.symbol_table;
+    let mut tree = symbol_table.get_tree(symbol_key);
+    let len_first_part = tree.0.len();
+    let odoo_tree = &session.sync_odoo.main_entry_tree;
+    if len_first_part >= odoo_tree.len() {
+        for component in odoo_tree.iter() {
+            if tree.0.len() > 0 && &tree.0[0] == component {
+                tree.0.remove(0);
+            } else {
+                return symbol_table.get_tree(symbol_key);
+            }
+        }
+    }
+    tree
+}
+
+// @arena: associated function is SymbolTable?
+///Given a path, create the appropriated symbol and attach it to the given parent
+pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
+    let symbol_table = &mut session.sync_odoo.symbol_table;
+    let name: String = if path.is_dir() {
+        path.components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+    } else {
+        path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+    };
+    let path_str = path.sanitize();
+    if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
+        return Some(symbol_table.add_new_file(parent, &name, &path_str));
+    }
+    let main_entry_tree = get_main_entry_tree(session, parent);
+    if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+        let module = SymbolTable::add_new_module_package(session, parent, &name, path);
+        let symbol_table = &mut session.sync_odoo.symbol_table;
+        if let Some(module) = module {
+            let module_symbol = symbol_table.get_symbol(module).unwrap();
+            let dir_name = module_symbol.as_module_package().dir_name.clone();
+            session.sync_odoo.modules.insert(dir_name, module);
+            return Some(module);
+        } else if require_module {
+            return None;
+        } else {
+            if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str);
+                if !path.join("__init__.py").exists() {
+                    symbol_table.packages.get_mut(package_key).unwrap().set_i_ext("i");
+                }
+                return Some(package_key.into());
+            } else {
+                return None;
+            }
+        }
+    } else if require_module {
+        return None;
+    } else {
+        let symbol_table = &mut session.sync_odoo.symbol_table;
+        if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+            if main_entry_tree == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
+                //Force namespace for odoo/addons
+                let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
+                return Some(namespace_key);
+            } else {
+                // let ref_sym = parent.borrow_mut().add_new_python_package(session, &name, &path_str);
+                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str);
+                if !path.join("__init__.py").exists() {
+                    symbol_table.packages.get_mut(package_key).unwrap().set_i_ext("i");
+                }
+                return Some(package_key.into());
+            }
+        } else if path.is_dir() {
+            let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
+            return Some(namespace_key);
+        }
+    }
+    None
 }

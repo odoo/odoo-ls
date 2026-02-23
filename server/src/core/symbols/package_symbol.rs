@@ -15,7 +15,7 @@ impl PackageSymbol {
     pub fn new_python_package(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         PackageSymbol::PythonPackage(PythonPackageSymbol::new(name, path, parent, is_external))
     }
-    pub fn new_module_package(session: &mut SessionInfo, name: String, path: &PathBuf, parent:SymbolKey, is_external: bool) -> Option<Self> {
+    pub fn new_module_package(session: &mut SessionInfo, name: &str, path: &PathBuf, parent:SymbolKey, is_external: bool) -> Option<Self> {
         if let Some(module) = ModuleSymbol::new(session, name, path, parent, is_external) {
             Some(PackageSymbol::Module(module))
         } else {
@@ -40,13 +40,13 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => p.parent = parent,
         }
     }
-    pub fn i_ext(&self) -> &String {
+    pub fn i_ext(&self) -> &'static str {
         match self {
-            PackageSymbol::Module(m) => &m.i_ext,
-            PackageSymbol::PythonPackage(p) => &p.i_ext,
+            PackageSymbol::Module(m) => m.i_ext,
+            PackageSymbol::PythonPackage(p) => p.i_ext,
         }
     }
-    pub fn set_i_ext(&mut self, ext: String) {
+    pub fn set_i_ext(&mut self, ext: &'static str) {
         match self {
             PackageSymbol::PythonPackage(p) => {p.i_ext = ext},
             PackageSymbol::Module(m) => {m.i_ext = ext},
@@ -100,7 +100,7 @@ impl PackageSymbol {
 pub struct PythonPackageSymbol {
     pub name: OYarn,
     pub path: String,
-    pub i_ext: String,
+    pub i_ext: &'static str,
     pub is_external: bool,
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
@@ -133,7 +133,7 @@ impl PythonPackageSymbol {
             name: oyarn!("{}", name),
             path: path.to_string(),
             is_external,
-            i_ext: S!(""),
+            i_ext: "",
             // weak_self: None,
             parent: Some(parent),
             arch_status: BuildStatus::PENDING,

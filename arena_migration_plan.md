@@ -50,10 +50,18 @@ RefCell to FileInfo, EntryPoint
 
 Move Symbol::add_new_* to SymbolTable
 
+## Insights/Notes
+Instead of Symbols, we now have the separate types stored. And the functions that
+return a symbol key could return the specific one. This allows us to:
+- look into the specific slot map and get specific type
+- cast it to SymbolKey (via into) if needed.
+
+Before, we were stuck with symbols, and using Symbol::as_* when we know the type.
+Now we don't need that when we have the specific key.
 
 ## Refactor oportunities for later
 
-NamespaceSymbol::add_file
+### NamespaceSymbol::add_file
 
 C-syle loop for finding most specific dir, could be written in more idiomatic Rust:
 ```rust
@@ -68,7 +76,7 @@ C-syle loop for finding most specific dir, could be written in more idiomatic Ru
   };
 ```
 
-SymbolTable::get_tree
+### SymbolTable::get_tree
 
 repeated logic before and inside the loop, handling the root case differently (which is likely wrong). If never called with a Root symbol (or with "Root" in the result is not correct), could be simplified:
 ```rust
@@ -93,3 +101,26 @@ repeated logic before and inside the loop, handling the root case differently (w
       res
   }
 ```
+
+### get_main_entry_tree
+
+- a bit inefficient to call get_tree again, instead of keeping a copy of the original one
+- the loop for removing the common intial part could be simplied by comparing slices:
+```rust
+    let len = odoo_tree.len();
+    if &tree.0[..len] == odoo_tree {
+        tree.0.drain(..len);
+    }
+```
+
+### i_ext in PythonPackage
+
+It could by a `&'static str`, set at construction (it never changes)
+The setter is only used right after its creation.
+And the Module variant never gets set to other than ""
+
+### session everywhere
+Many methods take session, while all they need is sync_odoo
+
+### &PathBuf x &Path
+Consider using &Path (the equivalent of &str) instead of the former

@@ -885,7 +885,7 @@ impl Symbol {
 
     pub fn get_symbol_first_path(&self) -> String{
         match self{
-            Symbol::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext().as_str(),
+            Symbol::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext(),
             Symbol::File(f) => f.path.clone(),
             Symbol::DiskDir(_) => panic!("invalid symbol type to extract path"),
             Symbol::Root(_) => panic!("invalid symbol type to extract path"),
@@ -1296,6 +1296,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol_table
     ///Given a path, create the appropriated symbol and attach it to the given parent
     pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Rc<RefCell<Symbol>>, require_module: bool) -> Option<Rc<RefCell<Symbol>>> {
         let name: String = if path.is_dir() {
