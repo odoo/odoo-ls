@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use slotmap::{SlotMap, new_key_type};
 
@@ -18,7 +18,7 @@ new_key_type! { pub struct VariableKey; }
 new_key_type! { pub struct XmlFileKey; }
 new_key_type! { pub struct CsvFileKey; }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SymbolKey {
     Root(RootKey),
     DiskDir(DiskDirKey),
@@ -162,6 +162,27 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena: consider factoring out first part into a decl_ext_symbols method in SymbolView
+    pub fn get_decl_ext_symbol(&self, symbol: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
+        let decl_ext_symbols = match self {
+            Self::Class(c) => &c.decl_ext_symbols,
+            Self::File(f) => &f.decl_ext_symbols,
+            Self::Package(PackageSymbol::Module(m)) => &m.decl_ext_symbols,
+            Self::Package(PackageSymbol::PythonPackage(p)) => &p.decl_ext_symbols,
+            Self::Function(f) => &f.decl_ext_symbols,
+            _ => return vec![],
+        };
+        let mut result = vec![];
+        if let Some(object_decl_symbols) = decl_ext_symbols.get(&symbol) {
+            if let Some(symbols) = object_decl_symbols.get(name) {
+                for end_symbols in symbols.values() {
+                    //TODO actually we don't take position into account, but can we really?
+                    result.extend(end_symbols);
+                }
+            }
+        }
+        result
+    }
 }
 
 #[derive(Debug)]
@@ -381,6 +402,11 @@ impl SymbolTable {
             }
         }
     }
+
+    // ==== external symbols =====
+
+
+
 
 }
 

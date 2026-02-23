@@ -1,7 +1,7 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
 use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn, threads::SessionInfo};
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -123,8 +123,8 @@ pub struct PythonPackageSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
-    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>
+    pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
+    pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>
 }
 
 impl PythonPackageSymbol {
@@ -148,7 +148,7 @@ impl PythonPackageSymbol {
             sections: vec![],
             symbols: HashMap::new(),
             ext_symbols: HashMap::new(),
-            decl_ext_symbols: PtrWeakKeyHashMap::new(),
+            decl_ext_symbols: HashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],
@@ -249,17 +249,18 @@ impl PythonPackageSymbol {
         result
     }
 
-    pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut result = vec![];
-        if let Some(object_decl_symbols) = self.decl_ext_symbols.get(symbol) {
-            if let Some(symbols) = object_decl_symbols.get(name) {
-                for end_symbols in symbols.values() {
-                    //TODO actually we don't take position into account, but can we really?
-                    result.extend(end_symbols.iter().map(|s| s.clone()));
-                }
-            }
-        }
-        result
-    }
+    // @arena: moved to SymbolView
+    // pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+    //     let mut result = vec![];
+    //     if let Some(object_decl_symbols) = self.decl_ext_symbols.get(symbol) {
+    //         if let Some(symbols) = object_decl_symbols.get(name) {
+    //             for end_symbols in symbols.values() {
+    //                 //TODO actually we don't take position into account, but can we really?
+    //                 result.extend(end_symbols.iter().map(|s| s.clone()));
+    //             }
+    //         }
+    //     }
+    //     result
+    // }
 
 }

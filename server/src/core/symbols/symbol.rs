@@ -1575,6 +1575,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol_table
     pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
         match self {
             Symbol::Class(c) => {

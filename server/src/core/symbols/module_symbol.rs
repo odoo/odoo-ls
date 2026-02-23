@@ -20,7 +20,6 @@ use crate::core::symbols::symbol::Symbol;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
-use crate::S;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -64,8 +63,8 @@ pub struct ModuleSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
-    pub decl_ext_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>>,
+    pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
+    pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>,
     pub data_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
 }
 
@@ -550,18 +549,19 @@ impl ModuleSymbol {
         result
     }
 
-    pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut result = vec![];
-        if let Some(object_decl_symbols) = self.decl_ext_symbols.get(symbol) {
-            if let Some(symbols) = object_decl_symbols.get(name) {
-                for end_symbols in symbols.values() {
-                    //TODO actually we don't take position into account, but can we really?
-                    result.extend(end_symbols.iter().map(|s| s.clone()));
-                }
-            }
-        }
-        result
-    }
+    // @arena: moved to SymbolView
+    // pub fn get_decl_ext_symbol(&self, symbol: &Rc<RefCell<Symbol>>, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
+    //     let mut result = vec![];
+    //     if let Some(object_decl_symbols) = self.decl_ext_symbols.get(symbol) {
+    //         if let Some(symbols) = object_decl_symbols.get(name) {
+    //             for end_symbols in symbols.values() {
+    //                 //TODO actually we don't take position into account, but can we really?
+    //                 result.extend(end_symbols.iter().map(|s| s.clone()));
+    //             }
+    //         }
+    //     }
+    //     result
+    // }
 
     pub fn this_and_dependencies(&self, session: &mut SessionInfo) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
         let mut result = PtrWeakHashSet::new();

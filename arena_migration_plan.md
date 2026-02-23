@@ -50,6 +50,12 @@ RefCell to FileInfo, EntryPoint
 
 Move Symbol::add_new_* to SymbolTable
 
+add_new_ext_symbol: method on SymbolTable, takes SymbolKey
+add_decl_ext_symbol: also method on SymbolTable
+    object -> self's key,
+    self-> self's symbol (get from key) 
+    symbol -> variable's key being added
+
 ## Insights/Notes
 Instead of Symbols, we now have the separate types stored. And the functions that
 return a symbol key could return the specific one. This allows us to:
@@ -58,6 +64,8 @@ return a symbol key could return the specific one. This allows us to:
 
 Before, we were stuck with symbols, and using Symbol::as_* when we know the type.
 Now we don't need that when we have the specific key.
+
+Code repetition: got rid of code repetition on get_decl_ext_symbol for each symbol variant
 
 ## Refactor oportunities for later
 
