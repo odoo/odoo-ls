@@ -36,7 +36,7 @@ pub struct ModuleSymbol {
     pub is_external: bool,
     root_path: String,
     loaded: bool,
-    module_name: OYarn,
+    pub module_name: OYarn,
     pub dir_name: OYarn,
     pub depends: Vec<(OYarn, TextRange)>,
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
