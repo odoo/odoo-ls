@@ -6,7 +6,7 @@ use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, 
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::S;
+use crate::{S, Sy};
 use crate::constants::OYarn;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::odoo::SyncOdoo;
@@ -71,7 +71,23 @@ impl ReferenceFeature {
                         locations.extend(ReferenceFeature::references_in_file(session, &file, &dep_file_info, &target_symbol));
                     }
                 },
-                _ => continue,
+                GotoSourceType::Module(m) => {
+                    let module_name = Sy!(m.borrow().name().clone());
+                    let modules = session.sync_odoo.modules.clone();
+                    for (_module_name, module) in modules.iter() {
+                        if let Some(module) = module.upgrade() {
+                            if module.borrow().name() == &module_name {
+                                locations.extend(ReferenceFeature::find_name_in_manifest(session, module.clone()));
+                            }
+                            if module.borrow().as_module_package().depends.iter().any(|(dep, _range)| dep == &module_name) {
+                                locations.extend(ReferenceFeature::find_depend_in_manifest(session, module.clone(), &S!(module_name.clone())));
+                            }
+                        }
+                    }
+                },
+                GotoSourceType::OdooData(data) => {
+
+                }
             }
         }
 
@@ -94,56 +110,72 @@ impl ReferenceFeature {
         std::mem::take(&mut session.sync_odoo.evaluation_locations)
     }
 
-    pub fn get_references_xml(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
-        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
-        let document = roxmltree::Document::parse(&data);
-        if let Ok(document) = document {
-            let root = document.root_element();
-            let (symbols, _range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, false);
-            if symbols.is_empty() {
-                return None;
+    //the name inside the manifest will be different, so we only search for the key in this module and return the location with the range
+    fn find_name_in_manifest(session: &mut SessionInfo, module: Rc<RefCell<Symbol>>) -> Vec<Location> {
+        let mut locations = Vec::new();
+        let manifest = PathBuf::from(module.borrow().paths()[0].clone()).join("__manifest__.py").sanitize();
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest).clone();
+        if let Some(file_info) = file_info {
+            let file_info_ast = file_info.borrow().file_info_ast.clone();
+            let file_info_ast = file_info_ast.borrow();
+            if let Some(stmts) = file_info_ast.get_stmts() {
+                if stmts.len() != 1 {
+                    return locations;
+                }
+                let Stmt::Expr(e) = &stmts[0] else {return locations;};
+                let Expr::Dict(d) = &*e.value else {return locations;};
+                for dict_item in d.items.iter() {
+                    let Some(key) = dict_item.key.as_ref() else {continue;};
+                    let value = &dict_item.value;
+                    let Expr::StringLiteral(key_s) = key else {continue;};
+                    let Expr::StringLiteral(value_s) = value else {continue;};
+                    if key_s.value.to_str() == "name" {
+                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, &value_s.range());
+                        locations.push(Location {
+                            uri: FileMgr::pathname2uri(&manifest),
+                            range,
+                        });
+                    }
+                }
             }
-            let mut links = vec![];
-            for xml_result in symbols.iter() {
-                match xml_result {
-                    crate::features::xml_ast_utils::XmlAstResult::SYMBOL(s) => {
-                        if let Some(file) = s.borrow().get_file() {
-                            for path in file.upgrade().unwrap().borrow().paths().iter() {
-                                let full_path = match file.upgrade().unwrap().borrow().typ() {
-                                    SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.upgrade().unwrap().borrow().as_package().i_ext())).sanitize(),
-                                    _ => path.clone()
-                                };
-                                let range = match s.borrow().typ() {
-                                    SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                    _ => session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &s.borrow().range()),
-                                };
-                                links.push(Location{uri: FileMgr::pathname2uri(&full_path), range});
+        }
+        locations
+    }
+
+    fn find_depend_in_manifest(session: &mut SessionInfo, module: Rc<RefCell<Symbol>>, module_name: &String) -> Vec<Location> {
+        let mut locations = Vec::new();
+        let manifest = PathBuf::from(module.borrow().paths()[0].clone()).join("__manifest__.py").sanitize();
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest).clone();
+        if let Some(file_info) = file_info {
+            let file_info_ast = file_info.borrow().file_info_ast.clone();
+            let file_info_ast = file_info_ast.borrow();
+            if let Some(stmts) = file_info_ast.get_stmts() {
+                if stmts.len() != 1 {
+                    return locations;
+                }
+                let Stmt::Expr(e) = &stmts[0] else {return locations;};
+                let Expr::Dict(d) = &*e.value else {return locations;};
+                for dict_item in d.items.iter() {
+                    let Some(key) = dict_item.key.as_ref() else {continue;};
+                    let value = &dict_item.value;
+                    let Expr::StringLiteral(key_s) = key else {continue;};
+                    let Expr::List(depends_d) = value else {continue;};
+                    if key_s.value.to_str() == "depends" {
+                        for value in depends_d.elts.iter() {
+                            let Expr::StringLiteral(value_s) = value else {continue;};
+                            if value_s.value.to_str() == module_name {
+                                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, &value_s.range());
+                                locations.push(Location {
+                                    uri: FileMgr::pathname2uri(&manifest),
+                                    range,
+                                });
                             }
-                        }
-                    },
-                    XmlAstResult::XML_DATA(xml_file_symbol, range) => {
-                        for path in xml_file_symbol.borrow().paths().iter() {
-                            let full_path = match xml_file_symbol.borrow().typ() {
-                                SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", xml_file_symbol.borrow().as_package().i_ext())).sanitize(),
-                                _ => path.clone()
-                            };
-                            let range = match xml_file_symbol.borrow().typ() {
-                                SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
-                            };
-                            links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
                         }
                     }
                 }
             }
-            return Some(links);
         }
-        None
-    }
-
-    pub fn get_references_csv(_session: &mut SessionInfo, _file_symbol: &Rc<RefCell<Symbol>>, _file_info: &Rc<RefCell<FileInfo>>, _line: u32, _character: u32) -> Option<Vec<Location>> {
-        None
+        locations
     }
 }
 
