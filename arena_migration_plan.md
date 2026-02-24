@@ -48,13 +48,30 @@ RefCell to FileInfo, EntryPoint
 
 ## Current changes
 
-Move Symbol::add_new_* to SymbolTable
-
 add_new_ext_symbol: method on SymbolTable, takes SymbolKey
 add_decl_ext_symbol: also method on SymbolTable
     object -> self's key,
     self-> self's symbol (get from key) 
     symbol -> variable's key being added
+
+convert symbol_mng trait (maybe move some methods to SymbolTable)
+- get_content_symbol (depends on get_ext_symbol, and _get_loc_symbol)
+- get_loc_symbol: borrow from rc (access to other symbols)
+- get_all_visible_symbols: depends on _get_loc_symbol
+
+
+Move remaining Symbol::add_new_* to SymbolTable
+
+## Strategy
+Symbol methods
+- start with "leaf" methods first! Clear dependencies before starting to convert a method.
+
+- takes session -> free/associated function. Self becomes symbol key.
+    - SymbolView is already a reference to SymbolTable, cannot take mut session (which owns the table)
+- borrows (other) symbols -> SymbleTable method
+    - self becomes symbol key, from which symbol can be fetched
+- immutable methods (&self) -> move to SymbolView
+- &mut self methods: move to SymbolTable, self becomes symbol key
 
 ## Insights/Notes
 Instead of Symbols, we now have the separate types stored. And the functions that
@@ -66,6 +83,7 @@ Before, we were stuck with symbols, and using Symbol::as_* when we know the type
 Now we don't need that when we have the specific key.
 
 Code repetition: got rid of code repetition on get_decl_ext_symbol for each symbol variant
+                same for get_ext_symbol
 
 ## Refactor oportunities for later
 
@@ -132,3 +150,6 @@ Many methods take session, while all they need is sync_odoo
 
 ### &PathBuf x &Path
 Consider using &Path (the equivalent of &str) instead of the former
+
+### ext_symbols / decl_ext_symbols
+Remove them from the symbol types structs, as each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol). Add them 
