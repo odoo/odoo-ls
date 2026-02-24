@@ -31,7 +31,7 @@ pub struct ClassSymbol {
     //Trait SymbolMgr
     //--- Body symbols
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl ClassSymbol {
@@ -79,10 +79,12 @@ impl ClassSymbol {
         false
     }
 
-    pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::new());
+    // @arena: code repetition among types. Move this to a trait and implement with a macro.
+    // or just add this to the SymbolMgr trait, if it matches
+    pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
+        let sections = self.symbols.entry(name.clone()).or_insert(HashMap::new());
         let section_vec = sections.entry(section).or_insert(vec![]);
-        section_vec.push(content.clone());
+        section_vec.push(content);
     }
 
     pub fn is_descriptor(&self) -> bool {

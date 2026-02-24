@@ -55,7 +55,7 @@ pub struct FunctionSymbol {
     //Trait SymbolMgr
     //--- Body content
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
     //--- dynamics variables
     pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
     pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>
@@ -101,10 +101,10 @@ impl FunctionSymbol {
         self.diagnostics.insert(step, diagnostics);
     }
 
-    pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert(HashMap::new());
+    pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
+        let sections = self.symbols.entry(name.clone()).or_insert(HashMap::new());
         let section_vec = sections.entry(section).or_insert(vec![]);
-        section_vec.push(content.clone());
+        section_vec.push(content);
     }
 
     /*

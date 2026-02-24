@@ -463,6 +463,44 @@ impl SymbolTable {
         }
     }
 
+    pub fn add_new_variable(&mut self, parent: SymbolKey, name: OYarn, range: &TextRange) -> VariableKey {
+        let is_external = self.get_symbol(parent).expect("valid key").is_external();
+        // let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name, range.clone(), self.is_external()))));
+        let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
+        let variable_key = self.variables.insert(variable_symbol);
+        match parent {
+            SymbolKey::File(f) => {
+                let file = &mut self.files[f];
+                let section = file.get_section_for(range.start().to_u32()).index;
+                file.add_symbol(variable_key.into(), &name, section);
+            },
+            SymbolKey::Package(p) => {
+                match &mut self.packages[p] {
+                    PackageSymbol::Module(m) => {
+                        let section = m.get_section_for(range.start().to_u32()).index;
+                        m.add_symbol(variable_key.into(), &name, section);
+                    },
+                    PackageSymbol::PythonPackage(p) => {
+                        let section = p.get_section_for(range.start().to_u32()).index;
+                        p.add_symbol(variable_key.into(), &name, section);
+                    },
+                }
+            },
+            SymbolKey::Class(c) => {
+                let class = &mut self.classes[c];
+                let section = class.get_section_for(range.start().to_u32()).index;
+                class.add_symbol(variable_key.into(), &name, section);
+            },
+            SymbolKey::Function(f) => {
+                let function = &mut self.functions[f];
+                let section = function.get_section_for(range.start().to_u32()).index;
+                function.add_symbol(variable_key.into(), &name, section);
+            }
+            _ => { panic!("Impossible to add a variable to a {}", self.get_symbol(parent).unwrap().typ()); }
+        }
+        variable_key
+    } 
+
     // ==== external symbols =====
 
     // @arena: This used to be a method in each Symbol variant

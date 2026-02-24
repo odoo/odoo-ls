@@ -229,6 +229,7 @@ impl Symbol {
         compiled
     }
 
+    // moved to @arena
     pub fn add_new_variable(&mut self, _session: &mut SessionInfo, name: OYarn, range: &TextRange) -> Rc<RefCell<Self>> {
         let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name, range.clone(), self.is_external()))));
         variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));

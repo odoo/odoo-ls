@@ -61,7 +61,7 @@ pub struct ModuleSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 
     pub data_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
 }
@@ -131,10 +131,10 @@ impl ModuleSymbol {
         Some(module)
     }
 
-    pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+    pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
+        let sections = self.symbols.entry(name.clone()).or_insert_with(|| HashMap::new());
         let section_vec = sections.entry(section).or_insert_with(|| vec![]);
-        section_vec.push(content.clone());
+        section_vec.push(content);
     }
 
     pub fn load_module_info(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) {
