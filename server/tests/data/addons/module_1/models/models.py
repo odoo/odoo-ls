@@ -1,4 +1,7 @@
 from odoo import models, fields
+from .base_test_models import basic_var
+
+print(basic_var)
 
 class model_model(models.Model):
     pass
