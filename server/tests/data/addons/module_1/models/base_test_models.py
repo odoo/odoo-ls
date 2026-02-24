@@ -47,3 +47,5 @@ return_funcBase2 = baseInstance2.get_test_int()
 
 class NoBaseModel(models.Model):
     _inherit = "module_1.no_base_model"
+
+basic_var = 42

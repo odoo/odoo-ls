@@ -3,7 +3,6 @@ use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
-use tracing::error;
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
@@ -12,7 +11,7 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::utils::NoHashBuilder;
-use crate::{constants::*, Sy};
+use crate::{Sy, constants::*, oyarn};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -1394,7 +1393,7 @@ impl Evaluation {
                                         let class_bw = evaluation_search.borrow();
                                         let class = class_bw.as_class_sym();
                                         if let Some(model_data) = class._model.as_ref() {
-                                            if s.value.to_str() == model_data.name {
+                                            if oyarn!("{}", s.value.to_str()) == model_data.name {
                                                 let file = parent.borrow().get_file().unwrap().upgrade().unwrap();
                                                 let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]);
                                                 if let Some(file_info) = file_info {
