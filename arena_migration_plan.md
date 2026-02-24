@@ -152,4 +152,4 @@ Many methods take session, while all they need is sync_odoo
 Consider using &Path (the equivalent of &str) instead of the former
 
 ### ext_symbols / decl_ext_symbols
-Remove them from the symbol types structs, as each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol). Add them 
+Remove them from the symbol types structs, as each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol). Add them to SymbolTable, under some kind of struct/abstraction (map of maps of maps is quite confusing)

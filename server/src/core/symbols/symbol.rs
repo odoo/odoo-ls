@@ -259,6 +259,7 @@ impl Symbol {
         variable
     }
 
+    // @arena: moved to SymbolTable
     pub fn add_new_ext_symbol(&mut self, _session: &mut SessionInfo, name: OYarn, range: &TextRange, owner: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {
         let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name.clone(), range.clone(), self.is_external()))));
         variable.borrow_mut().set_weak_self(Rc::downgrade(&variable));
@@ -301,6 +302,7 @@ impl Symbol {
         variable
     }
 
+    // @arena: moved to SymbolTable
     /* used by add_new_ext_symbol. Do not call directly */
     pub fn add_decl_ext_symbol(&mut self, object: &Rc<RefCell<Symbol>>, symbol: &Rc<RefCell<Symbol>>, name: OYarn, range: &TextRange) {
         match self {

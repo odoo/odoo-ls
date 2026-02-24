@@ -21,13 +21,13 @@ pub struct VariableSymbol {
 
 impl VariableSymbol {
 
-    pub fn new(name: OYarn, range: TextRange, is_external: bool) -> Self {
+    pub fn new(name: OYarn, parent: SymbolKey, range: TextRange, is_external: bool) -> Self {
         Self {
             name,
             is_external,
             doc_string: None,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             range,
             is_import_variable: false,
             is_parameter: false,
