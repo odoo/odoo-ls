@@ -4,7 +4,6 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use lsp_types::{Location, Range};
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use tracing::error;
 use weak_table::PtrWeakHashSet;
 
 use crate::S;
@@ -34,9 +33,7 @@ impl ReferenceFeature {
             match &definition.source {
                 GotoSourceType::Symbol(target_symbol) => {
                     let mut to_check: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
-                    let symbol_name = target_symbol.borrow().name().to_string();
 
-                    locations.extend(ReferenceFeature::references_in_file(session, file_symbol, file_info, &symbol_name, &target_symbol));
                     to_check.insert(file_symbol.clone());
 
                     //take arch and arch_eval dependents
@@ -60,14 +57,18 @@ impl ReferenceFeature {
                             }
                         }
                     }
+                    let mut files_to_check: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new(); //only iter on files
                     for sym in to_check.iter() {
                         let Some(Some(file)) = sym.borrow().get_file().map(|x| x.upgrade()) else { //to be sure we are on a file
                             continue;
                         };
+                        files_to_check.insert(file.clone());
+                    }
+                    for file in files_to_check.iter() {
                         let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]) else {
                             continue;
                         };
-                        locations.extend(ReferenceFeature::references_in_file(session, &sym, &dep_file_info, &symbol_name, &target_symbol));
+                        locations.extend(ReferenceFeature::references_in_file(session, &file, &dep_file_info, &target_symbol));
                     }
                 },
                 _ => continue,
@@ -81,7 +82,7 @@ impl ReferenceFeature {
         }
     }
 
-    fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, symbol_name: &String, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
+    fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let mut visitor = ReferenceVisitor {
             sym_stack: vec![],
@@ -333,14 +334,6 @@ impl ReferenceVisitor {
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
-        match *assign.value {
-            Expr::StringLiteral(ref s) => {
-                if s.value.to_str() == "pygls.tests.base_test_model" {
-                    error!("here");
-                }
-            },
-            _=> {}
-        }
         self.visit_expr(session, &assign.value, &assign.range.start());
     }
 
