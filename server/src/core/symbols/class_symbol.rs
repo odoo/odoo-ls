@@ -32,9 +32,6 @@ pub struct ClassSymbol {
     //--- Body symbols
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
-    //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
-    pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>
 }
 
 impl ClassSymbol {
@@ -50,8 +47,6 @@ impl ClassSymbol {
             doc_string: None,
             sections: vec![],
             symbols: HashMap::new(),
-            ext_symbols: HashMap::new(),
-            decl_ext_symbols: HashMap::new(),
             bases: vec![],
             _model: None,
             noqas: NoqaInfo::None,

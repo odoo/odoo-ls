@@ -30,9 +30,6 @@ pub struct FileSymbol {
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
-    //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
-    pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>
 }
 
 impl FileSymbol {
@@ -53,8 +50,6 @@ impl FileSymbol {
             self_import: false,
             sections: vec![],
             symbols: HashMap::new(),
-            ext_symbols: HashMap::new(),
-            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],

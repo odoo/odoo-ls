@@ -62,9 +62,7 @@ pub struct ModuleSymbol {
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
-    //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
-    pub decl_ext_symbols: HashMap<SymbolKey, HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>>,
+
     pub data_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
 }
 
@@ -97,8 +95,6 @@ impl ModuleSymbol {
             validation_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::new(),
-            ext_symbols: HashMap::new(),
-            decl_ext_symbols: PtrWeakKeyHashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],

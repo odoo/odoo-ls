@@ -162,16 +162,54 @@ impl SymbolView<'_> {
             _ => {panic!("Not a module package")}
         }
     }
+}
 
-    // @arena: consider factoring out first part into a decl_ext_symbols method in SymbolView
-    pub fn get_decl_ext_symbol(&self, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
-        let decl_ext_symbols = match self {
-            Self::Class(c) => &c.decl_ext_symbols,
-            Self::File(f) => &f.decl_ext_symbols,
-            Self::Package(PackageSymbol::Module(m)) => &m.decl_ext_symbols,
-            Self::Package(PackageSymbol::PythonPackage(p)) => &p.decl_ext_symbols,
-            Self::Function(f) => &f.decl_ext_symbols,
-            _ => return vec![],
+/// section index → [variable keys]                                                                  
+type SectionSymbols = HashMap<u32, Vec<SymbolKey>>;                                                  
+/// name → section symbols
+type NamedSectionSymbols = HashMap<OYarn, SectionSymbols>;                                           
+/// target/host → named section symbols
+type DeclExtSymbols = HashMap<SymbolKey, NamedSectionSymbols>;
+/// name → set of owner keys
+type ExtSymbolOwners = HashMap<OYarn, HashSet<SymbolKey>>;
+
+#[derive(Debug)]
+pub struct ExtSymbolStore {
+    /// formerly ext_symbols
+    /// target → name → owners
+    pub(crate) owners: HashMap<SymbolKey, ExtSymbolOwners>,
+    /// formerly decl_ext_symbols
+    /// owner → target → name → section → [variable keys]
+    declarations: HashMap<SymbolKey, DeclExtSymbols>,
+}
+
+impl ExtSymbolStore {
+    fn new() -> Self {
+        Self {
+            owners: HashMap::new(),
+            declarations: HashMap::new(),
+        }
+    }
+
+    fn add(&mut self, target: SymbolKey, owner: SymbolKey, name: OYarn, section: u32, variable: SymbolKey) {
+        self.owners
+            .entry(target).or_default()
+            .entry(name.clone()).or_default()
+            .insert(owner);
+
+        self.declarations
+            .entry(owner).or_default()
+            .entry(target).or_default()
+            .entry(name).or_default()
+            .entry(section).or_default()
+            .push(variable);
+    }
+
+    // @arena: former get_decl_ext_symbol
+    // Gets the symbol (`name`) injected by `owner` into `target`
+    fn get(&self, owner: SymbolKey, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
+        let Some(decl_ext_symbols ) = self.declarations.get(&owner) else {
+            return vec![];
         };
         let mut result = vec![];
         if let Some(object_decl_symbols) = decl_ext_symbols.get(&target) {
@@ -188,6 +226,7 @@ impl SymbolView<'_> {
 
 #[derive(Debug)]
 pub struct SymbolTable {
+    // slotmaps per symbol type
     pub roots: SlotMap<RootKey, RootSymbol>,
     pub disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
     pub namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
@@ -199,7 +238,10 @@ pub struct SymbolTable {
     pub variables: SlotMap<VariableKey, VariableSymbol>,
     pub xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
     pub csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
+    // external symbols
+    ext_symbols: ExtSymbolStore,
 }
+
 
 impl SymbolTable {
     pub fn new() -> Self {
@@ -215,6 +257,23 @@ impl SymbolTable {
             variables: SlotMap::with_key(),
             xml_files: SlotMap::with_key(),
             csv_files: SlotMap::with_key(),
+            ext_symbols: ExtSymbolStore::new(),
+        }
+    }
+
+    pub fn contains_key(&self, key: SymbolKey) -> bool {
+        match key {
+            SymbolKey::Root(k) => self.roots.contains_key(k),
+            SymbolKey::DiskDir(k) => self.disk_dirs.contains_key(k),
+            SymbolKey::Namespace(k) => self.namespaces.contains_key(k),
+            SymbolKey::Package(k) => self.packages.contains_key(k),
+            SymbolKey::File(k) => self.files.contains_key(k),
+            SymbolKey::Compiled(k) => self.compiled.contains_key(k),
+            SymbolKey::Class(k) => self.classes.contains_key(k),
+            SymbolKey::Function(k) => self.functions.contains_key(k),
+            SymbolKey::Variable(k) => self.variables.contains_key(k),
+            SymbolKey::XmlFile(k) => self.xml_files.contains_key(k),
+            SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
         }
     }
 
@@ -406,29 +465,21 @@ impl SymbolTable {
 
     // ==== external symbols =====
 
-    // @arena: review this panic / factor out getting ext_symbols map
-    // This used to be a method in each Symbol variant
+    // @arena: This used to be a method in each Symbol variant
     pub fn get_ext_symbol(&self, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
-        let target_symbol = self.get_symbol(target).expect("valid key");
-        // name -> set(owners)
-        let ext_symbols = match target_symbol {
-            SymbolView::Class(c) => &c.ext_symbols,
-            SymbolView::File(f) => &f.ext_symbols,
-            SymbolView::Function(f) => &f.ext_symbols,
-            SymbolView::Package(PackageSymbol::Module(m)) => &m.ext_symbols,
-            SymbolView::Package(PackageSymbol::PythonPackage(p)) => &p.ext_symbols,
-            SymbolView::Namespace(n) => &n.ext_symbols,
-            _ => panic!("Not implemented for this type of symbol"),
+        let Some(ext_symbols) = self.ext_symbols.owners.get(&target) else {
+            return vec![];
         };
 
         let mut result = vec![];
         if let Some(owners) = ext_symbols.get(name) {
-            for &owner_key in owners {
-                let Some(owner_sym) = self.get_symbol(owner_key) else {
+            for &owner in owners {
+                if !self.contains_key(owner) {
                     // @arena: Equivalent of iterating on a PtrWeakHashSet, which cleans up expired weaks
+                    // todo: remove key from ExtSymbolStore
                     continue;
-                };
-                result.extend(owner_sym.get_decl_ext_symbol(target, name));
+                }
+                result.extend(self.ext_symbols.get(owner, target, name));
             }
         }
         result
@@ -436,71 +487,53 @@ impl SymbolTable {
 
     // @arena: assumes owner as valid key (formerly an strong Rc)
     // @arena TODO: fix this weird API (take &str instead of OYarn)
-    pub fn add_new_ext_symbol(&mut self, target: SymbolKey, name: OYarn, range: &TextRange, owner: SymbolKey) -> SymbolKey {
-        let is_external = self.get_symbol(target).expect("valid key").is_external();
-        let variable_symbol = VariableSymbol::new(name.clone(), target, range.clone(), is_external);
+    pub fn add_new_ext_symbol(
+        &mut self,
+        target: SymbolKey,
+        name: OYarn,
+        range: &TextRange,
+        owner: SymbolKey,
+    ) -> SymbolKey {
+        let target_sym = self.get_symbol(target).expect("valid key");
+        // validate target can host an external symbol
+        if !matches!(target_sym.typ(),
+            SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
+                | SymType::PACKAGE(PackageType::PYTHON_PACKAGE)
+                | SymType::CLASS | SymType::FUNCTION | SymType::NAMESPACE
+        ) {
+            panic!("Impossible to add an external symbol to a {}", target_sym.typ());
+        }
+        let variable_symbol = VariableSymbol::new(
+            name.clone(),
+            target,
+            range.clone(),
+            target_sym.is_external(),
+        );
         let variable_key: SymbolKey = self.variables.insert(variable_symbol).into();
-        
-        // match on target key, get mut and get:
-        // - ext_symbols map -> insert owner
-        let ext_symbols = match target {
-            SymbolKey::File(f) => &mut self.files[f].ext_symbols,
-            SymbolKey::Package(p) =>  match &mut self.packages[p] {
-                PackageSymbol::Module(m) => &mut m.ext_symbols,
-                PackageSymbol::PythonPackage(p) =>  &mut p.ext_symbols,
-            }
-            SymbolKey::Class(c) => &mut self.classes[c].ext_symbols,
-            SymbolKey::Function(f) => &mut self.functions[f].ext_symbols,
-            SymbolKey::Namespace(n) => &mut self.namespaces[n].ext_symbols,
-            _ => panic!("Impossible to add an extern symbol to a {}", self.get_symbol(target).unwrap().typ()),
-        };
-        let set = ext_symbols.entry(name.clone()).or_insert_with(HashSet::new);
-        set.insert(owner);
-        self.add_decl_ext_symbol(owner, target, variable_key, name, range);
+        let section = self.get_section_for_key(owner, range.start().to_u32());
+
+        self.ext_symbols.add(target, owner, name, section, variable_key);
         variable_key
     }
     
     // @arena: assumes owner as valid key (formerly self on a Symbol)
     /* used by add_new_ext_symbol. Do not call directly */
-    fn add_decl_ext_symbol(&mut self, owner: SymbolKey, object: SymbolKey, symbol: SymbolKey, name: OYarn, range: &TextRange) {
-        let (section, decl_ext_symbols) = match owner {
-            SymbolKey::File(f) => {
-                let file = &mut self.files[f];
-                let section = file.get_section_for(range.start().to_u32()).index;
-                (section, &mut file.decl_ext_symbols)
-            },
+    fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
+        match owner {
+            SymbolKey::File(f) => self.files[f].get_section_for(position).index,
             SymbolKey::Package(p) => {
-                let package = &mut self.packages[p];
-                match package {
-                    PackageSymbol::Module(m) => {
-                        let section = m.get_section_for(range.start().to_u32()).index;
-                        (section, &mut m.decl_ext_symbols)
-                    },
-                    PackageSymbol::PythonPackage(p) => {
-                        let section = p.get_section_for(range.start().to_u32()).index;
-                        (section, &mut p.decl_ext_symbols)
-                    },
+                match &self.packages[p] {
+                    PackageSymbol::Module(m) => m.get_section_for(position).index,
+                    PackageSymbol::PythonPackage(p) => p.get_section_for(position).index,
                 }
             },
-            SymbolKey::Class(c) => {
-                let class = &mut self.classes[c];
-                let section = class.get_section_for(range.start().to_u32()).index;
-                (section, &mut class.decl_ext_symbols)
-            },
-            SymbolKey::Function(f) => {
-                let function = &mut self.functions[f];
-                let section = function.get_section_for(range.start().to_u32()).index;
-                (section, &mut function.decl_ext_symbols)
-            },
+            SymbolKey::Class(c) => self.classes[c].get_section_for(position).index,
+            SymbolKey::Function(f) => self.functions[f].get_section_for(position).index,
             _ => panic!(
                 "Impossible to add a declaration of external symbol to a {}",
                 self.get_symbol(owner).unwrap().typ()
             ),
-        };
-        let map_for_obj = decl_ext_symbols.entry(object).or_insert_with( HashMap::new);
-        let sections = map_for_obj.entry(name.clone()).or_insert_with( HashMap::new);
-        let section_vec = sections.entry(section).or_insert_with(Vec::new);
-        section_vec.push(symbol);
+        }
     }
 
 
