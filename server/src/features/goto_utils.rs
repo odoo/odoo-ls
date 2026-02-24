@@ -91,15 +91,18 @@ impl GotoUtils {
             // If not on manifest, we don't check for modules
             return false;
         };
-        let value = if let Some(eval_value) = eval.value.as_ref() {
+        let mut value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
                 oyarn!("{}", expr.value.to_string())
             } else {
                 return false;
             }
         } else {
-            return  false;
+            return false;
         };
+        if value == file_symbol.borrow().as_module_package().module_name {
+            value = file_symbol.borrow().as_module_package().dir_name.clone();
+        }
         let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", value)).and_then(|m| m.upgrade()) else {
             return false;
         };

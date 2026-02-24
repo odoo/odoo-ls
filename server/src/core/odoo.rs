@@ -1747,20 +1747,7 @@ impl Odoo {
                     if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
-                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-                    match ast_type {
-                        AstType::Python => {
-                            if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
-                                return Ok(ReferenceFeature::get_references(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
-                            }
-                        },
-                        AstType::Xml => {
-                            return Ok(ReferenceFeature::get_references_xml(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
-                        },
-                        AstType::Csv => {
-                            return Ok(ReferenceFeature::get_references_csv(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
-                        },
-                    }
+                    return Ok(ReferenceFeature::get_references(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                 }
             }
         }

@@ -52,6 +52,12 @@ fn test_references() {
     assert!(references.len() == 0, "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character)).collect::<Vec<String>>().join(", ")
     );
+
+    //reference of a module name in the manifest
+    let test_file = test_addons_path.join("module_1").join("__manifest__.py").sanitize();
+    let mut references = get_references(&mut session, &test_file, Position::new(3, 18));
+    assert_in_result(&mut references, "module_1/__manifest__.py", 3, 13);
+    assert_in_result(&mut references, "module_2/__manifest__.py", 13, 17);
     
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
