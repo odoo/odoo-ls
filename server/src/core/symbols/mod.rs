@@ -13,3 +13,5 @@ pub mod symbol_mgr;
 pub mod variable_symbol;
 pub mod xml_file_symbol;
 pub mod symbol_table;
+pub mod symbol_table_create;
+pub mod ext_symbol_store;

@@ -1,10 +1,10 @@
-use std::{collections::{HashMap, HashSet}, path::PathBuf};
+use std::path::PathBuf;
 
 use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{constants::{OYarn, PackageType, SymType, Tree, tree}, core::{file_mgr::FileMgr, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
@@ -164,65 +164,6 @@ impl SymbolView<'_> {
     }
 }
 
-/// section index → [variable keys]                                                                  
-type SectionSymbols = HashMap<u32, Vec<SymbolKey>>;                                                  
-/// name → section symbols
-type NamedSectionSymbols = HashMap<OYarn, SectionSymbols>;                                           
-/// target/host → named section symbols
-type DeclExtSymbols = HashMap<SymbolKey, NamedSectionSymbols>;
-/// name → set of owner keys
-type ExtSymbolOwners = HashMap<OYarn, HashSet<SymbolKey>>;
-
-#[derive(Debug)]
-pub struct ExtSymbolStore {
-    /// formerly ext_symbols
-    /// target → name → owners
-    pub(crate) owners: HashMap<SymbolKey, ExtSymbolOwners>,
-    /// formerly decl_ext_symbols
-    /// owner → target → name → section → [variable keys]
-    declarations: HashMap<SymbolKey, DeclExtSymbols>,
-}
-
-impl ExtSymbolStore {
-    fn new() -> Self {
-        Self {
-            owners: HashMap::new(),
-            declarations: HashMap::new(),
-        }
-    }
-
-    fn add(&mut self, target: SymbolKey, owner: SymbolKey, name: OYarn, section: u32, variable: SymbolKey) {
-        self.owners
-            .entry(target).or_default()
-            .entry(name.clone()).or_default()
-            .insert(owner);
-
-        self.declarations
-            .entry(owner).or_default()
-            .entry(target).or_default()
-            .entry(name).or_default()
-            .entry(section).or_default()
-            .push(variable);
-    }
-
-    // @arena: former get_decl_ext_symbol
-    // Gets the symbol (`name`) injected by `owner` into `target`
-    fn get(&self, owner: SymbolKey, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
-        let Some(decl_ext_symbols ) = self.declarations.get(&owner) else {
-            return vec![];
-        };
-        let mut result = vec![];
-        if let Some(object_decl_symbols) = decl_ext_symbols.get(&target) {
-            if let Some(symbols) = object_decl_symbols.get(name) {
-                for end_symbols in symbols.values() {
-                    //TODO actually we don't take position into account, but can we really?
-                    result.extend(end_symbols);
-                }
-            }
-        }
-        result
-    }
-}
 
 #[derive(Debug)]
 pub struct SymbolTable {
@@ -239,9 +180,8 @@ pub struct SymbolTable {
     pub xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
     pub csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
     // external symbols
-    ext_symbols: ExtSymbolStore,
+    pub ext_symbols: ExtSymbolStore,
 }
-
 
 impl SymbolTable {
     pub fn new() -> Self {
@@ -277,15 +217,15 @@ impl SymbolTable {
         }
     }
 
-    pub fn insert_variable(&mut self, symbol: VariableSymbol) -> SymbolKey {
-        let key = self.variables.insert(symbol);
-        SymbolKey::Variable(key)
-    }
+    // pub fn insert_variable(&mut self, symbol: VariableSymbol) -> SymbolKey {
+    //     let key = self.variables.insert(symbol);
+    //     SymbolKey::Variable(key)
+    // }
 
-    pub fn insert_function(&mut self, symbol: FunctionSymbol) -> SymbolKey {
-        let key = self.functions.insert(symbol);
-        SymbolKey::Function(key)
-    }
+    // pub fn insert_function(&mut self, symbol: FunctionSymbol) -> SymbolKey {
+    //     let key = self.functions.insert(symbol);
+    //     SymbolKey::Function(key)
+    // }
 
     pub fn get_symbol(&self, key: SymbolKey) -> Option<SymbolView<'_>> {
         match key {
@@ -351,230 +291,6 @@ impl SymbolTable {
         }
         res
     }
-
-    // ====== Symbol creation methods ======
-
-    // @arena: parent is a verified existing key
-    // Create a sub-symbol that is representing a file
-    pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
-        let is_external = self.parent_is_external(parent);
-        let file_symbol = FileSymbol::new(name, path, parent, is_external);
-        let file_key = self.files.insert(file_symbol);
-        self.register_in_parent(parent, file_key.into(), name, path);
-        file_key.into()
-    }
-
-    // @arena: parent is a verified existing key - Consider adding a validate_key method
-    //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str) -> PackageKey {
-        let is_external = self.parent_is_external(parent);
-        let package_symbol = PackageSymbol::new_python_package(name, path, parent, is_external);
-        let package_key = self.packages.insert(package_symbol);
-        self.register_in_parent(parent, package_key.into(), name, path);
-        package_key
-    }
-
-    pub fn add_new_namespace(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
-        let is_external = self.parent_is_external(parent);
-        let namespace_symbol = NamespaceSymbol::new(name, vec![path.to_string()], parent, is_external);
-        let namespace_key = self.namespaces.insert(namespace_symbol);
-        self.register_in_parent(parent, namespace_key.into(), name, path);
-        namespace_key.into()
-    }
-
-    pub fn add_new_disk_dir(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
-        let is_external = self.parent_is_external(parent);
-        let disk_dir_symbol = DiskDirSymbol::new(name, path, parent, is_external);
-        let disk_dir_key = self.disk_dirs.insert(disk_dir_symbol);
-        self.register_in_parent(parent, disk_dir_key.into(), name, path);
-        disk_dir_key.into()
-    }
-
-    pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
-        let is_external = self.parent_is_external(parent);
-        let compiled_symbol = CompiledSymbol::new(name, path, parent, is_external);
-        let compiled_key: SymbolKey = self.compiled.insert(compiled_symbol).into();
-        match parent {
-            SymbolKey::Namespace(n) => {
-                self.namespaces.get_mut(n).unwrap().add_file(compiled_key, name, path);
-            },
-            SymbolKey::Package(p) => {
-                self.packages.get_mut(p).unwrap().add_file(compiled_key, name);
-            },
-            SymbolKey::Root(r) => {
-                self.roots.get_mut(r).unwrap().add_file(compiled_key, name);
-            },
-            SymbolKey::Compiled(c) => {
-                self.compiled.get_mut(c).unwrap().add_compiled(compiled_key, name);
-            }
-            SymbolKey::DiskDir(d) => {
-                self.disk_dirs.get_mut(d).unwrap().add_file(compiled_key, name);
-            },
-            _ => {
-                panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol(compiled_key).unwrap().typ(), 
-                    self.get_symbol(parent).unwrap().typ()
-                );
-            }
-        }
-        compiled_key
-    }
-
-    // @arena: not a method! (takes SessionInfo as arg)
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &str, path: &PathBuf) -> Option<SymbolKey> {
-        let is_external = session.sync_odoo.symbol_table.parent_is_external(parent);
-        let module = PackageSymbol::new_module_package(session, name, path, parent, is_external)?;
-        let symbol_table = &mut session.sync_odoo.symbol_table;
-        let module_key = symbol_table.packages.insert(module);
-        symbol_table.register_in_parent(parent, module_key.into(), name, &path.sanitize());
-        Some(module_key.into())
-    }
-
-    // ====== Helpers for symbol creation ======
-
-    // @arena: this would be simpler if is_external returned true for root
-    fn parent_is_external(&self, parent: SymbolKey) -> bool {
-        match parent {
-            SymbolKey::Root(_) => true,
-            _ => self.get_symbol(parent).expect("valid key").is_external(),
-        }
-    }
-
-    fn register_in_parent(&mut self, parent: SymbolKey, child: SymbolKey, name: &str, path: &str) {             
-        match parent {
-            SymbolKey::Namespace(n) => {
-                self.namespaces.get_mut(n).unwrap().add_file(child, name, path);
-            },
-            SymbolKey::Package(p) => {
-                self.packages.get_mut(p).unwrap().add_file(child, name);
-            },
-            SymbolKey::Root(r) => {
-                self.roots.get_mut(r).unwrap().add_file(child, name);
-            },
-            SymbolKey::DiskDir(d) => {
-                self.disk_dirs.get_mut(d).unwrap().add_file(child, name);
-            },
-            _ => {
-                panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol(child).unwrap().typ(), 
-                    self.get_symbol(parent).unwrap().typ()
-                );
-            }
-        }
-    }
-
-    pub fn add_new_variable(&mut self, parent: SymbolKey, name: OYarn, range: &TextRange) -> VariableKey {
-        let is_external = self.get_symbol(parent).expect("valid key").is_external();
-        // let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name, range.clone(), self.is_external()))));
-        let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
-        let variable_key = self.variables.insert(variable_symbol);
-        match parent {
-            SymbolKey::File(f) => {
-                let file = &mut self.files[f];
-                let section = file.get_section_for(range.start().to_u32()).index;
-                file.add_symbol(variable_key.into(), &name, section);
-            },
-            SymbolKey::Package(p) => {
-                match &mut self.packages[p] {
-                    PackageSymbol::Module(m) => {
-                        let section = m.get_section_for(range.start().to_u32()).index;
-                        m.add_symbol(variable_key.into(), &name, section);
-                    },
-                    PackageSymbol::PythonPackage(p) => {
-                        let section = p.get_section_for(range.start().to_u32()).index;
-                        p.add_symbol(variable_key.into(), &name, section);
-                    },
-                }
-            },
-            SymbolKey::Class(c) => {
-                let class = &mut self.classes[c];
-                let section = class.get_section_for(range.start().to_u32()).index;
-                class.add_symbol(variable_key.into(), &name, section);
-            },
-            SymbolKey::Function(f) => {
-                let function = &mut self.functions[f];
-                let section = function.get_section_for(range.start().to_u32()).index;
-                function.add_symbol(variable_key.into(), &name, section);
-            }
-            _ => { panic!("Impossible to add a variable to a {}", self.get_symbol(parent).unwrap().typ()); }
-        }
-        variable_key
-    } 
-
-    // ==== external symbols =====
-
-    // @arena: This used to be a method in each Symbol variant
-    pub fn get_ext_symbol(&self, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
-        let Some(ext_symbols) = self.ext_symbols.owners.get(&target) else {
-            return vec![];
-        };
-
-        let mut result = vec![];
-        if let Some(owners) = ext_symbols.get(name) {
-            for &owner in owners {
-                if !self.contains_key(owner) {
-                    // @arena: Equivalent of iterating on a PtrWeakHashSet, which cleans up expired weaks
-                    // todo: remove key from ExtSymbolStore
-                    continue;
-                }
-                result.extend(self.ext_symbols.get(owner, target, name));
-            }
-        }
-        result
-    }
-
-    // @arena: assumes owner as valid key (formerly an strong Rc)
-    // @arena TODO: fix this weird API (take &str instead of OYarn)
-    pub fn add_new_ext_symbol(
-        &mut self,
-        target: SymbolKey,
-        name: OYarn,
-        range: &TextRange,
-        owner: SymbolKey,
-    ) -> SymbolKey {
-        let target_sym = self.get_symbol(target).expect("valid key");
-        // validate target can host an external symbol
-        if !matches!(target_sym.typ(),
-            SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
-                | SymType::PACKAGE(PackageType::PYTHON_PACKAGE)
-                | SymType::CLASS | SymType::FUNCTION | SymType::NAMESPACE
-        ) {
-            panic!("Impossible to add an external symbol to a {}", target_sym.typ());
-        }
-        let variable_symbol = VariableSymbol::new(
-            name.clone(),
-            target,
-            range.clone(),
-            target_sym.is_external(),
-        );
-        let variable_key: SymbolKey = self.variables.insert(variable_symbol).into();
-        let section = self.get_section_for_key(owner, range.start().to_u32());
-
-        self.ext_symbols.add(target, owner, name, section, variable_key);
-        variable_key
-    }
-    
-    // @arena: assumes owner as valid key (formerly self on a Symbol)
-    /* used by add_new_ext_symbol. Do not call directly */
-    fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
-        match owner {
-            SymbolKey::File(f) => self.files[f].get_section_for(position).index,
-            SymbolKey::Package(p) => {
-                match &self.packages[p] {
-                    PackageSymbol::Module(m) => m.get_section_for(position).index,
-                    PackageSymbol::PythonPackage(p) => p.get_section_for(position).index,
-                }
-            },
-            SymbolKey::Class(c) => self.classes[c].get_section_for(position).index,
-            SymbolKey::Function(f) => self.functions[f].get_section_for(position).index,
-            _ => panic!(
-                "Impossible to add a declaration of external symbol to a {}",
-                self.get_symbol(owner).unwrap().typ()
-            ),
-        }
-    }
-
-
 }
 
 // @arena: make this a method of SyncOdoo?
