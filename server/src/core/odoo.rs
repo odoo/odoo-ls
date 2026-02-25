@@ -475,7 +475,14 @@ impl SyncOdoo {
 
     fn build_modules(session: &mut SessionInfo) {
         {
-            let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
+            let Some(addons_symbol) = session.sync_odoo.get_symbol(
+                session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX
+            ).first().cloned() else {
+                let message = S!("OdooLS: Unable to find 'odoo/addons'. Check the addons_paths in your config or your file structure. Skipping addons loading...");
+                warn!("{}", message);
+                session.show_message(MessageType::WARNING, message);
+                return;
+            };
             let addons_path = addons_symbol.borrow().paths().clone();
             let mut modules = vec![];
             for addon_path in addons_path.iter() {
