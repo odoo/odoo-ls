@@ -7,7 +7,7 @@ use weak_table::PtrWeakHashSet;
 use crate::constants::{OYarn, SymType};
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
-use crate::Sy;
+use crate::{Sy, oyarn};
 use crate::core::symbols::symbol_table::SymbolKey;
 
 use super::symbol::Symbol;
@@ -36,12 +36,12 @@ pub struct ClassSymbol {
 
 impl ClassSymbol {
 
-    pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
+    pub fn new(name: &str, parent: SymbolKey, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
-            name: OYarn::from(name),
+            name: oyarn!("{}", name),
             is_external,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             range,
             body_range: TextRange::new(body_start, range.end()),
             doc_string: None,

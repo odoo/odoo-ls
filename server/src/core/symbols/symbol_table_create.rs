@@ -4,13 +4,14 @@ use std::path::PathBuf;
 
 use ruff_text_size::{TextRange, TextSize};
 
+use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
 use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{FunctionKey, PackageKey, SymbolKey, SymbolTable, VariableKey};
+use crate::core::symbols::symbol_table::{ClassKey, FunctionKey, PackageKey, SymbolKey, SymbolTable, VariableKey};
 
 
 impl SymbolTable {
@@ -139,6 +140,14 @@ impl SymbolTable {
         function_key
     }
 
+    pub fn add_new_class(&mut self, parent: SymbolKey, name: &String, range: &TextRange, body_start: &TextSize) -> ClassKey {
+        let is_external = self.get_symbol(parent).expect("valid key").is_external();
+        let class_symbol = ClassSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
+        let class_key = self.classes.insert(class_symbol);
+        self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());
+        class_key.into()
+    }
+
     fn add_to_parent_symbols(&mut self, parent: SymbolKey, content: SymbolKey, name: &str, position: u32) {
          match parent {
             SymbolKey::File(f) => {
@@ -168,7 +177,12 @@ impl SymbolTable {
                 let section = function.get_section_for(position).index;
                 function.add_symbol(content, name, section);
             }
-            _ => { panic!("Impossible to add a variable to a {}", self.get_symbol(parent).unwrap().typ()); }
+            _ => { 
+                panic!("Impossible to add a {} to a {}", 
+                    self.get_symbol(content).unwrap().typ(), 
+                    self.get_symbol(parent).unwrap().typ()
+                );
+            }
         }
     }
 
