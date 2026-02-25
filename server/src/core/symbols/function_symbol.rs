@@ -63,12 +63,12 @@ pub struct FunctionSymbol {
 
 impl FunctionSymbol {
 
-    pub fn new(name: String, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
+    pub fn new(name: &str, parent: SymbolKey, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
             is_external,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             range,
             body_range: TextRange::new(body_start, range.end()),
             is_static: false,

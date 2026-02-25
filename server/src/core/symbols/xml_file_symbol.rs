@@ -30,6 +30,7 @@ pub struct XmlFileSymbol {
     pub noqas: NoqaInfo,
 
     //Trait SymbolMgr
+    // @arena: these does not seem to be used anywhere
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables

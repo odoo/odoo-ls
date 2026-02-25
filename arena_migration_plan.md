@@ -48,11 +48,6 @@ RefCell to FileInfo, EntryPoint
 
 ## Current changes
 
-add_new_ext_symbol: method on SymbolTable, takes SymbolKey
-add_decl_ext_symbol: also method on SymbolTable
-    object -> self's key,
-    self-> self's symbol (get from key) 
-    symbol -> variable's key being added
 
 convert symbol_mng trait (maybe move some methods to SymbolTable)
 - get_content_symbol (depends on get_ext_symbol, and _get_loc_symbol)
@@ -151,5 +146,14 @@ Many methods take session, while all they need is sync_odoo
 ### &PathBuf x &Path
 Consider using &Path (the equivalent of &str) instead of the former
 
-### ext_symbols / decl_ext_symbols
+### ext_symbols / decl_ext_symbols - done
 Remove them from the symbol types structs, as each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol). Add them to SymbolTable, under some kind of struct/abstraction (map of maps of maps is quite confusing)
+
+### dead code?
+In XmlFileSymbol:
+```
+pub sections: Vec<SectionRange>,
+pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+//--- dynamics variables
+pub ext_symbols: Hash
+```

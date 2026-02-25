@@ -2,14 +2,15 @@
  
 use std::path::PathBuf;
 
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 
 use crate::core::symbols::file_symbol::FileSymbol;
+use crate::core::symbols::function_symbol::FunctionSymbol;
 use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{SymbolTable, PackageKey, SymbolKey, VariableKey};
+use crate::core::symbols::symbol_table::{FunctionKey, PackageKey, SymbolKey, SymbolTable, VariableKey};
 
 
 impl SymbolTable {
@@ -124,39 +125,50 @@ impl SymbolTable {
 
     pub fn add_new_variable(&mut self, parent: SymbolKey, name: OYarn, range: &TextRange) -> VariableKey {
         let is_external = self.get_symbol(parent).expect("valid key").is_external();
-        // let variable = Rc::new(RefCell::new(Symbol::Variable(VariableSymbol::new(name, range.clone(), self.is_external()))));
         let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
         let variable_key = self.variables.insert(variable_symbol);
-        match parent {
+        self.add_to_parent_symbols(parent, variable_key.into(), &name, range.start().to_u32());
+        variable_key
+    } 
+    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: &TextRange, body_start: &TextSize) -> FunctionKey {
+        let is_external = self.get_symbol(parent).expect("valid key").is_external();
+        let function_symbol = FunctionSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
+        let function_key = self.functions.insert(function_symbol);
+        self.add_to_parent_symbols(parent, function_key.into(), &oyarn!("{}", name), range.start().to_u32());
+        function_key
+    }
+
+    fn add_to_parent_symbols(&mut self, parent: SymbolKey, content: SymbolKey, name: &OYarn, position: u32) {
+         match parent {
             SymbolKey::File(f) => {
                 let file = &mut self.files[f];
-                let section = file.get_section_for(range.start().to_u32()).index;
-                file.add_symbol(variable_key.into(), &name, section);
+                let section = file.get_section_for(position).index;
+                file.add_symbol(content, &name, section);
             },
             SymbolKey::Package(p) => {
                 match &mut self.packages[p] {
                     PackageSymbol::Module(m) => {
-                        let section = m.get_section_for(range.start().to_u32()).index;
-                        m.add_symbol(variable_key.into(), &name, section);
+                        let section = m.get_section_for(position).index;
+                        m.add_symbol(content, &name, section);
                     },
                     PackageSymbol::PythonPackage(p) => {
-                        let section = p.get_section_for(range.start().to_u32()).index;
-                        p.add_symbol(variable_key.into(), &name, section);
+                        let section = p.get_section_for(position).index;
+                        p.add_symbol(content, &name, section);
                     },
                 }
             },
             SymbolKey::Class(c) => {
                 let class = &mut self.classes[c];
-                let section = class.get_section_for(range.start().to_u32()).index;
-                class.add_symbol(variable_key.into(), &name, section);
+                let section = class.get_section_for(position).index;
+                class.add_symbol(content, &name, section);
             },
             SymbolKey::Function(f) => {
                 let function = &mut self.functions[f];
-                let section = function.get_section_for(range.start().to_u32()).index;
-                function.add_symbol(variable_key.into(), &name, section);
+                let section = function.get_section_for(position).index;
+                function.add_symbol(content, &name, section);
             }
             _ => { panic!("Impossible to add a variable to a {}", self.get_symbol(parent).unwrap().typ()); }
         }
-        variable_key
-    } 
+    }
+
 }
