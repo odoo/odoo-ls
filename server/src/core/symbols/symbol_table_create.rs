@@ -123,6 +123,7 @@ impl SymbolTable {
         }
     }
 
+    // @arena: consider taking &str for name
     pub fn add_new_variable(&mut self, parent: SymbolKey, name: OYarn, range: &TextRange) -> VariableKey {
         let is_external = self.get_symbol(parent).expect("valid key").is_external();
         let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
@@ -134,38 +135,38 @@ impl SymbolTable {
         let is_external = self.get_symbol(parent).expect("valid key").is_external();
         let function_symbol = FunctionSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
         let function_key = self.functions.insert(function_symbol);
-        self.add_to_parent_symbols(parent, function_key.into(), &oyarn!("{}", name), range.start().to_u32());
+        self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
         function_key
     }
 
-    fn add_to_parent_symbols(&mut self, parent: SymbolKey, content: SymbolKey, name: &OYarn, position: u32) {
+    fn add_to_parent_symbols(&mut self, parent: SymbolKey, content: SymbolKey, name: &str, position: u32) {
          match parent {
             SymbolKey::File(f) => {
                 let file = &mut self.files[f];
                 let section = file.get_section_for(position).index;
-                file.add_symbol(content, &name, section);
+                file.add_symbol(content, name, section);
             },
             SymbolKey::Package(p) => {
                 match &mut self.packages[p] {
                     PackageSymbol::Module(m) => {
                         let section = m.get_section_for(position).index;
-                        m.add_symbol(content, &name, section);
+                        m.add_symbol(content, name, section);
                     },
                     PackageSymbol::PythonPackage(p) => {
                         let section = p.get_section_for(position).index;
-                        p.add_symbol(content, &name, section);
+                        p.add_symbol(content, name, section);
                     },
                 }
             },
             SymbolKey::Class(c) => {
                 let class = &mut self.classes[c];
                 let section = class.get_section_for(position).index;
-                class.add_symbol(content, &name, section);
+                class.add_symbol(content, name, section);
             },
             SymbolKey::Function(f) => {
                 let function = &mut self.functions[f];
                 let section = function.get_section_for(position).index;
-                function.add_symbol(content, &name, section);
+                function.add_symbol(content, name, section);
             }
             _ => { panic!("Impossible to add a variable to a {}", self.get_symbol(parent).unwrap().typ()); }
         }

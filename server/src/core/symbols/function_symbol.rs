@@ -101,11 +101,12 @@ impl FunctionSymbol {
         self.diagnostics.insert(step, diagnostics);
     }
 
-    pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
-        let sections = self.symbols.entry(name.clone()).or_insert(HashMap::new());
-        let section_vec = sections.entry(section).or_insert(vec![]);
-        section_vec.push(content);
-    }
+    // @arena: moved to SymbolMgr
+    // pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
+    //     let sections = self.symbols.entry(name.clone()).or_insert(HashMap::new());
+    //     let section_vec = sections.entry(section).or_insert(vec![]);
+    //     section_vec.push(content);
+    // }
 
     /*
     Add evaluations to possible return type of this function

@@ -150,7 +150,7 @@ Consider using &Path (the equivalent of &str) instead of the former
 Remove them from the symbol types structs, as each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol). Add them to SymbolTable, under some kind of struct/abstraction (map of maps of maps is quite confusing)
 
 ### dead code?
-In XmlFileSymbol:
+In XmlFileSymbol and CsvSymbol: 
 ```
 pub sections: Vec<SectionRange>,
 pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,

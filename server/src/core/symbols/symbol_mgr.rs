@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, collections::{HashMap, HashSet}};
 
 use ruff_text_size::TextSize;
 
-use crate::constants::OYarn;
+use crate::{constants::OYarn, oyarn, core::symbols::symbol_table::SymbolKey};
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol, symbol::Symbol};
 
@@ -36,6 +36,7 @@ pub trait SymbolMgr {
     fn _init_symbol_mgr(&mut self);
     fn _get_loc_symbol(&self, map: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols;
     fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>;
+    fn add_symbol(&mut self, content: SymbolKey, name: &str, section: u32);
 }
 
 
@@ -175,6 +176,12 @@ macro_rules! impl_section_mgr_for {
                 }
             }
             result
+        }
+
+        fn add_symbol(&mut self, content: SymbolKey, name: &str, section: u32) {
+            let sections = self.symbols.entry(oyarn!("{}", name)).or_default();
+            let section_vec = sections.entry(section).or_default();
+            section_vec.push(content);
         }
     }
 )+)

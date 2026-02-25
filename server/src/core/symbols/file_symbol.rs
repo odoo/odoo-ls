@@ -61,11 +61,12 @@ impl FileSymbol {
         res
     }
 
-    pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
-        let sections = self.symbols.entry(name.clone()).or_insert_with(|| HashMap::new());
-        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
-        section_vec.push(content);
-    }
+    // @arena: moved to SymbolMgr
+    // pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
+    //     let sections = self.symbols.entry(name.clone()).or_insert_with(|| HashMap::new());
+    //     let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+    //     section_vec.push(content);
+    // }
 
     pub fn get_dependencies(&self, step: usize, level: usize) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>>
     {

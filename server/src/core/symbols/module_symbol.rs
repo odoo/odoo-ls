@@ -131,11 +131,12 @@ impl ModuleSymbol {
         Some(module)
     }
 
-    pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
-        let sections = self.symbols.entry(name.clone()).or_insert_with(|| HashMap::new());
-        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
-        section_vec.push(content);
-    }
+    // @arena: moved to SymbolMgr
+    // pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
+    //     let sections = self.symbols.entry(name.clone()).or_insert_with(|| HashMap::new());
+    //     let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+    //     section_vec.push(content);
+    // }
 
     pub fn load_module_info(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) {
         let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(symbol.clone(), session, odoo_addons);
