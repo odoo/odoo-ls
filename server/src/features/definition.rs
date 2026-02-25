@@ -131,17 +131,21 @@ impl DefinitionFeature {
         let mut xml_found = false;
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, value.as_str(), &std::ops::Range{start: 0, end: 0}, &mut vec![]);
         for xml_id in xml_ids {
-            let file = xml_id.get_file_symbol();
-            if let Some(file) = file {
-                if let Some(file) = file.upgrade() {
-                    let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &file.borrow().paths()[0], &xml_id.get_range());
-                    xml_found = true;
-                    links.push(LocationLink {
-                        origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r)),
-                        target_uri: FileMgr::pathname2uri(&file.borrow().paths()[0]),
-                        target_range: range,
-                        target_selection_range: range });
-                }
+            let maybe_file = xml_id
+                .get_file_symbol()
+                .and_then(|file_sym_weak| file_sym_weak.upgrade())
+                // Get file, because for model xml_ids, it would be a class, we want to get the file to be able to get the path and range
+                .and_then(|xml_parent| xml_parent.borrow().get_file())
+                .and_then(|file_sym_weak| file_sym_weak.upgrade());
+            if let Some(file) = maybe_file {
+                let path = file.borrow().paths()[0].clone();
+                let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &xml_id.get_range());
+                xml_found = true;
+                links.push(LocationLink {
+                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r)),
+                    target_uri: FileMgr::pathname2uri(&path),
+                    target_range: range,
+                    target_selection_range: range });
             }
         }
         xml_found
@@ -355,30 +359,28 @@ impl DefinitionFeature {
                         }
                     },
                     XmlAstResult::XML_DATA(xml_file_symbol, range) => {
-                        let file = xml_file_symbol.borrow().get_file(); //in case of XML_DATA coming from a python class
-                        if let Some(file) = file {
-                            if let Some(file) = file.upgrade() {
-                                for path in file.borrow().paths().iter() {
-                                    let full_path = match file.borrow().typ() {
-                                        SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
-                                        _ => path.clone()
-                                    };
-                                    let range = match file.borrow().typ() {
-                                        SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                        _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
-                                    };
-                                    let link_range = if link_range.is_some() {
-                                        Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
-                                    } else {
-                                        None
-                                    };
-                                    links.push(LocationLink{
-                                        origin_selection_range: link_range,
-                                        target_uri: FileMgr::pathname2uri(&full_path),
-                                        target_range: range,
-                                        target_selection_range: range
-                                    });
-                                }
+                        let maybe_file = xml_file_symbol.borrow().get_file().and_then(|file| file.upgrade()); //in case of XML_DATA coming from a python class
+                        if let Some(file) = maybe_file {
+                            for path in file.borrow().paths().iter() {
+                                let full_path = match file.borrow().typ() {
+                                    SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
+                                    _ => path.clone()
+                                };
+                                let range = match xml_file_symbol.borrow().typ() {
+                                    SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                                    _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
+                                };
+                                let link_range = if link_range.is_some() {
+                                    Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
+                                } else {
+                                    None
+                                };
+                                links.push(LocationLink{
+                                    origin_selection_range: link_range,
+                                    target_uri: FileMgr::pathname2uri(&full_path),
+                                    target_range: range,
+                                    target_selection_range: range
+                                });
                             }
                         }
                     }
