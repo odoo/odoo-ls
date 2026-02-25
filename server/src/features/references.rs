@@ -18,10 +18,9 @@ pub struct ReferenceFeature {
 }
 
 impl ReferenceFeature {
-    /// Basic find all references implementation
-    /// Same-file references only, local vars, params, methods
-    /// TODO: Cross-file references within module
-    /// TODO: All files within workspace
+    /*
+    * Get all References to a symbol at the provided line and char
+     */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
@@ -86,6 +85,10 @@ impl ReferenceFeature {
                     }
                 },
                 GotoSourceType::OdooData(data) => {
+                    let xml_id = data.get_xml_id();
+                    let Some(xml_id) = xml_id else {continue;};
+                },
+                GotoSourceType::XmlData(xml_data) => {
 
                 }
             }
