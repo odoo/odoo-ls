@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use ruff_text_size::{TextRange, TextSize};
 
+use crate::constants::tree;
+use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
@@ -12,7 +14,7 @@ use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{ClassKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey};
+use crate::core::symbols::symbol_table::{ClassKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, get_main_entry_tree};
 
 
 impl SymbolTable {
@@ -191,4 +193,64 @@ impl SymbolTable {
         }
     }
 
+}
+
+// @arena: associated function in SymbolTable?
+///Given a path, create the appropriated symbol and attach it to the given parent
+pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
+    let symbol_table = &mut session.sync_odoo.symbol_table;
+    let name: String = if path.is_dir() {
+        path.components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+    } else {
+        path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+    };
+    let path_str = path.sanitize();
+    if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
+        return Some(symbol_table.add_new_file(parent, &name, &path_str));
+    }
+    let main_entry_tree = get_main_entry_tree(session, parent);
+    if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+        let module = SymbolTable::add_new_module_package(session, parent, &name, path);
+        let symbol_table = &mut session.sync_odoo.symbol_table;
+        if let Some(module) = module {
+            let module_symbol = symbol_table.get_symbol(module).unwrap();
+            let dir_name = module_symbol.as_module_package().dir_name.clone();
+            session.sync_odoo.modules.insert(dir_name, module);
+            return Some(module);
+        } else if require_module {
+            return None;
+        } else {
+            if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str);
+                if !path.join("__init__.py").exists() {
+                    symbol_table.packages.get_mut(package_key).unwrap().set_i_ext("i");
+                }
+                return Some(package_key.into());
+            } else {
+                return None;
+            }
+        }
+    } else if require_module {
+        return None;
+    } else {
+        let symbol_table = &mut session.sync_odoo.symbol_table;
+        if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+            if main_entry_tree == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
+                //Force namespace for odoo/addons
+                let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
+                return Some(namespace_key);
+            } else {
+                // let ref_sym = parent.borrow_mut().add_new_python_package(session, &name, &path_str);
+                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str);
+                if !path.join("__init__.py").exists() {
+                    symbol_table.packages.get_mut(package_key).unwrap().set_i_ext("i");
+                }
+                return Some(package_key.into());
+            }
+        } else if path.is_dir() {
+            let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
+            return Some(namespace_key);
+        }
+    }
+    None
 }

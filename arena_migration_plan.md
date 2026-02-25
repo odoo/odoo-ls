@@ -47,6 +47,7 @@ RefCell to FileInfo, EntryPoint
 
 - to decide: evaluations on secondary map?
 - to decide: store entry point in a slotmap, sibling to symbol table under sync_odoo?
+    - EntryPointMgr, which owns EntryPoints, is already a child of sync_odoo
 
 
 ## Current changes
@@ -70,6 +71,8 @@ Symbol methods
     - self becomes symbol key, from which symbol can be fetched
 - immutable methods (&self) -> move to SymbolView
 - &mut self methods: move to SymbolTable, self becomes symbol key
+
+Weak.upgrade()?.borrow -> TableSymbol.get_symbol(key)
 
 ## Insights/Notes
 Instead of Symbols, we now have the separate types stored. And the functions that
