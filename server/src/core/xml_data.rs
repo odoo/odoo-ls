@@ -91,6 +91,16 @@ impl OdooData {
         }
     }
 
+    pub fn get_xml_id(&self) -> Option<OYarn> {
+        match self {
+            OdooData::RECORD(r) => r.xml_id.clone(),
+            OdooData::MENUITEM(m) => m.xml_id.clone(),
+            OdooData::TEMPLATE(t) => t.xml_id.clone(),
+            OdooData::DELETE(d) => d.xml_id.clone(),
+            OdooData::ASSET(a) => a.xml_id.clone(),
+        }
+    }
+
     pub fn get_xml_file_symbol(&self, symbol_table: &SymbolTable) -> Option<XmlFileKey> {
         let file_symbol = self.get_file_symbol()?;
         let symbol = file_symbol.upgrade(symbol_table)?;

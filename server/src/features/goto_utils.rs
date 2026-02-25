@@ -1,9 +1,9 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-use lsp_types::{LocationLink, Range};
+use lsp_types::{LocationLink, Range, request::GotoDeclarationResponse};
 use ruff_python_ast::{Expr, ExprCall};
 
-use crate::{S, constants::{PackageType, SymType}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::OdooData}, features::{ast_utils::AstUtils, features_utils::FeaturesUtils}, oyarn, threads::SessionInfo, utils::PathSanitizer};
+use crate::{S, constants::{PackageType, SymType}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::OdooData}, features::{ast_utils::AstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
 
 pub enum GotoRequest {
     Definition,
@@ -14,6 +14,7 @@ pub enum GotoSourceType {
     Symbol(Rc<RefCell<Symbol>>),
     OdooData(OdooData),
     Module(Rc<RefCell<Symbol>>),
+    XmlData((Rc<RefCell<Symbol>>, Range)),
 }
 
 pub struct GotoSource {
@@ -272,6 +273,44 @@ impl GotoUtils {
         definition_sources
     }
 
+    pub fn get_symbols_xml(session: &mut SessionInfo,
+        file_symbol: &Rc<RefCell<Symbol>>,
+        file_info: &Rc<RefCell<FileInfo>>,
+        line: u32,
+        character: u32
+    ) -> Vec<GotoSource> {
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
+        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let document = roxmltree::Document::parse(&data);
+        let mut sources = vec![];
+        if let Ok(document) = document {
+            let root = document.root_element();
+            let (xml_ast_results, origin_range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
+            for xml_ast_result in xml_ast_results {
+                sources.push(match xml_ast_result {
+                    XmlAstResult ::SYMBOL(s) => {
+                        GotoSource {
+                            source: GotoSourceType::Symbol(s),
+                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), origin_range.as_ref().unwrap()))
+                        }
+                    },
+                    XmlAstResult::XML_DATA(data, range) => {
+                        let full_path = data.borrow().paths()[0].clone();
+                        let symbol_range = match data.borrow().typ() {
+                            SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                            _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
+                        };
+                        GotoSource {
+                            source: GotoSourceType::XmlData((data, symbol_range)),
+                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, origin_range.as_ref().unwrap()))
+                        }
+                    }
+                });
+            }
+        }
+        sources
+    }
+
     pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Vec<LocationLink> {
         let mut res = vec![];
         match &def.source {
@@ -316,6 +355,23 @@ impl GotoUtils {
                             target_uri: FileMgr::pathname2uri(&file.borrow().paths()[0]),
                             target_range: range,
                             target_selection_range: range });
+                    }
+                }
+            },
+            GotoSourceType::XmlData(xml_data) => {
+                if let Some(file_symbol) = xml_data.0.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
+                    let paths = file_symbol.borrow().paths();
+                    for path in paths.iter() {
+                        let full_path = match file_symbol.borrow().typ() {
+                            SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file_symbol.borrow().as_package().i_ext())).sanitize(),
+                            _ => path.clone()
+                        };
+                        res.push(LocationLink{
+                            origin_selection_range: def.origin_selection_range.clone(),
+                            target_uri: FileMgr::pathname2uri(&full_path),
+                            target_selection_range: xml_data.1,
+                            target_range: xml_data.1,
+                        });
                     }
                 }
             }
