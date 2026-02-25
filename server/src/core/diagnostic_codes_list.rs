@@ -59,6 +59,10 @@ OLS01009, DiagnosticSetting::Warning, "Arguments are not valid for all function 
  */
 OLS01010, DiagnosticSetting::Error, "Missing keyword-only argument(s): {0}",
 /**
+ * Classmethods should have at least one positional argument
+ */
+OLS01011, DiagnosticSetting::Error, "Classmethod missing a positional argument",
+/**
 * Check your python environment, the effective your sys.path and your addon paths.
 */
 OLS02001, DiagnosticSetting::Warning, "{0} not found",

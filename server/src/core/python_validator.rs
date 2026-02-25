@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtFunctionDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
@@ -223,17 +223,7 @@ impl PythonValidator {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(f.name.to_string()), &f.range);
-                    if let Some(sym) = sym {
-                        let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
-                        if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(self.entry_point.clone(), sym.clone());
-                            v.validate(session);
-                        } else if val_status == BuildStatus::IN_PROGRESS {
-                            panic!("cyclic validation detected... Aborting");
-                        }
-                        self.diagnostics.extend(sym.borrow_mut().as_func_mut().diagnostics.values().flat_map(|v| v.clone()));
-                    }
+                    self.visit_func_def(session, f);
                 },
                 Stmt::ClassDef(c) => {
                     self.visit_class_def(session, c);
@@ -296,6 +286,28 @@ impl PythonValidator {
                 Stmt::IpyEscapeCommand(_) => {},
             }
         }
+    }
+
+    fn visit_func_def(&mut self, session: &mut SessionInfo, f: &StmtFunctionDef) {
+        let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(f.name.to_string()), &f.range);
+        let Some(sym) = sym else {
+            return;
+        };
+        if sym.borrow().as_func().is_class_method && f.parameters.args.is_empty() {
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01011, &[]) {
+                self.diagnostics.push(Diagnostic {
+                    range: Range::new(Position::new(f.parameters.range.start().to_u32(), 0), Position::new(f.parameters.range.end().to_u32(), 0)),
+                    ..diagnostic_base.clone()
+                });
+            }
+        }
+        let fn_build_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
+        match fn_build_status {
+            BuildStatus::PENDING => PythonValidator::new(self.entry_point.clone(), sym.clone()).validate(session),
+            BuildStatus::IN_PROGRESS => panic!("cyclic validation detected... Aborting"),
+            _ => {},
+        }
+        self.diagnostics.extend(sym.borrow_mut().as_func_mut().diagnostics.values().flat_map(|v| v.clone()));
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
