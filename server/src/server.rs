@@ -397,7 +397,9 @@ impl Server {
                 }
             },
             Message::Response(r) => {
-                info!("Sending response to main thread : {}", r.id);
+                if DEBUG_THREADS {
+                    info!("Sending response to main thread : {}", r.id);
+                }
                 self.res_sender_s_to_main.send(Message::Response(r)).unwrap();
             },
             Message::Notification(n) => {
