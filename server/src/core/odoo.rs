@@ -530,7 +530,14 @@ impl SyncOdoo {
 
     fn build_modules(session: &mut SessionInfo) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0];
+        let Some(addons_symbol) = session.sync_odoo.get_symbol(
+            session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX
+        ).first().copied() else {
+            let message = S!("OdooLS: Unable to find 'odoo/addons'. Check the addons_paths in your config or your file structure. Skipping addons loading...");
+            warn!("{}", message);
+            session.show_message(MessageType::WARNING, message);
+            return;
+        };
         // @arena: not in the original code. Consider wrapping get_symbol in a get_addon_namespace function
         let addons_path = st!()[addons_symbol.unwrap_namespace_key()].paths();
         let mut modules = vec![];
