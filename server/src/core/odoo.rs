@@ -1690,33 +1690,20 @@ impl Odoo {
                     file_info.borrow_mut().prepare_ast(session);
                 }
                 let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-                match ast_type {
-                    AstType::Python => {
-                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
-                            if is_declaration {
-                                return Ok(DeclarationFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-
-                            } else {
-                                return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                            }
-                        }
-                    },
-                    AstType::Xml => {
-                        if is_declaration {
-                            return Ok(DeclarationFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-
-                        } else {
-                            return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                        }
-                    },
-                    AstType::Csv => {
-                        if is_declaration {
-                            return Ok(DeclarationFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                        } else {
-                            return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                        }
-                    },
+                if matches!(ast_type, AstType::Python) && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    return Ok(None);
                 }
+                let location_fn = match (ast_type, is_declaration) {
+                    (AstType::Python, true) => DeclarationFeature::get_location,
+                    (AstType::Python, false) => DefinitionFeature::get_location,
+                    (AstType::Xml, true) => DeclarationFeature::get_location_xml,
+                    (AstType::Xml, false) => DefinitionFeature::get_location_xml,
+                    (AstType::Csv, true) => DeclarationFeature::get_location_csv,
+                    (AstType::Csv, false) => DefinitionFeature::get_location_csv,
+                };
+                return Ok(location_fn(session, &file_symbol, &file_info,
+                    params.text_document_position_params.position.line,
+                    params.text_document_position_params.position.character));
             }
         }
         Ok(None)
