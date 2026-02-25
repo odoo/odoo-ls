@@ -61,7 +61,7 @@ impl Symbol {
     pub fn weak_ptr_eq(me: &Weak<RefCell<Symbol>>, them: &Weak<RefCell<Symbol>>) -> bool{
         me.upgrade().and_then(|me_rc| them.upgrade().map(|them_rc| Rc::ptr_eq(&me_rc, &them_rc))).unwrap_or(false)
     }
-    // @arena: only one caller. Can be inlined.
+    // @arena: moved to SymbolTable
     pub fn new_root() -> Rc<RefCell<Self>> {
         let root = Rc::new(RefCell::new(Symbol::Root(RootSymbol::new())));
         root.borrow_mut().set_weak_self(Rc::downgrade(&root));
@@ -348,6 +348,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to SymbolTable
     pub fn add_new_function(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
         let function = Rc::new(RefCell::new(Symbol::Function(FunctionSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         function.borrow_mut().set_weak_self(Rc::downgrade(&function));
@@ -378,6 +379,7 @@ impl Symbol {
         function
     }
 
+    // @arena: moved to SymbolTable
     pub fn add_new_class(&mut self, _session: &mut SessionInfo, name: &String, range: &TextRange, body_start: &TextSize) -> Rc<RefCell<Self>> {
         let class = Rc::new(RefCell::new(Symbol::Class(ClassSymbol::new(name.clone(), range.clone(), body_start.clone(), self.is_external()))));
         class.borrow_mut().set_weak_self(Rc::downgrade(&class));
@@ -1984,6 +1986,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol_table
     pub fn get_in_parents(&self, sym_types: &Vec<SymType>, stop_same_file: bool) -> Option<Weak<RefCell<Symbol>>> {
         if sym_types.contains(&self.typ()) {
             return self.weak_self().clone();
@@ -1997,10 +2000,12 @@ impl Symbol {
         return None;
     }
 
+    // @arena: moved to symbol_table
     pub fn get_root(&self) -> Option<Weak<RefCell<Symbol>>> {
         self.get_in_parents(&vec![SymType::ROOT], false)
     }
 
+    // @arena: moved to symbol_table
     pub fn get_entry(&self) -> Option<Rc<RefCell<EntryPoint>>> {
         if let Some(root) = self.get_root() {
             if let Some(root) = root.upgrade() {
@@ -2089,6 +2094,7 @@ impl Symbol {
         symbol.borrow_mut().set_parent(None);
     }
 
+    // @arena: moved to symbol_table
     pub fn get_file(&self) -> Option<Weak<RefCell<Symbol>>> {
         if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) || self.typ() == SymType::XML_FILE || self.typ() == SymType::CSV_FILE {
             return self.weak_self().clone();
@@ -2099,6 +2105,7 @@ impl Symbol {
         None
     }
 
+    // @arena: moved to symbol_table
     pub fn parent_file_or_function(&self) -> Option<Weak<RefCell<Symbol>>> {
         if self.typ() == SymType::FILE || matches!(self.typ(), SymType::PACKAGE(_)) || self.typ() == SymType::FUNCTION {
             return self.weak_self().clone();
@@ -2109,6 +2116,7 @@ impl Symbol {
         None
     }
 
+    // @arena: moved to symbol_table
     pub fn find_module(&self) -> Option<Rc<RefCell<Symbol>>> {
         if let Symbol::Package(PackageSymbol::Module(_)) = self {return self.get_rc();}
         if let Some(parent) = self.parent().as_ref() {

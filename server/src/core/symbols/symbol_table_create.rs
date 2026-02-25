@@ -7,14 +7,19 @@ use ruff_text_size::{TextRange, TextSize};
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
+use crate::core::symbols::root_symbol::RootSymbol;
 use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{ClassKey, FunctionKey, PackageKey, SymbolKey, SymbolTable, VariableKey};
+use crate::core::symbols::symbol_table::{ClassKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey};
 
 
 impl SymbolTable {
+    pub fn new_root(&mut self) -> RootKey {
+        let root_symbol = RootSymbol::new();
+        self.roots.insert(root_symbol)
+    }
     // @arena: parent is a verified existing key
     // Create a sub-symbol that is representing a file
     pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {

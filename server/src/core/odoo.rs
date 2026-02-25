@@ -141,6 +141,7 @@ impl SyncOdoo {
             capabilities: lsp_types::ClientCapabilities::default(),
             encoding: PositionEncoding::Utf16,
             opened_files: vec![],
+            symbol_table: SymbolTable::new(),
 
             test_mode: false,
         };

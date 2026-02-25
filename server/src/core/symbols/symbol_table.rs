@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{constants::{OYarn, PackageType, SymType, Tree, tree}, core::{file_mgr::FileMgr, symbols::{
+use crate::{constants::{OYarn, PackageType, SymType, Tree, tree}, core::{entry_point::EntryPoint, file_mgr::FileMgr, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
@@ -162,6 +162,13 @@ impl SymbolView<'_> {
             _ => {panic!("Not a module package")}
         }
     }
+    
+    pub fn as_root(&self) -> &RootSymbol {
+        match self {
+            Self::Root(r) => r,
+            _ => {panic!("Not a Root")}
+        }
+    }
 }
 
 
@@ -252,15 +259,6 @@ impl SymbolTable {
 
     // ========= former Symbol methods =========
 
-    // Formerly called like self.find_module on a Symbol after borrowing the Rc/RefCell
-    // No called directly with the key
-    pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
-        let symbol = self.get_symbol(key)?;
-        if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
-            return Some(key);
-        }
-        return self.find_module(symbol.parent()?);
-    }
 
 
     // @arena get_symbol + unwrap is the equivalent of upgrade + unwrap on a weak ref
@@ -291,6 +289,77 @@ impl SymbolTable {
         }
         res
     }
+
+    // @arena
+    // formerly a method on Symbol, so valid target expected
+    // original code unwrapped the upgrade() of weak without checking
+    pub fn get_in_parents(&self, target: SymbolKey, sym_types: &[SymType], stop_same_file: bool) -> Option<SymbolKey> {
+        let target_symbol = self.get_symbol(target).expect("valid key");
+        let target_type = target_symbol.typ();
+
+        if sym_types.contains(&target_type) {
+            return Some(target);
+        }
+        if stop_same_file && matches!(target_type, SymType::FILE | SymType::PACKAGE(_)) {
+            return None;
+        }
+        let Some(parent) = target_symbol.parent() else {
+            return None;
+        };
+        return self.get_in_parents(parent, sym_types, stop_same_file);
+    }
+
+
+    pub fn get_root(&self, target: SymbolKey) -> Option<SymbolKey> {
+        self.get_in_parents(target, &[SymType::ROOT], false)
+    }
+
+    pub fn get_entry(&self, target: SymbolKey) -> Option<Rc<RefCell<EntryPoint>>> {
+        self.get_root(target)
+            .and_then(|root_key| self.get_symbol(root_key))
+            .and_then(|root_symbol| root_symbol.as_root().entry_point.clone())
+    }
+
+    pub fn get_file(&self, target: SymbolKey) -> Option<SymbolKey> {
+        self.get_in_parents(
+            target,
+            &[
+                SymType::FILE,
+                SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
+                SymType::PACKAGE(PackageType::MODULE),
+                SymType::XML_FILE,
+                SymType::CSV_FILE,
+            ],
+            false,
+        )
+    }
+    pub fn parent_file_or_function(&self, target: SymbolKey) -> Option<SymbolKey> {
+        self.get_in_parents(
+            target,
+            &[
+                SymType::FILE,
+                SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
+                SymType::PACKAGE(PackageType::MODULE),
+                SymType::FUNCTION,
+            ],
+            false,
+        )
+    }
+
+    // Formerly called like self.find_module on a Symbol after borrowing the Rc/RefCell
+    // Now called directly with the key
+    // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
+    // Consider just calling get_in_parents
+    pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
+        let symbol = self.get_symbol(key)?;
+        if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
+            return Some(key);
+        }
+        return self.find_module(symbol.parent()?);
+    }
+
+// TODO then: add_new_xml_file, add_new_csv_file
+
 }
 
 // @arena: make this a method of SyncOdoo?
