@@ -7,14 +7,17 @@ use ruff_text_size::{TextRange, TextSize};
 use crate::constants::tree;
 use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::class_symbol::ClassSymbol;
+use crate::core::symbols::csv_file_symbol::CsvFileSymbol;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
+use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::root_symbol::RootSymbol;
+use crate::core::symbols::xml_file_symbol::XmlFileSymbol;
 use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{ClassKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, get_main_entry_tree};
+use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree};
 
 
 impl SymbolTable {
@@ -191,6 +194,33 @@ impl SymbolTable {
                 );
             }
         }
+    }
+
+
+    pub fn add_new_xml_file(&mut self, parent: PackageKey, name: &str, path: &str) -> XmlFileKey {
+        let parent_symbol = self.packages.get(parent).expect("valid key");
+        let mut xml_file_symbol = XmlFileSymbol::new(name, path, parent.into(), parent_symbol.is_external());
+        xml_file_symbol.set_in_workspace(parent_symbol.in_workspace());
+        let xml_file_key = self.xml_files.insert(xml_file_symbol);
+        self.register_data_file(parent, path, xml_file_key.into());
+        xml_file_key
+    }
+
+    pub fn add_new_csv_file(&mut self, parent: PackageKey, name: &str, path: &str) -> CsvFileKey {
+        let parent_symbol = self.packages.get(parent).expect("valid key");
+        let mut csv_file_symbol = CsvFileSymbol::new(name, path, parent.into(), parent_symbol.is_external());
+        csv_file_symbol.set_in_workspace(parent_symbol.in_workspace());
+        let csv_file_key = self.csv_files.insert(csv_file_symbol);
+        self.register_data_file(parent, path, csv_file_key.into());
+        csv_file_key
+    }
+
+    fn register_data_file(&mut self, parent: PackageKey, path: &str, data_file: SymbolKey) {
+        let entry = self.get_entry(parent.into()).unwrap();
+        entry.borrow_mut().data_symbols.insert(path.to_string(), data_file);
+
+        let package = &mut self.packages[parent];
+        package.as_module_package_mut().data_symbols.insert(path.to_string(), data_file);
     }
 
 }

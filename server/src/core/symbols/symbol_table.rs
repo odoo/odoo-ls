@@ -1,11 +1,10 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 
-use crate::{constants::{OYarn, PackageType, SymType, Tree, tree}, core::{entry_point::EntryPoint, file_mgr::FileMgr, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
-}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+}}, threads::SessionInfo};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -153,6 +152,23 @@ impl SymbolView<'_> {
             | Self::XmlFileSymbol(_)
             | Self::CsvFileSymbol(_) => false,
             Self::Class(_) | Self::Function(_) | Self::Variable(_) => true,
+        }
+    }
+
+    pub fn in_workspace(&self) -> bool {
+        match self {
+            Self::Root(_) => false,
+            Self::Namespace(n) => n.is_in_workspace(),
+            Self::DiskDir(d) => d.in_workspace,
+            Self::Package(PackageSymbol::Module(m)) => m.in_workspace,
+            Self::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace,
+            Self::File(f) => f.is_in_workspace(),
+            Self::Compiled(_) => panic!(),
+            Self::Class(_) => panic!(),
+            Self::Function(_) => panic!(),
+            Self::Variable(_) => panic!(),
+            Self::XmlFileSymbol(x) => x.is_in_workspace(),
+            Self::CsvFileSymbol(c) => c.is_in_workspace(),
         }
     }
     
@@ -357,9 +373,6 @@ impl SymbolTable {
         }
         return self.find_module(symbol.parent()?);
     }
-
-// TODO then: add_new_xml_file, add_new_csv_file
-
 }
 
 // @arena: make this a method of SyncOdoo?

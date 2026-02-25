@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc, Weak
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic};
+use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::symbols::symbol_table::SymbolKey, threads::SessionInfo, utils::PathSanitizer, warn_or_panic};
 
 use super::{odoo::SyncOdoo, symbols::symbol::Symbol};
 
@@ -385,7 +385,7 @@ pub struct EntryPoint {
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub not_found_symbols_for_models: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
-    pub data_symbols: HashMap<String, Weak<RefCell<Symbol>>>, //key is path, weak to Rc that is hold by the module symbol
+    pub data_symbols: HashMap<String, SymbolKey>, //key is path, weak to Rc that is hold by the module symbol
 }
 impl EntryPoint {
     pub fn new(path: String, tree: Vec<OYarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {

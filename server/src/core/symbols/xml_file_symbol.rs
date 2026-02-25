@@ -39,13 +39,14 @@ pub struct XmlFileSymbol {
 
 impl XmlFileSymbol {
 
-    pub fn new(name: String, path: String, is_external: bool) -> Self {
+    // @arena: parent could be of type PackageKey 
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         let res = Self {
             name: oyarn!("{}", name),
-            path,
+            path: path.to_string(),
             is_external,
             // weak_self: None,
-            parent: None,
+            parent: Some(parent),
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],

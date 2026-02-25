@@ -95,6 +95,20 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => p.is_external,
         }
     }
+
+    pub fn in_workspace(&self) -> bool {
+        match self {
+            PackageSymbol::Module(m) => m.in_workspace,
+            PackageSymbol::PythonPackage(p) => p.in_workspace,
+        }
+    }
+
+    pub fn as_module_package_mut(&mut self) -> &mut ModuleSymbol {
+        match self {
+            PackageSymbol::Module(m) => m,
+            _ => panic!("Not a module package"),
+        }
+    }
 }
 
 #[derive(Debug)]

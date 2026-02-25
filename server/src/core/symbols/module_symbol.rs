@@ -63,7 +63,7 @@ pub struct ModuleSymbol {
     pub sections: Vec<SectionRange>,
     pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 
-    pub data_symbols: HashMap<String, Rc<RefCell<Symbol>>>,
+    pub data_symbols: HashMap<String, SymbolKey>,
 }
 
 impl ModuleSymbol {

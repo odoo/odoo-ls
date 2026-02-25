@@ -410,6 +410,7 @@ impl Symbol {
         class
     }
 
+    // @arena: moved to SymbolTable
     pub fn add_new_xml_file(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let xml_sym = Rc::new(RefCell::new(Symbol::XmlFileSymbol(XmlFileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         xml_sym.borrow_mut().set_weak_self(Rc::downgrade(&xml_sym));
@@ -421,6 +422,7 @@ impl Symbol {
         xml_sym
     }
 
+    // @arena: moved to SymbolTable
     pub fn add_new_csv_file(&mut self, _session: &mut SessionInfo, name: &String, path: &String) -> Rc<RefCell<Self>> {
         let csv_sym = Rc::new(RefCell::new(Symbol::CsvFileSymbol(CsvFileSymbol::new(name.clone(), path.clone(), self.is_external()))));
         csv_sym.borrow_mut().set_weak_self(Rc::downgrade(&csv_sym));
