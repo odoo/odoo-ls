@@ -380,10 +380,6 @@ OLS05036, DiagnosticSetting::Error, "Empty Value data, text data or file attribu
 */
 OLS05037, DiagnosticSetting::Error, "Empty Value data, one of text data, `file`, `eval`, or `search` has to be provided",
 /**
-* Empty Function data, either of `eval` attribute , or one or more `value`, or `function` children have to be provided.
-*/
-OLS05038, DiagnosticSetting::Error, "Empty Function data, either of `eval` attribute , or one or more `value`, or `function` children have to be provided",
-/**
 * You provided an empty XML ID. Please provide a valid XML ID.
 */
 OLS05039, DiagnosticSetting::Error, "Empty XML ID. Please provide a valid XML ID.",
