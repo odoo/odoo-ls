@@ -5,7 +5,7 @@ use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, SymType}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey}, oyarn, threads::SessionInfo};
 
 use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -131,21 +131,9 @@ impl FunctionSymbol {
         false
     }
 
-    /* Return true if a previous implementation has the @overload decorator or has it itself */
-    pub fn is_overloaded(&self) -> bool {
-        if self.is_overloaded {
-            return true;
-        }
-        if let Some(parent) = &self.parent {
-            if let Some(parent) = parent.upgrade() {
-                let previous_defs = parent.borrow().get_content_symbol(&self.name, self.range.start().to_u32()).symbols;
-                if previous_defs.len() > 1 && previous_defs.last().unwrap().borrow().typ() == SymType::FUNCTION {
-                    return previous_defs.last().unwrap().borrow().as_func().is_overloaded;
-                }
-            }
-        }
-        false
-    }
+    // @arena: moved to SymbolTable::is_func_overloaded(key)
+    // /* Return true if a previous implementation has the @overload decorator or has it itself */
+    // pub fn is_overloaded(&self) -> bool { ... }
 
     /**
      * Given a specific context (with args, parent), adapt the evaluations of the function to get a more precise answer

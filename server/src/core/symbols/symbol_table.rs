@@ -1,9 +1,10 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc};
 
+use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo};
 
 new_key_type! { pub struct RootKey; }
@@ -172,6 +173,22 @@ impl SymbolView<'_> {
         }
     }
     
+    pub fn range(&self) -> &TextRange {
+        match self {
+            Self::Root(_) => panic!(),
+            Self::DiskDir(_) => panic!(),
+            Self::Namespace(_) => panic!(),
+            Self::Package(_) => panic!(),
+            Self::File(_) => panic!(),
+            Self::Compiled(_) => panic!(),
+            Self::Class(c) => &c.range,
+            Self::Function(f) => &f.range,
+            Self::Variable(v) => &v.range,
+            Self::XmlFileSymbol(_) => panic!(),
+            Self::CsvFileSymbol(_) => panic!(),
+        }
+    }
+
     pub fn as_module_package(&self) -> &ModuleSymbol {
         match self {
             Self::Package(PackageSymbol::Module(m)) => m,
@@ -183,6 +200,17 @@ impl SymbolView<'_> {
         match self {
             Self::Root(r) => r,
             _ => {panic!("Not a Root")}
+        }
+    }
+
+    pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
+        match self {
+            Self::File(f) => *f,
+            Self::Class(c) => *c,
+            Self::Function(f) => *f,
+            Self::Package(PackageSymbol::Module(m)) => m,
+            Self::Package(PackageSymbol::PythonPackage(p)) => p,
+            _ => {panic!("Not a symbol Mgr");}
         }
     }
 }
@@ -372,6 +400,167 @@ impl SymbolTable {
             return Some(key);
         }
         return self.find_module(symbol.parent()?);
+    }
+
+    // ========= former SymbolMgr trait methods =========
+
+    /**
+     * Return all symbol before the given position that match the name in the body of the symbol
+     */
+    /// @arena: the one from Symbol
+    pub fn get_content_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
+        match target {
+            SymbolKey::Class(_)
+            | SymbolKey::File(_)
+            | SymbolKey::Package(_)
+            | SymbolKey::Function(_) => self._get_content_symbol(target, name, position),
+            _ => ContentSymbols::default(),
+        }
+    }
+
+    ///Return all the symbols that are valid as last declaration for the given position
+    /// @arena: the one from SymbolMgr trait
+    fn _get_content_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
+        let target_sym = self.get_symbol(target).expect("valid key");
+        let target_sym_mgr = target_sym.as_symbol_mgr();
+        let sections = target_sym_mgr.get_symbols().get(name);
+        let mut content = if let Some(sections) = sections {
+            let section: SectionRange = target_sym_mgr.get_section_for(position);
+            self._get_loc_symbol(target_sym_mgr, sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
+        } else {
+            ContentSymbols::default()
+        };
+        let ext_sym = self.get_ext_symbol(target, name);
+        if ext_sym.len() > 1 {
+            content.symbols.extend(ext_sym.iter().cloned());
+            content.always_defined = true;
+        }
+        content
+    }
+
+     ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
+    fn _get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+        let mut res = ContentSymbols::default();
+        match index {
+            SectionIndex::NONE => { return res; },
+            SectionIndex::INDEX(index) => {
+                if acc.contains(index){
+                    res.always_defined = true;
+                    return res;
+                }
+                let section = target.get_sections().get(*index as usize).unwrap();
+                //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
+                if let Some(symbols) = map.get(index) {
+                    for &sym_key in symbols.iter().rev() {
+                        let loc_sym = self.get_symbol(sym_key).expect("valid key");
+                        if loc_sym.range().start().to_u32() < position {
+                            res.symbols.push(sym_key);
+                            break;
+                        }
+                    }
+                }
+                acc.insert(*index);
+                if !res.symbols.is_empty() {
+                    res.always_defined = true;
+                    return res;
+                }
+                res = self._get_loc_symbol(target, map, position, &section.previous_indexes, acc);
+            },
+            SectionIndex::OR(indexes) => {
+                if indexes.is_empty() {
+                    unreachable!("Or indexes should not be empty")
+                }
+                res.always_defined = true;
+                for index in indexes.iter() {
+                    let sub_result = self._get_loc_symbol(target, map, position, index, acc);
+                    res.symbols.extend(sub_result.symbols);
+                    res.always_defined = res.always_defined && sub_result.always_defined;
+                }
+            }
+        }
+        res
+    }
+
+    /// Return all symbols before the given position that are visible in the body of this symbol.
+    // @arena The one from Symbol
+    pub fn get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
+        match target {
+            SymbolKey::Class(_)
+            | SymbolKey::File(_)
+            | SymbolKey::Package(_)
+            | SymbolKey::Function(_) => self._get_all_visible_symbols(target, name_prefix, position),
+            _ => HashMap::new(),
+        }
+    }
+
+    // @arena The one from SymbolMgr trait
+    fn _get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
+        let target_sym = self.get_symbol(target).expect("valid key");
+        let target_sym_mgr = target_sym.as_symbol_mgr();
+        let mut result = HashMap::new();
+        let current_section = target_sym_mgr.get_section_for(position);
+        let current_index = SectionIndex::INDEX(current_section.index);
+
+        for (name, section_map) in target_sym_mgr.get_symbols().iter() {
+            if !name.starts_with(name_prefix) {
+                continue;
+            }
+            let mut seen = HashSet::new();
+            let content = self._get_loc_symbol(target_sym_mgr, section_map, position, &current_index, &mut seen);
+
+            if !content.symbols.is_empty() {
+                result.insert(name.clone(), content.symbols);
+            }
+        }
+        result
+    }
+
+    /**
+     * Return a symbol that can be called from outside of the body of the symbol
+     */
+    pub fn get_sub_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
+        match target {
+            SymbolKey::Class(_) | SymbolKey::File(_) | SymbolKey::Package(_) => {
+                self._get_content_symbol(target, name, position)
+            },
+            SymbolKey::Function(_) | SymbolKey::Namespace(_) => ContentSymbols {
+                symbols: self.get_ext_symbol(target, name),
+                always_defined: true,
+            },
+            _ => ContentSymbols::default(),
+        }
+    }
+
+    /// @arena: no callers/ dead code??
+    pub fn is_class_descriptor(&self, key: ClassKey) -> bool {
+        for &sym_key in self.get_content_symbol(key.into(), "__get__", u32::MAX).symbols.iter() {
+            if let SymbolKey::Function(_) = sym_key {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Return true if a previous implementation has the @overload decorator or has it itself
+    /// @arena: formerly a method in FunctionSymbol
+    pub fn is_func_overloaded(&self, key: FunctionKey) -> bool {
+        let func = self.functions.get(key).expect("valid key");
+        if func.is_overloaded {
+            return true;
+        }
+        let Some(parent_key) = func.parent else {
+            return false;
+        };
+        // @arena: Equivalent of if Some(parent) = parent_weak.upgrade() 
+        if !self.contains_key(parent_key) {
+            return false;
+        }
+        let previous_defs = self.get_content_symbol(parent_key, &func.name, func.range.start().to_u32()).symbols;
+        if let Some(SymbolKey::Function(k)) = previous_defs.last() {
+            // @arena: previous_defs is [Rc] (strong) originally
+            return self.functions.get(*k).expect("valid key").is_overloaded;
+        }
+        false
     }
 }
 

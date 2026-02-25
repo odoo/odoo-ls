@@ -1513,6 +1513,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved
     /**
      * Return all symbol before the given position that match the name in the body of the symbol
      */
@@ -1537,6 +1538,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved
     /// Return all symbols before the given position that are visible in the body of this symbol.
     pub fn get_all_visible_symbols(&self, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>> {
         match self {
@@ -1549,6 +1551,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol_table
     /**
      * Return a symbol that can be called from outside of the body of the symbol
      */

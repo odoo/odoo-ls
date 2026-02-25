@@ -47,7 +47,7 @@ impl ExtSymbolStore {
 
     // @arena: former get_decl_ext_symbol
     // Gets the symbol (`name`) injected by `owner` into `target`
-    pub fn get(&self, owner: SymbolKey, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
+    pub fn get(&self, owner: SymbolKey, target: SymbolKey, name: &str) -> Vec<SymbolKey> {
         let Some(decl_ext_symbols ) = self.declarations.get(&owner) else {
             return vec![];
         };
@@ -117,7 +117,7 @@ impl SymbolTable {
     }
 
         // @arena: This used to be a method in each Symbol variant
-    pub fn get_ext_symbol(&self, target: SymbolKey, name: &OYarn) -> Vec<SymbolKey> {
+    pub fn get_ext_symbol(&self, target: SymbolKey, name: &str) -> Vec<SymbolKey> {
         let Some(ext_symbols) = self.ext_symbols.owners.get(&target) else {
             return vec![];
         };

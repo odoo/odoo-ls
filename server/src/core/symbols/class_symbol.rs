@@ -4,10 +4,10 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use weak_table::PtrWeakHashSet;
 
-use crate::constants::{OYarn, SymType};
+use crate::constants::OYarn;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
-use crate::{Sy, oyarn};
+use crate::oyarn;
 use crate::core::symbols::symbol_table::SymbolKey;
 
 use super::symbol::Symbol;
@@ -87,14 +87,8 @@ impl ClassSymbol {
     //     section_vec.push(content);
     // }
 
-    pub fn is_descriptor(&self) -> bool {
-        for get_sym in self.get_content_symbol(Sy!("__get__"), u32::MAX).symbols.iter() {
-            if get_sym.borrow().typ() == SymType::FUNCTION {
-                return true;
-            }
-        }
-        false
-    }
+    // @arena: moved to SymbolTable::is_class_descriptor(key)
+    // pub fn is_descriptor(&self) -> bool { ... }
 
     // @arena: moved to SymbolTable
     // pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
