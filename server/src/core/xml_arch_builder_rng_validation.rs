@@ -562,10 +562,8 @@ impl XmlArchBuilder {
                 }
             }
         }
-        let mut has_value_or_function_child = false;
         for child in node.children().filter(|n| n.is_element()) {
             if self.load_value(session, &child, diagnostics) {
-                has_value_or_function_child = true;
                 if has_eval {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05045, &[]) {
                         diagnostics.push(Diagnostic {
@@ -575,7 +573,6 @@ impl XmlArchBuilder {
                     }
                 }
             } else if self.load_function(session, &child, diagnostics) {
-                has_value_or_function_child = true;
                 if has_eval {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05047, &[]) {
                         diagnostics.push(Diagnostic {
@@ -591,14 +588,6 @@ impl XmlArchBuilder {
                         ..diagnostic.clone()
                     });
                 }
-            }
-        }
-        if !has_eval && !has_value_or_function_child {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05038, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
-                    ..diagnostic.clone()
-                });
             }
         }
         true

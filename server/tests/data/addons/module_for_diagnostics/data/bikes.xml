@@ -80,7 +80,7 @@
     <function name="name" model="model" eval="eval"><value>children values not allowed</value></function> <!-- OLS05045 -->
     <function name="name" model="model" invalid_attr="error" eval="some_data"/> <!-- OLS05046 -->
     <function name="name" model="model" eval="eval"><function name="name" model="model" eval="some_data"/></function> <!-- OLS05047 -->
-    <function name="name" model="model"/> <!-- OLS05038 -->
+    <function name="name" model="model"/>
     <function name="name" model="model" eval="eval"><invalid_node /></function> <!-- OLS05048 -->
     <record id="bike_5" model="bikes.bike"><field name="wheel_id" ref=""/></record> <!-- OLS05039 -->
     <record id="bike_6" model="bikes.bike"><field name="wheel_id" ref="module_for_diagnostics.bike_wheel_6.too.many.dots"/></record> <!-- OLS05051 -->
