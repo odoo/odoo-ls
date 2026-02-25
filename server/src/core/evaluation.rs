@@ -1268,12 +1268,8 @@ impl Evaluation {
             },
             ExprOrIdent::Expr(Expr::BinOp(operator)) => {
                 if odoo.evaluation_search.is_some() {
-                    match operator.op {
-                        Operator::Add | Operator::Mult | Operator::Sub | Operator::Div | Operator::BitAnd | Operator::BitOr | Operator::BitXor |Operator::FloorDiv | Operator::LShift | Operator::MatMult | Operator::Mod | Operator::Pow | Operator::RShift => {
-                            Evaluation::eval_from_ast(session, &operator.left, parent.clone(), max_infer, false, required_dependencies);
-                            Evaluation::eval_from_ast(session, &operator.right, parent.clone(), max_infer, false, required_dependencies);
-                        }
-                    }
+                    Evaluation::eval_from_ast(session, &operator.left, parent.clone(), max_infer, false, required_dependencies);
+                    Evaluation::eval_from_ast(session, &operator.right, parent.clone(), max_infer, false, required_dependencies);
                 }
             },
             ExprOrIdent::Expr(Expr::If(if_expr)) => {
@@ -1359,12 +1355,12 @@ impl Evaluation {
         }
         if let Some(evaluation_search) = session.sync_odoo.evaluation_search.as_ref() {
             for eval in evals.iter() {
+                if found_one_reference {
+                    //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
+                    break;
+                }
                 if eval.symbol.sym.is_weak() && let Some(weak) = eval.symbol.sym.as_weak().weak.upgrade() {
                     if Rc::ptr_eq(&weak, evaluation_search) {
-                        if found_one_reference {
-                            //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
-                            continue;
-                        }
                         let file = parent.borrow().get_file().unwrap().upgrade().unwrap();
                         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]);
                         if let Some(file_info) = file_info {
