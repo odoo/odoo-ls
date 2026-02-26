@@ -2,26 +2,26 @@ use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc};
 
 use roxmltree::Node;
 
-use crate::{constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::OdooData}, threads::SessionInfo, Sy, S};
+use crate::{S, Sy, constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::{OdooData, OdooDataRecord}}, threads::SessionInfo};
 
 pub enum XmlAstResult {
     SYMBOL(Rc<RefCell<Symbol>>),
     #[allow(non_camel_case_types)]
-    XML_DATA(Rc<RefCell<Symbol>>, Range<usize>), //xml file symbol and range of the xml data
+    XML_DATA(OdooDataRecord),
 }
 
 impl XmlAstResult {
     pub fn as_symbol(&self) -> Rc<RefCell<Symbol>> {
         match self {
             XmlAstResult::SYMBOL(sym) => sym.clone(),
-            XmlAstResult::XML_DATA(_, _) =>panic!("Xml Data is not a symbol"),
+            XmlAstResult::XML_DATA(_) =>panic!("Xml Data is not a symbol"),
         }
     }
 
-    pub fn as_xml_data(&self) -> (Rc<RefCell<Symbol>>, Range<usize>) {
+    pub fn as_xml_data(&self) -> OdooDataRecord {
         match self {
             XmlAstResult::SYMBOL(_) => panic!("Symbol is not an XML Data"),
-            XmlAstResult::XML_DATA(sym, range) => (sym.clone(), range.clone()),
+            XmlAstResult::XML_DATA(record) => record.clone(),
         }
     }
 }
@@ -215,7 +215,7 @@ impl XmlAstUtils {
         for xml_data in xml_ids.iter() {
             match xml_data {
                 OdooData::RECORD(r) => {
-                    results.0.push(XmlAstResult::XML_DATA(r.file_symbol.upgrade().unwrap(), r.range.clone()));
+                    results.0.push(XmlAstResult::XML_DATA(r.clone()));
                 },
                 _ => {}
             }
