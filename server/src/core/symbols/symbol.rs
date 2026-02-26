@@ -2036,6 +2036,7 @@ impl Symbol {
         false
     }
 
+    // @arena: moved to symbol_table
     /// get a Symbol that has the same given range and name
     pub fn get_positioned_symbol(&self, name: &OYarn, range: &TextRange) -> Option<Rc<RefCell<Symbol>>> {
         if let Some(symbols) = match self {

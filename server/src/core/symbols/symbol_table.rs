@@ -545,6 +545,30 @@ impl SymbolTable {
         }
     }
 
+    /// get a Symbol that has the same given range and name
+    /// @arena: could use symbol_mgr trait
+    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &OYarn, range: &TextRange) -> Option<SymbolKey> {
+        let target_sym = self.get_symbol(target).expect("valid key");
+        if let Some(symbols) = match target_sym {
+            SymbolView::Class(c) => { c.symbols.get(name) },
+            SymbolView::File(f) => {f.symbols.get(name)},
+            SymbolView::Function(f) => {f.symbols.get(name)},
+            SymbolView::Package(PackageSymbol::Module(m)) => {m.symbols.get(name)},
+            SymbolView::Package(PackageSymbol::PythonPackage(p)) => {p.symbols.get(name)},
+            _ => {None}
+        } {
+            for sym_list in symbols.values() {
+                for &key in sym_list.iter() {
+                    let sym = self.get_symbol(key).expect("valid key");
+                    if sym.range().start() == range.start() {
+                        return Some(key);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// @arena: no callers/ dead code??
     pub fn is_class_descriptor(&self, key: ClassKey) -> bool {
         for &sym_key in self.get_content_symbol(key.into(), "__get__", u32::MAX).symbols.iter() {
