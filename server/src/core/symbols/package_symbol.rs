@@ -128,8 +128,8 @@ pub struct PythonPackageSymbol {
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
     pub module_symbols: HashMap<OYarn, SymbolKey>,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
-    pub dependencies: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
-    pub dependents: Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>,
+    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 
@@ -179,79 +179,6 @@ impl PythonPackageSymbol {
     //     let section_vec = sections.entry(section).or_insert(vec![]);
     //     section_vec.push(content);
     // }
-
-    pub fn get_dependencies(&self, step: usize, level: usize) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>>
-    {
-        self.dependencies.get(step)?.get(level)?.as_ref()
-    }
-
-    pub fn get_all_dependencies(&self, step: usize) -> Option<&Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>
-    {
-        self.dependencies.get(step)
-    }
-
-    pub fn dependencies(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
-        &self.dependencies
-    }
-
-    pub fn dependencies_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
-        &mut self.dependencies
-    }
-    pub fn get_dependents(&self, level: usize, step: usize) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>>
-    {
-        self.dependents.get(level)?.get(step)?.as_ref()
-    }
-
-    pub fn get_all_dependents(&self, level: usize) -> Option<&Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>>
-    {
-        self.dependents.get(level)
-    }
-
-    pub fn set_in_workspace(&mut self, in_workspace: bool) {
-        self.in_workspace = in_workspace;
-        if in_workspace {
-            self.dependencies= vec![
-                vec![ //ARCH
-                    None //ARCH
-                ],
-                vec![ //ARCH_EVAL
-                    None, //ARCH,
-                    None, //ARCH_EVAL
-                ],
-                vec![
-                    None, // ARCH
-                    None, //ARCH_EVAL
-                    None, //VALIDATIOn
-                ]
-            ];
-            self.dependents = vec![
-                vec![ //ARCH
-                    None, //ARCH
-                    None, //ARCH_EVAL
-                    None, //VALIDATION
-                ],
-                vec![ //ARCH_EVAL
-                    None, //ARCH_EVAL
-                    None //VALIDATION
-                ],
-                vec![ //VALIDATION
-                    None //VALIDATION
-                ]
-            ];
-        }
-    }
-
-    pub fn dependents(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
-        &self.dependents
-    }
-
-    pub fn dependents_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
-        &mut self.dependents
-    }
-
-    pub fn is_in_workspace(&self) -> bool {
-        self.in_workspace
-    }
 
     // @arena: moved to SymbolTable
     // pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
