@@ -87,8 +87,6 @@ impl ReferenceFeature {
                 GotoSourceType::OdooData(data) => {
                     let xml_id = data.get_xml_id();
                     let Some(xml_id) = xml_id else {continue;};
-                },
-                GotoSourceType::XmlData(xml_data) => {
 
                 }
             }
