@@ -66,6 +66,7 @@ impl XmlFileSymbol {
         res
     }
 
+    // @arena: dead code?
     pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
         let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
         let section_vec = sections.entry(section).or_insert_with(|| vec![]);

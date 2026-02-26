@@ -52,14 +52,10 @@ RefCell to FileInfo, EntryPoint
 
 ## Current changes
 
+body_range?
+iter_symbols
+get_scope_symbol
 
-convert symbol_mng trait (maybe move some methods to SymbolTable)
-- get_content_symbol (depends on get_ext_symbol, and _get_loc_symbol)
-- get_loc_symbol: borrow from rc (access to other symbols)
-- get_all_visible_symbols: depends on _get_loc_symbol
-
-
-Move remaining Symbol::add_new_* to SymbolTable
 
 ## Strategy
 Symbol methods
@@ -163,3 +159,6 @@ pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
 //--- dynamics variables
 pub ext_symbols: Hash
 ```
+
+## Build dependency management
+- SymbolDepKey type, that has from implementation only for keys of suitable types ???

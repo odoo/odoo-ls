@@ -594,6 +594,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
         match self {
             Symbol::File(f) => f,
@@ -615,6 +616,8 @@ impl Symbol {
             _ => {panic!("Not a symbol Mgr");}
         }
     }
+
+    // @arena: moved to symbol view
     pub fn typ(&self) -> SymType {
         match self {
             Symbol::Root(_) => SymType::ROOT,
@@ -632,6 +635,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn name(&self) -> &OYarn {
         match self {
             Symbol::Root(r) => &r.name,
@@ -648,6 +652,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn doc_string(&self) -> &Option<String> {
         match self {
             Symbol::Root(_) => &None,
@@ -680,6 +685,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn is_external(&self) -> bool {
         match self {
             Symbol::Root(_) => false,
@@ -712,6 +718,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn has_range(&self) -> bool {
         match self {
             Symbol::Root(_) => false,
@@ -728,6 +735,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn range(&self) -> &TextRange {
         match self {
             Symbol::Root(_) => panic!(),
@@ -744,6 +752,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn body_range(&self) -> &TextRange {
         match self {
             Symbol::Root(_) => panic!(),
@@ -760,6 +769,7 @@ impl Symbol {
         }
     }
 
+    // @arena: dead code?
     pub fn has_node_index(&self) -> bool {
         match self {
             Symbol::Variable(_) => false,
@@ -776,6 +786,7 @@ impl Symbol {
         }
     }
 
+    // @arena: every caller knows it's a function and unwraps the result
     pub fn node_index(&self) -> Option<&AtomicNodeIndex> {
         match self {
             Symbol::Variable(_) => None,
@@ -825,6 +836,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn parent(&self) -> Option<Weak<RefCell<Symbol>>> {
         match self {
             Symbol::Root(r) => r.parent.clone(),
@@ -858,6 +870,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved symbol view
     pub fn paths(&self) -> Vec<String> {
         match self {
             Symbol::Root(r) => r.paths.clone(),
@@ -891,6 +904,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved symbol view
     pub fn get_symbol_first_path(&self) -> String{
         match self{
             Symbol::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext(),
@@ -907,6 +921,7 @@ impl Symbol {
         }
     }
 
+    // @arena: no callers (dead code)?
     pub fn dependencies(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
@@ -1653,6 +1668,7 @@ impl Symbol {
         }
     }
 
+    // @arena: dead code?
     //Return a HashSet of all 'step' of symbols that require that this symbol is built until 'level';
     pub fn get_dependents(&self, level: BuildSteps, step: BuildSteps) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
         if level == BuildSteps::SYNTAX || step == BuildSteps::SYNTAX {

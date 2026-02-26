@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::Rc};
 
 use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
@@ -7,7 +7,7 @@ use tracing::trace;
 
 use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
-}}, threads::SessionInfo};
+}}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -144,6 +144,22 @@ impl SymbolView<'_> {
         }
     }
 
+    pub fn doc_string(&self) -> &Option<String> {
+        match self {
+            Self::Root(_) => &None,
+            Self::DiskDir(_) => &None,
+            Self::Namespace(_) => &None,
+            Self::Package(_) => &None,
+            Self::File(_) => &None,
+            Self::Compiled(_) => &None,
+            Self::Class(c) => &c.doc_string,
+            Self::Function(f) => &f.doc_string,
+            Self::Variable(v) => &v.doc_string,
+            Self::XmlFileSymbol(_) => &None,
+            Self::CsvFileSymbol(_) => &None,
+        }
+    }
+
     pub fn is_file_content(&self) -> bool {
         match self {
             Self::Root(_)
@@ -174,6 +190,22 @@ impl SymbolView<'_> {
             Self::CsvFileSymbol(c) => c.is_in_workspace(),
         }
     }
+
+    pub fn has_range(&self) -> bool {
+        match self {
+            Self::Root(_) => false,
+            Self::DiskDir(_) => false,
+            Self::Namespace(_) => false,
+            Self::Package(_) => false,
+            Self::File(_) => false,
+            Self::Compiled(_) => false,
+            Self::Class(_) => true,
+            Self::Function(_) => true,
+            Self::Variable(_) => true,
+            Self::XmlFileSymbol(_) => false,
+            Self::CsvFileSymbol(_) => false,
+        }
+    }
     
     pub fn range(&self) -> &TextRange {
         match self {
@@ -190,6 +222,72 @@ impl SymbolView<'_> {
             Self::CsvFileSymbol(_) => panic!(),
         }
     }
+
+    pub fn body_range(&self) -> &TextRange {
+        match self {
+            Self::Root(_) => panic!(),
+            Self::DiskDir(_) => panic!(),
+            Self::Namespace(_) => panic!(),
+            Self::Package(_) => panic!(),
+            Self::File(_) => panic!(),
+            Self::Compiled(_) => panic!(),
+            Self::Class(c) => &c.body_range,
+            Self::Function(f) => &f.body_range,
+            Self::Variable(_) => panic!(),
+            Self::XmlFileSymbol(_) => panic!(),
+            Self::CsvFileSymbol(_) => panic!(),
+        }
+    }
+
+    // @arena: consider returning Vec<&str> instead
+    pub fn paths(&self) -> Vec<String> {
+        match self {
+            Self::Root(r) => r.paths.clone(),
+            Self::Namespace(n) => n.paths(),
+            Self::DiskDir(d) => vec![d.path.clone()],
+            Self::Package(p) => p.paths(),
+            Self::File(f) => vec![f.path.clone()],
+            Self::Compiled(c) => vec![c.path.clone()],
+            Self::Class(_) => vec![],
+            Self::Function(_) => vec![],
+            Self::Variable(_) => vec![],
+            Self::XmlFileSymbol(x) => vec![x.path.clone()],
+            Self::CsvFileSymbol(c) => vec![c.path.clone()],
+        }
+    }
+
+    pub fn get_symbol_first_path(&self) -> String{
+        match self{
+            Self::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext(),
+            Self::File(f) => f.path.clone(),
+            Self::DiskDir(_) => panic!("invalid symbol type to extract path"),
+            Self::Root(_) => panic!("invalid symbol type to extract path"),
+            Self::Namespace(_) => panic!("invalid symbol type to extract path"),
+            Self::Compiled(_) => panic!("invalid symbol type to extract path"),
+            Self::Class(_) => panic!("invalid symbol type to extract path"),
+            Self::Function(_) => panic!("invalid symbol type to extract path"),
+            Self::Variable(_) => panic!("invalid symbol type to extract path"),
+            Self::XmlFileSymbol(x) => x.path.clone(),
+            Self::CsvFileSymbol(c) => c.path.clone(),
+        }
+    }
+
+    // @todo
+    // pub fn dependents(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
+    //     match self {
+    //         Self::Root(_) => panic!("No dependencies on Root"),
+    //         Self::Namespace(n) => n.dependents(),
+    //         Self::DiskDir(_) => panic!("No dependencies on DiskDir"),
+    //         Self::Package(p) => p.dependents(),
+    //         Self::File(f) => f.dependents(),
+    //         Self::Compiled(_) => panic!("No dependencies on Compiled"),
+    //         Self::Class(_) => panic!("No dependencies on Class"),
+    //         Self::Function(_) => panic!("No dependencies on Function"),
+    //         Self::Variable(_) => panic!("No dependencies on Variable"),
+    //         Self::XmlFileSymbol(x) => x.dependents(),
+    //         Self::CsvFileSymbol(c) => c.dependents(),
+    //     }
+    // }
 
     pub fn as_module_package(&self) -> &ModuleSymbol {
         match self {
