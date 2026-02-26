@@ -1,6 +1,6 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn, threads::SessionInfo};
+use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::Dependencies, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo};
 use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -65,7 +65,7 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => p.dependencies_mut()
         }
     }
-    pub fn dependents(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
+    pub fn dependents(&self) -> &Vec<Vec<Option<HashSet<SymbolKey>>>> {
         match self {
             PackageSymbol::Module(m) => m.dependents(),
             PackageSymbol::PythonPackage(p) => &p.dependents()

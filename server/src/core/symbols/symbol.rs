@@ -1624,6 +1624,7 @@ impl Symbol {
         }
     }
 
+    // @arena dead-code?
     //Return a HashSet of all symbols (constructed until 'level') that are dependencies for the 'step' of this symbol
     pub fn get_dependencies(&self, step: BuildSteps, level: BuildSteps) -> Option<&PtrWeakHashSet<Weak<RefCell<Symbol>>>> {
         if step == BuildSteps::SYNTAX || level == BuildSteps::SYNTAX {
@@ -1648,6 +1649,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")

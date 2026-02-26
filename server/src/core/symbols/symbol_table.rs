@@ -5,8 +5,8 @@ use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
@@ -272,22 +272,41 @@ impl SymbolView<'_> {
         }
     }
 
-    // @todo
-    // pub fn dependents(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
-    //     match self {
-    //         Self::Root(_) => panic!("No dependencies on Root"),
-    //         Self::Namespace(n) => n.dependents(),
-    //         Self::DiskDir(_) => panic!("No dependencies on DiskDir"),
-    //         Self::Package(p) => p.dependents(),
-    //         Self::File(f) => f.dependents(),
-    //         Self::Compiled(_) => panic!("No dependencies on Compiled"),
-    //         Self::Class(_) => panic!("No dependencies on Class"),
-    //         Self::Function(_) => panic!("No dependencies on Function"),
-    //         Self::Variable(_) => panic!("No dependencies on Variable"),
-    //         Self::XmlFileSymbol(x) => x.dependents(),
-    //         Self::CsvFileSymbol(c) => c.dependents(),
-    //     }
-    // }
+    pub fn dependents(&self) -> &Vec<Vec<Option<HashSet<SymbolKey>>>> {
+        match self {
+            Self::Root(_) => panic!("No dependencies on Root"),
+            Self::Namespace(n) => n.dependents(),
+            Self::DiskDir(_) => panic!("No dependencies on DiskDir"),
+            Self::Package(p) => p.dependents(),
+            Self::File(f) => f.dependents(),
+            Self::Compiled(_) => panic!("No dependencies on Compiled"),
+            Self::Class(_) => panic!("No dependencies on Class"),
+            Self::Function(_) => panic!("No dependencies on Function"),
+            Self::Variable(_) => panic!("No dependencies on Variable"),
+            Self::XmlFileSymbol(x) => x.dependents(),
+            Self::CsvFileSymbol(c) => c.dependents(),
+        }
+    }
+    
+    pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<HashSet<SymbolKey>>>> {
+        if step == BuildSteps::SYNTAX {
+            panic!("Can't get dependencies for syntax step")
+        }
+        match self {
+            Self::Root(_) => panic!("There is no dependencies on Root Symbol"),
+            Self::Namespace(n) => n.get_all_dependencies(step as usize),
+            Self::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
+            Self::Package(PackageSymbol::Module(m)) => m.get_all_dependencies(step as usize),
+            Self::Package(PackageSymbol::PythonPackage(p)) => p.get_all_dependencies(step as usize),
+            Self::File(f) => f.get_all_dependencies(step as usize),
+            Self::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
+            Self::Class(_) => panic!("There is no dependencies on Class Symbol"),
+            Self::Function(_) => panic!("There is no dependencies on Function Symbol"),
+            Self::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
+            Self::XmlFileSymbol(x) => x.get_all_dependencies(step as usize),
+            Self::CsvFileSymbol(c) => c.get_all_dependencies(step as usize),
+        }
+    }
 
     pub fn as_module_package(&self) -> &ModuleSymbol {
         match self {
