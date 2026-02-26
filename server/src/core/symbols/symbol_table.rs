@@ -1,10 +1,11 @@
 use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc};
 
+use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo};
 
 new_key_type! { pub struct RootKey; }
@@ -541,6 +542,9 @@ impl SymbolTable {
         false
     }
 
+
+    // ==== FunctionSymbol methods
+
     /// Return true if a previous implementation has the @overload decorator or has it itself
     /// @arena: formerly a method in FunctionSymbol
     pub fn is_func_overloaded(&self, key: FunctionKey) -> bool {
@@ -561,6 +565,36 @@ impl SymbolTable {
             return self.functions.get(*k).expect("valid key").is_overloaded;
         }
         false
+    }
+
+    // @arena: possible undeflow bug/panic: subttractions followed by cast to u32
+    /* Given a call of this function and an index, return the corresponding parameter definition */
+    pub fn get_indexed_arg_in_call(&self, key: FunctionKey, call: &ExprCall, index: u32, is_on_instance: Option<bool>) -> Option<&Argument> {
+        if self.is_func_overloaded(key) {
+            return None;
+        }
+        let func = self.functions.get(key).expect("valid key");
+        let mut call_arg_keyword = None;
+        if index > (call.arguments.args.len()-1) as u32 {
+            call_arg_keyword = call.arguments.keywords.get((index - call.arguments.args.len() as u32) as usize);
+        }
+        let arg_index = if is_on_instance.unwrap_or(false) {
+            index + 1
+        } else {
+            index
+        };
+
+        if let Some(keyword) = call_arg_keyword {
+            for arg in func.args.iter() {
+                let arg_sym = self.get_symbol(arg.symbol).expect("valid key");
+                if *arg_sym.name() == keyword.arg.as_ref().unwrap().id {
+                    return Some(arg);
+                }
+            }
+        } else {
+            return func.args.get(arg_index as usize);
+        }
+        None
     }
 }
 

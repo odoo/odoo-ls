@@ -22,7 +22,7 @@ pub enum ArgumentType {
 
 #[derive(Debug, Clone)]
 pub struct Argument {
-    pub symbol: Weak<RefCell<Symbol>>, //always a weak to a symbol of the function
+    pub symbol: SymbolKey, // @arena: formerly a weak to a symbol of the function
     //other informations about arg
     pub default_value: Option<Evaluation>,
     pub arg_type: ArgumentType,
@@ -151,32 +151,33 @@ impl FunctionSymbol {
         res
     }
 
+    // @areana: moved to SymbolTable
     /* Given a call of this function and an index, return the corresponding parameter definition */
-    pub fn get_indexed_arg_in_call(&self, call: &ExprCall, index: u32, is_on_instance: Option<bool>) -> Option<&Argument> {
-        if self.is_overloaded() {
-            return None;
-        }
-        let mut call_arg_keyword = None;
-        if index > (call.arguments.args.len()-1) as u32 {
-            call_arg_keyword = call.arguments.keywords.get((index - call.arguments.args.len() as u32) as usize);
-        }
-        let arg_index = if is_on_instance.unwrap_or(false) {
-            index + 1
-        } else {
-            index
-        };
+    // pub fn get_indexed_arg_in_call(&self, call: &ExprCall, index: u32, is_on_instance: Option<bool>) -> Option<&Argument> {
+    //     if self.is_overloaded() {
+    //         return None;
+    //     }
+    //     let mut call_arg_keyword = None;
+    //     if index > (call.arguments.args.len()-1) as u32 {
+    //         call_arg_keyword = call.arguments.keywords.get((index - call.arguments.args.len() as u32) as usize);
+    //     }
+    //     let arg_index = if is_on_instance.unwrap_or(false) {
+    //         index + 1
+    //     } else {
+    //         index
+    //     };
 
-        if let Some(keyword) = call_arg_keyword {
-            for arg in self.args.iter() {
-                if arg.symbol.upgrade().unwrap().borrow().name().to_string() == keyword.arg.as_ref().unwrap().id {
-                    return Some(arg);
-                }
-            }
-        } else {
-            return self.args.get(arg_index as usize);
-        }
-        None
-    }
+    //     if let Some(keyword) = call_arg_keyword {
+    //         for arg in self.args.iter() {
+    //             if arg.symbol.upgrade().unwrap().borrow().name().to_string() == keyword.arg.as_ref().unwrap().id {
+    //                 return Some(arg);
+    //             }
+    //         }
+    //     } else {
+    //         return self.args.get(arg_index as usize);
+    //     }
+    //     None
+    // }
 
     // @arena: moved to SymbolTable
     // pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
