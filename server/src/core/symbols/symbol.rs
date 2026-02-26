@@ -1153,6 +1153,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol view
     pub fn iter_symbols(&self) -> std::collections::hash_map::Iter<'_, OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>> {
         match self {
             Symbol::File(f) => {

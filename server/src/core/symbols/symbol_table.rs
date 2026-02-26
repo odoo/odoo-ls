@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, path::PathBuf, rc::Rc};
 
 use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
@@ -221,6 +221,11 @@ impl SymbolView<'_> {
             Self::XmlFileSymbol(_) => panic!(),
             Self::CsvFileSymbol(_) => panic!(),
         }
+    }
+
+    // @arena: original code did not rely on dyn dispatch (as_symbol_mgr)
+    pub fn iter_symbols(&self) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
+        self.as_symbol_mgr().get_symbols().iter()
     }
 
     pub fn body_range(&self) -> &TextRange {
