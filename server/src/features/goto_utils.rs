@@ -3,7 +3,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use lsp_types::{LocationLink, Range, request::GotoDeclarationResponse};
 use ruff_python_ast::{Expr, ExprCall};
 
-use crate::{S, constants::{PackageType, SymType}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::OdooData}, features::{ast_utils::AstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
+use crate::{S, constants::{PackageType, SymType}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord}}, features::{ast_utils::AstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
 
 pub enum GotoRequest {
     Definition,
@@ -14,7 +14,6 @@ pub enum GotoSourceType {
     Symbol(Rc<RefCell<Symbol>>),
     OdooData(OdooData),
     Module(Rc<RefCell<Symbol>>),
-    XmlData((Rc<RefCell<Symbol>>, Range)),
 }
 
 pub struct GotoSource {
@@ -294,14 +293,11 @@ impl GotoUtils {
                             origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), origin_range.as_ref().unwrap()))
                         }
                     },
-                    XmlAstResult::XML_DATA(data, range) => {
-                        let full_path = data.borrow().paths()[0].clone();
-                        let symbol_range = match data.borrow().typ() {
-                            SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                            _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
-                        };
+                    XmlAstResult::XML_DATA(record) => {
+                        let xml_file = record.file_symbol.upgrade().unwrap();
+                        let full_path = xml_file.borrow().paths()[0].clone();
                         GotoSource {
-                            source: GotoSourceType::XmlData((data, symbol_range)),
+                            source: GotoSourceType::OdooData(OdooData::RECORD(record)),
                             origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, origin_range.as_ref().unwrap()))
                         }
                     }
@@ -349,29 +345,21 @@ impl GotoUtils {
                 let file = xml_id.get_file_symbol();
                 if let Some(file) = file {
                     if let Some(file) = file.upgrade() {
-                        let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &file.borrow().paths()[0], &xml_id.get_range());
-                        res.push(LocationLink {
-                            origin_selection_range: def.origin_selection_range.clone(),
-                            target_uri: FileMgr::pathname2uri(&file.borrow().paths()[0]),
-                            target_range: range,
-                            target_selection_range: range });
-                    }
-                }
-            },
-            GotoSourceType::XmlData(xml_data) => {
-                if let Some(file_symbol) = xml_data.0.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
-                    let paths = file_symbol.borrow().paths();
-                    for path in paths.iter() {
-                        let full_path = match file_symbol.borrow().typ() {
-                            SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file_symbol.borrow().as_package().i_ext())).sanitize(),
+                        //in case of OdooData declared in python or at least "not xml" file
+                        let path = file.borrow().paths()[0].clone();
+                        let full_path = match file.borrow().typ() {
+                            SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
                             _ => path.clone()
                         };
-                        res.push(LocationLink{
+                        let symbol_range = match file.borrow().typ() {
+                            SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                            _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &xml_id.get_range()),
+                        };
+                        res.push(LocationLink {
                             origin_selection_range: def.origin_selection_range.clone(),
                             target_uri: FileMgr::pathname2uri(&full_path),
-                            target_selection_range: xml_data.1,
-                            target_range: xml_data.1,
-                        });
+                            target_range: symbol_range,
+                            target_selection_range: symbol_range });
                     }
                 }
             }
