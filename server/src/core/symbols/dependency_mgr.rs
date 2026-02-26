@@ -3,13 +3,16 @@ use std::collections::HashSet;
 use crate::core::symbols::{csv_file_symbol::CsvFileSymbol, file_symbol::FileSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, symbol_table::SymbolKey, xml_file_symbol::XmlFileSymbol};
 
 type DepSet = HashSet<SymbolKey>;
+// @arena: why an Option here?  An emtpy set should be enough no?
 type DepLevel = Vec<Option<DepSet>>;
 type DepTable = Vec<DepLevel>;
 
 pub trait Dependencies {
     fn dependencies(&self) -> &DepTable;
+    // @arena: probably not needed
     fn dependencies_mut(&mut self) -> &mut DepTable;
     fn dependents(&self) -> &DepTable;
+    // @arena: probably not needed
     fn dependents_mut(&mut self) -> &mut DepTable;
     fn is_in_workspace(&self) -> bool;
     fn set_in_workspace(&mut self, in_workspace: bool);
@@ -43,7 +46,7 @@ macro_rules! impl_dependencies {
             fn set_in_workspace(&mut self, in_workspace: bool) {
                 self.in_workspace = in_workspace;
                 if !in_workspace { return; }
-                self.dependencies= vec![
+                self.dependencies = vec![
                     vec![ //ARCH
                         None //ARCH
                     ],

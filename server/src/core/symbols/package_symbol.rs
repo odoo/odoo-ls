@@ -59,10 +59,10 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => &p.dependencies()
         }
     }
-    pub fn dependencies_as_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
+    pub fn dependencies_as_mut(&mut self) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
         match self {
-            PackageSymbol::Module(m) => m.dependencies_mut(),
-            PackageSymbol::PythonPackage(p) => p.dependencies_mut()
+            PackageSymbol::Module(m) => &mut m.dependencies,
+            PackageSymbol::PythonPackage(p) => &mut p.dependencies,
         }
     }
     pub fn dependents(&self) -> &Vec<Vec<Option<HashSet<SymbolKey>>>> {
@@ -71,10 +71,10 @@ impl PackageSymbol {
             PackageSymbol::PythonPackage(p) => &p.dependents()
         }
     }
-    pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
+    pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
         match self {
-            PackageSymbol::Module(m) => m.dependents_mut(),
-            PackageSymbol::PythonPackage(p) => p.dependents_mut()
+            PackageSymbol::Module(m) => &mut m.dependents,
+            PackageSymbol::PythonPackage(p) => &mut p.dependents,
         }
     }
     pub fn add_file(&mut self, file: SymbolKey, name: &str) {

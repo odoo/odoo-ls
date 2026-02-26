@@ -937,6 +937,7 @@ impl Symbol {
             Symbol::CsvFileSymbol(c) => &c.dependencies(),
         }
     }
+    // @arena: moved to symbol table
     pub fn dependencies_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
@@ -967,6 +968,7 @@ impl Symbol {
             Symbol::CsvFileSymbol(c) => c.dependents(),
         }
     }
+    // @arena: moved to symbol table
     pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
         match self {
             Symbol::Root(_) => panic!("No dependencies on Root"),
@@ -1695,6 +1697,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table
     /**Add a symbol as dependency on the step of the other symbol for the build level.
     * -> The build of the 'step' of self requires the build of 'dep_level' of the other symbol to be done */
     pub fn add_dependency(&mut self, symbol: &mut Symbol, step:BuildSteps, dep_level:BuildSteps) {

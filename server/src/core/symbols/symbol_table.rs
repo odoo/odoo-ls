@@ -840,6 +840,71 @@ impl SymbolTable {
         }
         None
     }
+
+
+    // ======== Dependencies management
+
+    // @arena: consider using get_unchecked_mut for verified keys (in private methods)
+    fn dependencies_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
+        match valid_key {
+            SymbolKey::File(k) => &mut self.files[k].dependencies,
+            SymbolKey::Namespace(k) => &mut self.namespaces[k].dependencies,
+            SymbolKey::XmlFile(k) => &mut self.xml_files[k].dependencies,
+            SymbolKey::CsvFile(k) => &mut self.csv_files[k].dependencies,
+            SymbolKey::Package(k) => self.packages[k].dependencies_as_mut(),
+            SymbolKey::Root(_) 
+            | SymbolKey::DiskDir(_) 
+            | SymbolKey::Compiled(_) 
+            | SymbolKey::Class(_) 
+            | SymbolKey::Function(_) 
+            | SymbolKey::Variable(_) => panic!("No dependencies on {:?}", valid_key),
+        }
+    }
+
+    fn dependents_as_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
+        match valid_key {
+            SymbolKey::Namespace(n) => &mut self.namespaces[n].dependents,
+            SymbolKey::File(f) => &mut self.files[f].dependents,
+            SymbolKey::XmlFile(x) => &mut self.xml_files[x].dependents,
+            SymbolKey::CsvFile(c) => &mut self.csv_files[c].dependents,
+            SymbolKey::Package(p) => self.packages[p].dependents_as_mut(),
+            SymbolKey::Root(_) 
+            | SymbolKey::DiskDir(_) 
+            | SymbolKey::Compiled(_) 
+            | SymbolKey::Class(_) 
+            | SymbolKey::Function(_) 
+            | SymbolKey::Variable(_) => panic!("No dependencies on {:?}", valid_key),
+        }
+    }
+
+    /**Add a symbol as dependency on the step of the other symbol for the build level.
+    * -> The build of the 'step' of 'target' requires the build of 'dep_level' of 'dependency' to be done */
+    // @arena: do we need protection against self-dependencies? 
+    pub fn add_dependency(&mut self, target: SymbolKey, dependency: SymbolKey, step:BuildSteps, dep_level:BuildSteps) {
+        if step == BuildSteps::SYNTAX || dep_level == BuildSteps::SYNTAX {
+            panic!("Can't add dependency for syntax step")
+        }
+        if dep_level > step {
+            panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
+        }
+        let target_sym = self.get_symbol_view(target).expect("valid key");
+        let dependency_sym = self.get_symbol_view(dependency).expect("valid key");
+        if !target_sym.in_workspace() || !dependency_sym.in_workspace() {
+            return;
+        }
+        let step_i = step as usize;
+        let level_i = dep_level as usize;
+
+        // register `depends_on` as a dependency of `target`
+        self.dependencies_mut(target)[step_i][level_i]
+            .get_or_insert_with(HashSet::new)
+            .insert(dependency);
+
+        // register `target` as a dependent of `depends_on`
+        self.dependents_as_mut(dependency)[level_i][step_i - level_i]
+            .get_or_insert_with(HashSet::new)
+            .insert(target);
+    }
 }
 
 // @arena: make this a method of SyncOdoo?
