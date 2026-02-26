@@ -214,6 +214,36 @@ impl SymbolView<'_> {
             _ => {panic!("Not a symbol Mgr");}
         }
     }
+
+    /*
+    Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
+     */
+    pub fn get_module_symbol(&self, name: &str) -> Option<SymbolKey> {
+        match self {
+            Self::Namespace(n) => {
+                for dir in n.directories.iter() {
+                    let result = dir.module_symbols.get(name);
+                    if result.is_some() {
+                        return result.copied();
+                    }
+                }
+                None
+            },
+            Self::Package(PackageSymbol::Module(m)) => {
+                m.module_symbols.get(name).copied()
+            },
+            Self::Package(PackageSymbol::PythonPackage(p)) => {
+                p.module_symbols.get(name).copied()
+            }
+            Self::Root(r) => {
+                r.module_symbols.get(name).copied()
+            },
+            Self::DiskDir(d) => {
+                d.module_symbols.get(name).copied()
+            }
+            _ => {None}
+        }
+    }
 }
 
 
@@ -568,6 +598,8 @@ impl SymbolTable {
         }
         None
     }
+
+    // ==== ClassSymbol methods
 
     /// @arena: no callers/ dead code??
     pub fn is_class_descriptor(&self, key: ClassKey) -> bool {

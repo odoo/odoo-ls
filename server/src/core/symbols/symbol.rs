@@ -1484,6 +1484,7 @@ impl Symbol {
         iter_sym
     }
 
+    // @arena: moved to symbol view
     /*
     Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
      */
