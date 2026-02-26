@@ -17,7 +17,7 @@ use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree};
+use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree};
 
 
 impl SymbolTable {
@@ -27,12 +27,12 @@ impl SymbolTable {
     }
     // @arena: parent is a verified existing key
     // Create a sub-symbol that is representing a file
-    pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+    pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> FileKey {
         let is_external = self.parent_is_external(parent);
         let file_symbol = FileSymbol::new(name, path, parent, is_external);
         let file_key = self.files.insert(file_symbol);
         self.register_in_parent(parent, file_key.into(), name, path);
-        file_key.into()
+        file_key
     }
 
     // @arena: parent is a verified existing key - Consider adding a validate_key method
@@ -83,8 +83,8 @@ impl SymbolTable {
             },
             _ => {
                 panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol(compiled_key).unwrap().typ(), 
-                    self.get_symbol(parent).unwrap().typ()
+                    self.get_symbol_view(compiled_key).unwrap().typ(), 
+                    self.get_symbol_view(parent).unwrap().typ()
                 );
             }
         }
@@ -107,7 +107,7 @@ impl SymbolTable {
     fn parent_is_external(&self, parent: SymbolKey) -> bool {
         match parent {
             SymbolKey::Root(_) => true,
-            _ => self.get_symbol(parent).expect("valid key").is_external(),
+            _ => self.get_symbol_view(parent).expect("valid key").is_external(),
         }
     }
 
@@ -127,8 +127,8 @@ impl SymbolTable {
             },
             _ => {
                 panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol(child).unwrap().typ(), 
-                    self.get_symbol(parent).unwrap().typ()
+                    self.get_symbol_view(child).unwrap().typ(), 
+                    self.get_symbol_view(parent).unwrap().typ()
                 );
             }
         }
@@ -136,14 +136,14 @@ impl SymbolTable {
 
     // @arena: consider taking &str for name
     pub fn add_new_variable(&mut self, parent: SymbolKey, name: OYarn, range: &TextRange) -> VariableKey {
-        let is_external = self.get_symbol(parent).expect("valid key").is_external();
+        let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
         let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
         let variable_key = self.variables.insert(variable_symbol);
         self.add_to_parent_symbols(parent, variable_key.into(), &name, range.start().to_u32());
         variable_key
     } 
     pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: &TextRange, body_start: &TextSize) -> FunctionKey {
-        let is_external = self.get_symbol(parent).expect("valid key").is_external();
+        let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
         let function_symbol = FunctionSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
         let function_key = self.functions.insert(function_symbol);
         self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
@@ -151,7 +151,7 @@ impl SymbolTable {
     }
 
     pub fn add_new_class(&mut self, parent: SymbolKey, name: &String, range: &TextRange, body_start: &TextSize) -> ClassKey {
-        let is_external = self.get_symbol(parent).expect("valid key").is_external();
+        let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
         let class_symbol = ClassSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
         let class_key = self.classes.insert(class_symbol);
         self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());
@@ -189,8 +189,8 @@ impl SymbolTable {
             }
             _ => { 
                 panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol(content).unwrap().typ(), 
-                    self.get_symbol(parent).unwrap().typ()
+                    self.get_symbol_view(content).unwrap().typ(), 
+                    self.get_symbol_view(parent).unwrap().typ()
                 );
             }
         }
@@ -243,7 +243,7 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
         let module = SymbolTable::add_new_module_package(session, parent, &name, path);
         let symbol_table = &mut session.sync_odoo.symbol_table;
         if let Some(module) = module {
-            let module_symbol = symbol_table.get_symbol(module).unwrap();
+            let module_symbol = symbol_table.get_symbol_view(module).unwrap();
             let dir_name = module_symbol.as_module_package().dir_name.clone();
             session.sync_odoo.modules.insert(dir_name, module);
             return Some(module);

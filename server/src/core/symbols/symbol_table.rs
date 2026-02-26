@@ -3,6 +3,7 @@ use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc};
 use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
+use tracing::trace;
 
 use crate::{constants::{OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
@@ -309,7 +310,7 @@ impl SymbolTable {
     //     SymbolKey::Function(key)
     // }
 
-    pub fn get_symbol(&self, key: SymbolKey) -> Option<SymbolView<'_>> {
+    pub fn get_symbol_view(&self, key: SymbolKey) -> Option<SymbolView<'_>> {
         match key {
             SymbolKey::Root(k) => self.roots.get(k).map(SymbolView::Root),
             SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(SymbolView::DiskDir),
@@ -341,7 +342,7 @@ impl SymbolTable {
     // - different behavior for root before and inside the loop
     // - loop stops if symbol has no parent, without including it.
     pub fn get_tree(&self, symbol_key: SymbolKey) -> Tree {
-        let symbol = self.get_symbol(symbol_key).expect("valid key");
+        let symbol = self.get_symbol_view(symbol_key).expect("valid key");
         let mut res = (vec![], vec![]);
         if symbol.is_file_content() {
             res.1.insert(0, symbol.name().clone());
@@ -352,7 +353,7 @@ impl SymbolTable {
             return res
         }
         let mut current_key = symbol.parent().unwrap();
-        let mut current_sym = self.get_symbol(current_key).expect("valid key");
+        let mut current_sym = self.get_symbol_view(current_key).expect("valid key");
         while current_sym.typ() != SymType::ROOT && current_sym.parent().is_some() {
             if current_sym.is_file_content() {
                 res.1.insert(0, current_sym.name().clone());
@@ -360,7 +361,7 @@ impl SymbolTable {
                 res.0.insert(0, current_sym.name().clone());
             }
             current_key = current_sym.parent().unwrap();
-            current_sym = self.get_symbol(current_key).expect("valid key");
+            current_sym = self.get_symbol_view(current_key).expect("valid key");
         }
         res
     }
@@ -369,7 +370,7 @@ impl SymbolTable {
     // formerly a method on Symbol, so valid target expected
     // original code unwrapped the upgrade() of weak without checking
     pub fn get_in_parents(&self, target: SymbolKey, sym_types: &[SymType], stop_same_file: bool) -> Option<SymbolKey> {
-        let target_symbol = self.get_symbol(target).expect("valid key");
+        let target_symbol = self.get_symbol_view(target).expect("valid key");
         let target_type = target_symbol.typ();
 
         if sym_types.contains(&target_type) {
@@ -391,7 +392,7 @@ impl SymbolTable {
 
     pub fn get_entry(&self, target: SymbolKey) -> Option<Rc<RefCell<EntryPoint>>> {
         self.get_root(target)
-            .and_then(|root_key| self.get_symbol(root_key))
+            .and_then(|root_key| self.get_symbol_view(root_key))
             .and_then(|root_symbol| root_symbol.as_root().entry_point.clone())
     }
 
@@ -427,7 +428,7 @@ impl SymbolTable {
         if symbol == to_test {
             return true;
         }
-        let symbol_view = self.get_symbol(symbol).expect("valid key");
+        let symbol_view = self.get_symbol_view(symbol).expect("valid key");
         let Some(parent) = symbol_view.parent() else {
             return false;
         };
@@ -439,7 +440,7 @@ impl SymbolTable {
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
     // Consider just calling get_in_parents
     pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
-        let symbol = self.get_symbol(key)?;
+        let symbol = self.get_symbol_view(key)?;
         if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
             return Some(key);
         }
@@ -465,7 +466,7 @@ impl SymbolTable {
     ///Return all the symbols that are valid as last declaration for the given position
     /// @arena: the one from SymbolMgr trait
     fn _get_content_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
-        let target_sym = self.get_symbol(target).expect("valid key");
+        let target_sym = self.get_symbol_view(target).expect("valid key");
         let target_sym_mgr = target_sym.as_symbol_mgr();
         let sections = target_sym_mgr.get_symbols().get(name);
         let mut content = if let Some(sections) = sections {
@@ -496,7 +497,7 @@ impl SymbolTable {
                 //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
                 if let Some(symbols) = map.get(index) {
                     for &sym_key in symbols.iter().rev() {
-                        let loc_sym = self.get_symbol(sym_key).expect("valid key");
+                        let loc_sym = self.get_symbol_view(sym_key).expect("valid key");
                         if loc_sym.range().start().to_u32() < position {
                             res.symbols.push(sym_key);
                             break;
@@ -539,7 +540,7 @@ impl SymbolTable {
 
     // @arena The one from SymbolMgr trait
     fn _get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
-        let target_sym = self.get_symbol(target).expect("valid key");
+        let target_sym = self.get_symbol_view(target).expect("valid key");
         let target_sym_mgr = target_sym.as_symbol_mgr();
         let mut result = HashMap::new();
         let current_section = target_sym_mgr.get_section_for(position);
@@ -578,7 +579,7 @@ impl SymbolTable {
     /// get a Symbol that has the same given range and name
     /// @arena: could use symbol_mgr trait
     pub fn get_positioned_symbol(&self, target: SymbolKey, name: &OYarn, range: &TextRange) -> Option<SymbolKey> {
-        let target_sym = self.get_symbol(target).expect("valid key");
+        let target_sym = self.get_symbol_view(target).expect("valid key");
         if let Some(symbols) = match target_sym {
             SymbolView::Class(c) => { c.symbols.get(name) },
             SymbolView::File(f) => {f.symbols.get(name)},
@@ -589,7 +590,7 @@ impl SymbolTable {
         } {
             for sym_list in symbols.values() {
                 for &key in sym_list.iter() {
-                    let sym = self.get_symbol(key).expect("valid key");
+                    let sym = self.get_symbol_view(key).expect("valid key");
                     if sym.range().start() == range.start() {
                         return Some(key);
                     }
@@ -598,6 +599,63 @@ impl SymbolTable {
         }
         None
     }
+
+    // @arena: there's probably a bug here (return in last loop)
+    pub fn get_symbol(&self, target: SymbolKey, tree: &Tree, position: u32) -> Vec<SymbolKey> {
+        let target_sym = self.get_symbol_view(target).expect("valid key");
+        let symbol_tree_files: &Vec<OYarn> = &tree.0;
+        let symbol_tree_content: &Vec<OYarn> = &tree.1;
+        let mut iter_sym: Vec<SymbolKey>;
+        if symbol_tree_files.len() != 0 {
+            let _mod_iter_sym = target_sym.get_module_symbol(&symbol_tree_files[0]);
+            if _mod_iter_sym.is_none() {
+                return vec![];
+            }
+            iter_sym = vec![_mod_iter_sym.unwrap()];
+            if symbol_tree_files.len() > 1 {
+                for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
+                    if let Some(s) = self.get_symbol_view(*iter_sym.last().unwrap()).expect("valid key").get_module_symbol(fk) {
+                        iter_sym = vec![s];
+                    } else {
+                        return vec![];
+                    }
+                }
+            }
+            if symbol_tree_content.len() != 0 {
+                for fk in symbol_tree_content.iter() {
+                    if iter_sym.len() > 1 {
+                        trace!("TODO: explore all implementation possibilities");
+                    }
+                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk, position);
+                    iter_sym = _iter_sym.symbols;
+                    if iter_sym.is_empty() {
+                        return vec![];
+                    }
+                }
+            }
+        } else {
+            if symbol_tree_content.len() == 0 {
+                return vec![];
+            }
+            iter_sym = self.get_sub_symbol(target, &symbol_tree_content[0], position).symbols;
+            if iter_sym.is_empty() {
+                return vec![];
+            }
+            if symbol_tree_content.len() > 1 {
+                if iter_sym.len() > 1 {
+                    trace!("TODO: explore all implementation possibilities");
+                }
+                for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
+                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk, position);
+                    iter_sym = _iter_sym.symbols;
+                    // @arena: this is a loop that run only once!
+                    return iter_sym;
+                }
+            }
+        }
+        iter_sym
+    }
+
 
     // ==== ClassSymbol methods
 
@@ -655,7 +713,7 @@ impl SymbolTable {
 
         if let Some(keyword) = call_arg_keyword {
             for arg in func.args.iter() {
-                let arg_sym = self.get_symbol(arg.symbol).expect("valid key");
+                let arg_sym = self.get_symbol_view(arg.symbol).expect("valid key");
                 if *arg_sym.name() == keyword.arg.as_ref().unwrap().id {
                     return Some(arg);
                 }

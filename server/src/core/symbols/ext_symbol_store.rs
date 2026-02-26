@@ -74,7 +74,7 @@ impl SymbolTable {
         range: &TextRange,
         owner: SymbolKey,
     ) -> SymbolKey {
-        let target_sym = self.get_symbol(target).expect("valid key");
+        let target_sym = self.get_symbol_view(target).expect("valid key");
         // validate target can host an external symbol
         if !matches!(target_sym.typ(),
             SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
@@ -111,7 +111,7 @@ impl SymbolTable {
             SymbolKey::Function(f) => self.functions[f].get_section_for(position).index,
             _ => panic!(
                 "Impossible to add a declaration of external symbol to a {}",
-                self.get_symbol(owner).unwrap().typ()
+                self.get_symbol_view(owner).unwrap().typ()
             ),
         }
     }
