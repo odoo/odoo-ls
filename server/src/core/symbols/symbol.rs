@@ -1357,6 +1357,7 @@ impl Symbol {
         None
     }
 
+    // @arena: moved to symbol_table
     pub fn get_tree(&self) -> Tree {
         let mut res = (vec![], vec![]);
         if self.is_file_content() {
@@ -1886,6 +1887,7 @@ impl Symbol {
         None
     }
 
+    // @arena: moved to symbolview
     pub fn is_file_content(&self) -> bool{
         match self {
             Symbol::Root(_) | Symbol::Namespace(_) | Symbol::DiskDir(_) | Symbol::Package(_) |
@@ -1894,6 +1896,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table
     ///return true if to_test is in parents of symbol or equal to it.
     pub fn is_symbol_in_parents(symbol: &Rc<RefCell<Symbol>>, to_test: &Rc<RefCell<Symbol>>) -> bool {
         if Rc::ptr_eq(symbol, to_test) {

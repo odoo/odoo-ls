@@ -391,6 +391,19 @@ impl SymbolTable {
         )
     }
 
+    ///return true if to_test is in parents of symbol or equal to it.
+    /// @arena: originally Rc's
+    pub fn is_symbol_in_parents(&self, symbol: SymbolKey, to_test: SymbolKey) -> bool {
+        if symbol == to_test {
+            return true;
+        }
+        let symbol_view = self.get_symbol(symbol).expect("valid key");
+        let Some(parent) = symbol_view.parent() else {
+            return false;
+        };
+        self.is_symbol_in_parents(parent, to_test)
+    }
+
     // Formerly called like self.find_module on a Symbol after borrowing the Rc/RefCell
     // Now called directly with the key
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
