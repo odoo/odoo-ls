@@ -1221,14 +1221,18 @@ fn load_config_from_workspace(
             let Some(parent_dir) = version_path.parent()  else {
                 continue;
             };
-            let Ok(parent_dir) = fill_or_canonicalize(
+            let parent_dir = match fill_or_canonicalize(
                 &{Sourced { value: parent_dir.sanitize(), sources: version_var.sources.clone(), ..Default::default() }},
                 unique_ws_folders,
                 Some(current_ws),
                 &|p| PathBuf::from(p).is_dir(),
                 HashMap::new(),
-            ) else {
-                continue;
+            ){
+                Ok(parent_dir) => parent_dir,
+                Err(err) => {
+                    error!("Failed to process $version path for variable {:?}: {}", version_var, err);
+                    continue;
+                }
             };
             let parent_dir = PathBuf::from(parent_dir.value());
             for entry in fs::read_dir(parent_dir).into_iter().flatten().flatten() {
