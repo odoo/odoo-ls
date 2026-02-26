@@ -1294,6 +1294,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table (free function)
     pub fn get_main_entry_tree(&self, session: &mut SessionInfo) -> Tree {
         let mut tree = self.get_tree();
         let len_first_part = tree.0.len();
@@ -1448,6 +1449,7 @@ impl Symbol {
         tree
     }
 
+    // @arena: moved to symbol view
     pub fn get_symbol(&self, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
         let symbol_tree_files: &Vec<OYarn> = &tree.0;
         let symbol_tree_content: &Vec<OYarn> = &tree.1;

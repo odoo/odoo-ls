@@ -51,11 +51,19 @@ RefCell to FileInfo, EntryPoint
 
 
 ## Current changes
+-> a typ() method on SymbolKey enum could be handy (even though we could pattern match on the key)
+        -> missing package inner type...
+
+
+insert_dependencies
 
 body_range?
 iter_symbols
 get_scope_symbol
 
+get_tree_and_entry (use get_tree)
+get_local_tree
+match_tree_from_any_entry
 
 ## Strategy
 Symbol methods
@@ -159,6 +167,3 @@ pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
 //--- dynamics variables
 pub ext_symbols: Hash
 ```
-
-## Build dependency management
-- SymbolDepKey type, that has from implementation only for keys of suitable types ???
