@@ -113,6 +113,7 @@ pub struct SyncOdoo {
     pub selected_config_profile: Option<String>,
     pub config_file: Option<ConfigFile>,
     pub config_path: Option<String>,
+    pub selected_config: Option<String>,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
     pub has_main_entry:bool,
     pub has_odoo_main_entry: bool,
@@ -164,6 +165,7 @@ impl SyncOdoo {
             selected_config_profile: None,
             config_file: None,
             config_path: None,
+            selected_config: None,
             entry_point_mgr: Rc::new(RefCell::new(EntryPointMgr::new())),
             has_main_entry: false,
             has_odoo_main_entry: false,
@@ -208,6 +210,7 @@ impl SyncOdoo {
         session.sync_odoo.version_micro = 0;
         session.sync_odoo.full_version = "0.0.0".to_string();
         session.sync_odoo.config = ConfigEntry::new();
+        session.sync_odoo.selected_config = None;
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
         session.sync_odoo.stubs_dirs = SyncOdoo::default_stubs();
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
@@ -1504,6 +1507,16 @@ impl Odoo {
             None => default_profile_name(),
             Some(c) if c == "" => default_profile_name(),
             Some(config) => config,
+        };
+        let selected_config = match session.sync_odoo.selected_config {
+            Some(ref current) => {
+                info!("Using selected configuration from cli arguments ({})", current);
+                current.clone()
+            },
+            None => {
+                info!("Using selected configuration from client : ({})", selected_config);
+                selected_config
+            }
         };
         session.sync_odoo.selected_config_profile = Some(selected_config.clone());
         if selected_config == "Disabled" {
