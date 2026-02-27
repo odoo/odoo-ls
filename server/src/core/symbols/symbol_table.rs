@@ -485,22 +485,12 @@ impl SymbolTable {
 
     // ========= former Symbol methods =========
 
-    // @arena get_symbol + unwrap is the equivalent of upgrade + unwrap on a weak ref
+    // @arena get_symbol + expect is the equivalent of upgrade + unwrap on a weak ref
     // @arena, to check possibly weird things:
-    // - different behavior for root before and inside the loop
     // - loop stops if symbol has no parent, without including it.
     fn get_tree_helper(&self, symbol_key: SymbolKey) -> (Tree, Option<RootKey>) {
-        let symbol = self.get_symbol_view(symbol_key).expect("valid key");
         let mut tree = (vec![], vec![]);
-        if symbol.is_file_content() {
-            tree.1.insert(0, symbol.name().clone());
-        } else {
-            tree.0.insert(0, symbol.name().clone());
-        }
-        if symbol.typ() == SymType::ROOT || symbol.parent().is_none() {
-            return (tree, None);
-        }
-        let mut current_key = symbol.parent().unwrap();
+        let mut current_key = symbol_key;
         let mut current_sym = self.get_symbol_view(current_key).expect("valid key");
         while current_sym.typ() != SymType::ROOT && current_sym.parent().is_some() {
             if current_sym.is_file_content() {
