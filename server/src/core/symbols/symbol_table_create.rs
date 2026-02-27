@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::constants::tree;
+use crate::constants::{SymType, tree};
 use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::csv_file_symbol::CsvFileSymbol;
@@ -198,6 +198,7 @@ impl SymbolTable {
     }
 
 
+    /// parent is a module package
     pub fn add_new_xml_file(&mut self, parent: PackageKey, name: &str, path: &str) -> XmlFileKey {
         let parent_symbol = self.packages.get(parent).expect("valid key");
         let mut xml_file_symbol = XmlFileSymbol::new(name, path, parent.into(), parent_symbol.is_external());
@@ -207,6 +208,7 @@ impl SymbolTable {
         xml_file_key
     }
 
+    /// parent is a module package
     pub fn add_new_csv_file(&mut self, parent: PackageKey, name: &str, path: &str) -> CsvFileKey {
         let parent_symbol = self.packages.get(parent).expect("valid key");
         let mut csv_file_symbol = CsvFileSymbol::new(name, path, parent.into(), parent_symbol.is_external());
@@ -216,12 +218,22 @@ impl SymbolTable {
         csv_file_key
     }
 
+    /// parent is a module package
     fn register_data_file(&mut self, parent: PackageKey, path: &str, data_file: SymbolKey) {
         let entry = self.get_entry(parent.into()).unwrap();
         entry.borrow_mut().data_symbols.insert(path.to_string(), data_file);
 
         let package = &mut self.packages[parent];
         package.as_module_package_mut().data_symbols.insert(path.to_string(), data_file);
+    }
+
+    // @arena: this is not done in the original code.
+    fn unregister_data_file(&mut self, parent: PackageKey, path: &str) {
+        let entry = self.get_entry(parent.into()).unwrap();
+        entry.borrow_mut().data_symbols.remove(path);
+
+        let package = &mut self.packages[parent];
+        package.as_module_package_mut().data_symbols.remove(path);
     }
 
     // @arena: removes a symbol from its parent (not yet from the symbol table)
@@ -256,18 +268,21 @@ impl SymbolTable {
                 SymbolKey::File(_) => { panic!("A file can not contain a file structure"); },
                 SymbolKey::Function(_) => { panic!("A function can not contain a file structure") },
                 SymbolKey::DiskDir(d) => { self.disk_dirs[d].module_symbols.remove(&child_name); },
-                SymbolKey::Package(p) => {
-                    match &mut self.packages[p] {
-                        PackageSymbol::Module(m) => {
-                            match child {
-                                SymbolKey::XmlFile(x) => m.data_symbols.remove(&self.xml_files[x].path),
-                                SymbolKey::CsvFile(c) => m.data_symbols.remove(&self.csv_files[c].path),
-                                _ => m.module_symbols.remove(&child_name),
-                                
-                            }
+                SymbolKey::Package(p) => match &mut self.packages[p] {
+                    PackageSymbol::Module(m) => match child {
+                        SymbolKey::XmlFile(x) => {
+                            self.unregister_data_file(p, &self.xml_files[x].path.clone());
                         },
-                        PackageSymbol::PythonPackage(p) => { p.module_symbols.remove(&child_name) },
-                    };
+                        SymbolKey::CsvFile(c) => {
+                            self.unregister_data_file(p, &self.csv_files[c].path.clone());
+                        },
+                        _ => {
+                            m.module_symbols.remove(&child_name);
+                        },
+                    },
+                    PackageSymbol::PythonPackage(p) => {
+                        p.module_symbols.remove(&child_name);
+                    },
                 },
                 SymbolKey::Compiled(c) => { self.compiled[c].module_symbols.remove(&child_name); },
                 SymbolKey::Namespace(n) => {

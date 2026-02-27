@@ -109,6 +109,13 @@ impl PackageSymbol {
             _ => panic!("Not a module package"),
         }
     }
+
+    pub fn as_python_package_mut(&mut self) -> &mut PythonPackageSymbol {
+        match self {
+            PackageSymbol::PythonPackage(p) => p,
+            _ => panic!("Not a python package"),
+        }
+    }
 }
 
 #[derive(Debug)]
