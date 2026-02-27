@@ -11,6 +11,7 @@ use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::constants::SymType;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
@@ -73,7 +74,7 @@ impl ModelData {
 pub struct Model {
     name: OYarn,
     symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    pub dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub dependents: HashSet<SymbolKey>,
 }
 
 impl Model {
@@ -81,7 +82,7 @@ impl Model {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
-            dependents: PtrWeakHashSet::new(),
+            dependents: HashSet::new(),
         };
         res.symbols.insert(symbol);
         res
@@ -283,8 +284,8 @@ impl Model {
         (symbols, inherits_symbols)
     }
 
-    pub fn add_dependent(&mut self, symbol: &Rc<RefCell<Symbol>>) {
-        self.dependents.insert(symbol.clone());
+    pub fn add_dependent(&mut self, symbol: SymbolKey) {
+        self.dependents.insert(symbol);
     }
 
     pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<Rc<RefCell<Symbol>>>) {

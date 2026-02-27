@@ -5,7 +5,7 @@ use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
+use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
     self, class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
@@ -937,6 +937,32 @@ impl SymbolTable {
         self.dependents_as_mut(dependency)[level_i][step_i - level_i]
             .get_or_insert_with(HashSet::new)
             .insert(target);
+    }
+
+    // @arena TODO: convert Rc<RefCell<Model>> too! Then make this sync_odoo method (uses symbol table and model table)
+    pub fn add_model_dependencies(&mut self, target: SymbolKey, model: &Rc<RefCell<Model>>) {
+        match target {
+            SymbolKey::Package(p) => {
+                match self.packages.get_mut(p).expect("valid key") {
+                    PackageSymbol::Module(m) => {
+                        m.model_dependencies.insert(model.clone());
+                    }
+                    PackageSymbol::PythonPackage(p) => {
+                        p.model_dependencies.insert(model.clone());
+                    }
+                }
+            },
+            SymbolKey::File(f) => {
+                let file = self.files.get_mut(f).expect("valid key");
+                file.model_dependencies.insert(model.clone());
+            },
+            SymbolKey::Function(f) => {
+                let func = self.functions.get_mut(f).expect("valid key");
+                func.model_dependencies.insert(model.clone());
+            }
+            _ => { return; }
+        }
+        model.borrow_mut().add_dependent(target);
     }
 
     /**
