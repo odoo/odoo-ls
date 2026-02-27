@@ -6,7 +6,7 @@ use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
@@ -816,7 +816,7 @@ impl SymbolTable {
         false
     }
 
-    // @arena: possible undeflow bug/panic: subttractions followed by cast to u32
+    // @arena: possible undeflow bug/panic: subtractions followed by cast to u32
     /* Given a call of this function and an index, return the corresponding parameter definition */
     pub fn get_indexed_arg_in_call(&self, key: FunctionKey, call: &ExprCall, index: u32, is_on_instance: Option<bool>) -> Option<&Argument> {
         if self.is_func_overloaded(key) {
@@ -911,16 +911,32 @@ impl SymbolTable {
             .insert(target);
     }
 
+    /**
+     * Only browse file content, do not use on namespace or packages to browse disk
+     * return a list of functions under Class symbol
+     */
     pub fn iter_inner_functions(&self, key: SymbolKey) -> Vec<FunctionKey> {
         let mut res = vec![];
 
         fn iter_recursive(table: &SymbolTable, key: SymbolKey, res: &mut Vec<FunctionKey>) {
-            // let Some(sym) = table.get_symbol_view(key) else { return };
-            let sym = table.get_symbol_view(key).expect("valid key");
-            let symbols = match sym {
-                SymbolView::File(f) => &f.symbols,
-                SymbolView::Function(f) => &f.symbols,
-                SymbolView::Class(c) => &c.symbols,
+            match table.get_symbol_view(key).expect("valid key") {
+                SymbolView::Class(c) => {
+                    for child_key in iter_symbol_keys(c) {
+                        if let SymbolKey::Function(fk) = child_key {
+                            res.push(*fk);
+                        }
+                    }
+                },
+                SymbolView::File(f) => {
+                    for child_key in iter_symbol_keys(f) {
+                        iter_recursive(table, *child_key, res);
+                    }
+                },
+                SymbolView::Function(f) => {
+                    for child_key in iter_symbol_keys(f) {
+                        iter_recursive(table, *child_key, res);
+                    }
+                },
                 SymbolView::DiskDir(_)
                 | SymbolView::Root(_)
                 | SymbolView::Namespace(_)
@@ -928,26 +944,51 @@ impl SymbolTable {
                 | SymbolView::Compiled(_)
                 | SymbolView::Variable(_)
                 | SymbolView::XmlFileSymbol(_)
-                | SymbolView::CsvFileSymbol(_) => {
-                    return;
-                }
-            };
-            for (_name, section) in symbols.iter() {
-                for (_position, symbol_list) in section.iter() {
-                    for child_key in symbol_list.iter() {
-                        if matches!(sym, SymbolView::Class(_)) {
-                            if let SymbolKey::Function(fk) = child_key {
-                                res.push(*fk);
-                            }
-                        } else { // File or Function
-                            iter_recursive(table, *child_key, res);
-                        }
-                    }
-                }
+                | SymbolView::CsvFileSymbol(_) => {},
             }
         }
 
         iter_recursive(self, key, &mut res);
+        res
+    }
+
+    pub fn iter_classes(&self, key: SymbolKey) -> Vec<ClassKey> {
+        let mut res = vec![];
+
+        fn iter_recursive(table: &SymbolTable, key: SymbolKey, res: &mut Vec<ClassKey>) {
+            match key {
+                SymbolKey::Class(c) => {
+                    res.push(c);
+                    let class_sym = table.classes.get(c).expect("valid key");
+                    for child_key in iter_symbol_keys(class_sym) {
+                        iter_recursive(table, *child_key, res);
+                    }
+                },
+                SymbolKey::File(f) => {
+                    let file_sym = table.files.get(f).expect("valid key");
+                    for child_key in iter_symbol_keys(file_sym) {
+                        iter_recursive(table, *child_key, res);
+                    }
+                },
+                SymbolKey::Function(f) => {
+                    let func_sym = table.functions.get(f).expect("valid key");
+                    for child_key in iter_symbol_keys(func_sym) {
+                        iter_recursive(table, *child_key, res);
+                    }
+                },
+                SymbolKey::DiskDir(_)
+                | SymbolKey::Root(_)
+                | SymbolKey::Namespace(_)
+                | SymbolKey::Package(_)
+                | SymbolKey::Compiled(_)
+                | SymbolKey::Variable(_)
+                | SymbolKey::XmlFile(_)
+                | SymbolKey::CsvFile(_) => {},
+            }
+        }
+
+        iter_recursive(self, key, &mut res);
+
         res
     }
 }

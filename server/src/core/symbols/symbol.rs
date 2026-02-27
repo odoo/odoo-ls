@@ -3069,6 +3069,7 @@ impl Symbol {
         res
     }
 
+    // @arena: moved to symbol table
     pub fn iter_classes(&self) -> Vec<Rc<RefCell<Symbol>>> {
         let mut res = vec![];
 
