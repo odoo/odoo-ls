@@ -485,35 +485,49 @@ impl SymbolTable {
 
     // ========= former Symbol methods =========
 
-
-
     // @arena get_symbol + unwrap is the equivalent of upgrade + unwrap on a weak ref
     // @arena, to check possibly weird things:
     // - different behavior for root before and inside the loop
     // - loop stops if symbol has no parent, without including it.
-    pub fn get_tree(&self, symbol_key: SymbolKey) -> Tree {
+    fn get_tree_helper(&self, symbol_key: SymbolKey) -> (Tree, Option<RootKey>) {
         let symbol = self.get_symbol_view(symbol_key).expect("valid key");
-        let mut res = (vec![], vec![]);
+        let mut tree = (vec![], vec![]);
         if symbol.is_file_content() {
-            res.1.insert(0, symbol.name().clone());
+            tree.1.insert(0, symbol.name().clone());
         } else {
-            res.0.insert(0, symbol.name().clone());
+            tree.0.insert(0, symbol.name().clone());
         }
         if symbol.typ() == SymType::ROOT || symbol.parent().is_none() {
-            return res
+            return (tree, None);
         }
         let mut current_key = symbol.parent().unwrap();
         let mut current_sym = self.get_symbol_view(current_key).expect("valid key");
         while current_sym.typ() != SymType::ROOT && current_sym.parent().is_some() {
             if current_sym.is_file_content() {
-                res.1.insert(0, current_sym.name().clone());
+                tree.1.insert(0, current_sym.name().clone());
             } else {
-                res.0.insert(0, current_sym.name().clone());
+                tree.0.insert(0, current_sym.name().clone());
             }
             current_key = current_sym.parent().unwrap();
             current_sym = self.get_symbol_view(current_key).expect("valid key");
         }
-        res
+        let root = match current_key {
+            SymbolKey::Root(root_key) => Some(root_key),
+            _ => None,
+        };
+        (tree, root)
+    }
+
+
+    pub fn get_tree(&self, symbol_key: SymbolKey) -> Tree {
+        self.get_tree_helper(symbol_key).0
+    }
+
+    pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, Option<Rc<RefCell<EntryPoint>>>) {
+        let (tree, root_key) = self.get_tree_helper(symbol_key);
+        let entry = root_key
+            .and_then(|rk| self.roots.get(rk).expect("valid key").entry_point.clone());
+        (tree, entry)
     }
 
     // @arena
