@@ -1,6 +1,6 @@
 use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
 
-use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::Dependencies, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo};
+use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::{Buildable, Dependencies}, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo};
 use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}};
 
 use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -114,6 +114,21 @@ impl PackageSymbol {
         match self {
             PackageSymbol::PythonPackage(p) => p,
             _ => panic!("Not a python package"),
+        }
+    }
+}
+
+impl Buildable for PackageSymbol {
+    fn build_status(&self, step: BuildSteps) -> BuildStatus {
+        match self {
+            PackageSymbol::Module(m) => m.build_status(step),
+            PackageSymbol::PythonPackage(p) => p.build_status(step),
+        }
+    }
+    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
+        match self {
+            PackageSymbol::Module(m) => m.set_build_status(step, status),
+            PackageSymbol::PythonPackage(p) => p.set_build_status(step, status),
         }
     }
 }

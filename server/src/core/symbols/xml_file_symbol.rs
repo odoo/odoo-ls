@@ -3,6 +3,7 @@ use roxmltree::Error;
 use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::dependency_mgr::Buildable;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model, xml_data::OdooData}, oyarn};
 use std::collections::HashSet;
@@ -74,6 +75,28 @@ impl XmlFileSymbol {
         section_vec.push(content.clone());
     }
 
+}
+
+impl Buildable for XmlFileSymbol {
+    fn build_status(&self, step: BuildSteps) -> BuildStatus {
+        match step {
+            BuildSteps::SYNTAX => panic!(),
+            BuildSteps::ARCH => self.arch_status,
+            BuildSteps::ARCH_EVAL => self.arch_status,
+            BuildSteps::VALIDATION => self.validation_status,
+        }
+    }
+    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
+        match step {
+            BuildSteps::SYNTAX => panic!(),
+            BuildSteps::ARCH => self.arch_status = status,
+            BuildSteps::ARCH_EVAL => {},
+            BuildSteps::VALIDATION => self.validation_status = status,
+        }
+    }
+}
+
+impl XmlFileSymbol {
     pub fn build_syntax_diagnostics(session: &SessionInfo, diagnostics: &mut Vec<Diagnostic>, file_info: &mut FileInfo, doc_error: &Error) {
         let offset = file_info.position_to_offset(doc_error.pos().row -1, doc_error.pos().col -1, session.sync_odoo.encoding);
         if let Some(diagnostic) = crate::core::diagnostics::create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()]) {

@@ -1,5 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
+use crate::core::symbols::dependency_mgr::Buildable;
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
 
@@ -71,4 +72,23 @@ impl CsvFileSymbol {
         section_vec.push(content.clone());
     }
 
+}
+
+impl Buildable for CsvFileSymbol {
+    fn build_status(&self, step: BuildSteps) -> BuildStatus {
+        match step {
+            BuildSteps::SYNTAX => panic!(),
+            BuildSteps::ARCH => self.arch_status,
+            BuildSteps::ARCH_EVAL => self.arch_status,
+            BuildSteps::VALIDATION => self.validation_status,
+        }
+    }
+    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
+        match step {
+            BuildSteps::SYNTAX => panic!(),
+            BuildSteps::ARCH => self.arch_status = status,
+            BuildSteps::ARCH_EVAL => panic!(),
+            BuildSteps::VALIDATION => self.validation_status = status,
+        }
+    }
 }

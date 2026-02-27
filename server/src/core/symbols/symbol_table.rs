@@ -6,7 +6,7 @@ use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
-    self, class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    self, class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
@@ -981,69 +981,37 @@ impl SymbolTable {
         model.borrow_mut().add_dependent(target);
     }
 
-    pub fn set_build_status(&mut self, target: SymbolKey, step:BuildSteps, status: BuildStatus) {
+    pub fn build_status(&self, target: SymbolKey, step: BuildSteps) -> BuildStatus {
         debug_assert!(self.contains_key(target)); // expect valid key (self in Symbol method)
         match target {
-            SymbolKey::Root(_) => {panic!()},
-            SymbolKey::Namespace(_) => {panic!()},
-            SymbolKey::DiskDir(_) => {panic!()},
-            SymbolKey::Package(k) => match &mut self.packages[k] {
-                PackageSymbol::Module(m) => {
-                    match step {
-                        BuildSteps::SYNTAX => panic!(),
-                        BuildSteps::ARCH => m.arch_status = status,
-                        BuildSteps::ARCH_EVAL => m.arch_eval_status = status,
-                        BuildSteps::VALIDATION => m.validation_status = status,
-                    }
-                },
-                PackageSymbol::PythonPackage(p) => {
-                    match step {
-                        BuildSteps::SYNTAX => panic!(),
-                        BuildSteps::ARCH => p.arch_status = status,
-                        BuildSteps::ARCH_EVAL => p.arch_eval_status = status,
-                        BuildSteps::VALIDATION => p.validation_status = status,
-                    }
-                },
-            },
-            SymbolKey::File(k) => {
-                let f = &mut self.files[k];
-                match step {
-                    BuildSteps::SYNTAX => panic!(),
-                    BuildSteps::ARCH => f.arch_status = status,
-                    BuildSteps::ARCH_EVAL => f.arch_eval_status = status,
-                    BuildSteps::VALIDATION => f.validation_status = status,
-                }
-            },
+            SymbolKey::Root(_) => panic!(),
+            SymbolKey::Namespace(_) => panic!(),
+            SymbolKey::DiskDir(_) => panic!(),
+            SymbolKey::Package(k) => self.packages[k].build_status(step),
+            SymbolKey::File(k) => self.files[k].build_status(step),
+            SymbolKey::Compiled(_) => todo!(),
+            SymbolKey::Class(_) => todo!(),
+            SymbolKey::Function(k) => self.functions[k].build_status(step),
+            SymbolKey::Variable(_) => todo!(),
+            SymbolKey::XmlFile(k) => self.xml_files[k].build_status(step),
+            SymbolKey::CsvFile(k) => self.csv_files[k].build_status(step),
+        }
+    }
+
+    pub fn set_build_status(&mut self, target: SymbolKey, step: BuildSteps, status: BuildStatus) {
+        debug_assert!(self.contains_key(target)); // expect valid key (self in Symbol method)
+        match target {
+            SymbolKey::Root(_) => panic!(),
+            SymbolKey::Namespace(_) => panic!(),
+            SymbolKey::DiskDir(_) => panic!(),
+            SymbolKey::Package(k) => self.packages[k].set_build_status(step, status),
+            SymbolKey::File(k) => self.files[k].set_build_status(step, status),
             SymbolKey::Compiled(_) => panic!(),
             SymbolKey::Class(_) => panic!(),
-            SymbolKey::Function(k) => {
-                let f = &mut self.functions[k];
-                match step {
-                    BuildSteps::SYNTAX => panic!(),
-                    BuildSteps::ARCH => f.arch_status = status,
-                    BuildSteps::ARCH_EVAL => f.arch_eval_status = status,
-                    BuildSteps::VALIDATION => f.validation_status = status,
-                }
-            },
+            SymbolKey::Function(k) => self.functions[k].set_build_status(step, status),
             SymbolKey::Variable(_) => todo!(),
-            SymbolKey::XmlFile(k) => {
-                let x = &mut self.xml_files[k];
-                match step {
-                    BuildSteps::SYNTAX => panic!(),
-                    BuildSteps::ARCH => x.arch_status = status,
-                    BuildSteps::ARCH_EVAL => {},
-                    BuildSteps::VALIDATION => x.validation_status = status,
-                }
-            },
-            SymbolKey::CsvFile(k) => {
-                let c = &mut self.csv_files[k];
-                match step {
-                    BuildSteps::SYNTAX => panic!(),
-                    BuildSteps::ARCH => c.arch_status = status,
-                    BuildSteps::ARCH_EVAL => panic!(),
-                    BuildSteps::VALIDATION => c.validation_status = status,
-                }
-            },
+            SymbolKey::XmlFile(k) => self.xml_files[k].set_build_status(step, status),
+            SymbolKey::CsvFile(k) => self.csv_files[k].set_build_status(step, status),
         }
     }
 
