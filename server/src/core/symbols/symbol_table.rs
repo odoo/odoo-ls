@@ -6,7 +6,7 @@ use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    self, class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
@@ -226,6 +226,34 @@ impl SymbolView<'_> {
     // @arena: original code did not rely on dyn dispatch (as_symbol_mgr)
     pub fn iter_symbols(&self) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
         self.as_symbol_mgr().get_symbols().iter()
+    }
+
+    // @arena: like the original, this is not lazy iteration (might as well just return the Vec)
+    pub fn all_symbols(&self) -> impl Iterator<Item = SymbolKey> {
+        //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
+        //be returned.
+        let mut iter: Vec<SymbolKey> = Vec::new();
+        match self {
+            Self::File(f) => iter.extend(iter_symbol_keys(*f)),
+            Self::Class(c) => iter.extend(iter_symbol_keys(*c)),
+            Self::Function(f) => iter.extend(iter_symbol_keys(*f)),
+            Self::Package(PackageSymbol::Module(m)) => {
+                iter.extend(iter_symbol_keys(m));
+                iter.extend(m.module_symbols.values());
+            },
+            Self::Package(PackageSymbol::PythonPackage(p)) => {
+                iter.extend(iter_symbol_keys(p));
+                iter.extend(p.module_symbols.values());
+            },
+            Self::Namespace(n) => {
+                let symbols = n.directories.iter().flat_map(|d| d.module_symbols.values());
+                iter.extend(symbols);
+            },
+            Self::Root(r) => iter.extend(r.module_symbols.values()),
+            Self::DiskDir(d) => iter.extend(d.module_symbols.values()),
+            _ => {}
+        }
+        iter.into_iter()
     }
 
     pub fn body_range(&self) -> &TextRange {
