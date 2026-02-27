@@ -939,6 +939,18 @@ impl SymbolTable {
             .insert(target);
     }
 
+    /* Helper to merge dependencies eval_from_ast will fill when called. To be called on a file/package... */
+    pub fn insert_dependencies(&mut self, target: SymbolKey, deps: &mut Vec<Vec<SymbolKey>>, current_step: BuildSteps) {
+        for (step, dependencies) in deps.iter().enumerate() {
+            let dep_level = BuildSteps::from(step as i32);
+            for &dependency in dependencies.iter() {
+                if target != dependency {
+                    self.add_dependency(target, dependency, current_step, dep_level);
+                }
+            }
+        }
+    }
+
     // @arena TODO: convert Rc<RefCell<Model>> too! Then make this sync_odoo method (uses symbol table and model table)
     pub fn add_model_dependencies(&mut self, target: SymbolKey, model: &Rc<RefCell<Model>>) {
         match target {
