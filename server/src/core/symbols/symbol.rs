@@ -3014,6 +3014,7 @@ impl Symbol {
         Weak::ptr_eq(&self.weak_self().unwrap_or_default(), &Rc::downgrade(other))
     }
 
+    // @arena: moved to symbol table
     /**
      * Only browse file content, do not use on namespace or packages to browse disk
      * return a list of functions under Class symbol

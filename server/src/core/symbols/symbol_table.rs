@@ -884,7 +884,7 @@ impl SymbolTable {
 
     /**Add a symbol as dependency on the step of the other symbol for the build level.
     * -> The build of the 'step' of 'target' requires the build of 'dep_level' of 'dependency' to be done */
-    // @arena: do we need protection against self-dependencies? 
+    // @arena: do we need protection against self-dependencies?
     pub fn add_dependency(&mut self, target: SymbolKey, dependency: SymbolKey, step:BuildSteps, dep_level:BuildSteps) {
         if step == BuildSteps::SYNTAX || dep_level == BuildSteps::SYNTAX {
             panic!("Can't add dependency for syntax step")
@@ -909,6 +909,46 @@ impl SymbolTable {
         self.dependents_as_mut(dependency)[level_i][step_i - level_i]
             .get_or_insert_with(HashSet::new)
             .insert(target);
+    }
+
+    pub fn iter_inner_functions(&self, key: SymbolKey) -> Vec<FunctionKey> {
+        let mut res = vec![];
+
+        fn iter_recursive(table: &SymbolTable, key: SymbolKey, res: &mut Vec<FunctionKey>) {
+            // let Some(sym) = table.get_symbol_view(key) else { return };
+            let sym = table.get_symbol_view(key).expect("valid key");
+            let symbols = match sym {
+                SymbolView::File(f) => &f.symbols,
+                SymbolView::Function(f) => &f.symbols,
+                SymbolView::Class(c) => &c.symbols,
+                SymbolView::DiskDir(_)
+                | SymbolView::Root(_)
+                | SymbolView::Namespace(_)
+                | SymbolView::Package(_)
+                | SymbolView::Compiled(_)
+                | SymbolView::Variable(_)
+                | SymbolView::XmlFileSymbol(_)
+                | SymbolView::CsvFileSymbol(_) => {
+                    return;
+                }
+            };
+            for (_name, section) in symbols.iter() {
+                for (_position, symbol_list) in section.iter() {
+                    for child_key in symbol_list.iter() {
+                        if matches!(sym, SymbolView::Class(_)) {
+                            if let SymbolKey::Function(fk) = child_key {
+                                res.push(*fk);
+                            }
+                        } else { // File or Function
+                            iter_recursive(table, *child_key, res);
+                        }
+                    }
+                }
+            }
+        }
+
+        iter_recursive(self, key, &mut res);
+        res
     }
 }
 
