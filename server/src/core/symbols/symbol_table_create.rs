@@ -8,6 +8,7 @@ use crate::constants::tree;
 use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::csv_file_symbol::CsvFileSymbol;
+use crate::core::symbols::dependency_mgr::Dependencies;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -223,6 +224,89 @@ impl SymbolTable {
         package.as_module_package_mut().data_symbols.insert(path.to_string(), data_file);
     }
 
+    // @arena: removes a symbol from its parent (not yet from the symbol table)
+    // original code in unload + remove symbol: unwraps Option(parent) and the weak.upgrade.
+    pub fn remove_symbol(&mut self, child: SymbolKey) {
+        let child_symbol = self.get_symbol_view(child).expect("valid key");
+        let child_name = child_symbol.name().clone();
+        let parent = child_symbol.parent().expect("symbol should have a parent");
+        debug_assert!(self.contains_key(parent)); // @arena: original code unwraps the upgrade of parent
+        if child_symbol.is_file_content() {
+            match parent {
+                SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
+                SymbolKey::File(f) => { self.files[f].symbols.remove(&child_name); },
+                SymbolKey::Function(f) => { self.functions[f].symbols.remove(&child_name); },
+                SymbolKey::Package(p) => {
+                    match &mut self.packages[p] {
+                        PackageSymbol::Module(m) => { m.symbols.remove(&child_name); },
+                        PackageSymbol::PythonPackage(p) => { p.symbols.remove(&child_name); },
+                    }
+                },
+                SymbolKey::DiskDir(_) => { panic!("A disk directory can not contain python code") },
+                SymbolKey::Compiled(_) => { panic!("A compiled symbol can not contain python code") },
+                SymbolKey::Namespace(_) => { panic!("A namespace can not contain python code") },
+                SymbolKey::Root(_) => { panic!("Root can not contain python code") },
+                SymbolKey::Variable(_) => { panic!("A variable can not contain python code") }
+                SymbolKey::XmlFile(_) => { panic!("An XML file symbol can not contain python code") }
+                SymbolKey::CsvFile(_) => { panic!("A CSV file symbol can not contain python code") }
+            };
+        } else {
+            match parent {
+                SymbolKey::Class(_) => { panic!("A class can not contain a file structure") },
+                SymbolKey::File(_) => { panic!("A file can not contain a file structure"); },
+                SymbolKey::Function(_) => { panic!("A function can not contain a file structure") },
+                SymbolKey::DiskDir(d) => { self.disk_dirs[d].module_symbols.remove(&child_name); },
+                SymbolKey::Package(p) => {
+                    match &mut self.packages[p] {
+                        PackageSymbol::Module(m) => {
+                            match child {
+                                SymbolKey::XmlFile(x) => m.data_symbols.remove(&self.xml_files[x].path),
+                                SymbolKey::CsvFile(c) => m.data_symbols.remove(&self.csv_files[c].path),
+                                _ => m.module_symbols.remove(&child_name),
+                                
+                            }
+                        },
+                        PackageSymbol::PythonPackage(p) => { p.module_symbols.remove(&child_name) },
+                    };
+                },
+                SymbolKey::Compiled(c) => { self.compiled[c].module_symbols.remove(&child_name); },
+                SymbolKey::Namespace(n) => {
+                    for directory in self.namespaces[n].directories.iter_mut() {
+                        directory.module_symbols.remove(&child_name);
+                    }
+                },
+                SymbolKey::Root(r) => { self.roots[r].module_symbols.remove(&child_name); },
+                SymbolKey::Variable(_) => { panic!("A variable can not contain a file structure"); }
+                SymbolKey::XmlFile(_) => { panic!("An XML file symbol can not contain a file structure") }
+                SymbolKey::CsvFile(_) => { panic!("A CSV file symbol can not contain a file structure") }
+            };
+        }
+        self.set_parent(child, None);
+    }
+
+    // @arena: probably not needed.
+    fn set_parent(&mut self, symbol_key: SymbolKey, new_parent: Option<SymbolKey>) {
+        match symbol_key {
+            SymbolKey::Class(c) => { self.classes[c].parent = new_parent; },
+            SymbolKey::File(f) => { self.files[f].parent = new_parent; },
+            SymbolKey::Function(f) => { self.functions[f].parent = new_parent; },
+            SymbolKey::Package(p) => {
+                match &mut self.packages[p] {
+                    PackageSymbol::Module(m) => { m.parent = new_parent; },
+                    PackageSymbol::PythonPackage(p) => { p.parent = new_parent; },
+                }
+            },
+            SymbolKey::DiskDir(d) => { self.disk_dirs[d].parent = new_parent; },
+            SymbolKey::Compiled(c) => { self.compiled[c].parent = new_parent; },
+            SymbolKey::Namespace(n) => { self.namespaces[n].parent = new_parent; },
+            SymbolKey::Root(r) => { self.roots[r].parent = new_parent; },
+            SymbolKey::Variable(v) => { self.variables[v].parent = new_parent; }
+            SymbolKey::XmlFile(x) => { self.xml_files[x].parent = new_parent; }
+            SymbolKey::CsvFile(c) => { self.csv_files[c].parent = new_parent; }
+        };
+    }
+        
+
 }
 
 // @arena: associated function in SymbolTable?
@@ -236,7 +320,7 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
     };
     let path_str = path.sanitize();
     if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
-        return Some(symbol_table.add_new_file(parent, &name, &path_str));
+        return Some(symbol_table.add_new_file(parent, &name, &path_str).into());
     }
     let main_entry_tree = get_main_entry_tree(session, parent);
     if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {

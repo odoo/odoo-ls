@@ -44,6 +44,7 @@ RefCell to FileInfo, EntryPoint
     - the alterative would be store somewhere else, and pass it around as sibling field to SyncOdoo inside SessionInfo. This might make some borrow issues easier to resolve (when needing to mutate sync odoo while borrowing from the symbol table)
 - moved ext_symbol/decl_ext_symbol storage from symbol types to symbol table
     - each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol)
+- moved dependency-related methods from variants to a new Depencency trait, to remove code duplication (6 variants)
 
 - to decide: evaluations on secondary map?
 - to decide: store entry point in a slotmap, sibling to symbol table under sync_odoo?
