@@ -2672,6 +2672,7 @@ impl Symbol {
         symbols.into_iter()
     }
 
+    // @arena-next
     /* Hook for get_member_symbol
     Position is set to [0,0], because inside the method there is no concept of the current position.
     The setting of the position is then delegated to the calling function.

@@ -2,13 +2,13 @@ use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::{Expr, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use tracing::{error, info};
-use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
+use weak_table::PtrWeakHashSet;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::{SymbolKey, SymbolTable};
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
@@ -453,8 +453,11 @@ impl ModuleSymbol {
         vec![]
     }
 
-    pub fn is_in_deps(_session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, dir_name: &OYarn) -> bool {
-        symbol.borrow().as_module_package().dir_name == *dir_name || symbol.borrow().as_module_package().all_depends.contains(dir_name)
+    // @arena done
+    pub fn is_in_deps(symbol_table: &SymbolTable, module_key: SymbolKey, dir_name: &OYarn) -> bool {
+        let symbol = symbol_table.get_symbol_view(module_key).expect("valid key");
+        let module = symbol.as_module_package();
+        module.dir_name == *dir_name || module.all_depends.contains(dir_name)
     }
 
     pub fn get_all_depends(&self) -> &HashSet<OYarn> {

@@ -12,6 +12,7 @@ use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::constants::SymType;
 use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::SymbolTable;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
@@ -73,7 +74,7 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: OYarn,
-    symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    symbols: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
     pub dependents: HashSet<SymbolKey>,
 }
 
@@ -102,11 +103,14 @@ impl Model {
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
+    // @arena: done
+    pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
         let mut symbol = Vec::new();
-        for s in self.symbols.iter() {
-            let module = s.borrow().find_module().expect("Unreachable: Model should be declared in a module");
-            if from_module.is_none() || ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) {
+        // @arena obs: possible stale keys
+        for &s in self.symbols.iter().filter(|&&k| symbol_table.contains_key(k)) {
+            let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
+            let module_sym = symbol_table.get_symbol_view(module).expect("valid key from find_module");
+            if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.as_module_package().dir_name) {
                 symbol.push(s);
             }
         }
@@ -142,6 +146,7 @@ impl Model {
         false
     }
 
+    // @arena-next 
     pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
         let mut symbol_set  = PtrWeakHashSet::new();
         let mut already_in = HashSet::new();
@@ -166,6 +171,7 @@ impl Model {
         symbol_set
     }
 
+    // @arena-next 
     pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
         let mut res = vec![];
         let mut already_in = HashSet::new();

@@ -55,16 +55,13 @@ RefCell to FileInfo, EntryPoint
 -> a typ() method on SymbolKey enum could be handy (even though we could pattern match on the key)
         -> missing package inner type...
 
+-idea: WeakKeysSet type: replicate PtrWeakSet. Offer an iter method that filters out stale keys
+    - problem: stale keys accumulate
+        - solution would be to mutate it and remove. But needs &mut access.
+            - good use of RefCell in this case?
 
-insert_dependencies
+-idea: macro to replace symbol.borrow() by `symbol_table.get_symbol_view(symbol).expect("valid key (formerly an Rc)")`
 
-body_range?
-iter_symbols
-get_scope_symbol
-
-get_tree_and_entry (use get_tree)
-get_local_tree
-match_tree_from_any_entry
 
 ## Strategy
 Symbol methods
