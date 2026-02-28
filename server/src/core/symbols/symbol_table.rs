@@ -1069,6 +1069,17 @@ impl SymbolTable {
         }
     }
 
+    pub fn invalidate_sub_functions(&mut self, target: SymbolKey) {
+        if matches!(target, SymbolKey::File(_) | SymbolKey::Package(_)) {
+            for func_key in self.iter_inner_functions(target) {
+                let func = self.functions.get_mut(func_key).expect("valid key"); // Rc's in the original code
+                func.evaluations.clear();
+                func.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                func.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
+            }
+        }
+    }    
+
     /**
      * Only browse file content, do not use on namespace or packages to browse disk
      * return a list of functions under Class symbol
