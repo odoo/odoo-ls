@@ -6,7 +6,7 @@ use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
-    self, class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::PathSanitizer};
 
 new_key_type! { pub struct RootKey; }
@@ -76,6 +76,14 @@ pub enum SymbolView<'a> {
     Variable(&'a VariableSymbol),
     XmlFileSymbol(&'a XmlFileSymbol),
     CsvFileSymbol(&'a CsvFileSymbol),
+}
+
+/// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
+/// Assumes `symbol_table` is in scope
+macro_rules! get_sym {                                                                     
+    ($key:expr) => {                                                                  
+        symbol_table.get_symbol_view($key).expect("valid key (formerly Rc)")          
+    };          
 }
 
 impl SymbolView<'_> {
