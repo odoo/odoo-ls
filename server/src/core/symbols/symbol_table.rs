@@ -824,6 +824,46 @@ impl SymbolTable {
         iter_sym
     }
 
+    /* return the Symbol (class, function or file) the closest to the given offset */
+    pub fn get_scope_symbol(&self, file: SymbolKey, offset: u32, is_param: bool) -> SymbolKey {
+        let mut result = file;
+        let file_sym = self.get_symbol_view(file).expect("valid key"); // formely Rc (strong)
+        let file_sym_mgr = file_sym.as_symbol_mgr();
+        let section_id = file_sym_mgr.get_section_for(offset);
+        for (_, sym_map) in file_sym_mgr.get_symbols() {
+            match sym_map.get(&section_id.index) {
+                Some(symbols) => {
+                    for &key in symbols {
+                        let symbol = self.get_symbol_view(key).expect("valid key");
+                        match symbol {
+                            SymbolView::Class(c) => {
+                                let range = match is_param {
+                                    true => c.range.start().to_u32(),
+                                    false => c.body_range.start().to_u32(),
+                                };
+                                if range <= offset && c.body_range.end().to_u32() > offset {
+                                    result = self.get_scope_symbol(key, offset, is_param);
+                                }
+                            },
+                            SymbolView::Function(f) => {
+                                let range = match is_param {
+                                    true => f.range.start().to_u32(),
+                                    false => f.body_range.start().to_u32(),
+                                };
+                                if range <= offset && f.body_range.end().to_u32() > offset {
+                                    result = self.get_scope_symbol(key, offset, is_param);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                },
+                None => {}
+            }
+        }
+        result
+    }
+
 
     // ==== ClassSymbol methods
 
