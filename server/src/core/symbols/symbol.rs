@@ -1406,6 +1406,7 @@ impl Symbol {
 
     
 
+    // @arena: moved to symbol table
     pub fn get_tree_and_entry(&self) -> (Tree, Option<Rc<RefCell<EntryPoint>>>) {
         let mut res = ((vec![], vec![]), None);
         if self.is_file_content() {
@@ -1436,6 +1437,7 @@ impl Symbol {
         res
     }
 
+    // @arena: moved to symbol table
     /**
      * Return the tree without the entrypoint tree.
      * As long as the tree starts with the entrypoint tree,
@@ -2850,6 +2852,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table (free function)
     pub fn match_tree_from_any_entry(&self, session: &mut SessionInfo, tree: &Tree) -> bool {
         let (mut self_tree, entry) = self.get_tree_and_entry();
         'outer: for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(&entry.unwrap()) {

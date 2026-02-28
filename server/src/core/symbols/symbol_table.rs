@@ -520,6 +520,20 @@ impl SymbolTable {
         (tree, entry)
     }
 
+    /**
+     * Return the tree without the entrypoint tree.
+     * As long as the tree starts with the entrypoint tree,
+     * otherwise return the full tree, even if it is related to an entrypoint.
+     * Which is possible due to relative imports e.g. `from ..module import X`.
+     */
+    pub fn get_local_tree(&self, symbol_key: SymbolKey) -> Tree {
+        let (mut tree, entry) = self.get_tree_and_entry(symbol_key);
+        if let Some(entry) = entry && tree.0.starts_with(&entry.borrow().tree) {
+            tree.0.drain(0..entry.borrow().tree.len());
+        }
+        tree
+    }
+
     // @arena
     // formerly a method on Symbol, so valid target expected
     // original code unwrapped the upgrade() of weak without checking
@@ -1113,4 +1127,22 @@ pub fn get_main_entry_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree
         }
     }
     tree
+}
+
+// @arena: make this a method of SyncOdoo?
+pub fn match_tree_from_any_entry(session: &SessionInfo, symbol_key: SymbolKey, tree: &Tree) -> bool {
+    let symbol_table = &session.sync_odoo.symbol_table;
+    let (mut self_tree, entry) = symbol_table.get_tree_and_entry(symbol_key);
+    'outer: for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(&entry.unwrap()) {
+        if entry.borrow().tree.len() > self_tree.0.len() {
+            continue;
+        }
+        for (index, tree_el) in entry.borrow().tree.iter().enumerate() {
+            if &self_tree.0[index] != tree_el {
+                continue 'outer;
+            }
+        }
+        return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
+    }
+    false
 }
