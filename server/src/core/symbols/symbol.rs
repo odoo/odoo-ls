@@ -2772,7 +2772,7 @@ impl Symbol {
         false
     }
 
-    // @arena-next, depends on is_inheriting_from_field
+    // @arena: moved to symbol_table (free function)
     pub fn is_field_class(&self, session: &mut SessionInfo) -> bool {
         // if not class return false
         if !matches!(self.typ(), SymType::CLASS) {

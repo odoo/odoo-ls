@@ -26,7 +26,7 @@ pub struct ClassSymbol {
     pub body_range: TextRange,
     pub _model: Option<ModelData>,
     pub noqas: NoqaInfo,
-    pub(crate) _is_field_class: Rc<RefCell<Option<bool>>>, //cache, do not call directly, use is_field_class() method instead
+    pub(crate) _is_field_class: RefCell<Option<bool>>, //cache, do not call directly, use is_field_class() method instead
 
     //Trait SymbolMgr
     //--- Body symbols

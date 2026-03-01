@@ -6,7 +6,7 @@ use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
 new_key_type! { pub struct RootKey; }
@@ -1251,6 +1251,65 @@ pub fn is_inheriting_from_field(session: &SessionInfo, symbol_key: SymbolKey) ->
         if is_inheriting_from_field(session, base_key) {
             return true;
         }
+    }
+    false
+}
+
+/// @arena: this shoud probably be an associated function of ClassSymbol
+pub fn is_field_class(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
+    // if not class return false
+    let SymbolKey::Class(class_key) = symbol_key else {
+        return false;
+    };
+    let symbol_table = &session.sync_odoo.symbol_table;
+    let class_symbol = symbol_table.classes.get(class_key).expect("valid key");
+    let cache = &class_symbol._is_field_class;
+    if let Some(is_field_class) = *cache.borrow() {
+        return is_field_class;
+    } 
+    let result = is_field_class_uncached(session, symbol_key);
+    cache.borrow_mut().replace(result);
+    result
+}
+
+fn is_field_class_uncached(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
+    let tree = &get_main_entry_tree(session, symbol_key);
+    if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
+        if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
+                tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
+                tree.0[2] == "fields_numeric" && tree.1[0] == "Integer" ||
+                tree.0[2] == "fields_numeric" && tree.1[0] == "Float" ||
+                tree.0[2] == "fields_numeric" && tree.1[0] == "Monetary" ||
+                tree.0[2] == "fields_textual" && tree.1[0] == "Char" ||
+                tree.0[2] == "fields_textual" && tree.1[0] == "Text" ||
+                tree.0[2] == "fields_textual" && tree.1[0] == "Html" ||
+                tree.0[2] == "fields_temporal" && tree.1[0] == "Date" ||
+                tree.0[2] == "fields_temporal" && tree.1[0] == "Datetime" ||
+                tree.0[2] == "fields_binary" && tree.1[0] == "Binary" ||
+                tree.0[2] == "fields_binary" && tree.1[0] == "Image" ||
+                tree.0[2] == "fields_selection" && tree.1[0] == "Selection" ||
+                tree.0[2] == "fields_reference" && tree.1[0] == "Reference" ||
+                tree.0[2] == "fields_relational" && tree.1[0] == "Many2one" ||
+                tree.0[2] == "fields_reference" && tree.1[0] == "Many2oneReference" ||
+                tree.0[2] == "fields_misc" && tree.1[0] == "Json" ||
+                tree.0[2] == "fields_properties" && tree.1[0] == "Properties" ||
+                tree.0[2] == "fields_properties" && tree.1[0] == "PropertiesDefinition" ||
+                tree.0[2] == "fields_relational" && tree.1[0] == "One2many" ||
+                tree.0[2] == "fields_relational" && tree.1[0] == "Many2many" ||
+                tree.0[2] == "fields_misc" && tree.1[0] == "Id"
+        ){
+            return true;
+        }
+    } else {
+        if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields" {
+            if matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+        "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+                return true;
+            }
+        }
+    }
+    if is_inheriting_from_field(session, symbol_key) {
+        return true;
     }
     false
 }
