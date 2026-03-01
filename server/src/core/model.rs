@@ -2,9 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::rc::Weak;
 use lsp_types::MessageType;
-use weak_table::PtrWeakHashSet;
 use std::collections::HashSet;
 
 use crate::constants::BuildStatus;
@@ -16,7 +14,6 @@ use crate::core::symbols::symbol_table::get_sym;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
-use super::symbols::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct ModelData {
@@ -215,6 +212,7 @@ impl Model {
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
         if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
+    /// @arena: done
     pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool) -> Vec<(SymbolKey, Option<OYarn>)> {
         self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
     }
@@ -242,7 +240,8 @@ impl Model {
             if !with_inheritance {
                 continue;
             }
-            let inherited_models = &get_sym!(st, s).as_class_sym()._model.as_ref().unwrap().inherit;
+            let sym = get_sym!(st, s);
+            let inherited_models = &sym.as_class_sym()._model.as_ref().unwrap().inherit;
             for inherited_model in inherited_models.iter() {
                 if !seen_inherited_models.contains(inherited_model) {
                     seen_inherited_models.insert(inherited_model.clone());
@@ -255,47 +254,52 @@ impl Model {
         symbols
     }
 
-    pub fn all_symbols_inherits(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> (Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>) {
+    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> (Vec<(SymbolKey, Option<OYarn>)>, Vec<(SymbolKey, Option<OYarn>)>) {
         let mut visited_models = HashSet::new();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
-    fn all_inherits_helper(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, visited_models: &mut HashSet<String>) -> (Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>) {
-        if visited_models.contains(&self.name.to_string()) {
+    /// @arena: code repetition with all_symbols_helper 
+    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(SymbolKey, Option<OYarn>)>, Vec<(SymbolKey, Option<OYarn>)>) {
+        if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
         }
-        visited_models.insert(self.name.to_string());
+        visited_models.insert(self.name.clone());
+        let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         let mut inherits_symbols = Vec::new();
-        for s in self.symbols.iter() {
-            if let Some(from_module) = from_module.as_ref() {
-                let module = s.borrow().find_module();
+        for &s in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
+            if let Some(from_module) = from_module {
+                let module = st.find_module(s);
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                        symbols.push((s.clone(), None));
+                    let module_sym = get_sym!(st, module);
+                    let dir_name = &module_sym.as_module_package().dir_name;
+                    if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
+                        symbols.push((s, None));
                     } else {
-                        symbols.push((s.clone(), Some(module.borrow().as_module_package().dir_name.clone())));
+                        symbols.push((s, Some(dir_name.clone())));
                     }
                 } else {
                     session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
                 }
             } else {
-                symbols.push((s.clone(), None));
+                symbols.push((s, None));
             }
             // First get results from normal inherit
             // To make sure we visit all of inherit before inherits, since it is DFS
             // Only inherits in the tree that are not already visited will be processed in the next iteration
-            let inherited_models = s.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
-            for inherited_model in inherited_models.iter() {
+            let sym = get_sym!(st, s);
+            let model_data = sym.as_class_sym()._model.as_ref().unwrap();
+            for inherited_model in &model_data.inherit {
                 if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
-                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module.clone(), visited_models);
+                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
                     symbols.extend(main_result);
                     inherits_symbols.extend(inherits_result);
                 }
             }
-            for (inherits_model, _) in s.borrow().as_class_sym()._model.as_ref().unwrap().inherits.clone() {
-                if let Some(model) = session.sync_odoo.models.get(&inherits_model).cloned() {
-                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module.clone(), visited_models);
+            for (inherits_model, _) in &model_data.inherits {
+                if let Some(model) = session.sync_odoo.models.get(inherits_model).cloned() {
+                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
                     // Everything that is in inherits should be added to inherits_symbols, regardless of whether
                     // it was in inherit or inherits. Since we need that distinction to later only get fields
                     inherits_symbols.extend(main_result);
