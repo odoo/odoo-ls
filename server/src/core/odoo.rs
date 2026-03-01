@@ -547,12 +547,13 @@ impl SyncOdoo {
 
 
     //search for a symbol with a tree local to an unknown entrypoint
-    pub fn get_symbol(&self, from_path: &str, tree: &Tree, position: u32) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_symbol(&self, from_path: &str, tree: &Tree, position: u32) -> Vec<SymbolKey> {
         //find which entrypoint to use
         for entry in self.entry_point_mgr.borrow().iter_all() {
             let entry_point = entry.borrow();
             if entry_point.is_public() || PathBuf::from(from_path).starts_with(&entry_point.path) {
-                let symbols = entry_point.root.borrow().get_symbol(&(entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree).iter().chain(&tree.0).map(|x| x.clone()).collect(), tree.1.clone()), position);
+                let tree: Tree = (entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree).iter().chain(&tree.0).map(|x| x.clone()).collect(), tree.1.clone());
+                let symbols = self.symbol_table.get_symbol(entry_point.root, &tree, position);
                 if !symbols.is_empty() {
                     return symbols;
                 }

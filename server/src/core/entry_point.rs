@@ -381,7 +381,7 @@ pub struct EntryPoint {
     pub typ: EntryPointType,
     pub addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
-    pub root: Rc<RefCell<Symbol>>,
+    pub root: SymbolKey,
     pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub not_found_symbols_for_models: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
