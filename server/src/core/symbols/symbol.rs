@@ -2468,6 +2468,7 @@ impl Symbol {
 
     //store in result all available members for symbol: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
+    // @arenaa: depends on is_field
     pub fn all_members(
         symbol: &Rc<RefCell<Symbol>>,
         session: &mut SessionInfo,
@@ -2605,6 +2606,7 @@ impl Symbol {
         result
     }
 
+    // @arena: needed for completion feature only - leave for phase 2
     /*
     Return all the symbols that are available at a given position or in a scope for a given start name
      */
@@ -2655,6 +2657,7 @@ impl Symbol {
         }
     }
 
+    // @arena: dead code?
     pub fn get_sorted_symbols(&self) -> impl Iterator<Item = Rc<RefCell<Symbol>>> + use<> {
         let mut symbols: Vec<Rc<RefCell<Symbol>>> = Vec::new();
         match self {
@@ -2719,6 +2722,7 @@ impl Symbol {
         }
     }
 
+    // @arena: depends on follow_ref
     pub fn is_method(&self, session: &mut SessionInfo) -> bool {
         match self.typ() {
             SymType::FUNCTION => true,
@@ -2883,6 +2887,7 @@ impl Symbol {
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
+    // @arena: depends on is_field, is_method, get_member_symbol_hook
     pub fn get_member_symbol(
         &self,
         session: &mut SessionInfo,

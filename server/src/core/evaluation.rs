@@ -3,6 +3,7 @@ use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Position, Range};
+use slotmap::Key;
 use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
@@ -10,7 +11,7 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::{RootKey, SymbolKey};
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -200,7 +201,7 @@ pub type Context = HashMap<String, ContextValue>;
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>;
+type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
 
 #[derive(Debug, Clone)]
 pub struct GetSymbolHook {
@@ -217,7 +218,7 @@ impl PartialEq for GetSymbolHook {
 
 #[derive(Debug, Clone)]
 pub struct EvaluationSymbolWeak {
-    pub weak: Weak<RefCell<Symbol>>,
+    pub weak: SymbolKey,
     pub context: Context,
     pub instance: Option<bool>,
     pub is_super: bool,
@@ -226,15 +227,14 @@ pub struct EvaluationSymbolWeak {
 impl PartialEq for EvaluationSymbolWeak {
     fn eq(&self, other: &Self) -> bool {
         self.context == other.context
-        && self.context == other.context
         && self.instance == other.instance
         && self.is_super == other.is_super
-        && Symbol::weak_ptr_eq(&self.weak, &other.weak)
+        && self.weak == other.weak
     }
 }
 
 impl EvaluationSymbolWeak {
-    pub fn new(weak: Weak<RefCell<Symbol>>, instance: Option<bool>, is_super: bool) -> Self {
+    pub fn new(weak: SymbolKey, instance: Option<bool>, is_super: bool) -> Self {
         EvaluationSymbolWeak {
             weak,
             context: HashMap::new(),
@@ -284,7 +284,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().expect("builtins list not found"),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -300,7 +300,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().expect("builtins list not found"),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -316,7 +316,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().expect("builtins list not found")),
+                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().expect("builtins list not found"),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -332,7 +332,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: Rc::downgrade(&odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().expect("builtins set not found")),
+                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().expect("builtins set not found"),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -386,13 +386,13 @@ impl Evaluation {
         };
         let symbol;
         if !values.is_none_literal_expr() {
-            symbol = Rc::downgrade(&odoo.get_symbol("", &tree_value, u32::MAX).last().expect("builtins class not found"));
+            symbol = *odoo.get_symbol("", &tree_value, u32::MAX).last().expect("builtins class not found");
         } else {
-            symbol = Weak::new();
+            symbol = RootKey::null().into(); // @arena: consider using Option for weak field
         }
         Evaluation {
             symbol: EvaluationSymbol {
-                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
+                sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                     weak: symbol,
                     context: HashMap::new(),
                     instance: Some(true),
