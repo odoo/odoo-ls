@@ -158,17 +158,19 @@ impl Model {
         false
     }
 
-    // @arena-next 
-    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
-        let mut symbol_set  = PtrWeakHashSet::new();
+    // @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    /// @arena: done
+    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: SymbolKey) -> HashSet<SymbolKey> {
+        let st = &session.sync_odoo.symbol_table;
+        let mut symbol_set  = HashSet::new();
         let mut already_in = HashSet::new();
         let mut queue = VecDeque::from([model_rc]);
         while let Some(current_model_rc) = queue.pop_front(){
             let current_model = current_model_rc.borrow();
-            let symbols = current_model.get_symbols(session, Some(from_module.clone()));
-            for symbol in symbols.iter() {
-                let sym_ref = symbol.borrow();
-                let Some(model_data) = &sym_ref.as_class_sym()._model else {continue};
+            let symbols = current_model.get_symbols(st, Some(from_module));
+            for symbol_key in symbols.iter() {
+                let sym = get_sym!(st, *symbol_key);
+                let Some(model_data) = &sym.as_class_sym()._model else {continue};
                 for inherit in model_data.inherit.iter() {
                     if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
                         if !already_in.contains(&model.borrow().name) {
