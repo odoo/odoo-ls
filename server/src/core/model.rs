@@ -13,6 +13,7 @@ use crate::constants::OYarn;
 use crate::constants::SymType;
 use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::symbol_table::SymbolTable;
+use crate::core::symbols::symbol_table::get_sym;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
@@ -75,35 +76,35 @@ impl ModelData {
 pub struct Model {
     name: OYarn,
     symbols: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
-    pub dependents: HashSet<SymbolKey>,
+    pub dependents: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
 }
 
 impl Model {
-    pub fn new(name: OYarn, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(name: OYarn, symbol: SymbolKey) -> Self {
         let mut res = Self {
             name,
-            symbols: PtrWeakHashSet::new(),
+            symbols: HashSet::new(),
             dependents: HashSet::new(),
         };
         res.symbols.insert(symbol);
         res
     }
 
-    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: SymbolKey) {
         if self.symbols.contains(&symbol) {
             return;
         }
-        self.symbols.insert(symbol.clone());
-        let from_module = symbol.borrow().find_module();
+        self.symbols.insert(symbol);
+        let from_module = session.sync_odoo.symbol_table.find_module(symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>) {
-        self.symbols.remove(symbol);
+    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: SymbolKey, from_module: Option<SymbolKey>) {
+        self.symbols.remove(&symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
-    // @arena: done
+    /// @arena: done
     pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
         let mut symbol = Vec::new();
         // @arena obs: possible stale keys
@@ -117,16 +118,21 @@ impl Model {
         symbol
     }
 
-    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut res: Vec<Rc<RefCell<Symbol>>> = vec![];
-        for sym in self.symbols.iter() {
-            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
-                if from_module.is_none() || sym.as_ref().borrow().find_module().is_none() {
-                    res.push(sym);
+    /// @arena: done
+    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
+        let st = &session.sync_odoo.symbol_table;
+        let mut res: Vec<SymbolKey> = vec![];
+        for &key in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
+            let sym = get_sym!(st, key);
+            let class_sym = sym.as_class_sym();
+            if !class_sym._model.as_ref().unwrap().inherit.contains(&class_sym._model.as_ref().unwrap().name) {
+                let module = st.find_module(key);
+                if from_module.is_none() || module.is_none() {
+                    res.push(key);
                 } else {
-                    let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
-                    if ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name) {
-                        res.push(sym);
+                    let dir_name = get_sym!(st, module.unwrap()).as_module_package().dir_name.clone();
+                    if ModuleSymbol::is_in_deps(st, from_module.unwrap(), &dir_name) {
+                        res.push(key);
                     }
                 }
             }
@@ -294,21 +300,19 @@ impl Model {
         self.dependents.insert(symbol);
     }
 
-    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<Rc<RefCell<Symbol>>>) {
-        for dep in self.dependents.iter() {
-            dep.borrow_mut().invalidate_sub_functions(session);
-            let module = dep.borrow().find_module();
-            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(session, &module.as_ref().unwrap(), &module_change.as_ref().unwrap().borrow().as_module_package().dir_name) {
-                let typ = dep.borrow().typ().clone();
-                match typ {
-                    SymType::FUNCTION => {
-                        dep.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                        session.sync_odoo.add_to_validations(dep.clone());
-                    },
-                    _ => {
-                        session.sync_odoo.add_to_validations(dep.clone());
-                    }
-                }
+    /// @arena: done
+    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<SymbolKey>) {
+        let st = &session.sync_odoo.symbol_table;
+        let deps = self.dependents.iter().filter(|&&k| st.contains_key(k)).copied().collect::<Vec<_>>();
+        for &dep in deps.iter() {
+            let st = &mut session.sync_odoo.symbol_table;
+            st.invalidate_sub_functions(dep);
+            let module = st.find_module(dep);
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &get_sym!(st, module_change.unwrap()).as_module_package().dir_name) {
+                if matches!(dep, SymbolKey::Function(_)) {
+                    st.set_build_status(dep, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                };
+                session.sync_odoo.add_to_validations(dep);
             }
         }
     }

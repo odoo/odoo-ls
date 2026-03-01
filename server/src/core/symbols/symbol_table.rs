@@ -81,10 +81,11 @@ pub enum SymbolView<'a> {
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
 /// Assumes `symbol_table` is in scope
 macro_rules! get_sym {                                                                     
-    ($key:expr) => {                                                                  
-        symbol_table.get_symbol_view($key).expect("valid key (formerly Rc)")          
+    ($st:expr, $key:expr) => {                                                                  
+        $st.get_symbol_view($key).expect("valid key (formerly Rc)")          
     };          
 }
+pub(crate) use get_sym;
 
 impl SymbolView<'_> {
     pub fn parent(&self) -> Option<SymbolKey> {
@@ -360,6 +361,13 @@ impl SymbolView<'_> {
         match self {
             Self::Root(r) => r,
             _ => {panic!("Not a Root")}
+        }
+    }
+
+    pub fn as_class_sym(&self) -> &ClassSymbol {
+        match self {
+            Self::Class(c) => c,
+            _ => {panic!("Not a class")}
         }
     }
 

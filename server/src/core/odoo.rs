@@ -827,7 +827,8 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_validations(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    /// @arena-todo
+    pub fn add_to_validations(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
             trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }
