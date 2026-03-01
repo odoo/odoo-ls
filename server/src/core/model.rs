@@ -10,7 +10,6 @@ use std::collections::HashSet;
 use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
 use crate::constants::OYarn;
-use crate::constants::SymType;
 use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_table::get_sym;
@@ -75,6 +74,7 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: OYarn,
+    /// @arena: always classes: consider changing to ClassKey
     symbols: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
     pub dependents: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
 }
@@ -123,15 +123,16 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut res: Vec<SymbolKey> = vec![];
         for &key in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
-            let sym = get_sym!(st, key);
-            let class_sym = sym.as_class_sym();
-            if !class_sym._model.as_ref().unwrap().inherit.contains(&class_sym._model.as_ref().unwrap().name) {
+            let sym  = get_sym!(st, key);
+            let model = sym.as_class_sym()._model.as_ref().unwrap();
+            if !model.inherit.contains(&model.name) {
                 let module = st.find_module(key);
                 if from_module.is_none() || module.is_none() {
                     res.push(key);
                 } else {
-                    let dir_name = get_sym!(st, module.unwrap()).as_module_package().dir_name.clone();
-                    if ModuleSymbol::is_in_deps(st, from_module.unwrap(), &dir_name) {
+                    let module_sym = get_sym!(st, module.unwrap());
+                    let dir_name = &module_sym.as_module_package().dir_name;
+                    if ModuleSymbol::is_in_deps(st, from_module.unwrap(), dir_name) {
                         res.push(key);
                     }
                 }
@@ -140,11 +141,16 @@ impl Model {
         res
     }
 
-    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: &Rc<RefCell<Symbol>>) -> bool {
-        for sym in self.symbols.iter() {
-            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
-                let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
-                if ModuleSymbol::is_in_deps(session, from_module, &dir_name) {
+    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: SymbolKey) -> bool {
+        let st = &session.sync_odoo.symbol_table;
+        for &key in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
+            let sym = get_sym!(st, key);
+            let model = sym.as_class_sym()._model.as_ref().unwrap();
+            if !model.inherit.contains(&model.name) {
+                let module = st.find_module(key).unwrap(); // @arena: same as original code (unwrap)
+                let module_sym =  get_sym!(st, module);
+                let dir_name = &module_sym.as_module_package().dir_name;
+                if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                     return true;
                 }
             }

@@ -623,6 +623,7 @@ impl SymbolTable {
     // Now called directly with the key
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
     // Consider just calling get_in_parents
+    /// @arena: this should return a ModuleKey (after spliting it from PackageKey)
     pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
         let symbol = self.get_symbol_view(key)?;
         if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
