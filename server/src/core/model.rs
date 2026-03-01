@@ -158,7 +158,7 @@ impl Model {
         false
     }
 
-    // @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    /// @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
     /// @arena: done
     pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: SymbolKey) -> HashSet<SymbolKey> {
         let st = &session.sync_odoo.symbol_table;
@@ -185,20 +185,19 @@ impl Model {
         symbol_set
     }
 
-    // @arena-next 
-    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
+    // @arena-done
+    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: SymbolKey) -> Vec<Rc<RefCell<Model>>> {
+        let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::new();
-        if let Some(from_module) = from_module {
-            let symbols = self.get_symbols(session, Some(from_module));
-            for symbol in symbols {
-                if let Some(model_data) = &symbol.borrow().as_class_sym()._model {
-                    for (model_name, _field) in model_data.inherits.iter() {
-                        if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                            if !already_in.contains(&model.borrow().name) {
-                                res.push(model.clone());
-                                already_in.insert(model.borrow().name.clone());
-                            }
+        let symbols = self.get_symbols(st, Some(from_module));
+        for symbol_key in symbols {
+            if let Some(model_data) = &get_sym!(st, symbol_key).as_class_sym()._model {
+                for (model_name, _field) in model_data.inherits.iter() {
+                    if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
+                        if !already_in.contains(&model.borrow().name) {
+                            res.push(model.clone());
+                            already_in.insert(model.borrow().name.clone());
                         }
                     }
                 }
