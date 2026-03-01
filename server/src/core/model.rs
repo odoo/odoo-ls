@@ -206,8 +206,8 @@ impl Model {
         res
     }
 
-    pub fn has_symbols(&mut self) -> bool {
-        self.symbols.remove_expired();
+    pub fn has_symbols(&mut self, symbol_table: &SymbolTable) -> bool {
+        self.symbols.retain(|&k| symbol_table.contains_key(k));
         !self.symbols.is_empty()
     }
 
@@ -215,36 +215,39 @@ impl Model {
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
         if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
-    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, with_inheritance: bool) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
+    pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool) -> Vec<(SymbolKey, Option<OYarn>)> {
         self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
     }
 
-    fn all_symbols_helper(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
+    fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(SymbolKey, Option<OYarn>)> {
+        let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
-        for s in self.symbols.iter() {
-            if let Some(from_module) = from_module.as_ref() {
-                let module = s.borrow().find_module();
+        for &s in self.symbols.iter().filter(|&&k| st.contains_key(k)) { // filter stale keys
+            if let Some(from_module) = from_module {
+                let module = st.find_module(s);
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                        symbols.push((s.clone(), None));
+                    let module_sym = get_sym!(st, module);
+                    let dir_name = &module_sym.as_module_package().dir_name;
+                    if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
+                        symbols.push((s, None));
                     } else {
-                        symbols.push((s.clone(), Some(module.borrow().as_module_package().dir_name.clone())));
+                        symbols.push((s, Some(dir_name.clone())));
                     }
                 } else {
                     session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
                 }
             } else {
-                symbols.push((s.clone(), None));
+                symbols.push((s, None));
             }
             if !with_inheritance {
                 continue;
             }
-            let inherited_models = s.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
+            let inherited_models = &get_sym!(st, s).as_class_sym()._model.as_ref().unwrap().inherit;
             for inherited_model in inherited_models.iter() {
                 if !seen_inherited_models.contains(inherited_model) {
                     seen_inherited_models.insert(inherited_model.clone());
                     if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
-                        symbols.extend(model.borrow().all_symbols_helper(session, from_module.clone(), true, seen_inherited_models));
+                        symbols.extend(model.borrow().all_symbols_helper(session, from_module, true, seen_inherited_models));
                     }
                 }
             }
