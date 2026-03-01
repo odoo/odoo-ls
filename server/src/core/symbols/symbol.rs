@@ -2409,6 +2409,7 @@ impl Symbol {
         results
     }
 
+    // @arena: moved to symbol_table
     pub fn all_symbols(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> + use<> {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
         //be returned.
@@ -2695,6 +2696,7 @@ impl Symbol {
         }
     }
 
+    // @arena: depends on follow_ref
     pub fn is_field(&self, session: &mut SessionInfo) -> bool {
         match self.typ() {
             SymType::VARIABLE => {
@@ -2740,6 +2742,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol_table (free function)
     pub fn is_inheriting_from_field(&self, session: &mut SessionInfo) -> bool {
         // if not class return false
         if !matches!(self.typ(), SymType::CLASS) {
@@ -2769,6 +2772,7 @@ impl Symbol {
         false
     }
 
+    // @arena-next, depends on is_inheriting_from_field
     pub fn is_field_class(&self, session: &mut SessionInfo) -> bool {
         // if not class return false
         if !matches!(self.typ(), SymType::CLASS) {

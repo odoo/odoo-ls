@@ -19,7 +19,7 @@ pub struct ClassSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub bases: Vec<Weak<RefCell<Symbol>>>,
+    pub bases: Vec<SymbolKey>, // formely Vec<Weak<RefCell<Symbol>>> 
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
     pub range: TextRange,

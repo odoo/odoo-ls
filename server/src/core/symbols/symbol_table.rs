@@ -1,13 +1,13 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, hash_map}, path::PathBuf, rc::Rc};
 
 use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
-}}, threads::SessionInfo, utils::PathSanitizer};
+}}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -1211,6 +1211,46 @@ pub fn match_tree_from_any_entry(session: &SessionInfo, symbol_key: SymbolKey, t
             }
         }
         return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
+    }
+    false
+}
+
+pub fn is_inheriting_from_field(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
+    // if not class return false
+    if !matches!(symbol_key, SymbolKey::Class(_)) {
+        return false;
+    }
+    let tree = flatten_tree(&get_main_entry_tree(session, symbol_key));
+    if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
+        // @arena: originally:
+        // if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+        //     if tree[2].as_str() == "Field" {
+        //         return true;
+        //     }
+        // }
+        if tree.as_slice() == ["odoo", "fields", "Field"] {
+            return true;
+        }
+
+    } else {
+        // @arena: originally:
+        // if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
+        //         tree[2] == "fields" && tree[3] == "Field"
+        // ){
+        //     return true;
+        // }
+        if tree.as_slice() == ["odoo", "orm", "fields", "Field"] {
+            return true;
+        }
+    }
+    // Follow class inheritance
+    let symbol_table = &session.sync_odoo.symbol_table;
+    let symbol = symbol_table.get_symbol_view(symbol_key).expect("valid key");
+    // @arena: ClassSymbol.bases are weak refs
+    for &base_key in symbol.as_class_sym().bases.iter().filter(|&&k| symbol_table.contains_key(k)) {
+        if is_inheriting_from_field(session, base_key) {
+            return true;
+        }
     }
     false
 }

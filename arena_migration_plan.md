@@ -166,6 +166,11 @@ pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
 pub ext_symbols: Hash
 ```
 
+### compare versions
+struct Semver{(u16, u16, u16)};
+implement partialeq against (u16, u16, u16) and (u16, u16)
+use Semver to store version in SyncOdoo.
+
 ## Symbol Method Migration Order
 
 ### Phase 1 — Leaf methods (no unmigrated dependencies, ready now)
