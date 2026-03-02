@@ -1754,6 +1754,8 @@ impl Symbol {
         }
     }
 
+    /// @arena-next
+    /// @arena: adapt fifoweakset
     pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
         //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
         //It will trigger rebuild on all dependencies
@@ -2639,6 +2641,7 @@ impl Symbol {
         results
     }
 
+    /// @arena-next
     //infer a name, given a position
     pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> ContentSymbols {
         let on_symbol = on_symbol.borrow();
@@ -2680,7 +2683,7 @@ impl Symbol {
         symbols.into_iter()
     }
 
-    // @arena-next
+    // @arena: moved to symbol_table (free function)
     /* Hook for get_member_symbol
     Position is set to [0,0], because inside the method there is no concept of the current position.
     The setting of the position is then delegated to the calling function.

@@ -22,6 +22,7 @@ impl<T> FifoPtrWeakHashSet<T>
         }
     }
 
+    // @arena: stale weaks linger forever in the queue
     pub fn iter(&self) -> impl Iterator<Item = Rc<T>> {
         self.queue.iter().filter_map(|weak| weak.upgrade())
     }
