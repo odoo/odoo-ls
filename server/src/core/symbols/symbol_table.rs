@@ -1,11 +1,12 @@
 use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, hash_map}, path::PathBuf, rc::Rc};
 
+use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, model::Model, symbols::{
+use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, model::Model, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol::Symbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
@@ -1385,6 +1386,37 @@ fn is_method(session: &mut SessionInfo, target: SymbolKey) -> bool {
     }
     false
 }
+
+/* Hook for get_member_symbol
+Position is set to [0,0], because inside the method there is no concept of the current position.
+The setting of the position is then delegated to the calling function.
+TODO Consider refactoring.
+    */
+fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &String, diagnostics: &mut Vec<Diagnostic>){
+    if session.sync_odoo.version_major >= 17 && name == "Form"{
+        let tree = session.sync_odoo.symbol_table.get_tree(target);
+        if tree.0.ends_with(&[Sy!("odoo"), Sy!("tests"), Sy!("common")]) && tree.1.is_empty() {
+            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
+                diagnostics.push(
+                    Diagnostic {
+                        range: Range::new(Position::new(0,0),Position::new(0,0)),
+                        tags: Some(vec![DiagnosticTag::DEPRECATED]),
+                        ..diagnostic_base.clone()
+                    }
+                );
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
 
 /**
  * @arena
