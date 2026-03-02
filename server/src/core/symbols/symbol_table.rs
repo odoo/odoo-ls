@@ -6,7 +6,7 @@ use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, model::Model, symbols::{
+use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr}, model::Model, python_validator::PythonValidator, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol::{self, Symbol}, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
@@ -1202,6 +1202,13 @@ impl SymbolTable {
             _ => None,
         }
     }
+    
+    pub fn is_expired_if_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> bool {
+        match eval_ptr {
+            EvaluationSymbolPtr::WEAK(w) => !self.contains_key(w.weak),
+            _ => false,
+        }
+    }
 }
 
 // @arena: make this a method of SyncOdoo?
@@ -1662,9 +1669,126 @@ fn _get_member_symbol_helper(
 }
 
 
+fn next_refs_class(session: &mut SessionInfo, key: SymbolKey, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolPtr> {
+    macro_rules! st {                                                                                        
+        () => { session.sync_odoo.symbol_table }
+    }  
+    //if current symbol is a descriptor, we have to resolve __get__ method before going further
+    let mut res = Vec::new();
+    if stop_on_type {
+        return res;
+    }
+    let mut base_attr = symbol_context.get("base_attr");
+    if base_attr.is_none() {
+        //search in context (used in decorators to indicate on which base the field is searched)
+        if let Some(context) = context.as_ref() {
+            base_attr = context.get("base_attr");
+        }
+    }
+    // let symbol = &*key.borrow();
+    let Some(base_attr) = base_attr else {
+        return res;
+    };
+    let base_attr = base_attr.as_symbol(); // weak ref
+    if !st!().contains_key(base_attr) {
+        return res;
+    }
+    if !matches!(base_attr, SymbolKey::Class(_)) {
+        return res;
+    }
+    let attribute_type_sym = key;
+    //TODO shouldn't we set the from_module in the call to get_member_symbol?
+    let get_method = get_member_symbol(session, attribute_type_sym, &S!("__get__"), None, true, false, false, true, false).0.first().copied();
+    let Some(get_method) = get_method else {
+        return res;
+    };
 
+    let get_sym_file = st!().get_file(get_method).unwrap();
+    let get_method_sym = st!().get_symbol_view(get_method).expect("valid key from get_member_symbol");
 
+    if get_method_sym.evaluations().is_some()
+    && get_method_sym.evaluations().unwrap().len() == 0
+    && !get_sym!(st!(), get_sym_file).is_external()
+    && st!().build_status(get_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+    && st!().build_status(get_method, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
+    && st!().build_status(get_method, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
+    && st!().build_status(get_method, BuildSteps::VALIDATION) == BuildStatus::PENDING {
+        let entry_point = st!().get_entry(get_method).unwrap();
+        let mut v = PythonValidator::new(entry_point, get_method);
+        v.validate(session);
+    }
+    let Some(evaluations) = get_sym!(st!(), get_method).evaluations().cloned() else {
+        return res;
+    };
+    if context.is_none() {
+        *context = Some(HashMap::new());
+    }
+    for get_method_eval in evaluations.iter() {
+        context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
+        let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, diagnostics, None);
+        if st!().contains_key(get_result.weak) {
+            let mut eval = Evaluation::eval_from_symbol(&st!(), get_result.weak, get_result.instance);
+            match eval.symbol.get_mut_symbol_ptr() {
+                EvaluationSymbolPtr::WEAK(weak) => {
+                    if weak.weak == key {
+                        continue;
+                    }
+                    weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_attr));
+                    res.push(eval.symbol.get_symbol_ptr().clone());
+                },
+                _ => {}
+            }
+        }
+        context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
+    }
+    res
+}
 
+fn next_refs_variable(session: &mut SessionInfo, key: VariableKey, context: &mut Option<Context>, symbol_context: &Context, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolPtr> {
+    let mut res = Vec::new();
+    let var_symbol = session.sync_odoo.symbol_table.variables.get(key).expect("valid key");
+    let evaluations = var_symbol.evaluations.clone();
+    for eval in evaluations.iter() {
+        let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
+        let mut sym = eval.symbol.get_symbol(session, ctx, diagnostics, None);
+        if let EvaluationSymbolPtr::WEAK(ref mut w) = sym {
+            if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+                if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                    w.context.insert(S!("base_attr"), base_attr.clone());
+                }
+            }
+            if let Some(base_attr) = symbol_context.get(&S!("is_attr_of_instance")) {
+                if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                    w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
+                }
+            }
+        }
+        if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
+            res.push(sym);
+        }
+    }
+    res
+}
+
+/*given a Symbol, give all the Symbol that are evaluated as valid evaluation for it.
+example:
+====
+a = 5
+if X:
+    a = Test()
+else:
+    a = Object()
+print(a)
+====
+next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
+*/
+pub fn next_refs(session: &mut SessionInfo, symbol_key: SymbolKey, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> Vec<EvaluationSymbolPtr> {
+    match symbol_key {
+        SymbolKey::Class(_) => next_refs_class(session, symbol_key, context, symbol_context, stop_on_type, diagnostics),
+        SymbolKey::Variable(v) => next_refs_variable(session, v, context, symbol_context, diagnostics),
+        _ => vec![],
+    }
+}
 
 
 /**

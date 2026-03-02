@@ -1786,6 +1786,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute the hook, then use context to return an EvaluationSymbolWeak if possible, else return an empty one */
+    /// @arena: todo
     pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak {
         let eval = EvaluationSymbol::get_symbol(&self, session, context, diagnostics, scope);
         match eval {
@@ -1832,7 +1833,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute Hook, then return the effective EvaluationSymbolPtr */
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolPtr {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> EvaluationSymbolPtr {
         let mut custom_eval = None;
         if let Some(hook) = self.get_symbol_hook.as_ref() {
             custom_eval = (hook.callable)(session, self, context, diagnostics, file_symbol);
@@ -1852,6 +1853,7 @@ impl EvaluationSymbol {
 
 impl EvaluationSymbolPtr {
 
+    // @arena: moved to symbol_table
     pub fn is_expired_if_weak(&self) -> bool {
         match self {
             EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(),
@@ -1859,6 +1861,7 @@ impl EvaluationSymbolPtr {
         }
     }
 
+    // @arena: moved to symbol_table
     pub fn upgrade_weak(&self) -> Option<Rc<RefCell<Symbol>>> {
         match self {
             EvaluationSymbolPtr::WEAK(w) => w.weak.upgrade(),

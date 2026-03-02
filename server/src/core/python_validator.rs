@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
@@ -23,9 +24,9 @@ use super::python_arch_eval::PythonArchEval;
 #[derive(Debug)]
 pub struct PythonValidator {
     entry_point: Rc<RefCell<EntryPoint>>,
-    file: Rc<RefCell<Symbol>>,
+    file: SymbolKey,
     file_mode: bool,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<SymbolKey>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
     current_module: Option<Rc<RefCell<Symbol>>>,
@@ -36,10 +37,10 @@ pub struct PythonValidator {
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> Self {
         Self {
             entry_point,
-            file: symbol.clone(), //dummy, not valid
+            file: symbol, //dummy, not valid
             file_mode: true,
             sym_stack: vec![symbol],
             diagnostics: vec![],

@@ -2174,6 +2174,7 @@ impl Symbol {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
+    /// @arena: moved to symbol_table (free function)
     pub fn next_refs(session: &mut SessionInfo, symbol_rc: Rc<RefCell<Symbol>>, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool, diagnostics: &mut Vec<Diagnostic>) -> VecDeque<EvaluationSymbolPtr> {
         //if current symbol is a descriptor, we have to resolve __get__ method before going further
         let mut res = VecDeque::new();
