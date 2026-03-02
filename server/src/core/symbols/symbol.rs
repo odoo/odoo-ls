@@ -2272,6 +2272,7 @@ impl Symbol {
     If a symbol in the chain is a descriptor, return the __get__ return evaluation.
     If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
      */
+    /// @arena: moved to symbol_table (free function)
     pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<Tree>, max_scope: Option<Rc<RefCell<Symbol>>>) -> Vec<EvaluationSymbolPtr> {
         let default_result = match filter_on_tree.as_ref() {
             Some(_) => vec![],
