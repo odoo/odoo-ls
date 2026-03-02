@@ -1194,6 +1194,13 @@ impl SymbolTable {
 
         res
     }
+
+    pub fn upgrade_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> Option<SymbolKey> {
+        match eval_ptr {
+            EvaluationSymbolPtr::WEAK(w) if self.contains_key(w.weak) => Some(w.weak),
+            _ => None,
+        }
+    }
 }
 
 // @arena: make this a method of SyncOdoo?
@@ -1343,14 +1350,36 @@ pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
         // @arena: pending conversion of follow_ref
         let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
         for eval_weak in eval_weaks.iter() {
-            let EvaluationSymbolPtr::WEAK(w) = eval_weak else {
-                continue;
-            };
-            if !session.sync_odoo.symbol_table.contains_key(w.weak) {
-                continue;
+            if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
+                if is_field_class(session, key) {
+                    return true;
+                }
             }
-            if is_field_class(session, w.weak) {
-                return true;
+        }
+    }
+    false
+}
+
+// @arena: helper for get_member_symbol
+// @arena: code duplication with is_field 
+fn is_method(session: &mut SessionInfo, target: SymbolKey) -> bool {
+    if matches!(target, SymbolKey::Function(_)) {
+        return true;
+    }
+    let SymbolKey::Variable(v) = target else {
+        return false;
+    };
+    let var_symbol = session.sync_odoo.symbol_table.variables.get(v).expect("valid key");
+    let evals = var_symbol.evaluations.clone();
+    for eval in evals.iter() {
+        let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+        // @arena: pending conversion of follow_ref
+        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
+        for eval_weak in eval_weaks.iter() {
+            if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
+                if matches!(key, SymbolKey::Function(_)) {
+                    return true;
+                }
             }
         }
     }
