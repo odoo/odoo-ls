@@ -5,8 +5,8 @@ use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, evaluation::Evaluation, model::Model, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, model::Model, symbols::{
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol::Symbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
 new_key_type! { pub struct RootKey; }
@@ -1329,4 +1329,66 @@ fn is_field_class_uncached(session: &SessionInfo, symbol_key: SymbolKey) -> bool
         return true;
     }
     false
+}
+
+// @arena: pending conversion of follow_ref
+pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
+    let SymbolKey::Variable(v) = target else {
+        return false;
+    };
+    let var_symbol = session.sync_odoo.symbol_table.variables.get(v).expect("valid key");
+    let evaluations = var_symbol.evaluations.clone();
+    for eval in evaluations {
+        let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+        // @arena: pending conversion of follow_ref
+        let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
+        for eval_weak in eval_weaks.iter() {
+            let EvaluationSymbolPtr::WEAK(w) = eval_weak else {
+                continue;
+            };
+            if !session.sync_odoo.symbol_table.contains_key(w.weak) {
+                continue;
+            }
+            if is_field_class(session, w.weak) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/**
+ * @arena
+ * consider creating a new type for storing as weak in evaluation.
+ * upgrade weak would convert it to symbol type.
+ * This avoids forgetting checking if key is valid every time
+ * table_symbol.get_valid_key(weak_key) -> Option(SymbolKey)
+ * use it also where PtrWeakHashSets were used. This forces the caller
+ * iterating on it to upgrade them
+ */
+
+ pub struct WeakKey {
+    key: SymbolKey,
+ }
+ 
+ impl WeakKey {
+    pub fn upgrade(&self, symbol_table: &SymbolTable) -> Option<SymbolKey> {
+        if symbol_table.contains_key(self.key) {
+            Some(self.key)
+        } else {
+            None
+        }
+    }
+ }
+
+ impl SymbolTable {
+    pub fn upgrade(&self, weak_key: &WeakKey) -> Option<SymbolKey> {
+        weak_key.upgrade(self)
+    }
+ }
+
+ impl From<SymbolKey> for WeakKey {
+    fn from(key: SymbolKey) -> Self {
+        Self { key }
+    }
 }

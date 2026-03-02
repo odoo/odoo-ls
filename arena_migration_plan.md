@@ -60,7 +60,7 @@ RefCell to FileInfo, EntryPoint
         - solution would be to mutate it and remove. But needs &mut access.
             - good use of RefCell in this case?
 
--idea: macro to replace symbol.borrow() by `symbol_table.get_symbol_view(symbol).expect("valid key (formerly an Rc)")`
+- get_member symbol
 
 
 ## Strategy

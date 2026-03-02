@@ -2700,7 +2700,7 @@ impl Symbol {
         }
     }
 
-    // @arena: depends on follow_ref
+    // @arena: moved to symbol table (free function) - follow_ref pending
     pub fn is_field(&self, session: &mut SessionInfo) -> bool {
         match self.typ() {
             SymType::VARIABLE => {
