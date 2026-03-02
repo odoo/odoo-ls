@@ -5,7 +5,7 @@ use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, model::Model, symbols::{
+use crate::{constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{entry_point::EntryPoint, evaluation::Evaluation, model::Model, symbols::{
     class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
@@ -229,6 +229,22 @@ impl SymbolView<'_> {
             Self::Variable(v) => &v.range,
             Self::XmlFileSymbol(_) => panic!(),
             Self::CsvFileSymbol(_) => panic!(),
+        }
+    }
+
+    pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
+        match self {
+            Self::File(_) => { None },
+            Self::Root(_) => { None },
+            Self::Namespace(_) => { None },
+            Self::DiskDir(_) => { None },
+            Self::Package(_) => { None },
+            Self::Compiled(_) => { None },
+            Self::Class(_) => { None },
+            Self::Function(f) => Some(&f.evaluations),
+            Self::Variable(v) => Some(&v.evaluations),
+            Self::XmlFileSymbol(_) => None,
+            Self::CsvFileSymbol(_) => None,
         }
     }
 
@@ -669,7 +685,8 @@ impl SymbolTable {
     }
 
      ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-    fn _get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+     /// @arena: rename this method (at least remove underscore): formerly in SymbolMgr trait, thus public
+    pub fn _get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
         let mut res = ContentSymbols::default();
         match index {
             SectionIndex::NONE => { return res; },

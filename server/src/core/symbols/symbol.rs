@@ -1180,6 +1180,7 @@ impl Symbol {
             Symbol::CsvFileSymbol(_) => panic!(),
         }
     }
+    // @arena: moved to symbol view
     pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
         match self {
             Symbol::File(_) => { None },

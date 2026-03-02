@@ -11,7 +11,7 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{RootKey, SymbolKey};
+use crate::core::symbols::symbol_table::{RootKey, SymbolKey, SymbolTable};
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -448,6 +448,7 @@ impl Evaluation {
         }
     }
     ///return the evaluation but valid outside of the given function scope
+    // @arena: depends on follow_ref
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
         let mut res = vec![];
         match self.symbol.sym {
@@ -475,6 +476,7 @@ impl Evaluation {
         res
     }
 
+    // @arena: depends on follow_ref
     pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
         if self.value.is_some() {
             Some(self.value.as_ref().unwrap().clone())
@@ -513,14 +515,19 @@ impl Evaluation {
     /// else:
     ///     i="test"
     /// It will return two evaluation for i, one with 5 and one for "test"
-    pub fn from_sections(parent: &Symbol, sections: &HashMap<u32, Vec<Rc<RefCell<Symbol>>>>) -> Vec<Evaluation> {
+    /// @ arena: formerly took a Symbol as parent (borrowed from strong RC by the caller)
+    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &HashMap<u32, Vec<SymbolKey>>) -> Vec<Evaluation> {
+        let parent = symbol_table.get_symbol_view(parent_key).expect("valid key");
+        let parent_sym_mgr = parent.as_symbol_mgr();
         let mut res = vec![];
-        let section = parent.as_symbol_mgr().get_section_for(u32::MAX);
-        let content_symbols = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
-        for sym in content_symbols.symbols {
+        let section = parent_sym_mgr.get_section_for(u32::MAX);
+        // let content_symbols = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
+        let content_symbols = symbol_table._get_loc_symbol(parent_sym_mgr, sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
+        for sym_key in content_symbols.symbols {
+            let symbol = symbol_table.get_symbol_view(sym_key).expect("valid key");
             let mut is_instance = None;
-            if matches!(sym.borrow().typ(), SymType::VARIABLE | SymType::FUNCTION) {
-                for eval in sym.borrow().evaluations().unwrap().iter() {
+            if matches!(symbol.typ(), SymType::VARIABLE | SymType::FUNCTION) {
+                for eval in symbol.evaluations().unwrap().iter() {
                     match eval.symbol.is_instance() {
                         Some(instance) => {
                             if is_instance.is_some() && is_instance.unwrap() != instance {
@@ -532,23 +539,23 @@ impl Evaluation {
                         None => {is_instance = None; continue},
                     }
                 }
-            } else if matches!(sym.borrow().typ(), SymType::CLASS) {
+            } else if matches!(symbol.typ(), SymType::CLASS) {
                 is_instance = Some(false);
             }
-            res.push(Evaluation::eval_from_symbol(&Rc::downgrade(&sym), is_instance));
+            res.push(Evaluation::eval_from_symbol(symbol_table, sym_key, is_instance));
         }
         res
     }
 
     /// Create an evaluation that is evaluating to the given symbol
-    pub fn eval_from_symbol(symbol: &Weak<RefCell<Symbol>>, instance: Option<bool>) -> Evaluation{
-        if symbol.is_expired() {
+    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, instance: Option<bool>) -> Evaluation {
+        if !symbol_table.contains_key(symbol) {
             return Evaluation::new_none();
         }
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: symbol.clone(),
+                    weak: symbol,
                     context: HashMap::new(),
                     instance: instance,
                     is_super: false,
