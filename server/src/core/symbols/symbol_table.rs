@@ -7,7 +7,7 @@ use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, model::Model, symbols::{
-    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol::Symbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
+    class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, root_symbol::RootSymbol, symbol::{self, Symbol}, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol
 }}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}};
 
 new_key_type! { pub struct RootKey; }
@@ -255,7 +255,7 @@ impl SymbolView<'_> {
     }
 
     // @arena: like the original, this is not lazy iteration (might as well just return the Vec)
-    pub fn all_symbols(&self) -> impl Iterator<Item = SymbolKey> {
+    pub fn all_symbols(&self) -> impl Iterator<Item = SymbolKey> + use<> {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
         //be returned.
         let mut iter: Vec<SymbolKey> = Vec::new();
@@ -1409,9 +1409,112 @@ fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &String, d
     }
 }
 
+//store in result all available members for symbol: sub symbols, base class elements and models symbols
+//TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
+pub fn all_members(
+    symbol: SymbolKey,
+    session: &mut SessionInfo,
+    with_co_models: bool,
+    only_fields: bool,
+    only_methods: bool,
+    from_module: Option<SymbolKey>,
+    is_super: bool
+) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
+    let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::new();
+    let mut acc: HashSet<Tree> = HashSet::new();
+    _all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
+    return  result;
+}
 
-
-
+fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<SymbolKey>, acc: &mut HashSet<Tree>, is_super: bool) {
+    macro_rules! st {                                                                                        
+        () => { session.sync_odoo.symbol_table }
+    }  
+    let tree = st!().get_tree(symbol_key);
+    if acc.contains(&tree) {
+        return;
+    }
+    acc.insert(tree);
+    let mut append_result = |name: OYarn, symbol: SymbolKey, dep: Option<OYarn>| {
+        if let Some(vec) = result.get_mut(&name) {
+            vec.push((symbol, dep));
+        } else {
+            result.insert(name, vec![(symbol, dep)]);
+        }
+    };
+    match symbol_key {
+        SymbolKey::Class(c) => {
+            // Skip current class symbols for super
+            if !is_super{
+                for symbol in get_sym!(st!(), symbol_key).all_symbols() {
+                    if (only_fields && !is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
+                        continue;
+                    }
+                    let name = get_sym!(st!(), symbol).name().clone();
+                    append_result(name, symbol, None);
+                }
+            }
+            if with_co_models {
+                let class_sym = st!().classes.get(c).expect("valid key");
+                let Some(model) = class_sym._model.as_ref().and_then(|model_data|
+                    session.sync_odoo.models.get(&model_data.name).cloned()
+                ) else {
+                    return;
+                };
+                // no recursion because it is handled in all_symbols_inherits
+                let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
+                for (model_key, dependency) in model_symbols {
+                    if dependency.is_some() || symbol_key == model_key {
+                        continue;
+                    }
+                    let model_sym = get_sym!(st!(), model_key);
+                    for s in model_sym.all_symbols() {
+                        if (only_fields && !is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                            continue;
+                        }
+                        let name = get_sym!(st!(), s).name().clone();
+                        let model_name = get_sym!(st!(), model_key).name().clone();
+                        append_result(name, s, Some(model_name));
+                    }
+                }
+                for (model_key, dependency) in model_inherits_symbols {
+                    if dependency.is_some() || symbol_key == model_key {
+                        continue;
+                    }
+                    let model_sym = get_sym!(st!(), model_key);
+                    // for inherits symbols, we only add fields
+                    let fields = model_sym.all_symbols().into_iter().filter(|&s| is_field(session, s)).collect::<Vec<_>>();
+                    for s in fields {
+                        let name = get_sym!(st!(), s).name().clone();
+                        let model_name = get_sym!(st!(), model_key).name().clone();
+                        append_result(name, s, Some(model_name));
+                    }
+                }
+            }
+            let bases = st!().classes[c].bases.iter()
+                .filter(|&&base| st!().contains_key(base))
+                .copied()
+                .collect::<Vec<_>>();
+            for base in bases {
+                //no comodel as we will search for co-model from original class (what about overrided _name?)
+                //TODO what about base of co-models classes?
+                _all_members(base, session, result, false, only_fields, only_methods, from_module, acc, false);
+            }
+        },
+        SymbolKey::Function(_) => {
+            // A function does not expose its symbols
+        },
+        // if not class just add it to result
+        _ => {
+            get_sym!(st!(), symbol_key).all_symbols().for_each(|s|
+                if !(only_fields && !is_field(session, s)) {
+                    let name = get_sym!(st!(), s).name().clone();
+                    append_result(name, s, None);
+                }
+            )
+        }
+    }
+}
 
 
 

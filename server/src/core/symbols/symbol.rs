@@ -2469,7 +2469,7 @@ impl Symbol {
 
     //store in result all available members for symbol: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
-    // @arena: depends on is_field
+    // @arena:  moved to symbol_table (free function)
     pub fn all_members(
         symbol: &Rc<RefCell<Symbol>>,
         session: &mut SessionInfo,
