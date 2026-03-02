@@ -2889,7 +2889,7 @@ impl Symbol {
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
-    // @arena: depends on is_field, is_method, get_member_symbol_hook
+    // @arena: moved to symbol_table (free function) 
     pub fn get_member_symbol(
         &self,
         session: &mut SessionInfo,

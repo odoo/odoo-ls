@@ -88,6 +88,9 @@ Now we don't need that when we have the specific key.
 Code repetition: got rid of code repetition on get_decl_ext_symbol for each symbol variant
                 same for get_ext_symbol
 
+
+Convention: former `self` on Symbol methods -> `target` (SymbolKey)
+
 ## Refactor oportunities for later
 
 ### NamespaceSymbol::add_file

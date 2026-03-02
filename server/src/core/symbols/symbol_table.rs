@@ -1516,6 +1516,152 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
     }
 }
 
+/* similar to get_symbol: will return the symbol that is under this one with the specified name.
+However, if the symbol is a class or a model, it will search in the base class or in comodel classes
+if not all, it will return the first found. If all, the all found symbols are returned, but the first one
+is the one that is overriding others.
+:param: from_module: optional, can change the from_module of the given class */
+pub fn get_member_symbol(
+    session: &mut SessionInfo,
+    target: SymbolKey,
+    name: &String,
+    from_module: Option<SymbolKey>,
+    prevent_comodel: bool,
+    only_fields: bool,
+    only_methods: bool,
+    all: bool,
+    is_super: bool
+) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+    let mut visited_classes: HashSet<SymbolKey> = HashSet::new();
+    return _get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
+}
+
+fn _get_member_symbol_helper(
+    session: &mut SessionInfo,
+    target: SymbolKey,
+    name: &String,
+    from_module: Option<SymbolKey>,
+    prevent_comodel: bool,
+    only_fields: bool,
+    only_methods: bool,
+    all: bool,
+    is_super: bool,
+    visited_classes: &mut HashSet<SymbolKey>
+) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+    macro_rules! st {                                                                                        
+        () => { session.sync_odoo.symbol_table }
+    }  
+    let mut result: Vec<SymbolKey> = vec![];
+    let mut visited_symbols: HashSet<SymbolKey> = HashSet::new();
+    let extend_result = |syms: Vec<SymbolKey>, result: &mut Vec<SymbolKey>, visited_symbols: &mut HashSet<SymbolKey>| {
+        syms.iter().for_each(|&sym|{
+            if !visited_symbols.contains(&sym){
+                visited_symbols.insert(sym);
+                result.push(sym);
+            }
+        });
+    };
+    let mut diagnostics: Vec<Diagnostic> = vec![];
+    member_symbol_hook(session, target, name, &mut diagnostics);
+    let mod_sym = get_sym!(st!(), target).get_module_symbol(name);
+    if let Some(mod_sym) = mod_sym {
+        if !only_fields {
+            if all {
+                extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
+            } else {
+                return (vec![mod_sym], diagnostics);
+            }
+        }
+    }
+    if !is_super {
+        let mut content_syms = st!().get_sub_symbol(target, name, u32::MAX).symbols;
+        if only_fields {
+            content_syms = content_syms.iter().filter(|&&x| is_field(session, x)).copied().collect();
+        }
+        if only_methods {
+            content_syms = content_syms.iter().filter(|&&x| is_method(session, x)).copied().collect();
+        }
+        if !content_syms.is_empty() {
+            if all {
+                extend_result(content_syms, &mut result, &mut visited_symbols);
+            } else {
+                return (content_syms, diagnostics);
+            }
+        }
+    }
+    let SymbolKey::Class(c) = target else {
+        return (result, diagnostics);
+    };
+    let model_data = &st!().classes.get(c).expect("valid key")._model;
+    if model_data.is_some() && !prevent_comodel {
+        let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
+        if let Some(model) = model {
+            let mut from_module = from_module.clone();
+            if from_module.is_none() {
+                from_module = st!().find_module(target);
+            }
+            if let Some(from_module) = from_module {
+                let model_symbols = Model::get_full_model_symbols(model.clone(), session, from_module);
+                for model_symbol in model_symbols {
+                    if target == model_symbol || visited_classes.contains(&model_symbol) {
+                        continue;
+                    }
+                    visited_classes.insert(model_symbol);
+                    let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol, name, None, true, only_fields, only_methods, all, false, visited_classes);
+                    diagnostics.extend(att_diagnostic);
+                    if all {
+                        extend_result(attributs, &mut result, &mut visited_symbols);
+                    } else {
+                        if !attributs.is_empty() {
+                            return (attributs, diagnostics);
+                        }
+                    }
+                }
+                for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
+                    //only fields are visible on inherits, not methods
+                    let model_symbols = Model::get_full_model_symbols(model_inherits_symbol, session, from_module);
+                    for model_symbol in model_symbols {
+                        if target == model_symbol || visited_classes.contains(&model_symbol) {
+                            continue;
+                        }
+                        visited_classes.insert(model_symbol);
+                        let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol, name, None, true, true, only_methods, all, false, visited_classes);
+                        diagnostics.extend(att_diagnostic);
+                        if all {
+                            extend_result(attributs, &mut result, &mut visited_symbols);
+                        } else {
+                            if !attributs.is_empty() {
+                                return (attributs, diagnostics);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if result.is_empty() { // if we already have something, do not go up in bases
+        let class_sym = &st!().classes[c];
+        let bases = class_sym.bases.iter().filter(|&&base| st!().contains_key(base)).copied().collect::<Vec<_>>();
+        for base in bases {
+            if visited_classes.contains(&base){
+                continue;
+            }
+            visited_classes.insert(base);
+            let (s, s_diagnostic) = get_member_symbol(session, base, name, from_module, prevent_comodel, only_fields, only_methods, all, false);
+                diagnostics.extend(s_diagnostic);
+            if !s.is_empty() {
+                if all {
+                    extend_result(s, &mut result, &mut visited_symbols);
+                } else {
+                    return (s, diagnostics);
+                }
+            }
+        }
+    }
+    (result, diagnostics)
+}
+
+
 
 
 

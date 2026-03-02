@@ -157,7 +157,7 @@ impl Model {
 
     /// @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
     /// @arena: done
-    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: SymbolKey) -> HashSet<SymbolKey> {
+    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: SymbolKey) -> HashSet<SymbolKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbol_set  = HashSet::new();
         let mut already_in = HashSet::new();
